@@ -9,7 +9,7 @@ Requirements for automated music match pipeline. Each maps to roadmap phases.
 
 ### Matching
 
-- [ ] **MATCH-01**: Scanner triggers MusicBrainz search using only artist name, album name, and track name from file tags
+- [ ] **MATCH-01**: Scanner triggers MusicBrainz search using artist name and album name from file tags
 - [ ] **MATCH-02**: Best match scoring 80% or higher is automatically accepted (highest score wins)
 - [ ] **MATCH-03**: Songs below 80% match threshold are silently skipped with no flagging or queuing
 
