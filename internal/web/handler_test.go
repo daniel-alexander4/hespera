@@ -62,6 +62,18 @@ func setupTemplateDir(t *testing.T, dir string) {
 			t.Fatalf("WriteFile %s: %v", p, err)
 		}
 	}
+
+	// Overwrite music_match_review.html with a functional stub that renders
+	// the same data structure the handler passes (.Albums, .LibraryID).
+	reviewTpl := `{{define "content"}}` +
+		`{{if .Albums}}` +
+		`{{if .LibraryID}}<button>Run Match</button>{{end}}` +
+		`{{range .Albums}}<span>{{.Title}}</span>{{end}}` +
+		`{{else}}<p>No albums need review</p>{{end}}` +
+		`{{end}}`
+	if err := os.WriteFile(filepath.Join(tplDir, "music_match_review.html"), []byte(reviewTpl), 0o644); err != nil {
+		t.Fatalf("WriteFile music_match_review.html override: %v", err)
+	}
 }
 
 // withChdir changes to dir for the duration of the test and restores on cleanup.

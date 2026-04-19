@@ -10,6 +10,10 @@
     <input type="hidden" name="id" value="{{.LibraryID}}" />
     <button type="submit" class="btn btn-sm">Write Tags</button>
   </form>
+  <form method="post" action="/music/match" class="inline-form">
+    <input type="hidden" name="id" value="{{.LibraryID}}" />
+    <button type="submit" class="btn btn-sm btn-primary">Run Match</button>
+  </form>
 </div>
 {{end}}
 
