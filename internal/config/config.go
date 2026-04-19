@@ -36,10 +36,10 @@ func FromEnv() Config {
 	mediaRoot := getenv("ISOMEDIA_MEDIA_ROOT", "/media")
 
 	return Config{
-		Listen:    listen,
-		DataDir:   dataDir,
-		DBPath:    dbPath,
-		MediaRoot: mediaRoot,
+		Listen:     listen,
+		DataDir:    dataDir,
+		DBPath:     dbPath,
+		MediaRoot:  mediaRoot,
 		TMDBAPIKey: getenv("ISOMEDIA_TMDB_API_KEY", ""),
 		AuthEnabled: parseBoolDefaultTrue(
 			os.Getenv("AUTH_ENABLED"),

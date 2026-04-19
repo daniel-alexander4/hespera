@@ -52,6 +52,7 @@ func New(d Deps) *Handler {
 		"music_albums.html",
 		"music_compilations.html",
 		"player.html",
+		"music_match_review.html",
 		"tv_home.html",
 		"movies_home.html",
 	}
@@ -93,9 +94,12 @@ func New(d Deps) *Handler {
 		return p + sep + "v=" + v
 	}
 
+	mult := func(a, b int) int { return a * b }
+
 	layoutBase, err := template.New("layout.html").Funcs(template.FuncMap{
 		"staticv":    staticURL,
 		"humanBytes": humanBytes,
+		"mult":       mult,
 	}).ParseFiles(layoutPath)
 	if err != nil {
 		slog.Error("failed to parse layout template", "err", err)

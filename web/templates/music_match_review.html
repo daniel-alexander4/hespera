@@ -1,0 +1,69 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Match Review</h1>
+</div>
+
+{{if .Albums}}
+<div style="margin-bottom: 1rem;">
+  <form method="post" action="/music/match/approve-all" class="inline-form">
+    <button type="submit" class="btn btn-sm">Approve All Uncertain</button>
+  </form>
+</div>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Art</th>
+      <th>Title</th>
+      <th>Artist</th>
+      <th>Year</th>
+      <th>Status</th>
+      <th>Confidence</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Albums}}
+    <tr>
+      <td>
+        {{if .ArtPath}}
+        <img src="/art/album/{{.AlbumID}}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" />
+        {{else}}
+        <span style="display:inline-block;width:40px;height:40px;background:var(--clr-surface-2);border-radius:4px;"></span>
+        {{end}}
+      </td>
+      <td>{{.Title}}</td>
+      <td>{{.ArtistName}}</td>
+      <td>{{if .Year}}{{.Year}}{{else}}&mdash;{{end}}</td>
+      <td>
+        <span class="badge badge-{{.MatchStatus}}">{{.MatchStatus}}</span>
+      </td>
+      <td>
+        {{if .MatchConfidence}}{{.MatchConfidence}}%{{else}}&mdash;{{end}}
+      </td>
+      <td style="white-space:nowrap;">
+        {{if eq .MatchStatus "uncertain"}}
+        <form method="post" action="/music/match/approve" class="inline-form">
+          <input type="hidden" name="album_id" value="{{.AlbumID}}" />
+          <button type="submit" class="btn btn-sm">Approve</button>
+        </form>
+        {{end}}
+        <form method="post" action="/music/match/reject" class="inline-form">
+          <input type="hidden" name="album_id" value="{{.AlbumID}}" />
+          <button type="submit" class="btn btn-sm btn-danger">Reject</button>
+        </form>
+        <form method="post" action="/music/match/rematch" class="inline-form">
+          <input type="hidden" name="album_id" value="{{.AlbumID}}" />
+          <button type="submit" class="btn btn-sm">Re-match</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty-state">
+  <p>No albums need review. All matched or no albums scanned yet.</p>
+</div>
+{{end}}
+{{end}}
