@@ -77,108 +77,7 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 			return nil
 		}
 
-		resolvedPath, err := pathguard.ResolveExistingUnderRoot(mediaRoot, p)
-		if err != nil {
-			slog.Warn("scan guard", "path", p, "err", err)
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			slog.Warn("scan stat", "path", p, "err", err)
-			return nil
-		}
-		fileSize := info.Size()
-		mtimeUnix := info.ModTime().UTC().Unix()
-
-		meta, err := music.ReadTrackMeta(resolvedPath)
-		if err != nil {
-			slog.Warn("scan read meta", "path", resolvedPath, "err", err)
-			return nil
-		}
-
-		checksumSHA, err := s.resolveTrackChecksum(ctx, libraryID, resolvedPath, fileSize, mtimeUnix)
-		if err != nil {
-			slog.Warn("scan checksum", "path", resolvedPath, "err", err)
-			return nil
-		}
-
-		tx, err := s.DB.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		artistID, err := ensureArtist(ctx, tx, libraryID, meta.Artist)
-		if err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-
-		heuristicCompilation, err := detectCompilationByArtistDiversity(ctx, tx, libraryID, meta.Album, meta.Year, artistID)
-		if err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-		if meta.ExplicitNotCompilation {
-			heuristicCompilation = false
-		}
-		trackCompilation := meta.IsCompilation || heuristicCompilation
-
-		albumArtistName := strings.TrimSpace(meta.AlbumArtist)
-		if albumArtistName == "" {
-			albumArtistName = meta.Artist
-		}
-		if trackCompilation && (albumArtistName == "" || strings.EqualFold(albumArtistName, meta.Artist)) {
-			albumArtistName = "Various Artists"
-		}
-		isCompilation := trackCompilation || strings.EqualFold(albumArtistName, "Various Artists")
-
-		albumArtistID, albumID, err := ensureAlbum(ctx, tx, libraryID, albumArtistName, meta.Album, meta.Year, isCompilation)
-		if err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-
-		if isCompilation {
-			if err := mergeAlbumVariants(ctx, tx, libraryID, meta.Album, meta.Year, albumID); err != nil {
-				_ = tx.Rollback()
-				return err
-			}
-		}
-
-		_, err = tx.ExecContext(ctx, `
-INSERT INTO music_tracks (library_id, artist_id, album_id, title, track_no, disc_no, abs_path, mime_type, file_size_bytes, mtime_unix, checksum_sha256)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(library_id, abs_path) DO UPDATE SET
-  artist_id=excluded.artist_id,
-  album_id=excluded.album_id,
-  title=excluded.title,
-  track_no=excluded.track_no,
-  disc_no=excluded.disc_no,
-  mime_type=excluded.mime_type,
-  file_size_bytes=excluded.file_size_bytes,
-  mtime_unix=excluded.mtime_unix,
-  checksum_sha256=excluded.checksum_sha256
-`, libraryID, artistID, albumID, meta.Title, meta.Track, meta.Disc, resolvedPath, meta.MIMEType, fileSize, mtimeUnix, checksumSHA)
-		if err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-
-		if meta.HasArt {
-			var existing string
-			if err := tx.QueryRowContext(ctx,
-				"SELECT art_path FROM music_albums WHERE id=?", albumID,
-			).Scan(&existing); err == nil {
-				if strings.TrimSpace(existing) == "" {
-					if err := saveEmbeddedArt(ctx, tx, thumbDir, libraryID, albumArtistID, albumID, meta); err != nil {
-						slog.Warn("save art", "err", err)
-					}
-				}
-			}
-		}
-
-		if err := tx.Commit(); err != nil {
-			_ = tx.Rollback()
+		if err := s.ScanFile(ctx, libraryID, p, thumbDir); err != nil {
 			return err
 		}
 
@@ -197,6 +96,120 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
 
 	if err := s.pruneMissingTracks(ctx, libraryID, cleanRoot); err != nil {
 		return err
+	}
+	return s.cleanupEmptyAlbums(ctx, libraryID)
+}
+
+// ScanFile processes a single audio file: reads tags, resolves artist/album, upserts track, extracts art.
+func (s *Scanner) ScanFile(ctx context.Context, libraryID int64, absPath string, thumbDir string) error {
+	mediaRoot := filepath.Clean(s.Cfg.MediaRoot)
+	resolvedPath, err := pathguard.ResolveExistingUnderRoot(mediaRoot, absPath)
+	if err != nil {
+		slog.Warn("scan guard", "path", absPath, "err", err)
+		return nil
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		slog.Warn("scan stat", "path", resolvedPath, "err", err)
+		return nil
+	}
+	fileSize := info.Size()
+	mtimeUnix := info.ModTime().UTC().Unix()
+
+	meta, err := music.ReadTrackMeta(resolvedPath)
+	if err != nil {
+		slog.Warn("scan read meta", "path", resolvedPath, "err", err)
+		return nil
+	}
+
+	checksumSHA, err := s.resolveTrackChecksum(ctx, libraryID, resolvedPath, fileSize, mtimeUnix)
+	if err != nil {
+		slog.Warn("scan checksum", "path", resolvedPath, "err", err)
+		return nil
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	artistID, err := ensureArtist(ctx, tx, libraryID, meta.Artist)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	// Use only tag-embedded compilation signals during per-file scan.
+	// Heuristic detection (artist diversity) runs in post-scan finalizeCompilations.
+	isCompilation := meta.IsCompilation || strings.EqualFold(strings.TrimSpace(meta.AlbumArtist), "Various Artists")
+	if meta.ExplicitNotCompilation {
+		isCompilation = false
+	}
+
+	albumArtistName := strings.TrimSpace(meta.AlbumArtist)
+	if albumArtistName == "" {
+		albumArtistName = meta.Artist
+	}
+	if isCompilation && (albumArtistName == "" || strings.EqualFold(albumArtistName, meta.Artist)) {
+		albumArtistName = "Various Artists"
+	}
+
+	albumArtistID, albumID, err := ensureAlbum(ctx, tx, libraryID, albumArtistName, meta.Album, meta.Year, isCompilation)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO music_tracks (library_id, artist_id, album_id, title, track_no, disc_no, abs_path, mime_type, file_size_bytes, mtime_unix, checksum_sha256)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(library_id, abs_path) DO UPDATE SET
+  artist_id=excluded.artist_id,
+  album_id=excluded.album_id,
+  title=excluded.title,
+  track_no=excluded.track_no,
+  disc_no=excluded.disc_no,
+  mime_type=excluded.mime_type,
+  file_size_bytes=excluded.file_size_bytes,
+  mtime_unix=excluded.mtime_unix,
+  checksum_sha256=excluded.checksum_sha256
+`, libraryID, artistID, albumID, meta.Title, meta.Track, meta.Disc, resolvedPath, meta.MIMEType, fileSize, mtimeUnix, checksumSHA)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if meta.HasArt {
+		var existing string
+		if err := tx.QueryRowContext(ctx,
+			"SELECT art_path FROM music_albums WHERE id=?", albumID,
+		).Scan(&existing); err == nil {
+			if strings.TrimSpace(existing) == "" {
+				if err := saveEmbeddedArt(ctx, tx, thumbDir, libraryID, albumArtistID, albumID, meta); err != nil {
+					slog.Warn("save art", "err", err)
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return nil
+}
+
+// ScanFiles rescans specific files and cleans up empty albums/artists.
+// Used after tag edits to sync DB with file metadata. Synchronous, not a background job.
+func (s *Scanner) ScanFiles(ctx context.Context, libraryID int64, absPaths []string) error {
+	thumbDir := filepath.Join(s.Cfg.DataDir, "thumbs", "music")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		return err
+	}
+	for _, p := range absPaths {
+		if err := s.ScanFile(ctx, libraryID, p, thumbDir); err != nil {
+			return err
+		}
 	}
 	return s.cleanupEmptyAlbums(ctx, libraryID)
 }
