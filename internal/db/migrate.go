@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -300,7 +302,15 @@ FROM tv_series_identities`)
 	return tx.Commit()
 }
 
+var safeIdentifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 func ensureColumn(db *sql.DB, table, col, decl string) error {
+	if !safeIdentifier.MatchString(table) {
+		return fmt.Errorf("ensureColumn: invalid table name %q", table)
+	}
+	if !safeIdentifier.MatchString(col) {
+		return fmt.Errorf("ensureColumn: invalid column name %q", col)
+	}
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
 		return err
