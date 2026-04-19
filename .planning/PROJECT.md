@@ -43,7 +43,10 @@ A personal media server that just works -- reliable scanning, matching, and stre
 
 ### Active
 
-(None -- define in next milestone)
+- [ ] Auto-trigger TMDB matching after TV scan
+- [ ] Auto-accept high-confidence TV matches
+- [ ] Silent skip for below-threshold TV matches
+- [ ] TMDB enrichment (poster art, episode metadata) applied inline
 
 ### Out of Scope
 
@@ -53,9 +56,15 @@ A personal media server that just works -- reliable scanning, matching, and stre
 - Scaling improvements (multi-worker jobs, database partitioning) -- not needed for personal server
 - New upload UI -- files arrive via filesystem, scanner detects them
 
-## Current Milestone
+## Current Milestone: v1.2 TV Auto-Match Pipeline
 
-Planning next milestone. Run `/gsd:new-milestone` to start.
+**Goal:** Automate TV matching the same way v1.1 automated music -- scan triggers TMDB matching, high-confidence results auto-accepted, below-threshold skipped for manual review.
+
+**Target features:**
+- Auto-trigger TMDB matching after TV library scan
+- Auto-accept matches above confidence threshold
+- Skip below-threshold matches silently (manual review UI preserved)
+- TMDB enrichment (poster art, episode metadata) applied inline during match
 
 ## Context
 
@@ -91,4 +100,4 @@ Known tech debt: 3 direct http.Error calls bypass httpError slog logging pattern
 | Enrichment already wired from Phase 2b | Cover art + artist bio/image already ran in pipeline, Phase 8 just verified | Good -- avoided re-implementing existing functionality |
 
 ---
-*Last updated: 2026-03-07 after v1.1 milestone completed*
+*Last updated: 2026-03-07 after v1.2 milestone started*
