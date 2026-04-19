@@ -60,10 +60,11 @@ Plans:
   1. URL path ID parsing is handled by a single shared helper function -- no handler contains its own path-splitting-and-parsing logic
   2. At server startup, every template name referenced by a handler is validated to exist in the compiled template set
   3. A missing or broken template file causes a clear, descriptive error at startup and prevents the server from accepting requests
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 03-01: TBD
+- [ ] 03-01-PLAN.md -- Extract pathID/pathSegment helpers and replace all inline URL ID parsing
+- [ ] 03-02-PLAN.md -- Template startup validation and fail-fast on broken/missing templates
 
 ### Phase 4: Unit Test Coverage
 **Goal**: Scanner and handler critical paths have automated tests that verify correctness and catch regressions from phases 1-3
@@ -102,6 +103,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. Security & Error Exposure | 2/2 | Complete | 2026-03-05 |
 | 2. Logic & Data Integrity Bugs | 3/3 | Complete   | 2026-03-05 |
-| 3. Fragility Elimination | 0/? | Not started | - |
+| 3. Fragility Elimination | 0/2 | Not started | - |
 | 4. Unit Test Coverage | 0/? | Not started | - |
 | 5. Integration Test Coverage | 0/? | Not started | - |
