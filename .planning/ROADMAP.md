@@ -75,11 +75,13 @@ Plans:
   2. Compilation detection tests cover mixed-artist albums, "Various Artists" tagging, and re-scan consistency -- verifiable via `go test ./internal/scan/ -run Compil`
   3. TV scanner ScanTV() tests cover file identification, upsert, and rescan behavior (including the BUG-01 fix) -- verifiable via `go test ./internal/scan/ -run TV`
   4. Music, TV, and settings handler tests verify correct routing, ID parsing via shared helper, and generic error responses -- verifiable via `go test ./internal/web/`
-**Plans**: TBD
+**Plans:** 4 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md -- Music scanner ScanFile, ensureArtist/ensureAlbum, and compilation detection tests
+- [ ] 04-02-PLAN.md -- TV scanner upsertTVFile, rescan BUG-01 fix, and pruneMissingFiles tests
+- [ ] 04-03-PLAN.md -- Music handler endpoint tests (routing, ID parsing, error responses)
+- [ ] 04-04-PLAN.md -- TV and settings handler endpoint tests (routing, library CRUD, scan trigger)
 
 ### Phase 5: Integration Test Coverage
 **Goal**: Match pipelines have automated tests that verify the full match-score-fetch-enrich flow for both music and TV
@@ -104,5 +106,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 1. Security & Error Exposure | 2/2 | Complete | 2026-03-05 |
 | 2. Logic & Data Integrity Bugs | 3/3 | Complete   | 2026-03-05 |
 | 3. Fragility Elimination | 2/2 | Complete   | 2026-03-05 |
-| 4. Unit Test Coverage | 0/? | Not started | - |
+| 4. Unit Test Coverage | 0/4 | Not started | - |
 | 5. Integration Test Coverage | 0/? | Not started | - |
