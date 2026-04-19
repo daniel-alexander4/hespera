@@ -331,6 +331,18 @@ WHERE al.library_id = ?
 		default:
 		}
 
+		// Skip if this album's tracks were already merged into another candidate
+		// earlier in this loop (same title+year variant that was processed first).
+		var trackCount int
+		if err := s.DB.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM music_tracks WHERE album_id = ?", a.id,
+		).Scan(&trackCount); err != nil {
+			return err
+		}
+		if trackCount == 0 {
+			continue
+		}
+
 		// Mark this album as compilation with "Various Artists" album artist.
 		vaID, err := s.ensureArtistDB(ctx, libraryID, "Various Artists")
 		if err != nil {
