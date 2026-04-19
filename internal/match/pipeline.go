@@ -252,6 +252,23 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 		return fmt.Errorf("update album: %w", err)
 	}
 
+	// Normalize album title to MusicBrainz canonical name.
+	if best.Title != "" {
+		if _, err := m.db.ExecContext(ctx,
+			"UPDATE music_albums SET title=? WHERE id=?", best.Title, albumID); err != nil {
+			slog.Warn("normalize album title failed", "album_id", albumID, "err", err)
+		}
+	}
+
+	// Normalize artist name to MusicBrainz canonical name.
+	if best.ArtistName != "" {
+		if _, err := m.db.ExecContext(ctx,
+			"UPDATE music_artists SET name=? WHERE id=(SELECT album_artist_id FROM music_albums WHERE id=?)",
+			best.ArtistName, albumID); err != nil {
+			slog.Warn("normalize artist name failed", "album_id", albumID, "err", err)
+		}
+	}
+
 	// Fetch cover art if we got a match.
 	if best.ReleaseGroupID != "" {
 		var releaseIDs []string
@@ -267,6 +284,11 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 				"UPDATE music_albums SET art_path=? WHERE id=? AND (art_path='' OR art_path IS NULL)",
 				artPath, albumID)
 		}
+	}
+
+	// Write tags back to audio files inline (reads normalized names from DB).
+	if err := writebackAlbumTracks(ctx, m.db, albumID); err != nil {
+		slog.Warn("inline writeback failed", "album_id", albumID, "err", err)
 	}
 
 	return nil
