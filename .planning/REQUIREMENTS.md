@@ -33,8 +33,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Test Coverage -- Scanner
 
-- [ ] **TEST-01**: Music scanner ScanFile() has unit tests covering tag reading, artist/album/track upsert, and art extraction
-- [ ] **TEST-02**: Music scanner compilation detection has tests covering mixed-artist albums, "Various Artists", and re-scan scenarios
+- [x] **TEST-01**: Music scanner ScanFile() has unit tests covering tag reading, artist/album/track upsert, and art extraction
+- [x] **TEST-02**: Music scanner compilation detection has tests covering mixed-artist albums, "Various Artists", and re-scan scenarios
 - [x] **TEST-03**: TV scanner ScanTV() has tests covering file identification, upsert, and rescan behavior
 
 ### Test Coverage -- Handlers
@@ -95,8 +95,8 @@ Deferred to future milestones.
 | FRAG-01 | Phase 3 | Complete |
 | FRAG-02 | Phase 3 | Complete |
 | FRAG-03 | Phase 3 | Complete |
-| TEST-01 | Phase 4 | Pending |
-| TEST-02 | Phase 4 | Pending |
+| TEST-01 | Phase 4 | Complete |
+| TEST-02 | Phase 4 | Complete |
 | TEST-03 | Phase 4 | Complete |
 | TEST-04 | Phase 4 | Complete |
 | TEST-05 | Phase 4 | Complete |
