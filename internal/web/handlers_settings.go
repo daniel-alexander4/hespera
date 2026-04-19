@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"isomedia/internal/jobs"
+	"isomedia/internal/match"
 	"isomedia/internal/scan"
+	"isomedia/internal/tmdb"
 	"isomedia/internal/tvscan"
 )
 
@@ -261,12 +263,30 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 	case "music":
 		scanner := scan.New(h.cfg, h.db)
 		jobID, err = h.jobs.Enqueue("scan", id, "user", func(ctx context.Context, jID, libID int64) error {
-			return scanner.ScanMusic(ctx, jID, libID)
+			if err := scanner.ScanMusic(ctx, jID, libID); err != nil {
+				return err
+			}
+			// Chain a music_match job after scan completes.
+			matcher := match.New(h.db, h.cfg.DataDir)
+			_, _ = h.jobs.Enqueue("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+				return matcher.RunMusicMatch(ctx, mJID, mLibID)
+			})
+			return nil
 		})
 	case "tv":
 		tvScanner := tvscan.New(h.cfg, h.db)
 		jobID, err = h.jobs.Enqueue("tvscan", id, "user", func(ctx context.Context, jID, libID int64) error {
-			return tvScanner.ScanTV(ctx, jID, libID)
+			if err := tvScanner.ScanTV(ctx, jID, libID); err != nil {
+				return err
+			}
+			// Chain a tv_match job after scan completes if TMDB key is configured.
+			if h.cfg.TMDBAPIKey != "" {
+				tvMatcher := tmdb.NewMatcher(h.db, h.cfg.TMDBAPIKey, h.cfg.DataDir)
+				_, _ = h.jobs.Enqueue("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+					return tvMatcher.RunTVMatch(ctx, mJID, mLibID)
+				})
+			}
+			return nil
 		})
 	default:
 		http.Error(w, "scanning not supported for this library type", 400)
