@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: TV Auto-Match Pipeline
 status: completed
-stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-03-07T15:08:41.616Z"
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-03-07T15:09:03.646Z"
 last_activity: 2026-03-07 -- Completed Phase 10 Plan 1 (TV Match Scoring and Threshold Tests)
 progress:
   total_phases: 2
@@ -42,6 +42,7 @@ Progress: [██████░░░░] 66%
 **Velocity:**
 *Carried from v1.1: 3 plans across 3 phases*
 *Carried from v1.0: 13 plans across 5 phases*
+| Phase 10 P01 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -55,6 +56,7 @@ Progress: [██████░░░░] 66%
 - Used table recreation migration pattern for SQLite CHECK constraint changes
 - Used inline handler creation with config override for subtests needing TMDBAPIKey
 - Added functional template stubs in setupTemplateDir for TV match review tests
+- [Phase 10]: Used 'Breakng Bad X' for near-boundary test (similarity ~0.77), dedicated mock servers for below-threshold integration tests
 
 ### Pending Todos
 
@@ -66,5 +68,5 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T15:08:41.614Z
-Stopped at: Completed 10-02-PLAN.md
+Last session: 2026-03-07T15:08:55.343Z
+Stopped at: Completed 10-01-PLAN.md
