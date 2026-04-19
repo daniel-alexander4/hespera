@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 5 context gathered
-last_updated: "2026-03-06T00:53:48.856Z"
-last_activity: 2026-03-05 -- Completed 04-01-PLAN.md
+status: in-progress
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-03-06T01:49:54.197Z"
+last_activity: 2026-03-06 -- Completed 05-02-PLAN.md
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Every identified bug and logic flaw is fixed and verified -- no known issues remain in the codebase
-**Current focus:** Phase 4: Unit Test Coverage (complete)
+**Current focus:** Phase 5: Integration Test Coverage (in progress)
 
 ## Current Position
 
-Phase: 4 of 5 (Unit Test Coverage)
-Plan: 4 of 4 in current phase (complete)
-Status: Phase complete
-Last activity: 2026-03-05 -- Completed 04-01-PLAN.md
+Phase: 5 of 5 (Integration Test Coverage)
+Plan: 2 of 2 in current phase
+Status: In progress
+Last activity: 2026-03-06 -- Completed 05-02-PLAN.md
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 | Phase 04 P03 | 2min | 1 tasks | 1 files |
 | Phase 04 P04 | 3min | 2 tasks | 3 files |
 | Phase 04 P01 | 4min | 2 tasks | 3 files |
+| Phase 05 P02 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Defined newTestHandler in handler_test.go as shared helper for all handler test files
 - [Phase 04]: Minimal ID3v2.3 MP3 fixture generated in-test via writeMinimalMP3 helper (no external fixtures)
 - [Phase 04]: Fixed UNIQUE constraint bug in finalizeCompilations variant merge (skip already-merged albums)
+- [Phase 05]: apiBase/imgBase as struct fields (not constructor params) to avoid changing NewClient signature
+- [Phase 05]: Closed channel for rate limiter bypass -- reading from closed chan returns zero value immediately
+- [Phase 05]: Reuse sampleSearchJSON/sampleShowJSON/sampleSeasonJSON from client_test.go as mock server fixtures
 
 ### Pending Todos
 
@@ -101,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T00:53:48.854Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-integration-test-coverage/05-CONTEXT.md
+Last session: 2026-03-06T01:49:00Z
+Stopped at: Completed 05-02-PLAN.md
+Resume file: .planning/phases/05-integration-test-coverage/05-02-SUMMARY.md
