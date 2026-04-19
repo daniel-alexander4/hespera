@@ -89,12 +89,13 @@ Plans:
 **Requirements**: TEST-07, TEST-08
 **Success Criteria** (what must be TRUE):
   1. RunMusicMatch() integration tests exercise the full pipeline (MusicBrainz search, scoring, CAA art fetch, artist enrichment) using mocked external APIs -- verifiable via `go test ./internal/match/ -run Integration`
-  2. RunTVMatch() integration tests exercise the full pipeline (TMDB search, metadata fetch, art download) using mocked external APIs -- verifiable via `go test ./internal/match/ -run TVIntegration`
+  2. RunTVMatch() integration tests exercise the full pipeline (TMDB search, metadata fetch, art download) using mocked external APIs -- verifiable via `go test ./internal/tmdb/ -run TVIntegration`
   3. Both test suites verify error handling: partial failures in external APIs do not crash the pipeline and produce appropriate logged warnings
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 05-01: TBD
+- [ ] 05-01-PLAN.md -- Music match pipeline integration tests (RunMusicMatch with mocked MusicBrainz/Wikipedia/CAA)
+- [ ] 05-02-PLAN.md -- TV match pipeline integration tests (RunTVMatch with mocked TMDB API)
 
 ## Progress
 
@@ -107,4 +108,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. Logic & Data Integrity Bugs | 3/3 | Complete   | 2026-03-05 |
 | 3. Fragility Elimination | 2/2 | Complete   | 2026-03-05 |
 | 4. Unit Test Coverage | 0/4 | Not started | - |
-| 5. Integration Test Coverage | 0/? | Not started | - |
+| 5. Integration Test Coverage | 0/2 | Not started | - |
