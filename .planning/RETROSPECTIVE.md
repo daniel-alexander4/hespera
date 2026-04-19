@@ -88,6 +88,48 @@
 
 ---
 
+## Milestone: v1.2 -- TV Auto-Match Pipeline
+
+**Shipped:** 2026-03-07
+**Phases:** 2 | **Plans:** 3 | **Tasks:** 5
+
+### What Was Built
+- TV auto-match threshold raised from 0.45 to 0.80 with confidence-driven auto-accept
+- Unified status model across music and TV (matched/unmatched/skipped replacing resolved/needs_fix)
+- DB migration with table recreation pattern for CHECK constraint changes
+- 7 unit subtests for pickBestResult scoring (empty, exact, multi-candidate, popularity cap, threshold boundaries)
+- Integration test for below-threshold pipeline (identity stays unmatched, no metadata cached, no art downloaded)
+- 7 handler subtests for TV match review/approve/skip endpoints with new status model
+
+### What Worked
+- Parallel execution of Phase 10's two plans (different packages, zero file overlap) halved wall-clock time
+- Clean phase separation: Phase 9 changed behavior, Phase 10 tested it -- no circular dependency
+- Unified status model simplified both code and mental model -- one set of statuses across music and TV
+- Table recreation migration pattern handled SQLite's lack of ALTER CHECK cleanly
+
+### What Was Inefficient
+- SUMMARY.md files still lack one_liner frontmatter (third milestone with this issue)
+- Both phases skipped research (disabled in config) so no VALIDATION.md generated -- Nyquist compliance missing for all v1.2 phases
+- Phase 9 ROADMAP.md progress row had malformed columns (milestone field missing)
+
+### Patterns Established
+- Table recreation pattern for CHECK constraint migration (idempotent CASE conversion + recreation)
+- Inline handler creation with config override for subtests needing specific config (TMDBAPIKey)
+- Functional template stubs in setupTemplateDir for handler tests (tv_match_review.html alongside music_match_review.html)
+- Dedicated mock server per test scenario rather than reusing shared mock with parameter variation
+
+### Key Lessons
+1. Unified status models across similar subsystems reduce cognitive load and testing surface -- matched/unmatched works for both music and TV
+2. Table recreation is the right SQLite migration pattern for CHECK constraints -- don't fight the limitations, work with them
+3. Two focused phases (implement + test) is cleaner than one large phase -- keeps each plan small and parallelizable
+
+### Cost Observations
+- Model mix: orchestrator on opus, executors/verifiers/researchers on sonnet (balanced profile)
+- Phase execution: ~2-4 min per plan
+- Notable: Both Phase 10 plans executed in parallel (~5 min wall clock for 2 plans)
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -96,6 +138,7 @@
 |-----------|--------|-------|------------|
 | v1.0 | 5 | 13 | First milestone -- established audit/fix/test pattern |
 | v1.1 | 3 | 3 | Lean phases (1 plan each), research-driven planning reduced wasted execution |
+| v1.2 | 2 | 3 | Parallel plan execution, implement+test phase separation pattern |
 
 ### Cumulative Quality
 
@@ -103,9 +146,11 @@
 |-----------|---------------|-------------------|-----------------|
 | v1.0 | 49+ | 4 (music + TV match) | db, web, scan, tvscan, match, tmdb |
 | v1.1 | 58+ | 5 (+ match threshold/normalization/writeback) | + match (6 new test functions) |
+| v1.2 | 72+ | 6 (+ TV below-threshold pipeline) | + tmdb (pickBestResult), web (TV handler tests) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Always verify after execution -- missing artifacts block completion (v1.0 audit caught missing VERIFICATION.md)
 2. Research before planning prevents over-engineering (v1.1 Phase 8 avoided re-implementing existing code)
-3. SUMMARY.md one_liner frontmatter needs enforcement -- manually extracting accomplishments at milestone completion is friction (recurring v1.0, v1.1)
+3. SUMMARY.md one_liner frontmatter needs enforcement -- manually extracting accomplishments at milestone completion is friction (recurring v1.0, v1.1, v1.2)
+4. Unified models across similar subsystems (matched/unmatched for both music and TV) reduce complexity -- confirmed in v1.2 after v1.1 established the pattern
