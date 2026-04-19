@@ -45,7 +45,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Test Coverage -- Pipeline
 
-- [ ] **TEST-07**: Music match pipeline RunMusicMatch() has integration tests covering the full match-score-art-enrich flow
+- [x] **TEST-07**: Music match pipeline RunMusicMatch() has integration tests covering the full match-score-art-enrich flow
 - [x] **TEST-08**: TMDB matcher RunTVMatch() has integration tests covering search, metadata fetch, and art download
 
 ## v2 Requirements
@@ -101,7 +101,7 @@ Deferred to future milestones.
 | TEST-04 | Phase 4 | Complete |
 | TEST-05 | Phase 4 | Complete |
 | TEST-06 | Phase 4 | Complete |
-| TEST-07 | Phase 5 | Pending |
+| TEST-07 | Phase 5 | Complete |
 | TEST-08 | Phase 5 | Complete |
 
 **Coverage:**
