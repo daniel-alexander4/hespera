@@ -18,6 +18,7 @@ import (
 	"isomedia/internal/match"
 	"isomedia/internal/music"
 	"isomedia/internal/pathguard"
+	"isomedia/internal/scan"
 )
 
 // --- Row types ---
@@ -183,13 +184,13 @@ ORDER BY x.last_played DESC, lower(a.name)
 LIMIT 18
 `, libraryID, libraryID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
 		return
 	}
 
 	recentlyAddedAlbums, err := h.loadRecentlyAddedAlbums(r.Context(), libraryID, 18)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "load recently added albums failed", "handler", "musicHome", "err", err)
 		return
 	}
 
@@ -210,7 +211,7 @@ WHERE a.library_id=?
 ORDER BY lower(a.name)
 `, libraryID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
 		return
 	}
 	defer artistRows.Close()
@@ -220,7 +221,7 @@ ORDER BY lower(a.name)
 		var a artistRow
 		var art sql.NullString
 		if err := artistRows.Scan(&a.ID, &a.Name, &art, &a.Count, &a.PlayCount, &a.LastPlayedRaw); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicHome", "err", err)
 			return
 		}
 		a.ArtPath = scanNullString(art)
@@ -228,7 +229,7 @@ ORDER BY lower(a.name)
 		artists = append(artists, a)
 	}
 	if err := artistRows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicHome", "err", err)
 		return
 	}
 
@@ -240,7 +241,7 @@ WHERE library_id=? AND COALESCE(is_compilation,0)=1
 ORDER BY year, lower(title)
 `, libraryID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
 		return
 	}
 	defer compRows.Close()
@@ -250,14 +251,14 @@ ORDER BY year, lower(title)
 		var row compilationAlbumRow
 		var art sql.NullString
 		if err := compRows.Scan(&row.ID, &row.Title, &row.Year, &art); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicHome", "err", err)
 			return
 		}
 		row.ArtPath = scanNullString(art)
 		compilations = append(compilations, row)
 	}
 	if err := compRows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicHome", "err", err)
 		return
 	}
 
@@ -344,7 +345,7 @@ WHERE al.album_artist_id=? AND COALESCE(al.is_compilation,0)=0
 ORDER BY CASE WHEN al.year > 0 THEN 0 ELSE 1 END, al.year DESC, lower(al.title)
 `, artistID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicArtistAlbums", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -355,7 +356,7 @@ ORDER BY CASE WHEN al.year > 0 THEN 0 ELSE 1 END, al.year DESC, lower(al.title)
 		var art sql.NullString
 		var comp int
 		if err := rows.Scan(&a.ID, &a.Title, &a.Year, &art, &comp, &a.Count, &a.PlayCount); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicArtistAlbums", "err", err)
 			return
 		}
 		a.ArtPath = scanNullString(art)
@@ -363,7 +364,7 @@ ORDER BY CASE WHEN al.year > 0 THEN 0 ELSE 1 END, al.year DESC, lower(al.title)
 		albums = append(albums, a)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicArtistAlbums", "err", err)
 		return
 	}
 
@@ -376,7 +377,7 @@ WHERE t.artist_id=? AND COALESCE(al.is_compilation,0)=1
 ORDER BY al.year, lower(al.title)
 `, artistID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicArtistAlbums", "err", err)
 		return
 	}
 	defer compRows.Close()
@@ -386,14 +387,14 @@ ORDER BY al.year, lower(al.title)
 		var c compilationAlbumRow
 		var art sql.NullString
 		if err := compRows.Scan(&c.ID, &c.Title, &c.Year, &art); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicArtistAlbums", "err", err)
 			return
 		}
 		c.ArtPath = scanNullString(art)
 		comps = append(comps, c)
 	}
 	if err := compRows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicArtistAlbums", "err", err)
 		return
 	}
 
@@ -407,7 +408,7 @@ WHERE al.album_artist_id=? AND COALESCE(al.is_compilation,0)=0
 ORDER BY al.year, lower(al.title), t.disc_no, t.track_no, lower(t.title)
 `, artistID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicArtistAlbums", "err", err)
 		return
 	}
 	defer trackRows.Close()
@@ -416,13 +417,13 @@ ORDER BY al.year, lower(al.title), t.disc_no, t.track_no, lower(t.title)
 	for trackRows.Next() {
 		var t trackRow
 		if err := trackRows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.TrackNo, &t.DiscNo, &t.MIME); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicArtistAlbums", "err", err)
 			return
 		}
 		tracks = append(tracks, t)
 	}
 	if err := trackRows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicArtistAlbums", "err", err)
 		return
 	}
 
@@ -481,7 +482,7 @@ WHERE t.album_id=?
 ORDER BY disc_no, track_no, lower(title)
 `, albumID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbumTracks", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -492,7 +493,7 @@ ORDER BY disc_no, track_no, lower(title)
 	for rows.Next() {
 		var t trackRow
 		if err := rows.Scan(&t.ID, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumTracks", "err", err)
 			return
 		}
 		t.AlbumID = albumID
@@ -512,7 +513,7 @@ ORDER BY disc_no, track_no, lower(title)
 		discBuckets[discNo] = append(discBuckets[discNo], t)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbumTracks", "err", err)
 		return
 	}
 
@@ -560,18 +561,15 @@ func (h *Handler) musicAlbumEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albumID int64) {
-	writeback := r.URL.Query().Get("writeback") == "1"
-
 	var albumTitle string
 	var albumYear int
 	var artistName string
-	var compInt int
 	if err := h.db.QueryRowContext(r.Context(), `
-		SELECT al.title, al.year, ar.name, COALESCE(al.is_compilation, 0)
+		SELECT al.title, al.year, ar.name
 		FROM music_albums al
 		JOIN music_artists ar ON ar.id = al.album_artist_id
 		WHERE al.id=?
-	`, albumID).Scan(&albumTitle, &albumYear, &artistName, &compInt); err != nil {
+	`, albumID).Scan(&albumTitle, &albumYear, &artistName); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -584,7 +582,7 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 		ORDER BY t.disc_no, t.track_no, lower(t.title)
 	`, albumID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbumEditGET", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -600,305 +598,255 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 	for rows.Next() {
 		var t editTrack
 		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNo, &t.DiscNo, &t.Artist); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumEditGET", "err", err)
 			return
 		}
 		tracks = append(tracks, t)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbumEditGET", "err", err)
 		return
 	}
 
-	var wbSuccess, wbErrors int
+	var successCount, errorCount int
 	if s := r.URL.Query().Get("success"); s != "" {
-		wbSuccess, _ = strconv.Atoi(s)
+		successCount, _ = strconv.Atoi(s)
 	}
 	if s := r.URL.Query().Get("errors"); s != "" {
-		wbErrors, _ = strconv.Atoi(s)
+		errorCount, _ = strconv.Atoi(s)
+	}
+
+	mode := r.URL.Query().Get("mode")
+	if mode != "single" {
+		mode = "all"
 	}
 
 	h.render(w, "music_album_edit.html", map[string]any{
-		"Title":         "Edit Album",
-		"AlbumID":       albumID,
-		"AlbumTitle":    albumTitle,
-		"AlbumYear":     albumYear,
-		"ArtistName":    artistName,
-		"Tracks":        tracks,
-		"Writeback":     writeback,
-		"IsCompilation": compInt != 0,
-		"WBSuccess":     wbSuccess,
-		"WBErrors":      wbErrors,
+		"Title":      "Edit Album",
+		"AlbumID":    albumID,
+		"AlbumTitle": albumTitle,
+		"AlbumYear":  albumYear,
+		"ArtistName": artistName,
+		"Tracks":     tracks,
+		"Mode":       mode,
+		"Success":    successCount,
+		"Errors":     errorCount,
 	})
 }
 
 func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, albumID int64) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicAlbumEditPOST", "err", err)
 		return
 	}
 
-	writeback := r.FormValue("writeback") == "1"
-	newTitle := strings.TrimSpace(r.FormValue("title"))
-	newArtist := strings.TrimSpace(r.FormValue("artist"))
-	newYearStr := strings.TrimSpace(r.FormValue("year"))
-	newYear, _ := strconv.Atoi(newYearStr)
+	mode := r.FormValue("mode") // "all" or "single"
+	newAlbum := strings.TrimSpace(r.FormValue("title"))
+	newAlbumArtist := strings.TrimSpace(r.FormValue("artist"))
+	newYear, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("year")))
 
-	if newTitle == "" || newArtist == "" {
+	if newAlbum == "" || newAlbumArtist == "" {
 		http.Error(w, "title and artist are required", 400)
 		return
 	}
 
-	// Get current album info for comparison.
-	var curTitle, curArtist string
-	var curYear int
-	var libraryID, curArtistID int64
-	if err := h.db.QueryRowContext(r.Context(), `
-		SELECT al.title, al.year, al.library_id, al.album_artist_id, ar.name
-		FROM music_albums al
-		JOIN music_artists ar ON ar.id = al.album_artist_id
-		WHERE al.id=?
-	`, albumID).Scan(&curTitle, &curYear, &libraryID, &curArtistID, &curArtist); err != nil {
+	// Get library_id for this album.
+	var libraryID int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT library_id FROM music_albums WHERE id=?", albumID).Scan(&libraryID); err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	// Build selected track set for writeback mode.
-	var selectedSet map[int64]bool
-	if writeback {
-		selectedIDs := r.Form["selected_track"]
-		if len(selectedIDs) == 0 {
-			http.Error(w, "no tracks selected", 400)
-			return
-		}
-		selectedSet = make(map[int64]bool, len(selectedIDs))
-		for _, s := range selectedIDs {
-			if id, err := strconv.ParseInt(s, 10, 64); err == nil && id > 0 {
-				selectedSet[id] = true
-			}
-		}
-		if len(selectedSet) == 0 {
-			http.Error(w, "no valid tracks selected", 400)
-			return
-		}
+	// Query abs_path for affected tracks.
+	type trackInfo struct {
+		ID      int64
+		AbsPath string
 	}
+	var affectedTracks []trackInfo
 
-	tx, err := h.db.BeginTx(r.Context(), nil)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	defer tx.Rollback()
-
-	// Resolve target artist ID (may be new).
-	targetArtistID := curArtistID
-	if newArtist != curArtist {
-		if _, err := tx.ExecContext(r.Context(),
-			"INSERT OR IGNORE INTO music_artists (library_id, name) VALUES (?, ?)",
-			libraryID, newArtist); err != nil {
-			http.Error(w, err.Error(), 500)
+	if mode == "single" {
+		trackID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("track_id")), 10, 64)
+		if err != nil || trackID <= 0 {
+			http.Error(w, "no track selected", 400)
 			return
 		}
-		if err := tx.QueryRowContext(r.Context(),
-			"SELECT id FROM music_artists WHERE library_id=? AND name=?",
-			libraryID, newArtist).Scan(&targetArtistID); err != nil {
-			http.Error(w, err.Error(), 500)
+		var absPath string
+		if err := h.db.QueryRowContext(r.Context(),
+			"SELECT abs_path FROM music_tracks WHERE id=? AND album_id=?", trackID, albumID).Scan(&absPath); err != nil {
+			http.Error(w, "track not found", 404)
 			return
 		}
-	}
-
-	// Determine target album for writeback.
-	targetAlbumID := albumID
-	if writeback {
-		// Count total tracks in the source album.
-		var totalTracks int
-		if err := tx.QueryRowContext(r.Context(),
-			"SELECT COUNT(*) FROM music_tracks WHERE album_id=?",
-			albumID).Scan(&totalTracks); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		allSelected := len(selectedSet) >= totalTracks
-
-		compVal := 0
-		if r.FormValue("compilation") == "1" {
-			compVal = 1
-		}
-
-		if allSelected {
-			// All tracks selected: update album in place.
-			if _, err := tx.ExecContext(r.Context(),
-				"UPDATE music_albums SET title=?, year=?, album_artist_id=?, is_compilation=? WHERE id=?",
-				newTitle, newYear, targetArtistID, compVal, albumID); err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-		} else {
-			// Partial selection: find or create target album, move selected tracks.
-			err := tx.QueryRowContext(r.Context(),
-				"SELECT id FROM music_albums WHERE library_id=? AND title=? AND album_artist_id=? AND id!=?",
-				libraryID, newTitle, targetArtistID, albumID).Scan(&targetAlbumID)
-			if err == sql.ErrNoRows {
-				res, err := tx.ExecContext(r.Context(), `
-					INSERT INTO music_albums (library_id, title, year, artist_id, album_artist_id, is_compilation, match_status)
-					VALUES (?, ?, ?, ?, ?, ?, 'manual')`,
-					libraryID, newTitle, newYear, targetArtistID, targetArtistID, compVal)
-				if err != nil {
-					http.Error(w, err.Error(), 500)
-					return
-				}
-				targetAlbumID, _ = res.LastInsertId()
-			} else if err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-
-			// Move selected tracks to target album.
-			for id := range selectedSet {
-				if _, err := tx.ExecContext(r.Context(),
-					"UPDATE music_tracks SET album_id=? WHERE id=? AND album_id=?",
-					targetAlbumID, id, albumID); err != nil {
-					http.Error(w, err.Error(), 500)
-					return
-				}
-			}
-		}
-
-		// Single-track edit: update that track's title, artist, track_no, disc_no.
-		if singleIDStr := strings.TrimSpace(r.FormValue("single_track_id")); singleIDStr != "" {
-			singleID, err := strconv.ParseInt(singleIDStr, 10, 64)
-			if err == nil && singleID > 0 && selectedSet[singleID] {
-				stTitle := strings.TrimSpace(r.FormValue("single_track_title"))
-				stTrackNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("single_track_no")))
-				stDiscNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("single_track_disc")))
-
-				if stTitle != "" {
-					if _, err := tx.ExecContext(r.Context(),
-						"UPDATE music_tracks SET title=?, track_no=?, disc_no=? WHERE id=? AND album_id=?",
-						stTitle, stTrackNo, stDiscNo, singleID, targetAlbumID); err != nil {
-						http.Error(w, err.Error(), 500)
-						return
-					}
-				}
-
-				stArtist := strings.TrimSpace(r.FormValue("single_track_artist"))
-				if stArtist != "" {
-					if _, err := tx.ExecContext(r.Context(),
-						"INSERT OR IGNORE INTO music_artists (library_id, name) VALUES (?, ?)",
-						libraryID, stArtist); err != nil {
-						http.Error(w, err.Error(), 500)
-						return
-					}
-					var stArtistID int64
-					if err := tx.QueryRowContext(r.Context(),
-						"SELECT id FROM music_artists WHERE library_id=? AND name=?",
-						libraryID, stArtist).Scan(&stArtistID); err != nil {
-						http.Error(w, err.Error(), 500)
-						return
-					}
-					if _, err := tx.ExecContext(r.Context(),
-						"UPDATE music_tracks SET artist_id=? WHERE id=? AND album_id=?",
-						stArtistID, singleID, targetAlbumID); err != nil {
-						http.Error(w, err.Error(), 500)
-						return
-					}
-				}
-			}
-		}
+		affectedTracks = []trackInfo{{ID: trackID, AbsPath: absPath}}
 	} else {
-		// Non-writeback mode: update album in place + inline track titles.
-		if _, err := tx.ExecContext(r.Context(),
-			"UPDATE music_albums SET title=?, year=?, album_artist_id=? WHERE id=?",
-			newTitle, newYear, targetArtistID, albumID); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		trackIDs := r.Form["track_id"]
-		for _, tidStr := range trackIDs {
-			tid, err := strconv.ParseInt(tidStr, 10, 64)
-			if err != nil {
-				continue
-			}
-			newTrackTitle := strings.TrimSpace(r.FormValue(fmt.Sprintf("track_title_%d", tid)))
-			if newTrackTitle == "" {
-				continue
-			}
-			newTrackNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue(fmt.Sprintf("track_no_%d", tid))))
-			if _, err := tx.ExecContext(r.Context(),
-				"UPDATE music_tracks SET title=?, track_no=? WHERE id=? AND album_id=?",
-				newTrackTitle, newTrackNo, tid, albumID); err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-		}
-	}
-
-	// Set match_status to 'manual' on the target album.
-	if _, err := tx.ExecContext(r.Context(),
-		"UPDATE music_albums SET match_status='manual' WHERE id=?",
-		targetAlbumID); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	// Write tags to audio files if in writeback mode (only selected tracks).
-	if writeback {
-		rows, err := h.db.QueryContext(r.Context(), `
-			SELECT t.id, t.abs_path, t.title, t.track_no, t.disc_no, ar.name
-			FROM music_tracks t
-			JOIN music_artists ar ON ar.id = t.artist_id
-			WHERE t.album_id=?
-		`, targetAlbumID)
+		rows, err := h.db.QueryContext(r.Context(),
+			"SELECT id, abs_path FROM music_tracks WHERE album_id=?", albumID)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbumEditPOST", "err", err)
 			return
 		}
 		defer rows.Close()
-
-		var success, errCount int
 		for rows.Next() {
-			var id int64
-			var absPath, title, trackArtist string
-			var trackNo, discNo int
-			if err := rows.Scan(&id, &absPath, &title, &trackNo, &discNo, &trackArtist); err != nil {
-				errCount++
-				continue
+			var t trackInfo
+			if err := rows.Scan(&t.ID, &t.AbsPath); err != nil {
+				httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumEditPOST", "err", err)
+				return
 			}
-			if !selectedSet[id] {
-				continue
-			}
-			fields := music.TagWriteFields{
-				Title:       title,
-				Artist:      trackArtist,
-				AlbumArtist: newArtist,
-				Album:       newTitle,
-				Year:        newYear,
-				TrackNo:     trackNo,
-				DiscNo:      discNo,
-			}
-			if err := music.WriteTrackTags(absPath, fields); err != nil {
-				slog.Error("tag writeback failed", "track_id", id, "path", absPath, "err", err)
-				errCount++
-				continue
-			}
-			success++
+			affectedTracks = append(affectedTracks, t)
 		}
 		if err := rows.Err(); err != nil {
-			slog.Error("tag writeback row iteration failed", "err", err)
+			httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbumEditPOST", "err", err)
+			return
 		}
+	}
 
-		http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d&writeback=1&success=%d&errors=%d", targetAlbumID, success, errCount), http.StatusSeeOther)
+	if len(affectedTracks) == 0 {
+		http.Error(w, "no tracks found", 404)
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", albumID), http.StatusSeeOther)
+	// Single-track fields (only used in single mode).
+	stTitle := strings.TrimSpace(r.FormValue("single_track_title"))
+	stArtist := strings.TrimSpace(r.FormValue("single_track_artist"))
+	stTrackNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("single_track_no")))
+	stDiscNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("single_track_disc")))
+
+	// Write tags to files.
+	var successPaths []string
+	var errCount int
+	for _, t := range affectedTracks {
+		// Read current tags to preserve fields we're not editing.
+		meta, err := music.ReadTrackMeta(t.AbsPath)
+		if err != nil {
+			slog.Error("edit: read tags failed", "path", t.AbsPath, "err", err)
+			errCount++
+			continue
+		}
+
+		fields := music.TagWriteFields{
+			Album:       newAlbum,
+			AlbumArtist: newAlbumArtist,
+			Year:        newYear,
+			// Preserve per-track fields from file.
+			Title:   meta.Title,
+			Artist:  meta.Artist,
+			TrackNo: meta.Track,
+			DiscNo:  meta.Disc,
+		}
+
+		if mode == "single" {
+			if stTitle != "" {
+				fields.Title = stTitle
+			}
+			if stArtist != "" {
+				fields.Artist = stArtist
+			}
+			if stTrackNo > 0 {
+				fields.TrackNo = stTrackNo
+			}
+			if stDiscNo > 0 {
+				fields.DiscNo = stDiscNo
+			}
+		}
+
+		if err := music.WriteTrackTags(t.AbsPath, fields); err != nil {
+			slog.Error("edit: write tags failed", "path", t.AbsPath, "err", err)
+			errCount++
+			continue
+		}
+		successPaths = append(successPaths, t.AbsPath)
+	}
+
+	if len(successPaths) == 0 {
+		// All writes failed — redirect back with error.
+		http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d&errors=%d", albumID, errCount), http.StatusSeeOther)
+		return
+	}
+
+	// Rescan successfully-written files.
+	scanner := scan.New(h.cfg, h.db)
+	if err := scanner.ScanFiles(r.Context(), libraryID, successPaths); err != nil {
+		slog.Error("edit: rescan failed", "err", err)
+	}
+
+	// Determine where tracks ended up after rescan.
+	var newAlbumID int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT album_id FROM music_tracks WHERE abs_path=?",
+		successPaths[0]).Scan(&newAlbumID); err != nil {
+		newAlbumID = albumID
+	}
+
+	if errCount > 0 {
+		http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d&success=%d&errors=%d", newAlbumID, len(successPaths), errCount), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", newAlbumID), http.StatusSeeOther)
+}
+
+func (h *Handler) musicAlbumRescan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicAlbumRescan", "err", err)
+		return
+	}
+	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
+	if err != nil || albumID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	var libraryID int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT library_id FROM music_albums WHERE id=?", albumID).Scan(&libraryID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	rows, err := h.db.QueryContext(r.Context(),
+		"SELECT abs_path FROM music_tracks WHERE album_id=?", albumID)
+	if err != nil {
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbumRescan", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumRescan", "err", err)
+			return
+		}
+		paths = append(paths, p)
+	}
+	if err := rows.Err(); err != nil {
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbumRescan", "err", err)
+		return
+	}
+
+	if len(paths) == 0 {
+		http.Redirect(w, r, fmt.Sprintf("/music/album/%d", albumID), http.StatusSeeOther)
+		return
+	}
+
+	scanner := scan.New(h.cfg, h.db)
+	if err := scanner.ScanFiles(r.Context(), libraryID, paths); err != nil {
+		slog.Error("rescan failed", "album_id", albumID, "err", err)
+	}
+
+	// Determine where tracks ended up.
+	var newAlbumID int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT album_id FROM music_tracks WHERE abs_path=?",
+		paths[0]).Scan(&newAlbumID); err != nil {
+		newAlbumID = albumID
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", newAlbumID), http.StatusSeeOther)
 }
 
 // --- Albums Grid ---
@@ -925,7 +873,7 @@ WHERE al.library_id=?
 ORDER BY lower(ar.name), al.year, lower(al.title)
 `, libraryID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbums", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -945,7 +893,7 @@ ORDER BY lower(ar.name), al.year, lower(al.title)
 		var art sql.NullString
 		var comp int
 		if err := rows.Scan(&a.ID, &a.Title, &a.Year, &art, &a.ArtistName, &a.ArtistID, &comp); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbums", "err", err)
 			return
 		}
 		a.ArtPath = scanNullString(art)
@@ -953,7 +901,7 @@ ORDER BY lower(ar.name), al.year, lower(al.title)
 		albums = append(albums, a)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbums", "err", err)
 		return
 	}
 
@@ -983,7 +931,7 @@ WHERE library_id=? AND COALESCE(is_compilation,0)=1
 ORDER BY year, lower(title)
 `, libraryID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicCompilations", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -993,14 +941,14 @@ ORDER BY year, lower(title)
 		var row compilationAlbumRow
 		var art sql.NullString
 		if err := rows.Scan(&row.ID, &row.Title, &row.Year, &art); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicCompilations", "err", err)
 			return
 		}
 		row.ArtPath = scanNullString(art)
 		compilations = append(compilations, row)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicCompilations", "err", err)
 		return
 	}
 
@@ -1044,7 +992,7 @@ WHERE t.album_id=?
 ORDER BY t.disc_no, t.track_no, lower(t.title)
 `, albumID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicPlayer", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -1053,14 +1001,14 @@ ORDER BY t.disc_no, t.track_no, lower(t.title)
 	for rows.Next() {
 		var t trackRow
 		if err := rows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicPlayer", "err", err)
 			return
 		}
 		t.ArtistDisplay = t.Artist
 		tracks = append(tracks, t)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicPlayer", "err", err)
 		return
 	}
 
@@ -1123,14 +1071,14 @@ func (h *Handler) streamTrack(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "open track file failed", "handler", "streamTrack", "err", err)
 		return
 	}
 	defer f.Close()
 
 	st, err := f.Stat()
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "stat track file failed", "handler", "streamTrack", "err", err)
 		return
 	}
 
@@ -1191,7 +1139,7 @@ SELECT library_id, artist_id, album_id FROM music_tracks WHERE id=?
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicPlayEvent", "err", err)
 		return
 	}
 
@@ -1203,7 +1151,7 @@ SELECT library_id, artist_id, album_id FROM music_tracks WHERE id=?
 INSERT INTO play_history (track_id, library_id, artist_id, album_id, played_ms, completed, source)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 `, in.TrackID, libraryID, artistID, albumID, in.PlayedMS, completed, in.Source); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db insert failed", "handler", "musicPlayEvent", "err", err)
 		return
 	}
 
@@ -1228,7 +1176,7 @@ func (h *Handler) musicDuplicates(w http.ResponseWriter, r *http.Request) {
 
 	groups, err := match.FindDuplicateAlbums(r.Context(), h.db, libraryID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "find duplicates failed", "handler", "musicDuplicates", "err", err)
 		return
 	}
 
@@ -1244,7 +1192,7 @@ func (h *Handler) musicDuplicatesMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicDuplicatesMerge", "err", err)
 		return
 	}
 	targetID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("target")), 10, 64)
@@ -1259,7 +1207,7 @@ func (h *Handler) musicDuplicatesMerge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := match.MergeAlbums(r.Context(), h.db, targetID, sourceID); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "merge albums failed", "handler", "musicDuplicatesMerge", "err", err)
 		return
 	}
 

@@ -19,7 +19,7 @@ func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicMatch", "err", err)
 		return
 	}
 	idStr := strings.TrimSpace(r.FormValue("id"))
@@ -35,10 +35,10 @@ func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, jobs.ErrQueueFull) {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "musicMatch", "err", err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "enqueue music match failed", "handler", "musicMatch", "err", err)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 		ORDER BY a.match_status ASC, a.match_confidence DESC, a.title ASC
 	`)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicMatchReview", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -90,13 +90,13 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 		var a matchReviewRow
 		if err := rows.Scan(&a.AlbumID, &a.Title, &a.ArtistName, &a.Year, &a.ArtPath,
 			&a.MatchStatus, &a.MatchConfidence, &a.MusicBrainzID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicMatchReview", "err", err)
 			return
 		}
 		albums = append(albums, a)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicMatchReview", "err", err)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (h *Handler) musicMatchApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicMatchApprove", "err", err)
 		return
 	}
 	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
@@ -132,7 +132,7 @@ func (h *Handler) musicMatchApprove(w http.ResponseWriter, r *http.Request) {
 		"UPDATE music_albums SET match_status='matched' WHERE id=? AND match_status='uncertain'",
 		albumID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db update failed", "handler", "musicMatchApprove", "err", err)
 		return
 	}
 	affected, _ := res.RowsAffected()
@@ -158,7 +158,7 @@ func (h *Handler) musicMatchApproveAll(w http.ResponseWriter, r *http.Request) {
 	_, err := h.db.ExecContext(r.Context(),
 		"UPDATE music_albums SET match_status='matched' WHERE match_status='uncertain'")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db update failed", "handler", "musicMatchApproveAll", "err", err)
 		return
 	}
 
@@ -171,7 +171,7 @@ func (h *Handler) musicMatchReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicMatchReject", "err", err)
 		return
 	}
 	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
@@ -189,7 +189,7 @@ func (h *Handler) musicMatchReject(w http.ResponseWriter, r *http.Request) {
 		WHERE id=?
 	`, albumID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db update failed", "handler", "musicMatchReject", "err", err)
 		return
 	}
 
@@ -202,7 +202,7 @@ func (h *Handler) musicWriteback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicWriteback", "err", err)
 		return
 	}
 	idStr := strings.TrimSpace(r.FormValue("id"))
@@ -218,10 +218,10 @@ func (h *Handler) musicWriteback(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, jobs.ErrQueueFull) {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "musicWriteback", "err", err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "enqueue writeback failed", "handler", "musicWriteback", "err", err)
 		return
 	}
 
@@ -243,7 +243,7 @@ func (h *Handler) musicMatchRematch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicMatchRematch", "err", err)
 		return
 	}
 	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
@@ -262,7 +262,7 @@ func (h *Handler) musicMatchRematch(w http.ResponseWriter, r *http.Request) {
 		WHERE id=?
 	`, albumID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db update failed", "handler", "musicMatchRematch", "err", err)
 		return
 	}
 

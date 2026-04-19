@@ -54,8 +54,7 @@ func (h *Handler) authChallenge(w http.ResponseWriter, r *http.Request) {
 	}
 	ch, err := h.auth.CreateChallenge(w, r)
 	if err != nil {
-		slog.Error("create challenge failed", "err", err)
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		jsonErr(w, 500, "internal server error", "create challenge failed", "err", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -75,15 +74,14 @@ func (h *Handler) authVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonErr(w, 400, "bad request", "parse form failed", "err", err)
 		return
 	}
 	username := strings.TrimSpace(r.FormValue("username"))
 	signature := strings.TrimSpace(r.FormValue("signature"))
 
 	if err := h.auth.VerifyAndStartSession(w, r, username, signature); err != nil {
-		slog.Warn("auth verify failed", "err", err)
-		jsonError(w, err.Error(), http.StatusUnauthorized)
+		jsonErr(w, 401, "authentication failed", "auth verify failed", "err", err)
 		return
 	}
 
