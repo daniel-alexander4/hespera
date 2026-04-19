@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: TV Auto-Match Pipeline
 status: completed
-stopped_at: Phase 10 context gathered
-last_updated: "2026-03-07T14:22:46.696Z"
-last_activity: 2026-03-07 -- Completed Phase 9 Plan 1 (TV Match Threshold and Status Alignment)
+stopped_at: Completed 10-02-PLAN.md
+last_updated: "2026-03-07T15:08:41.616Z"
+last_activity: 2026-03-07 -- Completed Phase 10 Plan 1 (TV Match Scoring and Threshold Tests)
 progress:
   total_phases: 2
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 50
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
+  percent: 66
 ---
 
 # Project State
@@ -21,22 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** A personal media server that just works
-**Current focus:** TV Auto-Match Pipeline -- Phase 9: TV Match Threshold and Status Alignment
+**Current focus:** TV Auto-Match Pipeline -- Phase 10: TV Match Test Coverage
 
 ## Current Position
 
-Phase: 9 (TV Match Threshold and Status Alignment) -- first of 2 in v1.2
-Plan: 1 of 1 complete
-Status: Phase 9 Plan 1 complete
-Last activity: 2026-03-07 -- Completed Phase 9 Plan 1 (TV Match Threshold and Status Alignment)
+Phase: 10 (TV Match Test Coverage) -- second of 2 in v1.2
+Plan: 2 of 2 complete
+Status: Phase 10 complete
+Last activity: 2026-03-07 -- Completed Phase 10 Plan 1 (TV Match Scoring and Threshold Tests)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 66%
 
 ## Performance Metrics
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | 09    | 01   | 4min     | 2     | 7     |
+| 10    | 02   | 2min     | 1     | 2     |
 
 **Velocity:**
 *Carried from v1.1: 3 plans across 3 phases*
@@ -52,6 +53,8 @@ Progress: [█████░░░░░] 50%
 - Two-phase roadmap: implementation first (Phase 9), test coverage second (Phase 10)
 - TV statuses aligned with music: matched/unmatched/skipped (was resolved/needs_fix/skipped)
 - Used table recreation migration pattern for SQLite CHECK constraint changes
+- Used inline handler creation with config override for subtests needing TMDBAPIKey
+- Added functional template stubs in setupTemplateDir for TV match review tests
 
 ### Pending Todos
 
@@ -63,6 +66,5 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T14:22:46.694Z
-Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-tv-match-test-coverage/10-CONTEXT.md
+Last session: 2026-03-07T15:08:41.614Z
+Stopped at: Completed 10-02-PLAN.md

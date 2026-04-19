@@ -37,7 +37,7 @@ See: `.planning/milestones/v1.1-ROADMAP.md` for full details.
 **Milestone Goal:** Automate TV matching the same way v1.1 automated music -- scan triggers TMDB matching, high-confidence results auto-accepted, below-threshold skipped for manual review.
 
 - [x] **Phase 9: TV Match Threshold and Status Alignment** - Raise auto-accept threshold to 0.80, align status model with music pipeline (matched/unmatched), preserve manual review for below-threshold (completed 2026-03-07)
-- [ ] **Phase 10: TV Match Test Coverage** - Unit tests for scoring/threshold, integration tests for auto-match pipeline, tests for review UI with new status model
+- [x] **Phase 10: TV Match Test Coverage** - Unit tests for scoring/threshold, integration tests for auto-match pipeline, tests for review UI with new status model (completed 2026-03-07)
 
 ## Phase Details
 
@@ -63,7 +63,7 @@ Plans:
   1. Unit tests exercise TV match scoring and verify that scores above 0.80 produce auto-accept and scores below 0.80 produce unmatched status
   2. Integration tests run the full TV auto-match pipeline (scan to match) with mocked TMDB and verify correct auto-accept/skip behavior end-to-end
   3. Tests verify the match review UI renders correctly with the new matched/unmatched status model and that manual review actions work
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 10-01-PLAN.md -- pickBestResult unit tests (scoring, threshold boundaries) and below-threshold integration test
@@ -82,4 +82,4 @@ Plans:
 | 7. Automated Writeback | v1.1 | 1/1 | Complete | 2026-03-07 |
 | 8. Enrichment and UI Preservation | v1.1 | 1/1 | Complete | 2026-03-07 |
 | 9. TV Match Threshold and Status Alignment | 1/1 | Complete   | 2026-03-07 | - |
-| 10. TV Match Test Coverage | v1.2 | 0/2 | Not started | - |
+| 10. TV Match Test Coverage | 2/2 | Complete   | 2026-03-07 | - |
