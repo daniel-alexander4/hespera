@@ -77,6 +77,25 @@ func withChdir(t *testing.T, dir string) {
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 }
 
+// newTestHandler creates a Handler backed by a real SQLite DB with migrations
+// applied and minimal template stubs. It chdir's into a temp dir so template
+// compilation finds web/templates/.
+func newTestHandler(t *testing.T) (*Handler, *sql.DB) {
+	t.Helper()
+	dir := t.TempDir()
+	setupTemplateDir(t, dir)
+	withChdir(t, dir)
+	db := openTestDB(t)
+	h, err := New(Deps{
+		Cfg: config.Config{DataDir: dir, MediaRoot: dir},
+		DB:  db,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return h, db
+}
+
 func TestNewValidTemplates(t *testing.T) {
 	dir := t.TempDir()
 	setupTemplateDir(t, dir)
