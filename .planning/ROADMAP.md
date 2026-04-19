@@ -45,11 +45,12 @@ Plans:
   3. mergeAlbumVariants called mid-scan does not orphan tracks or corrupt album associations -- all tracks remain linked to a valid album
   4. Approving a TV match enqueues metadata fetch through the job queue instead of spawning a detached goroutine
   5. Scanner errors on individual files are logged with the file path and error details, and scanning continues to the next file without silent data loss
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md -- Fix TV rescan identity overwrite + replace detached goroutine with job queue
+- [ ] 02-02-PLAN.md -- Move compilation detection and album merge to post-scan pass
+- [ ] 02-03-PLAN.md -- Make music and TV scanners continue past per-file errors
 
 ### Phase 3: Fragility Elimination
 **Goal**: Duplicated patterns are consolidated and the server fails fast on configuration errors instead of producing runtime 500s
@@ -99,8 +100,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Security & Error Exposure | 0/2 | Planned | - |
-| 2. Logic & Data Integrity Bugs | 0/? | Not started | - |
+| 1. Security & Error Exposure | 2/2 | Complete | 2026-03-05 |
+| 2. Logic & Data Integrity Bugs | 0/3 | Planned | - |
 | 3. Fragility Elimination | 0/? | Not started | - |
 | 4. Unit Test Coverage | 0/? | Not started | - |
 | 5. Integration Test Coverage | 0/? | Not started | - |
