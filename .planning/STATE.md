@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Every identified bug and logic flaw is fixed and verified -- no known issues remain in the codebase
-**Current focus:** Phase 3: Fragility Elimination (complete)
+**Current focus:** Phase 4: Unit Test Coverage (complete)
 
 ## Current Position
 
-Phase: 3 of 5 (Fragility Elimination)
-Plan: 2 of 2 in current phase (complete)
+Phase: 4 of 5 (Unit Test Coverage)
+Plan: 4 of 4 in current phase (complete)
 Status: Phase complete
-Last activity: 2026-03-05 -- Completed 03-01-PLAN.md
+Last activity: 2026-03-05 -- Completed 04-01-PLAN.md
 
 Progress: [██████████] 100%
 
@@ -60,6 +60,7 @@ Progress: [██████████] 100%
 | Phase 04 P02 | 3min | 1 tasks | 1 files |
 | Phase 04 P03 | 2min | 1 tasks | 1 files |
 | Phase 04 P04 | 3min | 2 tasks | 3 files |
+| Phase 04 P01 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase 04]: Used same-package tests for tvscan to access unexported upsertTVFile/pruneMissingFiles
 - [Phase 04]: Reuse newTestHandler from handler_test.go; seedMusicData with full FK chain for handler tests
 - [Phase 04]: Defined newTestHandler in handler_test.go as shared helper for all handler test files
+- [Phase 04]: Minimal ID3v2.3 MP3 fixture generated in-test via writeMinimalMP3 helper (no external fixtures)
+- [Phase 04]: Fixed UNIQUE constraint bug in finalizeCompilations variant merge (skip already-merged albums)
 
 ### Pending Todos
 
@@ -98,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-05T23:51:58.802Z
-Stopped at: Completed 04-04-PLAN.md
+Last session: 2026-03-05T23:52:35Z
+Stopped at: Completed 04-01-PLAN.md (all Phase 4 plans now complete)
 Resume file: None
