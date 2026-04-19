@@ -35,10 +35,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	h := web.New(web.Deps{
+	h, err := web.New(web.Deps{
 		Cfg: cfg,
 		DB:  dbConn,
 	})
+	if err != nil {
+		slog.Error("web handler initialization failed", "err", err)
+		os.Exit(1)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
