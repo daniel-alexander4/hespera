@@ -23,12 +23,12 @@ type MBClient struct {
 	baseURL string
 	// wikiClient is used by enrichment functions for Wikipedia/Wikidata/Commons.
 	// If nil, enrichment functions create their own ad-hoc clients.
-	wikiClient       *http.Client
-	wikiBaseURL      string // e.g. "https://en.wikipedia.org"
-	wikidataBaseURL  string // e.g. "https://www.wikidata.org"
-	commonsBaseURL   string // e.g. "https://commons.wikimedia.org"
-	mu               sync.Mutex
-	lastReq          time.Time
+	wikiClient      *http.Client
+	wikiBaseURL     string // e.g. "https://en.wikipedia.org"
+	wikidataBaseURL string // e.g. "https://www.wikidata.org"
+	commonsBaseURL  string // e.g. "https://commons.wikimedia.org"
+	mu              sync.Mutex
+	lastReq         time.Time
 }
 
 func NewMBClient() *MBClient {
