@@ -15,15 +15,15 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Error Handling
 
-- [ ] **ERR-01**: All HTTP handlers return generic user-facing error messages instead of raw Go error strings
-- [ ] **ERR-02**: All internal errors are logged server-side with slog before returning generic HTTP errors
+- [x] **ERR-01**: All HTTP handlers return generic user-facing error messages instead of raw Go error strings
+- [x] **ERR-02**: All internal errors are logged server-side with slog before returning generic HTTP errors
 - [ ] **ERR-03**: TV match approve uses the job queue instead of a detached goroutine for background metadata fetch
 - [ ] **ERR-04**: Scanner per-item error handling is explicit -- no silent swallowing of errors that could affect data integrity
 
 ### Security
 
 - [x] **SEC-01**: ensureColumn validates table and column names against a safe pattern before building SQL
-- [ ] **SEC-02**: HTTP error responses never contain SQL error text, filesystem paths, or internal Go error details
+- [x] **SEC-02**: HTTP error responses never contain SQL error text, filesystem paths, or internal Go error details
 
 ### Fragility Fixes
 
@@ -86,12 +86,12 @@ Deferred to future milestones.
 | BUG-01 | Phase 2 | Pending |
 | BUG-02 | Phase 2 | Pending |
 | BUG-03 | Phase 2 | Pending |
-| ERR-01 | Phase 1 | Pending |
-| ERR-02 | Phase 1 | Pending |
+| ERR-01 | Phase 1 | Complete |
+| ERR-02 | Phase 1 | Complete |
 | ERR-03 | Phase 2 | Pending |
 | ERR-04 | Phase 2 | Pending |
 | SEC-01 | Phase 1 | Complete |
-| SEC-02 | Phase 1 | Pending |
+| SEC-02 | Phase 1 | Complete |
 | FRAG-01 | Phase 3 | Pending |
 | FRAG-02 | Phase 3 | Pending |
 | FRAG-03 | Phase 3 | Pending |
