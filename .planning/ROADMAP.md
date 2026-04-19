@@ -66,10 +66,10 @@ Plans:
   2. After auto-match, artist bio from Wikipedia and artist image from Wikimedia Commons are fetched and stored (visible on artist page)
   3. User can navigate to the match review UI and manually match an album that was silently skipped by auto-match
   4. Manually triggering a match from the review UI still performs writeback and enrichment as before
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 08-01: TBD
+- [ ] 08-01-PLAN.md -- Add Run Match button to review page, verify enrichment pipeline end-to-end
 
 ## Progress
 
@@ -85,4 +85,4 @@ Phases execute in numeric order: 6 -> 7 -> 8
 | 5. Integration Test Coverage | v1.0 | 2/2 | Complete | 2026-03-06 |
 | 6. Auto-Match Pipeline | v1.1 | 1/1 | Complete | 2026-03-06 |
 | 7. Automated Writeback | v1.1 | 1/1 | Complete | 2026-03-07 |
-| 8. Enrichment and UI Preservation | v1.1 | 0/? | Not started | - |
+| 8. Enrichment and UI Preservation | v1.1 | 0/1 | Not started | - |
