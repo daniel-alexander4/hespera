@@ -18,7 +18,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **ERR-01**: All HTTP handlers return generic user-facing error messages instead of raw Go error strings
 - [x] **ERR-02**: All internal errors are logged server-side with slog before returning generic HTTP errors
 - [x] **ERR-03**: TV match approve uses the job queue instead of a detached goroutine for background metadata fetch
-- [ ] **ERR-04**: Scanner per-item error handling is explicit -- no silent swallowing of errors that could affect data integrity
+- [x] **ERR-04**: Scanner per-item error handling is explicit -- no silent swallowing of errors that could affect data integrity
 
 ### Security
 
@@ -89,7 +89,7 @@ Deferred to future milestones.
 | ERR-01 | Phase 1 | Complete |
 | ERR-02 | Phase 1 | Complete |
 | ERR-03 | Phase 2 | Complete |
-| ERR-04 | Phase 2 | Pending |
+| ERR-04 | Phase 2 | Complete |
 | SEC-01 | Phase 1 | Complete |
 | SEC-02 | Phase 1 | Complete |
 | FRAG-01 | Phase 3 | Pending |

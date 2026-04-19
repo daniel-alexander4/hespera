@@ -13,7 +13,7 @@ This milestone transforms the isomedia codebase from "works but fragile" to "wor
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Security & Error Exposure** - Eliminate internal error leakage, harden SQL construction, sanitize all HTTP responses
-- [ ] **Phase 2: Logic & Data Integrity Bugs** - Fix TV rescan overwrites, compilation detection ordering, merge corruption, detached goroutines, and silent failures
+- [x] **Phase 2: Logic & Data Integrity Bugs** - Fix TV rescan overwrites, compilation detection ordering, merge corruption, detached goroutines, and silent failures (completed 2026-03-05)
 - [ ] **Phase 3: Fragility Elimination** - Consolidate URL parsing, validate templates at startup, fail fast on missing templates
 - [ ] **Phase 4: Unit Test Coverage** - Test scanner (music + TV) and handler (music, TV, settings) critical paths
 - [ ] **Phase 5: Integration Test Coverage** - Test music match and TV match pipelines end-to-end
@@ -45,7 +45,7 @@ Plans:
   3. mergeAlbumVariants called mid-scan does not orphan tracks or corrupt album associations -- all tracks remain linked to a valid album
   4. Approving a TV match enqueues metadata fetch through the job queue instead of spawning a detached goroutine
   5. Scanner errors on individual files are logged with the file path and error details, and scanning continues to the next file without silent data loss
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 02-01-PLAN.md -- Fix TV rescan identity overwrite + replace detached goroutine with job queue
@@ -101,7 +101,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Security & Error Exposure | 2/2 | Complete | 2026-03-05 |
-| 2. Logic & Data Integrity Bugs | 0/3 | Planned | - |
+| 2. Logic & Data Integrity Bugs | 3/3 | Complete   | 2026-03-05 |
 | 3. Fragility Elimination | 0/? | Not started | - |
 | 4. Unit Test Coverage | 0/? | Not started | - |
 | 5. Integration Test Coverage | 0/? | Not started | - |
