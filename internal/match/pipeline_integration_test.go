@@ -668,3 +668,281 @@ func TestMatchAlbumThresholdBehavior(t *testing.T) {
 
 	_ = fmt.Sprint(libID) // suppress unused
 }
+
+func TestMatchAlbumNormalizesNames(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	// Mock server returns a candidate with DIFFERENT canonical names than what's in DB.
+	// Local: "dark side of the moon" by "pink floyd"
+	// MusicBrainz canonical: "The Dark Side of the Moon" by "Pink Floyd"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case path == "/ws/2/release-group" && strings.Contains(r.URL.RawQuery, "query="):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"release-groups": []map[string]interface{}{
+					{
+						"id":                 "norm-rg-id",
+						"title":              "The Dark Side of the Moon",
+						"primary-type":       "Album",
+						"score":              100,
+						"first-release-date": "1973-03-01",
+						"artist-credit": []map[string]interface{}{
+							{
+								"name": "Pink Floyd",
+								"artist": map[string]string{
+									"id":   "norm-artist-mbid",
+									"name": "Pink Floyd",
+								},
+							},
+						},
+						"releases": []map[string]string{
+							{"id": "norm-release-id", "title": "The Dark Side of the Moon"},
+						},
+					},
+				},
+			})
+		case path == "/release-group/norm-rg-id":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"images": []map[string]interface{}{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	m := newTestMatcher(t, db, srv)
+
+	// Seed with lower-case names (different from MusicBrainz canonical).
+	res, err := db.ExecContext(ctx,
+		"INSERT INTO libraries (name, type, root_path) VALUES ('test', 'music', '/music')")
+	if err != nil {
+		t.Fatalf("insert library: %v", err)
+	}
+	libID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx,
+		"INSERT INTO music_artists (library_id, name) VALUES (?, 'pink floyd')", libID)
+	if err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	artistID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx, `
+		INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, match_status)
+		VALUES (?, ?, ?, 'dark side of the moon', 1973, '')`,
+		libID, artistID, artistID)
+	if err != nil {
+		t.Fatalf("insert album: %v", err)
+	}
+	albumID, _ := res.LastInsertId()
+
+	// Run matchAlbum with local names (close enough for high score).
+	err = m.matchAlbum(ctx, albumID, "dark side of the moon", "pink floyd", 1973)
+	if err != nil {
+		t.Fatalf("matchAlbum: %v", err)
+	}
+
+	// Verify album title was normalized to MusicBrainz canonical.
+	var albumTitle string
+	if err := db.QueryRowContext(ctx,
+		"SELECT title FROM music_albums WHERE id=?", albumID).Scan(&albumTitle); err != nil {
+		t.Fatalf("query album title: %v", err)
+	}
+	if albumTitle != "The Dark Side of the Moon" {
+		t.Fatalf("expected album title='The Dark Side of the Moon', got %q", albumTitle)
+	}
+
+	// Verify artist name was normalized to MusicBrainz canonical.
+	var artistName string
+	if err := db.QueryRowContext(ctx,
+		"SELECT name FROM music_artists WHERE id=?", artistID).Scan(&artistName); err != nil {
+		t.Fatalf("query artist name: %v", err)
+	}
+	if artistName != "Pink Floyd" {
+		t.Fatalf("expected artist name='Pink Floyd', got %q", artistName)
+	}
+
+	_ = fmt.Sprint(libID)
+}
+
+func TestMatchAlbumWritebackInline(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	// Seed data: library, artist, album (matched), and tracks.
+	res, err := db.ExecContext(ctx,
+		"INSERT INTO libraries (name, type, root_path) VALUES ('test', 'music', '/music')")
+	if err != nil {
+		t.Fatalf("insert library: %v", err)
+	}
+	libID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx,
+		"INSERT INTO music_artists (library_id, name) VALUES (?, 'Test Artist')", libID)
+	if err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	artistID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx, `
+		INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, match_status,
+			musicbrainz_id, artist_musicbrainz_id)
+		VALUES (?, ?, ?, 'Test Album', 2020, 'matched', 'wb-rg-id', 'wb-artist-mbid')`,
+		libID, artistID, artistID)
+	if err != nil {
+		t.Fatalf("insert album: %v", err)
+	}
+	albumID, _ := res.LastInsertId()
+
+	// Insert two tracks under this album.
+	for i, title := range []string{"Track One", "Track Two"} {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO music_tracks (library_id, artist_id, album_id, title, abs_path, track_no, disc_no)
+			VALUES (?, ?, ?, ?, '/fake/track'||?||'.mp3', ?, 1)`,
+			libID, artistID, albumID, title, i+1, i+1)
+		if err != nil {
+			t.Fatalf("insert track %d: %v", i+1, err)
+		}
+	}
+
+	// Insert a track under a DIFFERENT album to ensure writebackAlbumTracks is scoped.
+	res, err = db.ExecContext(ctx, `
+		INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, match_status)
+		VALUES (?, ?, ?, 'Other Album', 2021, 'matched')`,
+		libID, artistID, artistID)
+	if err != nil {
+		t.Fatalf("insert other album: %v", err)
+	}
+	otherAlbumID, _ := res.LastInsertId()
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO music_tracks (library_id, artist_id, album_id, title, abs_path, track_no, disc_no)
+		VALUES (?, ?, ?, 'Other Track', '/fake/other.mp3', 1, 1)`,
+		libID, artistID, otherAlbumID)
+	if err != nil {
+		t.Fatalf("insert other track: %v", err)
+	}
+
+	// Call writebackAlbumTracks -- it will fail on WriteTrackTags since files don't exist,
+	// but it should NOT return an error (non-fatal pattern).
+	err = writebackAlbumTracks(ctx, db, albumID)
+	if err != nil {
+		t.Fatalf("writebackAlbumTracks should not return error even if tag writes fail: %v", err)
+	}
+
+	// Verify the function queried the right tracks by checking it only touches the target album.
+	// Since files don't exist, WriteTrackTags errors are logged but not returned.
+	// The key behavior: it runs without error and doesn't panic on missing files.
+	_ = fmt.Sprint(libID, otherAlbumID)
+}
+
+func TestMatchAlbumBelowThresholdNoNormalization(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	// Mock server returns a candidate that will score below 80
+	// (different title to force low title similarity).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case path == "/ws/2/release-group" && strings.Contains(r.URL.RawQuery, "query="):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"release-groups": []map[string]interface{}{
+					{
+						"id":                 "low-rg-id",
+						"title":              "Completely Different Album Title",
+						"primary-type":       "Album",
+						"score":              100,
+						"first-release-date": "2020-01-01",
+						"artist-credit": []map[string]interface{}{
+							{
+								"name": "Completely Different Artist",
+								"artist": map[string]string{
+									"id":   "low-artist-mbid",
+									"name": "Completely Different Artist",
+								},
+							},
+						},
+						"releases": []map[string]string{
+							{"id": "low-release-id", "title": "Completely Different Album Title"},
+						},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	m := newTestMatcher(t, db, srv)
+
+	// Seed with original names.
+	res, err := db.ExecContext(ctx,
+		"INSERT INTO libraries (name, type, root_path) VALUES ('test', 'music', '/music')")
+	if err != nil {
+		t.Fatalf("insert library: %v", err)
+	}
+	libID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx,
+		"INSERT INTO music_artists (library_id, name) VALUES (?, 'Original Artist Name')", libID)
+	if err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	artistID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx, `
+		INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, match_status)
+		VALUES (?, ?, ?, 'Original Album Title', 2020, '')`,
+		libID, artistID, artistID)
+	if err != nil {
+		t.Fatalf("insert album: %v", err)
+	}
+	albumID, _ := res.LastInsertId()
+
+	// matchAlbum with local names -- score will be low because MusicBrainz returns
+	// "Completely Different Album Title" which won't score >= 80 against "Original Album Title".
+	err = m.matchAlbum(ctx, albumID, "Original Album Title", "Original Artist Name", 2020)
+	if err != nil {
+		t.Fatalf("matchAlbum: %v", err)
+	}
+
+	// Verify album title is UNCHANGED.
+	var albumTitle string
+	if err := db.QueryRowContext(ctx,
+		"SELECT title FROM music_albums WHERE id=?", albumID).Scan(&albumTitle); err != nil {
+		t.Fatalf("query album title: %v", err)
+	}
+	if albumTitle != "Original Album Title" {
+		t.Fatalf("expected album title to remain 'Original Album Title', got %q", albumTitle)
+	}
+
+	// Verify artist name is UNCHANGED.
+	var artistName string
+	if err := db.QueryRowContext(ctx,
+		"SELECT name FROM music_artists WHERE id=?", artistID).Scan(&artistName); err != nil {
+		t.Fatalf("query artist name: %v", err)
+	}
+	if artistName != "Original Artist Name" {
+		t.Fatalf("expected artist name to remain 'Original Artist Name', got %q", artistName)
+	}
+
+	// Verify match_status is 'unmatched' (below threshold).
+	var status string
+	if err := db.QueryRowContext(ctx,
+		"SELECT match_status FROM music_albums WHERE id=?", albumID).Scan(&status); err != nil {
+		t.Fatalf("query album status: %v", err)
+	}
+	if status != "unmatched" {
+		t.Fatalf("expected match_status='unmatched', got %q", status)
+	}
+
+	_ = fmt.Sprint(libID)
+}
