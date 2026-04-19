@@ -15,8 +15,8 @@ Requirements for TV Auto-Match Pipeline. Each maps to roadmap phases.
 
 ### Testing
 
-- [ ] **TEST-01**: Unit tests for TV match scoring and threshold logic
-- [ ] **TEST-02**: Integration tests for TV auto-match pipeline (auto-accept above threshold, skip below)
+- [x] **TEST-01**: Unit tests for TV match scoring and threshold logic
+- [x] **TEST-02**: Integration tests for TV auto-match pipeline (auto-accept above threshold, skip below)
 - [x] **TEST-03**: Tests verify match review UI works with new status model
 
 ## Future Requirements
@@ -39,8 +39,8 @@ None deferred.
 | MATCH-01 | Phase 9 | Complete |
 | MATCH-02 | Phase 9 | Complete |
 | MATCH-03 | Phase 9 | Complete |
-| TEST-01 | Phase 10 | Pending |
-| TEST-02 | Phase 10 | Pending |
+| TEST-01 | Phase 10 | Complete |
+| TEST-02 | Phase 10 | Complete |
 | TEST-03 | Phase 10 | Complete |
 
 **Coverage:**
