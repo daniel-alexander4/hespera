@@ -174,14 +174,14 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
 		epCSV := episodeNumbersCSV(ident.EpisodeNumbers)
 		_, err = s.DB.ExecContext(ctx, `
 INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method)
-VALUES (?, 'needs_fix', ?, ?, ?, ?, ?)
+VALUES (?, 'unmatched', ?, ?, ?, ?, ?)
 ON CONFLICT(file_id) DO UPDATE SET
   guessed_title=excluded.guessed_title,
   season_number=excluded.season_number,
   episode_numbers_csv=excluded.episode_numbers_csv,
   match_confidence=excluded.match_confidence,
   match_method=excluded.match_method
-WHERE status NOT IN ('resolved', 'skipped')
+WHERE status NOT IN ('matched', 'skipped')
 `, fileID, ident.ShowTitle, ident.SeasonNumber, epCSV, ident.Confidence, ident.Method)
 		if err != nil {
 			return fmt.Errorf("upsert tv_series_identities: %w", err)
@@ -189,7 +189,7 @@ WHERE status NOT IN ('resolved', 'skipped')
 	} else {
 		_, err = s.DB.ExecContext(ctx, `
 INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method)
-VALUES (?, 'needs_fix', '', -1, '', 0.0, '')
+VALUES (?, 'unmatched', '', -1, '', 0.0, '')
 ON CONFLICT(file_id) DO NOTHING
 `, fileID)
 		if err != nil {

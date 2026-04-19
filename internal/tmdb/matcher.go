@@ -40,7 +40,7 @@ func (m *Matcher) RunTVMatch(ctx context.Context, jobID, libraryID int64) error 
 SELECT i.file_id, i.guessed_title, i.season_number
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.status = 'needs_fix'
+WHERE i.status = 'unmatched'
   AND f.library_id = ?
   AND i.guessed_title != ''
 `, libraryID)
@@ -104,7 +104,7 @@ WHERE i.status = 'needs_fix'
 		}
 
 		bestResult, bestScore := pickBestResult(results, rawTitle)
-		if bestResult == nil || bestScore < 0.45 {
+		if bestResult == nil || bestScore < 0.80 {
 			slog.Info("tmdb no match", "title", rawTitle, "best_score", bestScore)
 			continue
 		}
@@ -221,7 +221,7 @@ ON CONFLICT(entity_key, lang) DO UPDATE SET
 UPDATE tv_series_identities SET
   provider='tmdb',
   series_id=?,
-  status='resolved',
+  status='matched',
   match_confidence=?,
   matched_at=?
 WHERE file_id=?
