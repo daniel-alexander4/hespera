@@ -35,15 +35,14 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full details.
 **Depends on**: Phase 5 (v1.0 complete)
 **Requirements**: MATCH-01, MATCH-02, MATCH-03
 **Success Criteria** (what must be TRUE):
-  1. Running a music scan automatically triggers MusicBrainz matching for unmatched albums using artist name, album name, and track name from file tags
+  1. Running a music scan automatically triggers MusicBrainz matching for unmatched albums using artist name and album name from file tags
   2. Albums scoring 80% or higher are automatically accepted with match_status set accordingly and the highest-scoring candidate chosen
   3. Albums scoring below 80% are left with their original metadata -- no error state, no flag, no queue entry
   4. Previously matched or manually matched albums are not re-matched on subsequent scans
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
+- [ ] 06-01-PLAN.md -- Raise threshold to 80%, eliminate uncertain status, update review UI
 
 ### Phase 7: Automated Writeback
 **Goal**: Auto-accepted matches immediately write MusicBrainz identifiers and normalized metadata back to audio file tags
@@ -84,6 +83,6 @@ Phases execute in numeric order: 6 -> 7 -> 8
 | 3. Fragility Elimination | v1.0 | 2/2 | Complete | 2026-03-05 |
 | 4. Unit Test Coverage | v1.0 | 4/4 | Complete | 2026-03-05 |
 | 5. Integration Test Coverage | v1.0 | 2/2 | Complete | 2026-03-06 |
-| 6. Auto-Match Pipeline | v1.1 | 0/? | Not started | - |
+| 6. Auto-Match Pipeline | v1.1 | 0/1 | Not started | - |
 | 7. Automated Writeback | v1.1 | 0/? | Not started | - |
 | 8. Enrichment and UI Preservation | v1.1 | 0/? | Not started | - |
