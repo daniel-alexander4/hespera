@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in-progress
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-03-06T01:49:54.197Z"
-last_activity: 2026-03-06 -- Completed 05-02-PLAN.md
+status: completed
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-03-06T01:53:58.464Z"
+last_activity: 2026-03-06 -- Completed 05-01-PLAN.md
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Every identified bug and logic flaw is fixed and verified -- no known issues remain in the codebase
-**Current focus:** Phase 5: Integration Test Coverage (in progress)
+**Current focus:** Phase 5: Integration Test Coverage (complete)
 
 ## Current Position
 
 Phase: 5 of 5 (Integration Test Coverage)
-Plan: 2 of 2 in current phase
-Status: In progress
-Last activity: 2026-03-06 -- Completed 05-02-PLAN.md
+Plan: 2 of 2 in current phase (complete)
+Status: Phase complete
+Last activity: 2026-03-06 -- Completed 05-01-PLAN.md
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -62,6 +62,8 @@ Progress: [█████████░] 92%
 | Phase 04 P04 | 3min | 2 tasks | 3 files |
 | Phase 04 P01 | 4min | 2 tasks | 3 files |
 | Phase 05 P02 | 3min | 2 tasks | 2 files |
+| Phase 05 P01 | 6min | 2 tasks | 4 files |
+| Phase 05 P01 | 6min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -94,6 +96,10 @@ Recent decisions affecting current work:
 - [Phase 05]: apiBase/imgBase as struct fields (not constructor params) to avoid changing NewClient signature
 - [Phase 05]: Closed channel for rate limiter bypass -- reading from closed chan returns zero value immediately
 - [Phase 05]: Reuse sampleSearchJSON/sampleShowJSON/sampleSeasonJSON from client_test.go as mock server fixtures
+- [Phase 05]: Added wikiClient/wikiBaseURL/wikidataBaseURL/commonsBaseURL to MBClient for enrichment testability
+- [Phase 05]: Extended EnrichArtist relation URL matching to check by relation type when base URL overrides are set
+- [Phase 05]: Added wikiClient/wikiBaseURL/wikidataBaseURL/commonsBaseURL to MBClient for enrichment testability
+- [Phase 05]: Extended EnrichArtist relation URL matching to check by relation type when base URL overrides are set
 
 ### Pending Todos
 
@@ -105,6 +111,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T01:49:00Z
-Stopped at: Completed 05-02-PLAN.md
-Resume file: .planning/phases/05-integration-test-coverage/05-02-SUMMARY.md
+Last session: 2026-03-06T01:53:49.521Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None
