@@ -241,7 +241,19 @@ func Migrate(db *sql.DB) error {
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
 		return err
 	}
+	if err := migrateUncertainToUnmatched(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+// migrateUncertainToUnmatched converts any music_albums rows with
+// match_status='uncertain' to 'unmatched'. The uncertain state has been
+// eliminated in favor of a simpler two-state model (matched or unmatched).
+// Naturally idempotent: no rows match after the first run.
+func migrateUncertainToUnmatched(db *sql.DB) error {
+	_, err := db.Exec("UPDATE music_albums SET match_status='unmatched' WHERE match_status='uncertain'")
+	return err
 }
 
 // migrateIdentitiesSkippedStatus adds 'skipped' to the tv_series_identities.status CHECK constraint.
