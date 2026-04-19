@@ -51,8 +51,26 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/music/duplicates", h.musicDuplicates)
 	mux.HandleFunc("/music/duplicates/merge", h.musicDuplicatesMerge)
 
+	// TV browse
+	mux.HandleFunc("/tv", h.tvSeriesList)
+	mux.HandleFunc("/tv/series/", h.tvSeriesDetail)
+	mux.HandleFunc("/tv/season/", h.tvSeasonDetail)
+	mux.HandleFunc("/tv/match", h.tvMatch)
+	mux.HandleFunc("/tv/match/review", h.tvMatchReview)
+	mux.HandleFunc("/tv/match/approve", h.tvMatchApprove)
+	mux.HandleFunc("/tv/match/skip", h.tvMatchSkip)
+	mux.HandleFunc("/tv/match/rematch", h.tvMatchRematch)
+	mux.HandleFunc("/tv/match/search", h.tvMatchSearch)
+	mux.HandleFunc("/tv/player", h.tvPlayer)
+	mux.HandleFunc("/tv/playback-progress", h.tvPlaybackProgress)
+
+	// TV streaming
+	mux.HandleFunc("/stream/tv/", h.streamTVEpisode)
+
+	// TV art
+	mux.HandleFunc("/art/tv/", h.tvArt)
+
 	// Other media
-	mux.HandleFunc("/tv", h.tvHome)
 	mux.HandleFunc("/movies", h.moviesHome)
 
 	// Static files

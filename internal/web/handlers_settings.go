@@ -13,6 +13,7 @@ import (
 
 	"isomedia/internal/jobs"
 	"isomedia/internal/scan"
+	"isomedia/internal/tvscan"
 )
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
@@ -245,10 +246,32 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scanner := scan.New(h.cfg, h.db)
-	jobID, err := h.jobs.Enqueue("scan", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
-		return scanner.ScanMusic(ctx, jobID, libraryID)
-	})
+	var libType string
+	if err := h.db.QueryRowContext(r.Context(), "SELECT type FROM libraries WHERE id=?", id).Scan(&libType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	var jobID int64
+	switch libType {
+	case "music":
+		scanner := scan.New(h.cfg, h.db)
+		jobID, err = h.jobs.Enqueue("scan", id, "user", func(ctx context.Context, jID, libID int64) error {
+			return scanner.ScanMusic(ctx, jID, libID)
+		})
+	case "tv":
+		tvScanner := tvscan.New(h.cfg, h.db)
+		jobID, err = h.jobs.Enqueue("tvscan", id, "user", func(ctx context.Context, jID, libID int64) error {
+			return tvScanner.ScanTV(ctx, jID, libID)
+		})
+	default:
+		http.Error(w, "scanning not supported for this library type", 400)
+		return
+	}
 	if err != nil {
 		if errors.Is(err, jobs.ErrQueueFull) {
 			if requestWantsJSON(r) {
