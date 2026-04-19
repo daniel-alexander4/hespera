@@ -39,7 +39,12 @@ A personal media server that just works -- reliable scanning, matching, and stre
 
 ### Active
 
-(None -- next milestone not yet planned)
+- [ ] Auto-match: scanner triggers MusicBrainz matching using only artist name, album name, track name
+- [ ] Auto-accept: matches scoring 80% or higher are automatically accepted (highest score wins)
+- [ ] Auto-writeback: matched metadata (normalized names, artist MBID, album MBID) written back to file tags
+- [ ] Full enrichment: CAA cover art + Wikipedia bio + Wikimedia artist image fetched on auto-match
+- [ ] Silent skip: songs below 80% match threshold are left with original metadata, no flagging
+- [ ] Manual review UI retained for manually matching songs that didn't auto-match
 
 ### Out of Scope
 
@@ -47,6 +52,17 @@ A personal media server that just works -- reliable scanning, matching, and stre
 - Major refactoring (store layer extraction, handler decomposition) -- architectural debt
 - Performance optimization (N+1 queries, missing indexes, double directory walk) -- separate milestone
 - Scaling improvements (multi-worker jobs, database partitioning) -- not needed for personal server
+- New upload UI -- files arrive via filesystem, scanner detects them
+
+## Current Milestone: v1.1 Automated Music Match Pipeline
+
+**Goal:** Automate the music metadata matching and writeback flow so scanned songs are automatically matched, enriched, and tagged without manual intervention.
+
+**Target features:**
+- Scanner-triggered MusicBrainz matching (trust only artist/album/track name)
+- Auto-accept at 80%+ match score with automatic tag writeback (MBIDs + normalized names)
+- Full enrichment pipeline (CAA cover art, Wikipedia bio, Wikimedia artist image)
+- Silent skip for low-confidence matches; manual review UI preserved for fallback
 
 ## Context
 
@@ -76,4 +92,4 @@ Known tech debt: 3 direct http.Error calls bypass httpError slog logging pattern
 | baseURL/apiBase struct fields for test injection | Unexported fields with production defaults, same-package test access | Good -- zero public API changes, full pipeline testability |
 
 ---
-*Last updated: 2026-03-06 after v1.0 milestone*
+*Last updated: 2026-03-06 after v1.1 milestone started*
