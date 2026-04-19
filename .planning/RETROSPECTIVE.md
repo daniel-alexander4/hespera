@@ -48,6 +48,46 @@
 
 ---
 
+## Milestone: v1.1 -- Automated Music Match Pipeline
+
+**Shipped:** 2026-03-07
+**Phases:** 3 | **Plans:** 3 | **Tasks:** 6
+
+### What Was Built
+- 80% auto-accept threshold with two-state match model (matched/unmatched, eliminated uncertain status)
+- Inline tag writeback in match pipeline -- name normalization to MusicBrainz canonical values + MBID writing to file tags in same pass
+- Verified enrichment pipeline (cover art, artist bio, artist image) already wired from Phase 2b
+- "Run Match" button on review page for manual matching without navigating to Libraries
+- DB migration converting legacy uncertain rows to unmatched
+
+### What Worked
+- Research agent correctly identified ENRICH-01 and ENRICH-02 as already implemented -- Phase 8 became verification + small UI addition instead of re-implementing existing code
+- Lean 1-plan-per-phase structure kept each phase fast (~2-5 min execution)
+- Tight cross-phase integration: matchAlbum() orchestrates the entire Phase 6->7->8 chain in one function (score -> threshold -> normalize -> cover art -> writeback)
+- Integration checker at audit verified all 12 cross-phase connections wired correctly
+
+### What Was Inefficient
+- SUMMARY.md files still lack one_liner frontmatter (same issue from v1.0 -- not fixed)
+- Phases 2, 6, 7 missing VALIDATION.md files (Nyquist validation never formally signed off for any phase)
+- ROADMAP.md checkboxes still get out of sync (06-01 and 08-01 showed `[ ]` despite being complete)
+
+### Patterns Established
+- Inline writeback scoped to single album (writebackAlbumTracks) vs library-wide (RunTagWriteback) -- separation of concerns for auto vs manual paths
+- Non-fatal name normalization with slog warnings -- matching succeeds even if name update fails
+- Research-driven phase planning -- Phase 8 research revealed no new code needed, saving execution time
+
+### Key Lessons
+1. Research before planning saves execution time -- Phase 8 would have been over-engineered without the researcher identifying existing enrichment code
+2. Inline writeback in the match function is simpler than a separate job -- eliminates coordination and ensures matching + writeback are atomic
+3. Two-state match model (matched/unmatched) is simpler and sufficient -- the uncertain queue added complexity without user value
+
+### Cost Observations
+- Model mix: orchestrator on opus, executors/verifiers/researchers on sonnet (balanced profile)
+- Phase execution: ~2-5 min per plan
+- Notable: 3 phases completed in one session, end-to-end including audit took ~30 min
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -55,14 +95,17 @@
 | Milestone | Phases | Plans | Key Change |
 |-----------|--------|-------|------------|
 | v1.0 | 5 | 13 | First milestone -- established audit/fix/test pattern |
+| v1.1 | 3 | 3 | Lean phases (1 plan each), research-driven planning reduced wasted execution |
 
 ### Cumulative Quality
 
 | Milestone | Test Subtests | Integration Tests | Packages Tested |
 |-----------|---------------|-------------------|-----------------|
 | v1.0 | 49+ | 4 (music + TV match) | db, web, scan, tvscan, match, tmdb |
+| v1.1 | 58+ | 5 (+ match threshold/normalization/writeback) | + match (6 new test functions) |
 
 ### Top Lessons (Verified Across Milestones)
 
-1. Always verify after execution -- missing artifacts block completion
-2. Post-scan finalization eliminates ordering bugs
+1. Always verify after execution -- missing artifacts block completion (v1.0 audit caught missing VERIFICATION.md)
+2. Research before planning prevents over-engineering (v1.1 Phase 8 avoided re-implementing existing code)
+3. SUMMARY.md one_liner frontmatter needs enforcement -- manually extracting accomplishments at milestone completion is friction (recurring v1.0, v1.1)

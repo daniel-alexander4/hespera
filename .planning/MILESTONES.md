@@ -1,5 +1,14 @@
 # Milestones
 
+## v1.1 Automated Music Match Pipeline (Shipped: 2026-03-07)
+
+**Phases completed:** 3 phases, 3 plans, 0 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v1.0 Codebase Audit & Hardening (Shipped: 2026-03-06)
 
 **Phases completed:** 5 phases, 13 plans, 24 tasks
