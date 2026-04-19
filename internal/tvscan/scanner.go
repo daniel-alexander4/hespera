@@ -153,6 +153,7 @@ ON CONFLICT(file_id) DO UPDATE SET
   episode_numbers_csv=excluded.episode_numbers_csv,
   match_confidence=excluded.match_confidence,
   match_method=excluded.match_method
+WHERE status NOT IN ('resolved', 'skipped')
 `, fileID, ident.ShowTitle, ident.SeasonNumber, epCSV, ident.Confidence, ident.Method)
 			if err != nil {
 				return fmt.Errorf("upsert tv_series_identities: %w", err)
