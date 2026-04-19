@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"isomedia/internal/match"
 	"isomedia/internal/pathguard"
 )
 
@@ -534,6 +535,182 @@ ORDER BY disc_no, track_no, lower(title)
 	})
 }
 
+// --- Album Edit ---
+
+func (h *Handler) musicAlbumEdit(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimSpace(r.URL.Query().Get("id"))
+	albumID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || albumID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		h.musicAlbumEditGET(w, r, albumID)
+	case http.MethodPost:
+		h.musicAlbumEditPOST(w, r, albumID)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albumID int64) {
+	var albumTitle string
+	var albumYear int
+	var artistName string
+	if err := h.db.QueryRowContext(r.Context(), `
+		SELECT al.title, al.year, ar.name
+		FROM music_albums al
+		JOIN music_artists ar ON ar.id = al.album_artist_id
+		WHERE al.id=?
+	`, albumID).Scan(&albumTitle, &albumYear, &artistName); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	rows, err := h.db.QueryContext(r.Context(), `
+		SELECT id, title, track_no FROM music_tracks WHERE album_id=? ORDER BY disc_no, track_no, lower(title)
+	`, albumID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	type editTrack struct {
+		ID      int64
+		Title   string
+		TrackNo int
+	}
+	var tracks []editTrack
+	for rows.Next() {
+		var t editTrack
+		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNo); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		tracks = append(tracks, t)
+	}
+	if err := rows.Err(); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	h.render(w, "music_album_edit.html", map[string]any{
+		"Title":      "Edit Album",
+		"AlbumID":    albumID,
+		"AlbumTitle": albumTitle,
+		"AlbumYear":  albumYear,
+		"ArtistName": artistName,
+		"Tracks":     tracks,
+	})
+}
+
+func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, albumID int64) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	newTitle := strings.TrimSpace(r.FormValue("title"))
+	newArtist := strings.TrimSpace(r.FormValue("artist"))
+	newYearStr := strings.TrimSpace(r.FormValue("year"))
+	newYear, _ := strconv.Atoi(newYearStr)
+
+	if newTitle == "" || newArtist == "" {
+		http.Error(w, "title and artist are required", 400)
+		return
+	}
+
+	// Get current album info for comparison.
+	var curTitle, curArtist string
+	var curYear int
+	var libraryID, curArtistID int64
+	if err := h.db.QueryRowContext(r.Context(), `
+		SELECT al.title, al.year, al.library_id, al.album_artist_id, ar.name
+		FROM music_albums al
+		JOIN music_artists ar ON ar.id = al.album_artist_id
+		WHERE al.id=?
+	`, albumID).Scan(&curTitle, &curYear, &libraryID, &curArtistID, &curArtist); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	tx, err := h.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer tx.Rollback()
+
+	// Update album title and year.
+	if _, err := tx.ExecContext(r.Context(),
+		"UPDATE music_albums SET title=?, year=? WHERE id=?",
+		newTitle, newYear, albumID); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	// If artist changed, ensure artist and update.
+	if newArtist != curArtist {
+		// Ensure artist exists.
+		if _, err := tx.ExecContext(r.Context(),
+			"INSERT OR IGNORE INTO music_artists (library_id, name) VALUES (?, ?)",
+			libraryID, newArtist); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		var newArtistID int64
+		if err := tx.QueryRowContext(r.Context(),
+			"SELECT id FROM music_artists WHERE library_id=? AND name=?",
+			libraryID, newArtist).Scan(&newArtistID); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if _, err := tx.ExecContext(r.Context(),
+			"UPDATE music_albums SET album_artist_id=? WHERE id=?",
+			newArtistID, albumID); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	}
+
+	// Update track titles.
+	trackIDs := r.Form["track_id"]
+	for _, tidStr := range trackIDs {
+		tid, err := strconv.ParseInt(tidStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		newTrackTitle := strings.TrimSpace(r.FormValue(fmt.Sprintf("track_title_%d", tid)))
+		if newTrackTitle == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(r.Context(),
+			"UPDATE music_tracks SET title=? WHERE id=? AND album_id=?",
+			newTrackTitle, tid, albumID); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	}
+
+	// Set match_status to 'manual'.
+	if _, err := tx.ExecContext(r.Context(),
+		"UPDATE music_albums SET match_status='manual' WHERE id=?",
+		albumID); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", albumID), http.StatusSeeOther)
+}
+
 // --- Albums Grid ---
 
 func (h *Handler) musicAlbums(w http.ResponseWriter, r *http.Request) {
@@ -842,6 +1019,61 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "recorded": true})
+}
+
+// --- Duplicates ---
+
+func (h *Handler) musicDuplicates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	libraryID := h.resolveMusicLibraryID(r)
+	if libraryID == 0 {
+		h.render(w, "music_duplicates.html", map[string]any{
+			"Title": "Duplicate Albums",
+		})
+		return
+	}
+
+	groups, err := match.FindDuplicateAlbums(r.Context(), h.db, libraryID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	h.render(w, "music_duplicates.html", map[string]any{
+		"Title":  "Duplicate Albums",
+		"Groups": groups,
+	})
+}
+
+func (h *Handler) musicDuplicatesMerge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	targetID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("target")), 10, 64)
+	if err != nil || targetID <= 0 {
+		http.Error(w, "invalid target", 400)
+		return
+	}
+	sourceID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("source")), 10, 64)
+	if err != nil || sourceID <= 0 {
+		http.Error(w, "invalid source", 400)
+		return
+	}
+
+	if err := match.MergeAlbums(r.Context(), h.db, targetID, sourceID); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	http.Redirect(w, r, "/music/duplicates", http.StatusSeeOther)
 }
 
 // --- Art Serving ---

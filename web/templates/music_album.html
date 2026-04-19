@@ -20,6 +20,7 @@
     <div class="album-actions">
       <a href="/music/player?album={{.AlbumID}}" class="btn btn-primary">Play All</a>
       <a href="/music/player?album={{.AlbumID}}&shuffle=1" class="btn">Shuffle</a>
+      <a href="/music/album/edit?id={{.AlbumID}}" class="btn">Edit</a>
     </div>
 
     {{range .DiscTracks}}

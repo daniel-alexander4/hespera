@@ -1,6 +1,7 @@
 package match
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -64,6 +65,54 @@ func LevenshteinDistance(a, b string) int {
 		prev = curr
 	}
 	return prev[lb]
+}
+
+// reAnnotation matches bracketed/parenthesized common suffixes.
+var reAnnotation = regexp.MustCompile(`(?i)\s*[\[\(]\s*(?:` +
+	`remaster(?:ed)?|` +
+	`deluxe(?:\s+edition)?|` +
+	`bonus\s+track(?:s|version)?|` +
+	`expanded(?:\s+edition)?|` +
+	`special\s+edition|` +
+	`anniversary\s+edition|` +
+	`super\s+deluxe|` +
+	`explicit|` +
+	`clean` +
+	`)\s*[\]\)]`)
+
+// reYearRemaster matches trailing year-remaster patterns like " - 2015 Remaster" or "(2020 Remastered Version)".
+var reYearRemaster = regexp.MustCompile(`(?i)\s*(?:-\s*)?[\(\[]?\d{4}\s+remaster(?:ed)?(?:\s+version)?[\)\]]?\s*$`)
+
+// NormalizeTitle strips common annotations for display and dedup.
+// Removes remaster, deluxe edition, explicit, trailing year-remaster patterns, etc.
+// Preserves casing and letters.
+func NormalizeTitle(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+
+	// Strip bracketed/parenthesized annotations (may appear multiple times).
+	for {
+		next := reAnnotation.ReplaceAllString(s, "")
+		next = strings.TrimSpace(next)
+		if next == s {
+			break
+		}
+		s = next
+	}
+
+	// Strip trailing year-remaster patterns.
+	s = reYearRemaster.ReplaceAllString(s, "")
+
+	// Collapse whitespace and trim.
+	fields := strings.Fields(s)
+	return strings.Join(fields, " ")
+}
+
+// NormalizeForDedup combines NormalizeTitle + Normalize (lowercase, strip non-alnum).
+func NormalizeForDedup(s string) string {
+	return Normalize(NormalizeTitle(s))
 }
 
 // NormalizedSimilarity returns a value in [0.0, 1.0] representing how similar

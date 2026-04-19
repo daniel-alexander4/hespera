@@ -4,10 +4,16 @@
 </div>
 
 {{if .Albums}}
-<div style="margin-bottom: 1rem;">
+<div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
   <form method="post" action="/music/match/approve-all" class="inline-form">
     <button type="submit" class="btn btn-sm">Approve All Uncertain</button>
   </form>
+  {{if .LibraryID}}
+  <form method="post" action="/music/writeback" class="inline-form">
+    <input type="hidden" name="id" value="{{.LibraryID}}" />
+    <button type="submit" class="btn btn-sm">Write Tags</button>
+  </form>
+  {{end}}
 </div>
 
 <table class="table">
