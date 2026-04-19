@@ -9,7 +9,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Logic Bugs
 
-- [ ] **BUG-01**: TV identity fields (guessed_title, season_number, episode_numbers_csv) are not overwritten on rescan for files that have already been resolved
+- [x] **BUG-01**: TV identity fields (guessed_title, season_number, episode_numbers_csv) are not overwritten on rescan for files that have already been resolved
 - [ ] **BUG-02**: Compilation detection produces consistent results regardless of filesystem walk order
 - [ ] **BUG-03**: mergeAlbumVariants does not corrupt album/track associations when run mid-scan
 
@@ -17,7 +17,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [x] **ERR-01**: All HTTP handlers return generic user-facing error messages instead of raw Go error strings
 - [x] **ERR-02**: All internal errors are logged server-side with slog before returning generic HTTP errors
-- [ ] **ERR-03**: TV match approve uses the job queue instead of a detached goroutine for background metadata fetch
+- [x] **ERR-03**: TV match approve uses the job queue instead of a detached goroutine for background metadata fetch
 - [ ] **ERR-04**: Scanner per-item error handling is explicit -- no silent swallowing of errors that could affect data integrity
 
 ### Security
@@ -83,12 +83,12 @@ Deferred to future milestones.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUG-01 | Phase 2 | Pending |
+| BUG-01 | Phase 2 | Complete |
 | BUG-02 | Phase 2 | Pending |
 | BUG-03 | Phase 2 | Pending |
 | ERR-01 | Phase 1 | Complete |
 | ERR-02 | Phase 1 | Complete |
-| ERR-03 | Phase 2 | Pending |
+| ERR-03 | Phase 2 | Complete |
 | ERR-04 | Phase 2 | Pending |
 | SEC-01 | Phase 1 | Complete |
 | SEC-02 | Phase 1 | Complete |
