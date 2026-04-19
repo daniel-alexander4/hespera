@@ -52,7 +52,7 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 	if wikidataURL != "" {
 		wikidataQID = extractQID(wikidataURL)
 		if wikidataQID != "" {
-			body, err := fetchWikidataEntity(ctx, wikidataQID)
+			body, err := fetchWikidataEntity(ctx, wikidataQID, mb.wikiClient, mb.wikidataBaseURL)
 			if err != nil {
 				slog.Warn("wikidata entity fetch failed", "qid", wikidataQID, "err", err)
 			} else {
@@ -63,7 +63,7 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 
 	// Bio from Wikipedia (direct link, or derived from Wikidata sitelink).
 	if wikiURL != "" {
-		bio, err := fetchWikipediaSummary(ctx, wikiURL)
+		bio, err := fetchWikipediaSummary(ctx, wikiURL, mb.wikiClient, mb.wikiBaseURL)
 		if err != nil {
 			slog.Warn("wikipedia bio fetch failed", "url", wikiURL, "err", err)
 		} else if bio != "" {
@@ -74,7 +74,7 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 	} else if len(wikidataEntity) > 0 {
 		derivedURL := extractEnwikiURL(wikidataEntity, wikidataQID)
 		if derivedURL != "" {
-			bio, err := fetchWikipediaSummary(ctx, derivedURL)
+			bio, err := fetchWikipediaSummary(ctx, derivedURL, mb.wikiClient, mb.wikiBaseURL)
 			if err != nil {
 				slog.Warn("wikipedia bio fetch failed", "url", derivedURL, "err", err)
 			} else if bio != "" {
@@ -90,9 +90,13 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 		filename := extractP18(wikidataEntity, wikidataQID)
 		if filename != "" {
 			slog.Info("P18 image found", "qid", wikidataQID, "filename", filename)
-			commonsURL := fmt.Sprintf("https://commons.wikimedia.org/wiki/Special:FilePath/%s?width=500",
-				url.PathEscape(filename))
-			imgPath, err := downloadArtistImage(ctx, commonsURL, dataDir, artistMBID)
+			commonsBase := "https://commons.wikimedia.org"
+			if mb.commonsBaseURL != "" {
+				commonsBase = mb.commonsBaseURL
+			}
+			commonsURL := fmt.Sprintf("%s/wiki/Special:FilePath/%s?width=500",
+				commonsBase, url.PathEscape(filename))
+			imgPath, err := downloadArtistImage(ctx, commonsURL, dataDir, artistMBID, mb.wikiClient)
 			if err != nil {
 				slog.Warn("artist image download failed", "qid", wikidataQID, "err", err)
 			} else if imgPath != "" {
@@ -106,7 +110,7 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 	return meta, nil
 }
 
-func fetchWikipediaSummary(ctx context.Context, wikiURL string) (string, error) {
+func fetchWikipediaSummary(ctx context.Context, wikiURL string, optClient *http.Client, baseOverride string) (string, error) {
 	// Extract the article title from the URL.
 	// e.g. https://en.wikipedia.org/wiki/The_Beatles -> The_Beatles
 	parts := strings.SplitN(wikiURL, "/wiki/", 2)
@@ -115,17 +119,26 @@ func fetchWikipediaSummary(ctx context.Context, wikiURL string) (string, error) 
 	}
 	title := parts[1]
 
-	// Determine the language subdomain.
-	lang := "en"
-	if u, err := url.Parse(wikiURL); err == nil {
-		host := u.Hostname()
-		if idx := strings.IndexByte(host, '.'); idx > 0 {
-			lang = host[:idx]
+	var apiURL string
+	if baseOverride != "" {
+		// Use the override base URL (for testing).
+		apiURL = fmt.Sprintf("%s/api/rest_v1/page/summary/%s", baseOverride, title)
+	} else {
+		// Determine the language subdomain.
+		lang := "en"
+		if u, err := url.Parse(wikiURL); err == nil {
+			host := u.Hostname()
+			if idx := strings.IndexByte(host, '.'); idx > 0 {
+				lang = host[:idx]
+			}
 		}
+		apiURL = fmt.Sprintf("https://%s.wikipedia.org/api/rest_v1/page/summary/%s", lang, title)
 	}
 
-	apiURL := fmt.Sprintf("https://%s.wikipedia.org/api/rest_v1/page/summary/%s", lang, title)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := optClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
@@ -157,9 +170,16 @@ func fetchWikipediaSummary(ctx context.Context, wikiURL string) (string, error) 
 }
 
 // fetchWikidataEntity fetches the JSON entity data for a Wikidata QID.
-func fetchWikidataEntity(ctx context.Context, qid string) ([]byte, error) {
-	entityURL := fmt.Sprintf("https://www.wikidata.org/wiki/Special:EntityData/%s.json", qid)
-	client := &http.Client{Timeout: 30 * time.Second}
+func fetchWikidataEntity(ctx context.Context, qid string, optClient *http.Client, baseOverride string) ([]byte, error) {
+	base := "https://www.wikidata.org"
+	if baseOverride != "" {
+		base = baseOverride
+	}
+	entityURL := fmt.Sprintf("%s/wiki/Special:EntityData/%s.json", base, qid)
+	client := optClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, entityURL, nil)
 	if err != nil {
 		return nil, err
@@ -285,13 +305,16 @@ func extractP18(data []byte, qid string) string {
 	return filename
 }
 
-func downloadArtistImage(ctx context.Context, imgURL, dataDir, artistMBID string) (string, error) {
+func downloadArtistImage(ctx context.Context, imgURL, dataDir, artistMBID string, optClient *http.Client) (string, error) {
 	thumbDir := filepath.Join(dataDir, "thumbs", "music")
 	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
 		return "", err
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := optClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imgURL, nil)
 	if err != nil {
 		return "", err

@@ -19,12 +19,14 @@ const caaBaseURL = "https://coverartarchive.org"
 // CAAClient fetches cover art from the Cover Art Archive.
 type CAAClient struct {
 	client   *http.Client
+	baseURL  string
 	thumbDir string
 }
 
 func NewCAAClient(dataDir string) *CAAClient {
 	return &CAAClient{
 		client:   &http.Client{Timeout: 30 * time.Second},
+		baseURL:  caaBaseURL,
 		thumbDir: filepath.Join(dataDir, "thumbs", "music"),
 	}
 }
@@ -57,7 +59,7 @@ func (c *CAAClient) FetchCover(ctx context.Context, releaseGroupID string, relea
 
 	// Try release-group first.
 	if releaseGroupID != "" {
-		imgURL, err := c.findCoverURL(ctx, fmt.Sprintf("%s/release-group/%s", caaBaseURL, releaseGroupID))
+		imgURL, err := c.findCoverURL(ctx, fmt.Sprintf("%s/release-group/%s", c.baseURL, releaseGroupID))
 		if err == nil && imgURL != "" {
 			return c.downloadAndSave(ctx, imgURL, releaseGroupID)
 		}
@@ -68,7 +70,7 @@ func (c *CAAClient) FetchCover(ctx context.Context, releaseGroupID string, relea
 		if i >= 3 {
 			break
 		}
-		imgURL, err := c.findCoverURL(ctx, fmt.Sprintf("%s/release/%s", caaBaseURL, rid))
+		imgURL, err := c.findCoverURL(ctx, fmt.Sprintf("%s/release/%s", c.baseURL, rid))
 		if err == nil && imgURL != "" {
 			key := releaseGroupID
 			if key == "" {

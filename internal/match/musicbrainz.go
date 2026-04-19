@@ -20,13 +20,21 @@ const (
 // MBClient queries the MusicBrainz API with a 1 req/sec rate limiter.
 type MBClient struct {
 	client  *http.Client
-	mu      sync.Mutex
-	lastReq time.Time
+	baseURL string
+	// wikiClient is used by enrichment functions for Wikipedia/Wikidata/Commons.
+	// If nil, enrichment functions create their own ad-hoc clients.
+	wikiClient       *http.Client
+	wikiBaseURL      string // e.g. "https://en.wikipedia.org"
+	wikidataBaseURL  string // e.g. "https://www.wikidata.org"
+	commonsBaseURL   string // e.g. "https://commons.wikimedia.org"
+	mu               sync.Mutex
+	lastReq          time.Time
 }
 
 func NewMBClient() *MBClient {
 	return &MBClient{
-		client: &http.Client{Timeout: 15 * time.Second},
+		client:  &http.Client{Timeout: 15 * time.Second},
+		baseURL: mbBaseURL,
 	}
 }
 
@@ -43,7 +51,7 @@ func (c *MBClient) throttle() {
 func (c *MBClient) get(ctx context.Context, path string) ([]byte, error) {
 	c.throttle()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mbBaseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
