@@ -1,0 +1,65 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Duplicate Albums</h1>
+</div>
+
+{{if .Groups}}
+{{range .Groups}}
+<div class="card" style="margin-bottom: 1.5rem; padding: 1rem;">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Art</th>
+        <th>Title</th>
+        <th>Artist</th>
+        <th>Year</th>
+        <th>Tracks</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{$best := .BestAlbumID}}
+      {{range .Albums}}
+      <tr{{if eq .ID $best}} style="background:var(--clr-surface-2);"{{end}}>
+        <td>
+          {{if .ArtPath}}
+          <img src="/art/album/{{.ID}}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" />
+          {{else}}
+          <span style="display:inline-block;width:40px;height:40px;background:var(--clr-surface-2);border-radius:4px;"></span>
+          {{end}}
+        </td>
+        <td><a href="/music/album/{{.ID}}">{{.Title}}</a></td>
+        <td>{{.ArtistName}}</td>
+        <td>{{if .Year}}{{.Year}}{{else}}&mdash;{{end}}</td>
+        <td>{{.TrackCount}}</td>
+        <td>
+          {{if .MatchStatus}}
+          <span class="badge badge-{{.MatchStatus}}">{{.MatchStatus}}</span>
+          {{else}}
+          <span class="text-muted">&mdash;</span>
+          {{end}}
+        </td>
+        <td>
+          {{if eq .ID $best}}
+          <span class="text-muted">Best</span>
+          {{else}}
+          <form method="post" action="/music/duplicates/merge" class="inline-form">
+            <input type="hidden" name="target" value="{{$best}}" />
+            <input type="hidden" name="source" value="{{.ID}}" />
+            <button type="submit" class="btn btn-sm">Merge into best</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{else}}
+<div class="empty-state">
+  <p>No duplicate albums detected.</p>
+</div>
+{{end}}
+{{end}}

@@ -100,9 +100,16 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get the first music library ID for the writeback button.
+	var libraryID int64
+	_ = h.db.QueryRowContext(r.Context(),
+		"SELECT id FROM libraries WHERE type='music' ORDER BY id DESC LIMIT 1",
+	).Scan(&libraryID)
+
 	h.render(w, "music_match_review.html", map[string]any{
-		"Title":  "Match Review",
-		"Albums": albums,
+		"Title":     "Match Review",
+		"Albums":    albums,
+		"LibraryID": libraryID,
 	})
 }
 
@@ -187,6 +194,47 @@ func (h *Handler) musicMatchReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/music/match/review", http.StatusSeeOther)
+}
+
+func (h *Handler) musicWriteback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	idStr := strings.TrimSpace(r.FormValue("id"))
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid id", 400)
+		return
+	}
+
+	matcher := match.New(h.db, h.cfg.DataDir)
+	jobID, err := h.jobs.Enqueue("tag_writeback", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
+		return matcher.RunTagWriteback(ctx, jobID, libraryID)
+	})
+	if err != nil {
+		if errors.Is(err, jobs.ErrQueueFull) {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if requestWantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"message": "writeback queued",
+			"data":    map[string]any{"library_id": id, "job_id": jobID},
+		})
+		return
+	}
+	http.Redirect(w, r, "/settings/jobs", http.StatusSeeOther)
 }
 
 func (h *Handler) musicMatchRematch(w http.ResponseWriter, r *http.Request) {

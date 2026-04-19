@@ -1,0 +1,48 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Edit Album</h1>
+</div>
+
+<form method="post" action="/music/album/edit?id={{.AlbumID}}" class="form-stack">
+  <div class="form-group">
+    <label for="album-title">Album Title</label>
+    <input type="text" id="album-title" name="title" value="{{.AlbumTitle}}" required class="input" />
+  </div>
+
+  <div class="form-group">
+    <label for="album-year">Year</label>
+    <input type="number" id="album-year" name="year" value="{{.AlbumYear}}" min="0" max="9999" class="input" style="max-width: 8rem;" />
+  </div>
+
+  <div class="form-group">
+    <label for="album-artist">Artist</label>
+    <input type="text" id="album-artist" name="artist" value="{{.ArtistName}}" required class="input" />
+  </div>
+
+  <h3 style="margin-top: 1.5rem;">Tracks</h3>
+  <table class="table">
+    <thead>
+      <tr>
+        <th style="width:3rem;">#</th>
+        <th>Title</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Tracks}}
+      <tr>
+        <td>{{.TrackNo}}</td>
+        <td>
+          <input type="text" name="track_title_{{.ID}}" value="{{.Title}}" class="input" style="width:100%;" />
+          <input type="hidden" name="track_id" value="{{.ID}}" />
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <div class="form-actions" style="margin-top: 1rem;">
+    <button type="submit" class="btn btn-primary">Save Changes</button>
+    <a href="/music/album/{{.AlbumID}}" class="btn">Cancel</a>
+  </div>
+</form>
+{{end}}
