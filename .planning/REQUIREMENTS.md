@@ -21,12 +21,12 @@ Requirements for automated music match pipeline. Each maps to roadmap phases.
 
 ### Enrichment
 
-- [ ] **ENRICH-01**: Cover art is fetched from Cover Art Archive on auto-match
-- [ ] **ENRICH-02**: Artist bio (Wikipedia) and artist image (Wikimedia Commons) are fetched on auto-match
+- [x] **ENRICH-01**: Cover art is fetched from Cover Art Archive on auto-match
+- [x] **ENRICH-02**: Artist bio (Wikipedia) and artist image (Wikimedia Commons) are fetched on auto-match
 
 ### UI
 
-- [ ] **UI-01**: Existing match review UI remains functional for manually matching songs that didn't auto-match
+- [x] **UI-01**: Existing match review UI remains functional for manually matching songs that didn't auto-match
 
 ## Future Requirements
 
@@ -54,9 +54,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WRITE-01 | Phase 7 | Complete |
 | WRITE-02 | Phase 7 | Complete |
 | WRITE-03 | Phase 7 | Complete |
-| ENRICH-01 | Phase 8 | Pending |
-| ENRICH-02 | Phase 8 | Pending |
-| UI-01 | Phase 8 | Pending |
+| ENRICH-01 | Phase 8 | Complete |
+| ENRICH-02 | Phase 8 | Complete |
+| UI-01 | Phase 8 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 9 total
