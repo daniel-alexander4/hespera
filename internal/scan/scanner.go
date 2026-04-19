@@ -94,6 +94,11 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 	// Final progress update.
 	_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
 
+	// Post-scan: detect compilations and merge variants (order-independent).
+	if err := s.finalizeCompilations(ctx, libraryID); err != nil {
+		return err
+	}
+
 	if err := s.pruneMissingTracks(ctx, libraryID, cleanRoot); err != nil {
 		return err
 	}
@@ -211,6 +216,9 @@ func (s *Scanner) ScanFiles(ctx context.Context, libraryID int64, absPaths []str
 			return err
 		}
 	}
+	if err := s.finalizeCompilations(ctx, libraryID); err != nil {
+		return err
+	}
 	return s.cleanupEmptyAlbums(ctx, libraryID)
 }
 
@@ -275,31 +283,63 @@ SELECT id FROM music_albums WHERE library_id=? AND artist_id=? AND title=? AND y
 	return artistID, albumID, nil
 }
 
-func detectCompilationByArtistDiversity(ctx context.Context, tx *sql.Tx, libraryID int64, albumTitle string, year int, currentArtistID int64) (bool, error) {
-	var one int
-	err := tx.QueryRowContext(ctx, `
-SELECT 1
-FROM music_tracks t
-JOIN music_albums al ON al.id = t.album_id
-WHERE t.library_id = ?
-  AND lower(al.title) = lower(?)
-  AND al.year = ?
-  AND t.artist_id <> ?
-LIMIT 1
-`, libraryID, strings.TrimSpace(albumTitle), year, currentArtistID).Scan(&one)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
+// finalizeCompilations detects multi-artist albums and consolidates variant album records.
+// Runs after all files are scanned so artist diversity is computed from the full track set,
+// making results independent of filesystem walk order (BUG-02 fix).
+func (s *Scanner) finalizeCompilations(ctx context.Context, libraryID int64) error {
+	// Find albums with tracks from multiple artists that aren't already marked as compilations.
+	rows, err := s.DB.QueryContext(ctx, `
+SELECT al.id, al.title, al.year
+FROM music_albums al
+WHERE al.library_id = ?
+  AND al.is_compilation = 0
+  AND (SELECT COUNT(DISTINCT t.artist_id) FROM music_tracks t WHERE t.album_id = al.id) > 1
+`, libraryID)
 	if err != nil {
-		return false, err
+		return fmt.Errorf("find multi-artist albums: %w", err)
 	}
-	return true, nil
-}
+	defer rows.Close()
 
-func mergeAlbumVariants(ctx context.Context, tx *sql.Tx, libraryID int64, albumTitle string, year int, canonicalAlbumID int64) error {
-	_, err := tx.ExecContext(ctx, `
-UPDATE music_tracks
-SET album_id = ?
+	type albumInfo struct {
+		id    int64
+		title string
+		year  int
+	}
+	var candidates []albumInfo
+	for rows.Next() {
+		var a albumInfo
+		if err := rows.Scan(&a.id, &a.title, &a.year); err != nil {
+			return err
+		}
+		candidates = append(candidates, a)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, a := range candidates {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Mark this album as compilation with "Various Artists" album artist.
+		vaID, err := s.ensureArtistDB(ctx, libraryID, "Various Artists")
+		if err != nil {
+			return err
+		}
+		_, err = s.DB.ExecContext(ctx, `
+UPDATE music_albums SET is_compilation = 1, artist_id = ?, album_artist_id = ? WHERE id = ?
+`, vaID, vaID, a.id)
+		if err != nil {
+			return fmt.Errorf("mark compilation: %w", err)
+		}
+
+		// Merge any other album records with the same title+year into this one (BUG-03 fix).
+		// Now safe because all tracks are already inserted -- no more files will create new variants.
+		_, err = s.DB.ExecContext(ctx, `
+UPDATE music_tracks SET album_id = ?
 WHERE library_id = ?
   AND album_id IN (
     SELECT id FROM music_albums
@@ -308,8 +348,35 @@ WHERE library_id = ?
       AND year = ?
       AND id <> ?
   )
-`, canonicalAlbumID, libraryID, libraryID, strings.TrimSpace(albumTitle), year, canonicalAlbumID)
-	return err
+`, a.id, libraryID, libraryID, strings.TrimSpace(a.title), a.year, a.id)
+		if err != nil {
+			return fmt.Errorf("merge album variants: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ensureArtistDB is like ensureArtist but uses *sql.DB instead of *sql.Tx for post-scan use.
+func (s *Scanner) ensureArtistDB(ctx context.Context, libraryID int64, name string) (int64, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "Unknown Artist"
+	}
+	_, err := s.DB.ExecContext(ctx, `
+INSERT INTO music_artists (library_id, name) VALUES (?, ?)
+ON CONFLICT(library_id, name) DO NOTHING
+`, libraryID, name)
+	if err != nil {
+		return 0, err
+	}
+	var id int64
+	if err := s.DB.QueryRowContext(ctx, `
+SELECT id FROM music_artists WHERE library_id=? AND name=?
+`, libraryID, name).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // --- Checksum ---
