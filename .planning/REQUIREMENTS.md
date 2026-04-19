@@ -48,21 +48,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MATCH-01 | -- | Pending |
-| MATCH-02 | -- | Pending |
-| MATCH-03 | -- | Pending |
-| WRITE-01 | -- | Pending |
-| WRITE-02 | -- | Pending |
-| WRITE-03 | -- | Pending |
-| ENRICH-01 | -- | Pending |
-| ENRICH-02 | -- | Pending |
-| UI-01 | -- | Pending |
+| MATCH-01 | Phase 6 | Pending |
+| MATCH-02 | Phase 6 | Pending |
+| MATCH-03 | Phase 6 | Pending |
+| WRITE-01 | Phase 7 | Pending |
+| WRITE-02 | Phase 7 | Pending |
+| WRITE-03 | Phase 7 | Pending |
+| ENRICH-01 | Phase 8 | Pending |
+| ENRICH-02 | Phase 8 | Pending |
+| UI-01 | Phase 8 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-06*
-*Last updated: 2026-03-06 after initial definition*
+*Last updated: 2026-03-06 after roadmap creation*

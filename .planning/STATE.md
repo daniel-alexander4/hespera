@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Automated Music Match Pipeline
-status: defining_requirements
+status: ready_to_plan
 stopped_at: null
 last_updated: "2026-03-06"
-last_activity: 2026-03-06 -- Milestone v1.1 started
+last_activity: 2026-03-06 -- Roadmap created for v1.1 (3 phases, 9 requirements)
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,17 +21,44 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** A personal media server that just works
-**Current focus:** v1.1 Automated Music Match Pipeline
+**Current focus:** Phase 6 -- Auto-Match Pipeline
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 6 of 8 (Auto-Match Pipeline) -- first phase of v1.1
 Plan: --
-Status: Defining requirements
-Last activity: 2026-03-06 -- Milestone v1.1 started
+Status: Ready to plan
+Last activity: 2026-03-06 -- Roadmap created for v1.1
+
+Progress: [░░░░░░░░░░] 0%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 0 (v1.1)
+- Average duration: --
+- Total execution time: --
+
+*Carried from v1.0: 13 plans across 5 phases*
 
 ## Accumulated Context
 
+### Decisions
+
 - v1.0 shipped: codebase hardened, 20/20 requirements, comprehensive test coverage
-- Existing match pipeline: MusicBrainz search, scoring (70% threshold), CAA, artist enrichment, tag writeback
-- Known tech debt: 3 direct http.Error calls bypass httpError slog logging pattern
+- Existing match pipeline has 70% threshold -- v1.1 raises to 80% for auto-accept
+- Tag writeback already exists for MP3/FLAC/OGG/M4A -- v1.1 wires it into auto-match
+
+### Pending Todos
+
+None yet.
+
+### Blockers/Concerns
+
+- Known tech debt: 3 direct http.Error calls bypass httpError slog logging (non-blocking)
+
+## Session Continuity
+
+Last session: 2026-03-06
+Stopped at: Roadmap created, ready to plan Phase 6
+Resume file: None
