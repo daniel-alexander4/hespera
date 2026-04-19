@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A locally-hosted media server built from scratch in Go. Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite for storage, server-rendered HTML templates with vanilla CSS/JS. Audited and hardened codebase with comprehensive test coverage. Music scan-to-tag pipeline fully automated: scan, match, enrich, writeback in one pass.
+A locally-hosted media server built from scratch in Go. Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite for storage, server-rendered HTML templates with vanilla CSS/JS. Audited and hardened codebase with comprehensive test coverage. Both music and TV scan-to-match pipelines fully automated: scan, match, enrich in one pass with confidence-driven auto-accept.
 
 ## Core Value
 
@@ -40,13 +40,16 @@ A personal media server that just works -- reliable scanning, matching, and stre
 - Auto-writeback: matched metadata (normalized names, MBIDs) written back to file tags inline -- v1.1
 - Full enrichment on auto-match: CAA cover art + Wikipedia bio + Wikimedia artist image -- v1.1
 - Silent skip for below-threshold matches, manual review UI preserved for fallback -- v1.1
+- TV auto-match uses 0.80 confidence threshold for auto-accept -- v1.2
+- Below-threshold TV matches stay as 'unmatched' for manual review -- v1.2
+- TV match status model aligned with music pipeline (matched/unmatched/skipped) -- v1.2
+- Unit tests for TV match scoring and threshold logic -- v1.2
+- Integration tests for TV auto-match pipeline (above/below threshold) -- v1.2
+- Handler tests for TV match review UI with new status model -- v1.2
 
 ### Active
 
-- [ ] Auto-trigger TMDB matching after TV scan
-- [ ] Auto-accept high-confidence TV matches
-- [ ] Silent skip for below-threshold TV matches
-- [ ] TMDB enrichment (poster art, episode metadata) applied inline
+(None -- planning next milestone)
 
 ### Out of Scope
 
@@ -55,22 +58,14 @@ A personal media server that just works -- reliable scanning, matching, and stre
 - Performance optimization (N+1 queries, missing indexes, double directory walk) -- separate milestone
 - Scaling improvements (multi-worker jobs, database partitioning) -- not needed for personal server
 - New upload UI -- files arrive via filesystem, scanner detects them
-
-## Current Milestone: v1.2 TV Auto-Match Pipeline
-
-**Goal:** Automate TV matching the same way v1.1 automated music -- scan triggers TMDB matching, high-confidence results auto-accepted, below-threshold skipped for manual review.
-
-**Target features:**
-- Auto-trigger TMDB matching after TV library scan
-- Auto-accept matches above confidence threshold
-- Skip below-threshold matches silently (manual review UI preserved)
-- TMDB enrichment (poster art, episode metadata) applied inline during match
+- TV tag writeback -- video files don't have writable metadata tags like audio
+- TV title normalization -- not needed, TMDB handles canonical names
 
 ## Context
 
-Shipped v1.1 (Automated Music Match Pipeline) on 2026-03-07. Codebase is 14,700 LOC Go. Full scan-to-tag pipeline automated: scan triggers MusicBrainz matching, 80%+ auto-accepted, names normalized to MusicBrainz canonical values, MBIDs + metadata written back to file tags inline, cover art + artist bio/image enrichment runs automatically. Below-threshold albums silently skipped; manual review UI preserved with "Run Match" button for fallback.
+Shipped v1.2 (TV Auto-Match Pipeline) on 2026-03-07. Codebase is 15,205 LOC Go. TV matching now mirrors music: scan triggers TMDB matching, scores >= 0.80 auto-accepted, below-threshold stays unmatched for manual review. Status model unified across music and TV (matched/unmatched/skipped). Comprehensive test coverage added for scoring logic, pipeline flow, and handler endpoints.
 
-Previously shipped v1.0 (Codebase Audit & Hardening) on 2026-03-06. All bugs fixed, error handling standardized, comprehensive test coverage added.
+Previously shipped v1.1 (Automated Music Match Pipeline) on 2026-03-07 and v1.0 (Codebase Audit & Hardening) on 2026-03-06.
 
 Tech stack: Go 1.23, SQLite (WAL mode via modernc.org/sqlite), stdlib http.ServeMux, html/template. Four direct dependencies: dhowden/tag, modernc.org/sqlite, bogem/id3v2/v2, gcottom/audiometa/v3.
 
@@ -87,17 +82,19 @@ Known tech debt: 3 direct http.Error calls bypass httpError slog logging pattern
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Fix bugs before adding features | Compounding risk -- bugs in foundation affect everything built on top | Good -- found and fixed 3 data integrity bugs plus 100+ error handling gaps |
-| Keep refactoring out of scope | Separates "fix what's broken" from "improve how it's organized" | Good -- kept milestone focused, identified ARCH-01/02/03 for future |
-| Focus tests on critical paths | Scanner, handlers, and pipeline are highest-risk untested code | Good -- 49+ test subtests plus 4 integration tests covering all critical paths |
-| httpError/jsonErr with severity-appropriate logging | 5xx via slog.Error, 4xx via slog.Warn | Good -- clean separation of severity levels |
-| Post-scan finalization pattern | Heavy heuristics (compilation, merge) run after WalkDir, not per-file | Good -- eliminated ordering dependency and mid-scan corruption |
-| WHERE clause on DO UPDATE for TV rescan | Atomic guard at SQL level instead of application-level check | Good -- simpler and more reliable than read-check-write |
-| baseURL/apiBase struct fields for test injection | Unexported fields with production defaults, same-package test access | Good -- zero public API changes, full pipeline testability |
-| 80% auto-accept threshold | Simple, aggressive -- user wants automatic matching, not curation | Good -- clean two-state model (matched/unmatched), no uncertain queue |
-| Inline writeback in matchAlbum | Tag writing happens same pass as matching, no separate job needed | Good -- eliminates writeback as a separate step users must trigger |
-| writebackAlbumTracks as package-level function | Unexported, takes db+albumID directly for testability | Good -- cleanly separated from library-wide RunTagWriteback |
-| Enrichment already wired from Phase 2b | Cover art + artist bio/image already ran in pipeline, Phase 8 just verified | Good -- avoided re-implementing existing functionality |
+| Fix bugs before adding features | Compounding risk -- bugs in foundation affect everything built on top | ✓ Good -- found and fixed 3 data integrity bugs plus 100+ error handling gaps |
+| Keep refactoring out of scope | Separates "fix what's broken" from "improve how it's organized" | ✓ Good -- kept milestone focused, identified ARCH-01/02/03 for future |
+| Focus tests on critical paths | Scanner, handlers, and pipeline are highest-risk untested code | ✓ Good -- 49+ test subtests plus 4 integration tests covering all critical paths |
+| httpError/jsonErr with severity-appropriate logging | 5xx via slog.Error, 4xx via slog.Warn | ✓ Good -- clean separation of severity levels |
+| Post-scan finalization pattern | Heavy heuristics (compilation, merge) run after WalkDir, not per-file | ✓ Good -- eliminated ordering dependency and mid-scan corruption |
+| WHERE clause on DO UPDATE for TV rescan | Atomic guard at SQL level instead of application-level check | ✓ Good -- simpler and more reliable than read-check-write |
+| baseURL/apiBase struct fields for test injection | Unexported fields with production defaults, same-package test access | ✓ Good -- zero public API changes, full pipeline testability |
+| 80% auto-accept threshold | Simple, aggressive -- user wants automatic matching, not curation | ✓ Good -- clean two-state model (matched/unmatched), no uncertain queue |
+| Inline writeback in matchAlbum | Tag writing happens same pass as matching, no separate job needed | ✓ Good -- eliminates writeback as a separate step users must trigger |
+| writebackAlbumTracks as package-level function | Unexported, takes db+albumID directly for testability | ✓ Good -- cleanly separated from library-wide RunTagWriteback |
+| Enrichment already wired from Phase 2b | Cover art + artist bio/image already ran in pipeline, Phase 8 just verified | ✓ Good -- avoided re-implementing existing functionality |
+| Unified status model across music and TV | matched/unmatched/skipped replaces resolved/needs_fix for TV | ✓ Good -- consistent behavior, shared UI patterns, single mental model |
+| Table recreation pattern for CHECK constraint migration | Idempotent CASE conversion with table recreation instead of ALTER TABLE | ✓ Good -- SQLite doesn't support ALTER CHECK, this pattern is clean and testable |
 
 ---
-*Last updated: 2026-03-07 after v1.2 milestone started*
+*Last updated: 2026-03-07 after v1.2 milestone completed*
