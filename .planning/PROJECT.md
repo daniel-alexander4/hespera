@@ -49,7 +49,14 @@ A personal media server that just works -- reliable scanning, matching, and stre
 
 ### Active
 
-(None -- planning next milestone)
+## Current Milestone: v1.3 Manual Controls
+
+**Goal:** Add manual artwork upload, fix track numbering edit, and enable manual match selection for both music and TV.
+
+**Target features:**
+- Manual artwork upload/assignment for albums without Cover Art Archive art
+- Fix track numbering edit in single-track edit UI
+- Manual match selection UI for music (MusicBrainz candidates) and TV (TMDB candidates)
 
 ### Out of Scope
 
@@ -66,6 +73,8 @@ A personal media server that just works -- reliable scanning, matching, and stre
 Shipped v1.2 (TV Auto-Match Pipeline) on 2026-03-07. Codebase is 15,205 LOC Go. TV matching now mirrors music: scan triggers TMDB matching, scores >= 0.80 auto-accepted, below-threshold stays unmatched for manual review. Status model unified across music and TV (matched/unmatched/skipped). Comprehensive test coverage added for scoring logic, pipeline flow, and handler endpoints.
 
 Previously shipped v1.1 (Automated Music Match Pipeline) on 2026-03-07 and v1.0 (Codebase Audit & Hardening) on 2026-03-06.
+
+v1.3 addresses user-facing gaps: no manual artwork management, broken track number editing, and a rematch loop where re-running auto-match on below-threshold albums produces the same unmatched result with no way to manually accept a candidate.
 
 Tech stack: Go 1.23, SQLite (WAL mode via modernc.org/sqlite), stdlib http.ServeMux, html/template. Four direct dependencies: dhowden/tag, modernc.org/sqlite, bogem/id3v2/v2, gcottom/audiometa/v3.
 
@@ -97,4 +106,4 @@ Known tech debt: 3 direct http.Error calls bypass httpError slog logging pattern
 | Table recreation pattern for CHECK constraint migration | Idempotent CASE conversion with table recreation instead of ALTER TABLE | ✓ Good -- SQLite doesn't support ALTER CHECK, this pattern is clean and testable |
 
 ---
-*Last updated: 2026-03-07 after v1.2 milestone completed*
+*Last updated: 2026-03-07 after v1.3 milestone started*
