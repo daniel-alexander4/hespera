@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Automated Music Match Pipeline
-status: completed
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-03-07T03:10:44.765Z"
-last_activity: 2026-03-07 -- Phase 8 Plan 01 complete
+milestone: v1.2
+milestone_name: TV Auto-Match Pipeline
+status: defining_requirements
+stopped_at: Defining requirements
+last_updated: "2026-03-07"
+last_activity: 2026-03-07 -- Milestone v1.2 started
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,26 +21,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** A personal media server that just works
-**Current focus:** Planning next milestone
+**Current focus:** TV Auto-Match Pipeline
 
 ## Current Position
 
-Milestone v1.1 shipped 2026-03-07.
-Next: `/gsd:new-milestone` to start next milestone.
+Phase: Not started (defining requirements)
+Plan: --
+Status: Defining requirements
+Last activity: 2026-03-07 -- Milestone v1.2 started
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3 (v1.1)
-- Average duration: 3min
-- Total execution time: 9min
-
-| Phase | Plan | Duration | Tasks | Files |
-|-------|------|----------|-------|-------|
-| 06    | 01   | 4min     | 2     | 6     |
-| 07    | 01   | 3min     | 2     | 4     |
-| 08    | 01   | 2min     | 2     | 3     |
-
+*Carried from v1.1: 3 plans across 3 phases*
 *Carried from v1.0: 13 plans across 5 phases*
 
 ## Accumulated Context
@@ -48,14 +41,8 @@ Next: `/gsd:new-milestone` to start next milestone.
 ### Decisions
 
 - v1.0 shipped: codebase hardened, 20/20 requirements, comprehensive test coverage
-- Match pipeline threshold raised from 70 to 80 for auto-accept (06-01)
-- Eliminated uncertain status entirely -- two-state model matched/unmatched (06-01)
-- Approve handlers kept but retargeted to unmatched for defensive compatibility (06-01)
-- Tag writeback already exists for MP3/FLAC/OGG/M4A -- v1.1 wires it into auto-match
-- writebackAlbumTracks is unexported package-level function for testability (07-01)
-- Name normalization and writeback errors are non-fatal to avoid blocking matches (07-01)
-- Inline writeback runs after cover art fetch ensuring correct DB read order (07-01)
-- Functional template stub overrides in test setup enable content assertions for handler tests (08-01)
+- v1.1 shipped: music auto-match pipeline (80% threshold, inline writeback, full enrichment)
+- TV auto-match mirrors v1.1 approach: auto-trigger after scan, high-confidence auto-accept, TMDB-only enrichment
 
 ### Pending Todos
 
@@ -67,6 +54,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T01:04:46Z
-Stopped at: Completed 08-01-PLAN.md
-Resume file: .planning/phases/08-enrichment-and-ui-preservation/08-01-SUMMARY.md
+Last session: 2026-03-07
+Stopped at: Defining requirements for v1.2
+Resume file: .planning/.continue-here.md
