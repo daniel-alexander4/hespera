@@ -52,10 +52,10 @@ Plans:
   1. After auto-accept, artist MBID and album MBID are present in the audio file's metadata tags (verifiable by reading the file with a tag reader)
   2. After auto-accept, artist name, album name, and track name in file tags reflect the normalized MusicBrainz values
   3. Tag writeback occurs as part of the match pipeline execution -- there is no separate "writeback" job or manual trigger required for auto-matched albums
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 07-01: TBD
+- [ ] 07-01-PLAN.md -- Normalize names in DB on match, inline per-album tag writeback in pipeline
 
 ### Phase 8: Enrichment and UI Preservation
 **Goal**: Auto-matched albums receive full enrichment (cover art, artist bio, artist image) and the manual review UI continues to work for songs that did not auto-match
@@ -84,5 +84,5 @@ Phases execute in numeric order: 6 -> 7 -> 8
 | 4. Unit Test Coverage | v1.0 | 4/4 | Complete | 2026-03-05 |
 | 5. Integration Test Coverage | v1.0 | 2/2 | Complete | 2026-03-06 |
 | 6. Auto-Match Pipeline | v1.1 | 0/1 | Not started | - |
-| 7. Automated Writeback | v1.1 | 0/? | Not started | - |
+| 7. Automated Writeback | v1.1 | 0/1 | Not started | - |
 | 8. Enrichment and UI Preservation | v1.1 | 0/? | Not started | - |
