@@ -91,8 +91,8 @@ func TestUpsertTVFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("query tv_series_identities: %v", err)
 		}
-		if status != "needs_fix" {
-			t.Fatalf("status = %q, want needs_fix", status)
+		if status != "unmatched" {
+			t.Fatalf("status = %q, want unmatched", status)
 		}
 		if title != "Breaking Bad" {
 			t.Fatalf("guessed_title = %q, want Breaking Bad", title)
@@ -132,8 +132,8 @@ func TestUpsertTVFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("query identity: %v", err)
 		}
-		if status != "needs_fix" {
-			t.Fatalf("status = %q, want needs_fix", status)
+		if status != "unmatched" {
+			t.Fatalf("status = %q, want unmatched", status)
 		}
 		if title != "" {
 			t.Fatalf("guessed_title = %q, want empty", title)
@@ -174,7 +174,7 @@ func TestUpsertTVFile(t *testing.T) {
 		}
 	})
 
-	t.Run("rescan preserves resolved", func(t *testing.T) {
+	t.Run("rescan preserves matched", func(t *testing.T) {
 		db := openTestDB(t)
 		libID := seedLibrary(t, db, "tv4", "tv", "/media/tv")
 		s := &Scanner{DB: db}
@@ -185,14 +185,14 @@ func TestUpsertTVFile(t *testing.T) {
 			t.Fatalf("initial upsert: %v", err)
 		}
 
-		// Simulate user resolving the file.
+		// Simulate user matching the file.
 		_, err := db.Exec(`
-			UPDATE tv_series_identities SET status='resolved', provider='tmdb', series_id='12345'
+			UPDATE tv_series_identities SET status='matched', provider='tmdb', series_id='12345'
 			WHERE file_id = (SELECT id FROM tv_series_files WHERE library_id=? AND abs_path=?)`,
 			libID, path,
 		)
 		if err != nil {
-			t.Fatalf("set resolved: %v", err)
+			t.Fatalf("set matched: %v", err)
 		}
 
 		// Rescan with different identity data.
@@ -207,8 +207,8 @@ func TestUpsertTVFile(t *testing.T) {
 			WHERE file_id = (SELECT id FROM tv_series_files WHERE library_id=? AND abs_path=?)`,
 			libID, path,
 		).Scan(&status, &title, &seriesID)
-		if status != "resolved" {
-			t.Fatalf("status = %q, want resolved", status)
+		if status != "matched" {
+			t.Fatalf("status = %q, want matched", status)
 		}
 		if title != "Breaking Bad" {
 			t.Fatalf("guessed_title = %q, want Breaking Bad", title)
@@ -250,7 +250,7 @@ func TestUpsertTVFile(t *testing.T) {
 		}
 	})
 
-	t.Run("rescan overwrites needs_fix", func(t *testing.T) {
+	t.Run("rescan overwrites unmatched", func(t *testing.T) {
 		db := openTestDB(t)
 		libID := seedLibrary(t, db, "tv6", "tv", "/media/tv")
 		s := &Scanner{DB: db}

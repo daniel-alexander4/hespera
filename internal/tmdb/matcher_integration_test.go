@@ -124,7 +124,7 @@ func seedTVFile(t *testing.T, db *sql.DB, title, absPath string, seasonNum int, 
 	// Insert tv_series_identities.
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv)
-		 VALUES (?, 'needs_fix', ?, ?, ?)`,
+		 VALUES (?, 'unmatched', ?, ?, ?)`,
 		fileID, title, seasonNum, episodeCSV)
 	if err != nil {
 		t.Fatalf("insert tv_series_identities: %v", err)
@@ -154,7 +154,7 @@ func TestRunTVMatchIntegrationHappyPath(t *testing.T) {
 		t.Fatalf("RunTVMatch: %v", err)
 	}
 
-	t.Run("identity_resolved", func(t *testing.T) {
+	t.Run("identity_matched", func(t *testing.T) {
 		var status, provider, seriesID string
 		var confidence float64
 		err := db.QueryRowContext(ctx,
@@ -163,8 +163,8 @@ func TestRunTVMatchIntegrationHappyPath(t *testing.T) {
 		if err != nil {
 			t.Fatalf("query identity: %v", err)
 		}
-		if status != "resolved" {
-			t.Fatalf("status = %q, want resolved", status)
+		if status != "matched" {
+			t.Fatalf("status = %q, want matched", status)
 		}
 		if provider != "tmdb" {
 			t.Fatalf("provider = %q, want tmdb", provider)
@@ -360,7 +360,7 @@ func TestRunTVMatchIntegrationPartialFailure(t *testing.T) {
 	fileID1, _ := res.LastInsertId()
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv)
-		 VALUES (?, 'needs_fix', 'Breaking Bad', 1, '1')`, fileID1)
+		 VALUES (?, 'unmatched', 'Breaking Bad', 1, '1')`, fileID1)
 	if err != nil {
 		t.Fatalf("insert identity 1: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestRunTVMatchIntegrationPartialFailure(t *testing.T) {
 	fileID2, _ := res.LastInsertId()
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv)
-		 VALUES (?, 'needs_fix', 'The Wire', 1, '1')`, fileID2)
+		 VALUES (?, 'unmatched', 'The Wire', 1, '1')`, fileID2)
 	if err != nil {
 		t.Fatalf("insert identity 2: %v", err)
 	}
@@ -406,27 +406,27 @@ func TestRunTVMatchIntegrationPartialFailure(t *testing.T) {
 		t.Fatalf("RunTVMatch should not fail: %v", err)
 	}
 
-	t.Run("failed_group_stays_needs_fix", func(t *testing.T) {
+	t.Run("failed_group_stays_unmatched", func(t *testing.T) {
 		var status string
 		err := db.QueryRowContext(ctx,
 			"SELECT status FROM tv_series_identities WHERE file_id=?", fileID1).Scan(&status)
 		if err != nil {
 			t.Fatalf("query file 1 identity: %v", err)
 		}
-		if status != "needs_fix" {
-			t.Fatalf("file 1 status = %q, want needs_fix", status)
+		if status != "unmatched" {
+			t.Fatalf("file 1 status = %q, want unmatched", status)
 		}
 	})
 
-	t.Run("successful_group_resolved", func(t *testing.T) {
+	t.Run("successful_group_matched", func(t *testing.T) {
 		var status, provider, seriesID string
 		err := db.QueryRowContext(ctx,
 			"SELECT status, provider, series_id FROM tv_series_identities WHERE file_id=?", fileID2).Scan(&status, &provider, &seriesID)
 		if err != nil {
 			t.Fatalf("query file 2 identity: %v", err)
 		}
-		if status != "resolved" {
-			t.Fatalf("file 2 status = %q, want resolved", status)
+		if status != "matched" {
+			t.Fatalf("file 2 status = %q, want matched", status)
 		}
 		if provider != "tmdb" {
 			t.Fatalf("file 2 provider = %q, want tmdb", provider)
