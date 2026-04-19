@@ -29,11 +29,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Every handler that encounters an error logs the full error via slog before returning the generic HTTP error
   3. ensureColumn rejects table/column names that don't match a strict alphanumeric+underscore pattern, preventing SQL injection through schema evolution
   4. A developer can grep the handler code and confirm zero instances of raw err.Error() passed to http.Error or template rendering
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md -- Harden ensureColumn with identifier validation + unit tests
+- [ ] 01-02-PLAN.md -- Sanitize all HTTP error responses with httpError/jsonErr helpers
 
 ### Phase 2: Logic & Data Integrity Bugs
 **Goal**: Scanning, matching, and merging produce correct, deterministic results regardless of filesystem order or timing
@@ -99,7 +99,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Security & Error Exposure | 0/? | Not started | - |
+| 1. Security & Error Exposure | 0/2 | Planned | - |
 | 2. Logic & Data Integrity Bugs | 0/? | Not started | - |
 | 3. Fragility Elimination | 0/? | Not started | - |
 | 4. Unit Test Coverage | 0/? | Not started | - |
