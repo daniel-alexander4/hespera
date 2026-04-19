@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>isomedia</title>
+  <script>
+    (() => {
+      try {
+        const defaultBgTone = 'slate';
+        const defaultPalette = 'violet';
+        const defaultFontTheme = 'system-ui';
+        const defaultFontSize = 'compact';
+        const bgTone = String(localStorage.getItem('iso_theme_bg_tone') || defaultBgTone).trim();
+        const palette = String(localStorage.getItem('iso_theme_palette') || defaultPalette).trim();
+        const fontTheme = String(localStorage.getItem('iso_theme_font') || defaultFontTheme).trim();
+        const fontSize = String(localStorage.getItem('iso_theme_font_size') || defaultFontSize).trim();
+        if (bgTone) document.documentElement.setAttribute('data-bg-tone', bgTone);
+        if (palette) document.documentElement.setAttribute('data-palette', palette);
+        if (fontTheme) document.documentElement.setAttribute('data-font-theme', fontTheme);
+        if (fontSize) document.documentElement.setAttribute('data-font-size', fontSize);
+      } catch (_) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{{staticv "/static/app.css"}}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><a href="/">isomedia</a></div>
+    <nav class="nav">
+      <a href="/" class="nav-link">Home</a>
+      <a href="/music" class="nav-link">Music</a>
+      <a href="/movies" class="nav-link">Movies</a>
+      <a href="/tv" class="nav-link">TV Shows</a>
+      <div class="entity-menu nav-settings" data-menu>
+        <a href="/settings" class="nav-link nav-menu-trigger" data-menu-trigger aria-haspopup="true" aria-expanded="false">Settings</a>
+        <div class="entity-menu-panel nav-settings-panel">
+          <a href="/libraries" class="nav-sub-link">Libraries</a>
+          <a href="/settings/jobs" class="nav-sub-link">Job Status</a>
+          <form method="post" action="/auth/logout" class="m-0">
+            <button type="submit" class="nav-sub-link">Logout</button>
+          </form>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main class="main">
+    {{template "content" .}}
+  </main>
+
+  <footer class="footer">
+    <div>isomedia</div>
+  </footer>
+
+  <script>
+    (() => {
+      const menus = Array.from(document.querySelectorAll('[data-menu]'));
+      if (!menus.length) return;
+
+      const closeMenu = (menu) => {
+        menu.removeAttribute('data-open');
+        const trigger = menu.querySelector('[data-menu-trigger]');
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      };
+
+      const openMenu = (menu) => {
+        menus.forEach((m) => { if (m !== menu) closeMenu(m); });
+        menu.setAttribute('data-open', '1');
+        const trigger = menu.querySelector('[data-menu-trigger]');
+        if (trigger) trigger.setAttribute('aria-expanded', 'true');
+      };
+
+      menus.forEach((menu) => {
+        const trigger = menu.querySelector('[data-menu-trigger]');
+        if (!trigger) return;
+        trigger.addEventListener('click', (e) => {
+          const alreadyOpen = menu.getAttribute('data-open') === '1';
+          if (!alreadyOpen) {
+            e.preventDefault();
+            openMenu(menu);
+          } else {
+            closeMenu(menu);
+          }
+        });
+      });
+
+      document.addEventListener('click', (e) => {
+        const target = e.target;
+        if (!(target instanceof Node)) return;
+        menus.forEach((menu) => {
+          if (!menu.contains(target)) closeMenu(menu);
+        });
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        menus.forEach(closeMenu);
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      const toggles = Array.from(document.querySelectorAll('[data-section-toggle]'));
+      if (!toggles.length) return;
+      toggles.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const targetID = String(btn.getAttribute('data-section-toggle') || '').trim();
+          if (!targetID) return;
+          const panel = document.getElementById(targetID);
+          if (!panel) return;
+          const expanded = !panel.classList.contains('hidden');
+          panel.classList.toggle('hidden', expanded);
+          btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

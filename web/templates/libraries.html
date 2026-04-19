@@ -1,0 +1,42 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Libraries</h1>
+  <a href="/libraries/new" class="btn btn-primary">Add Library</a>
+</div>
+
+{{if .Libraries}}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Type</th>
+      <th>Path</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Libraries}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td>{{.Type}}</td>
+      <td><code>{{.RootPath}}</code></td>
+      <td class="actions-cell">
+        <form method="post" action="/libraries/scan" class="inline-form">
+          <input type="hidden" name="id" value="{{.ID}}" />
+          <button type="submit" class="btn btn-sm">Scan</button>
+        </form>
+        <form method="post" action="/libraries/delete" class="inline-form" onsubmit="return confirm('Delete this library and all its data?')">
+          <input type="hidden" name="id" value="{{.ID}}" />
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty-state">
+  <p>No libraries yet. Add one to get started.</p>
+</div>
+{{end}}
+{{end}}

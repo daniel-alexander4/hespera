@@ -1,0 +1,134 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Music</h1>
+</div>
+
+{{if not .LibraryID}}
+<div class="empty-state">
+  <p>No music library found. Use <a href="/libraries">Libraries</a> to add and scan your music collection.</p>
+</div>
+{{else}}
+
+<div class="music-tabs">
+  <button class="music-tab active" data-tab="artists">Artists</button>
+  <button class="music-tab" data-tab="compilations">Compilations</button>
+  <button class="music-tab" data-tab="recent">Recent</button>
+</div>
+
+<!-- Artists Tab -->
+<div class="music-tab-panel active" id="tab-artists">
+  {{if .Artists}}
+  <div class="band-albums-grid">
+    {{range .Artists}}
+    <a href="/music/artist/{{.ID}}" class="band-album-card">
+      <div class="artist-thumb">
+        {{if .ArtPath}}
+        <img src="/art/artist/{{.ID}}" alt="{{.Name}}" loading="lazy" />
+        {{else}}
+        <div class="artist-thumb-ph">{{slice .Name 0 1}}</div>
+        {{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Name}}</div>
+        <div class="artist-card-stats">{{.Count}} tracks</div>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state"><p>No artists found. Scan a music library to get started.</p></div>
+  {{end}}
+</div>
+
+<!-- Compilations Tab -->
+<div class="music-tab-panel" id="tab-compilations">
+  {{if .Compilations}}
+  <div class="band-albums-grid">
+    {{range .Compilations}}
+    <a href="/music/album/{{.ID}}" class="band-album-card">
+      <div class="band-album-art">
+        {{if .ArtPath}}
+        <img src="/art/album/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+        {{else}}
+        <div class="album-art-ph">♪</div>
+        {{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Title}}</div>
+        <div class="artist-card-stats">{{if .Year}}{{.Year}}{{end}} {{.DiscText}}</div>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty-state"><p>No compilations found.</p></div>
+  {{end}}
+</div>
+
+<!-- Recent Tab -->
+<div class="music-tab-panel" id="tab-recent">
+  {{if .RecentlyPlayed}}
+  <h3 class="section-title">Recently Played Artists</h3>
+  <div class="home-carousel-row">
+    {{range .RecentlyPlayed}}
+    <a href="/music/artist/{{.ID}}" class="band-album-card">
+      <div class="artist-thumb">
+        {{if .ArtPath}}
+        <img src="/art/artist/{{.ID}}" alt="{{.Name}}" loading="lazy" />
+        {{else}}
+        <div class="artist-thumb-ph">{{slice .Name 0 1}}</div>
+        {{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Name}}</div>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .RecentlyAddedAlbums}}
+  <h3 class="section-title">Recently Added Albums</h3>
+  <div class="home-carousel-row">
+    {{range .RecentlyAddedAlbums}}
+    <a href="/music/album/{{.ID}}" class="band-album-card">
+      <div class="band-album-art">
+        {{if .ArtPath}}
+        <img src="/art/album/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+        {{else}}
+        <div class="album-art-ph">♪</div>
+        {{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Title}}</div>
+        <div class="artist-card-stats">{{.ArtistName}} {{if .Year}}· {{.Year}}{{end}}</div>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if not .RecentlyPlayed}}{{if not .RecentlyAddedAlbums}}
+  <div class="empty-state"><p>No recent activity. Start playing some music!</p></div>
+  {{end}}{{end}}
+</div>
+
+<script>
+(() => {
+  const tabs = Array.from(document.querySelectorAll('.music-tab'));
+  const panels = Array.from(document.querySelectorAll('.music-tab-panel'));
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-tab');
+      tabs.forEach(t => t.classList.remove('active'));
+      panels.forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      const panel = document.getElementById('tab-' + target);
+      if (panel) panel.classList.add('active');
+    });
+  });
+})();
+</script>
+
+{{end}}
+{{end}}

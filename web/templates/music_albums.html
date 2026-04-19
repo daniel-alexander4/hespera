@@ -1,0 +1,27 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>All Albums</h1>
+</div>
+
+{{if .Albums}}
+<div class="band-albums-grid">
+  {{range .Albums}}
+  <a href="/music/album/{{.ID}}" class="band-album-card">
+    <div class="band-album-art">
+      {{if .ArtPath}}
+      <img src="/art/album/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">♪</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{.ArtistName}} {{if .Year}}· {{.Year}}{{end}}</div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{else}}
+<div class="empty-state"><p>No albums found.</p></div>
+{{end}}
+{{end}}
