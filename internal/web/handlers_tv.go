@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -169,9 +168,7 @@ func (h *Handler) tvSeriesDetail(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	seriesID := strings.TrimPrefix(r.URL.Path, "/tv/series/")
-	seriesID = path.Clean("/" + seriesID)
-	seriesID = strings.TrimPrefix(seriesID, "/")
+	seriesID := pathSegment(r, "/tv/series/")
 	if seriesID == "" {
 		http.NotFound(w, r)
 		return
@@ -724,11 +721,8 @@ func (h *Handler) streamTVEpisode(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	idStr := strings.TrimPrefix(r.URL.Path, "/stream/tv/")
-	idStr = path.Clean("/" + idStr)
-	idStr = strings.TrimPrefix(idStr, "/")
-	fileID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || fileID <= 0 {
+	fileID, err := pathID(r, "/stream/tv/")
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
