@@ -39,9 +39,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Test Coverage -- Handlers
 
-- [ ] **TEST-04**: Music handler tests verify routing, ID parsing, and error responses for key endpoints
-- [ ] **TEST-05**: TV handler tests verify routing, ID parsing, and error responses for key endpoints
-- [ ] **TEST-06**: Settings handler tests verify library CRUD and scan trigger endpoints
+- [x] **TEST-04**: Music handler tests verify routing, ID parsing, and error responses for key endpoints
+- [x] **TEST-05**: TV handler tests verify routing, ID parsing, and error responses for key endpoints
+- [x] **TEST-06**: Settings handler tests verify library CRUD and scan trigger endpoints
 
 ### Test Coverage -- Pipeline
 
@@ -98,9 +98,9 @@ Deferred to future milestones.
 | TEST-01 | Phase 4 | Pending |
 | TEST-02 | Phase 4 | Pending |
 | TEST-03 | Phase 4 | Complete |
-| TEST-04 | Phase 4 | Pending |
-| TEST-05 | Phase 4 | Pending |
-| TEST-06 | Phase 4 | Pending |
+| TEST-04 | Phase 4 | Complete |
+| TEST-05 | Phase 4 | Complete |
+| TEST-06 | Phase 4 | Complete |
 | TEST-07 | Phase 5 | Pending |
 | TEST-08 | Phase 5 | Pending |
 
