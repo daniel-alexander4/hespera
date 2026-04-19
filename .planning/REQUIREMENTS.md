@@ -15,9 +15,9 @@ Requirements for automated music match pipeline. Each maps to roadmap phases.
 
 ### Writeback
 
-- [ ] **WRITE-01**: Artist MBID and album MBID are written to audio file metadata on auto-match
-- [ ] **WRITE-02**: Normalized artist, album, and track names from MusicBrainz are written back to file tags
-- [ ] **WRITE-03**: Tag writeback happens automatically as part of the match pipeline, not as a separate step
+- [x] **WRITE-01**: Artist MBID and album MBID are written to audio file metadata on auto-match
+- [x] **WRITE-02**: Normalized artist, album, and track names from MusicBrainz are written back to file tags
+- [x] **WRITE-03**: Tag writeback happens automatically as part of the match pipeline, not as a separate step
 
 ### Enrichment
 
@@ -51,9 +51,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MATCH-01 | Phase 6 | Complete |
 | MATCH-02 | Phase 6 | Complete |
 | MATCH-03 | Phase 6 | Complete |
-| WRITE-01 | Phase 7 | Pending |
-| WRITE-02 | Phase 7 | Pending |
-| WRITE-03 | Phase 7 | Pending |
+| WRITE-01 | Phase 7 | Complete |
+| WRITE-02 | Phase 7 | Complete |
+| WRITE-03 | Phase 7 | Complete |
 | ENRICH-01 | Phase 8 | Pending |
 | ENRICH-02 | Phase 8 | Pending |
 | UI-01 | Phase 8 | Pending |

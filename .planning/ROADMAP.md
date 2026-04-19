@@ -55,7 +55,7 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 07-01-PLAN.md -- Normalize names in DB on match, inline per-album tag writeback in pipeline
+- [x] 07-01-PLAN.md -- Normalize names in DB on match, inline per-album tag writeback in pipeline
 
 ### Phase 8: Enrichment and UI Preservation
 **Goal**: Auto-matched albums receive full enrichment (cover art, artist bio, artist image) and the manual review UI continues to work for songs that did not auto-match
@@ -83,6 +83,6 @@ Phases execute in numeric order: 6 -> 7 -> 8
 | 3. Fragility Elimination | v1.0 | 2/2 | Complete | 2026-03-05 |
 | 4. Unit Test Coverage | v1.0 | 4/4 | Complete | 2026-03-05 |
 | 5. Integration Test Coverage | v1.0 | 2/2 | Complete | 2026-03-06 |
-| 6. Auto-Match Pipeline | v1.1 | 0/1 | Not started | - |
-| 7. Automated Writeback | v1.1 | 0/1 | Not started | - |
+| 6. Auto-Match Pipeline | v1.1 | 1/1 | Complete | 2026-03-06 |
+| 7. Automated Writeback | v1.1 | 1/1 | Complete | 2026-03-07 |
 | 8. Enrichment and UI Preservation | v1.1 | 0/? | Not started | - |
