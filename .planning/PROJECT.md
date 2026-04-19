@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A locally-hosted media server built from scratch in Go. Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite for storage, server-rendered HTML templates with vanilla CSS/JS. Audited and hardened codebase with comprehensive test coverage.
+A locally-hosted media server built from scratch in Go. Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite for storage, server-rendered HTML templates with vanilla CSS/JS. Audited and hardened codebase with comprehensive test coverage. Music scan-to-tag pipeline fully automated: scan, match, enrich, writeback in one pass.
 
 ## Core Value
 
@@ -36,15 +36,14 @@ A personal media server that just works -- reliable scanning, matching, and stre
 - Template startup validation with fail-fast -- v1.0
 - Unit tests for scanner, handler, and settings critical paths -- v1.0
 - Integration tests for music and TV match pipelines -- v1.0
+- Auto-match: scanner triggers MusicBrainz matching with 80% auto-accept threshold -- v1.1
+- Auto-writeback: matched metadata (normalized names, MBIDs) written back to file tags inline -- v1.1
+- Full enrichment on auto-match: CAA cover art + Wikipedia bio + Wikimedia artist image -- v1.1
+- Silent skip for below-threshold matches, manual review UI preserved for fallback -- v1.1
 
 ### Active
 
-- [ ] Auto-match: scanner triggers MusicBrainz matching using only artist name, album name, track name
-- [ ] Auto-accept: matches scoring 80% or higher are automatically accepted (highest score wins)
-- [ ] Auto-writeback: matched metadata (normalized names, artist MBID, album MBID) written back to file tags
-- [ ] Full enrichment: CAA cover art + Wikipedia bio + Wikimedia artist image fetched on auto-match
-- [ ] Silent skip: songs below 80% match threshold are left with original metadata, no flagging
-- [ ] Manual review UI retained for manually matching songs that didn't auto-match
+(None -- define in next milestone)
 
 ### Out of Scope
 
@@ -54,19 +53,15 @@ A personal media server that just works -- reliable scanning, matching, and stre
 - Scaling improvements (multi-worker jobs, database partitioning) -- not needed for personal server
 - New upload UI -- files arrive via filesystem, scanner detects them
 
-## Current Milestone: v1.1 Automated Music Match Pipeline
+## Current Milestone
 
-**Goal:** Automate the music metadata matching and writeback flow so scanned songs are automatically matched, enriched, and tagged without manual intervention.
-
-**Target features:**
-- Scanner-triggered MusicBrainz matching (trust only artist/album/track name)
-- Auto-accept at 80%+ match score with automatic tag writeback (MBIDs + normalized names)
-- Full enrichment pipeline (CAA cover art, Wikipedia bio, Wikimedia artist image)
-- Silent skip for low-confidence matches; manual review UI preserved for fallback
+Planning next milestone. Run `/gsd:new-milestone` to start.
 
 ## Context
 
-Shipped v1.0 (Codebase Audit & Hardening) on 2026-03-06. Codebase is 14,048 LOC Go across 83 modified files. All identified bugs fixed, error handling standardized, fragile patterns consolidated, and comprehensive test coverage added for scanner, handler, and match pipeline critical paths. Full test suite passes across all packages.
+Shipped v1.1 (Automated Music Match Pipeline) on 2026-03-07. Codebase is 14,700 LOC Go. Full scan-to-tag pipeline automated: scan triggers MusicBrainz matching, 80%+ auto-accepted, names normalized to MusicBrainz canonical values, MBIDs + metadata written back to file tags inline, cover art + artist bio/image enrichment runs automatically. Below-threshold albums silently skipped; manual review UI preserved with "Run Match" button for fallback.
+
+Previously shipped v1.0 (Codebase Audit & Hardening) on 2026-03-06. All bugs fixed, error handling standardized, comprehensive test coverage added.
 
 Tech stack: Go 1.23, SQLite (WAL mode via modernc.org/sqlite), stdlib http.ServeMux, html/template. Four direct dependencies: dhowden/tag, modernc.org/sqlite, bogem/id3v2/v2, gcottom/audiometa/v3.
 
@@ -90,6 +85,10 @@ Known tech debt: 3 direct http.Error calls bypass httpError slog logging pattern
 | Post-scan finalization pattern | Heavy heuristics (compilation, merge) run after WalkDir, not per-file | Good -- eliminated ordering dependency and mid-scan corruption |
 | WHERE clause on DO UPDATE for TV rescan | Atomic guard at SQL level instead of application-level check | Good -- simpler and more reliable than read-check-write |
 | baseURL/apiBase struct fields for test injection | Unexported fields with production defaults, same-package test access | Good -- zero public API changes, full pipeline testability |
+| 80% auto-accept threshold | Simple, aggressive -- user wants automatic matching, not curation | Good -- clean two-state model (matched/unmatched), no uncertain queue |
+| Inline writeback in matchAlbum | Tag writing happens same pass as matching, no separate job needed | Good -- eliminates writeback as a separate step users must trigger |
+| writebackAlbumTracks as package-level function | Unexported, takes db+albumID directly for testability | Good -- cleanly separated from library-wide RunTagWriteback |
+| Enrichment already wired from Phase 2b | Cover art + artist bio/image already ran in pipeline, Phase 8 just verified | Good -- avoided re-implementing existing functionality |
 
 ---
-*Last updated: 2026-03-06 after v1.1 milestone started*
+*Last updated: 2026-03-07 after v1.1 milestone completed*
