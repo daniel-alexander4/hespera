@@ -63,7 +63,11 @@ Plans:
   1. Unit tests exercise TV match scoring and verify that scores above 0.80 produce auto-accept and scores below 0.80 produce unmatched status
   2. Integration tests run the full TV auto-match pipeline (scan to match) with mocked TMDB and verify correct auto-accept/skip behavior end-to-end
   3. Tests verify the match review UI renders correctly with the new matched/unmatched status model and that manual review actions work
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md -- pickBestResult unit tests (scoring, threshold boundaries) and below-threshold integration test
+- [ ] 10-02-PLAN.md -- TV match review handler tests (review/approve/skip with matched/unmatched status model)
 
 ## Progress
 
@@ -78,4 +82,4 @@ Plans:
 | 7. Automated Writeback | v1.1 | 1/1 | Complete | 2026-03-07 |
 | 8. Enrichment and UI Preservation | v1.1 | 1/1 | Complete | 2026-03-07 |
 | 9. TV Match Threshold and Status Alignment | 1/1 | Complete   | 2026-03-07 | - |
-| 10. TV Match Test Coverage | v1.2 | 0/? | Not started | - |
+| 10. TV Match Test Coverage | v1.2 | 0/2 | Not started | - |
