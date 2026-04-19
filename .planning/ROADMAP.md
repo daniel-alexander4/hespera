@@ -82,4 +82,4 @@ Plans:
 | 7. Automated Writeback | v1.1 | 1/1 | Complete | 2026-03-07 |
 | 8. Enrichment and UI Preservation | v1.1 | 1/1 | Complete | 2026-03-07 |
 | 9. TV Match Threshold and Status Alignment | 1/1 | Complete   | 2026-03-07 | - |
-| 10. TV Match Test Coverage | 2/2 | Complete   | 2026-03-07 | - |
+| 10. TV Match Test Coverage | 2/2 | Complete    | 2026-03-07 | - |
