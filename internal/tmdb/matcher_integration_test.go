@@ -436,3 +436,122 @@ func TestRunTVMatchIntegrationPartialFailure(t *testing.T) {
 		}
 	})
 }
+
+func TestRunTVMatchBelowThreshold(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	// Mock server: search always returns a result with a very different name.
+	// "Completely Different Series" vs any seeded title will produce
+	// NormalizedSimilarity well below 0.80, causing the matcher to skip.
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/3/search/tv", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"page":1,
+			"results":[{
+				"id":8888,
+				"name":"Completely Different Series",
+				"first_air_date":"2020-01-01",
+				"overview":"Unrelated show.",
+				"poster_path":"/different.jpg",
+				"popularity":10.0
+			}],
+			"total_results":1
+		}`)
+	})
+
+	// Show fetch and image endpoints should NOT be called, but register
+	// a catch-all so we can detect unexpected calls.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// If matcher incorrectly proceeds past the threshold check,
+		// it would try to fetch show details -- fail with 404.
+		http.NotFound(w, r)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	// Seed a file with title very different from the mock result.
+	libID, fileID, jobID := seedTVFile(t, db, "My Unique Show", "/tv/my.unique.show.s01e01.mp4", 1, "1")
+
+	ch := make(chan time.Time)
+	close(ch)
+	m := &Matcher{
+		db: db,
+		client: &Client{
+			apiKey:     "test-key",
+			httpClient: srv.Client(),
+			apiBase:    srv.URL + "/3",
+			imgBase:    srv.URL + "/t/p/w500",
+			limiter:    ch,
+		},
+		artDir: filepath.Join(t.TempDir(), "thumbs", "tv"),
+	}
+
+	if err := m.RunTVMatch(ctx, jobID, libID); err != nil {
+		t.Fatalf("RunTVMatch: %v", err)
+	}
+
+	t.Run("identity_stays_unmatched", func(t *testing.T) {
+		var status, provider, seriesID string
+		err := db.QueryRowContext(ctx,
+			"SELECT status, provider, series_id FROM tv_series_identities WHERE file_id=?",
+			fileID).Scan(&status, &provider, &seriesID)
+		if err != nil {
+			t.Fatalf("query identity: %v", err)
+		}
+		if status != "unmatched" {
+			t.Fatalf("status = %q, want unmatched", status)
+		}
+		if provider != "" {
+			t.Fatalf("provider = %q, want empty", provider)
+		}
+		if seriesID != "" {
+			t.Fatalf("series_id = %q, want empty", seriesID)
+		}
+	})
+
+	t.Run("no_metadata_cached", func(t *testing.T) {
+		var count int
+		err := db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM tv_series_metadata_cache").Scan(&count)
+		if err != nil {
+			t.Fatalf("query metadata cache: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("metadata cache rows = %d, want 0 (no show should be cached)", count)
+		}
+	})
+
+	t.Run("no_art_downloaded", func(t *testing.T) {
+		var count int
+		err := db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM tv_series_art").Scan(&count)
+		if err != nil {
+			t.Fatalf("query art: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("art rows = %d, want 0 (no art should be downloaded)", count)
+		}
+	})
+
+	t.Run("job_progress_set", func(t *testing.T) {
+		var current, total int
+		err := db.QueryRowContext(ctx,
+			"SELECT progress_current, progress_total FROM scan_jobs WHERE id=?",
+			jobID).Scan(&current, &total)
+		if err != nil {
+			t.Fatalf("query job progress: %v", err)
+		}
+		if total != 1 {
+			t.Fatalf("progress_total = %d, want 1", total)
+		}
+		// The continue at line 109 in matcher.go skips the progress_current
+		// update at line 232, so progress_current stays 0.
+		if current != 0 {
+			t.Fatalf("progress_current = %d, want 0 (skipped groups don't update progress)", current)
+		}
+	})
+}
