@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: TV Auto-Match Pipeline
-status: defining_requirements
-stopped_at: Defining requirements
+status: ready_to_plan
+stopped_at: Roadmap created, ready to plan Phase 9
 last_updated: "2026-03-07"
-last_activity: 2026-03-07 -- Milestone v1.2 started
+last_activity: 2026-03-07 -- Roadmap created for v1.2
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** A personal media server that just works
-**Current focus:** TV Auto-Match Pipeline
+**Current focus:** TV Auto-Match Pipeline -- Phase 9: TV Match Threshold and Status Alignment
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 9 (TV Match Threshold and Status Alignment) -- first of 2 in v1.2
 Plan: --
-Status: Defining requirements
-Last activity: 2026-03-07 -- Milestone v1.2 started
+Status: Ready to plan
+Last activity: 2026-03-07 -- Roadmap created for v1.2
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -43,6 +45,7 @@ Last activity: 2026-03-07 -- Milestone v1.2 started
 - v1.0 shipped: codebase hardened, 20/20 requirements, comprehensive test coverage
 - v1.1 shipped: music auto-match pipeline (80% threshold, inline writeback, full enrichment)
 - TV auto-match mirrors v1.1 approach: auto-trigger after scan, high-confidence auto-accept, TMDB-only enrichment
+- Two-phase roadmap: implementation first (Phase 9), test coverage second (Phase 10)
 
 ### Pending Todos
 
@@ -55,5 +58,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Defining requirements for v1.2
+Stopped at: Roadmap created for v1.2, ready to plan Phase 9
 Resume file: .planning/.continue-here.md
