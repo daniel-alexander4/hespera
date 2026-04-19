@@ -604,14 +604,15 @@ WHERE lower(guessed_title) = lower(?) AND status = 'needs_fix'
 		return
 	}
 
-	// Fetch metadata in background.
+	// Fetch metadata via job queue (not detached goroutine).
 	matcher := tmdb.NewMatcher(h.db, h.cfg.TMDBAPIKey, h.cfg.DataDir)
-	go func() {
-		ctx := context.Background()
-		if err := matcher.FetchShowMetadata(ctx, tmdbID); err != nil {
-			slog.Warn("fetch show metadata failed", "tmdb_id", tmdbID, "err", err)
-		}
-	}()
+	capturedTmdbID := tmdbID
+	_, enqErr := h.jobs.Enqueue("tv_metadata_fetch", 0, "user", func(ctx context.Context, jobID, libraryID int64) error {
+		return matcher.FetchShowMetadata(ctx, capturedTmdbID)
+	})
+	if enqErr != nil {
+		slog.Warn("failed to enqueue tv metadata fetch", "tmdb_id", tmdbID, "err", enqErr)
+	}
 
 	if requestWantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
