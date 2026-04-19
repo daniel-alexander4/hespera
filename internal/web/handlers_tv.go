@@ -81,7 +81,7 @@ func (h *Handler) loadTVSeriesList(ctx context.Context) ([]tvSeriesRow, error) {
 SELECT i.series_id, COUNT(*) AS ep_count
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.status = 'resolved' AND i.provider = 'tmdb' AND i.series_id != ''
+WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
 GROUP BY i.series_id
 ORDER BY i.series_id
 `)
@@ -113,12 +113,12 @@ ORDER BY i.series_id
 		return nil, err
 	}
 
-	// Unmatched series (needs_fix, grouped by guessed_title).
+	// Unmatched series (unmatched, grouped by guessed_title).
 	unmatchedRows, err := h.db.QueryContext(ctx, `
 SELECT i.guessed_title, COUNT(*) AS ep_count
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.status = 'needs_fix' AND i.guessed_title != ''
+WHERE i.status = 'unmatched' AND i.guessed_title != ''
 GROUP BY lower(i.guessed_title)
 ORDER BY lower(i.guessed_title)
 `)
@@ -195,7 +195,7 @@ func (h *Handler) tvSeriesDetail(w http.ResponseWriter, r *http.Request) {
 SELECT i.season_number, COUNT(*) AS ep_count
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.series_id = ? AND i.status = 'resolved'
+WHERE i.series_id = ? AND i.status = 'matched'
 GROUP BY i.season_number
 ORDER BY i.season_number
 `, seriesID)
@@ -311,7 +311,7 @@ SELECT f.id, i.episode_numbers_csv, f.stream_info_json,
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 LEFT JOIN tv_playback_progress p ON p.file_id = f.id
-WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'resolved'
+WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'matched'
 ORDER BY i.episode_numbers_csv
 `, seriesID, seasonNum)
 	if err != nil {
@@ -532,7 +532,7 @@ SELECT i.guessed_title, COUNT(*) AS file_count,
        GROUP_CONCAT(DISTINCT i.season_number) AS seasons
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.status = 'needs_fix' AND i.guessed_title != ''
+WHERE i.status = 'unmatched' AND i.guessed_title != ''
 GROUP BY lower(i.guessed_title)
 ORDER BY lower(i.guessed_title)
 `)
@@ -590,11 +590,11 @@ func (h *Handler) tvMatchApprove(w http.ResponseWriter, r *http.Request) {
 UPDATE tv_series_identities SET
   provider='tmdb',
   series_id=?,
-  status='resolved',
+  status='matched',
   match_confidence=1.0,
   match_method='manual',
   matched_at=?
-WHERE lower(guessed_title) = lower(?) AND status = 'needs_fix'
+WHERE lower(guessed_title) = lower(?) AND status = 'unmatched'
 `, strconv.Itoa(tmdbID), now, guessedTitle)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "tvMatchApprove", "err", err)
@@ -636,7 +636,7 @@ func (h *Handler) tvMatchSkip(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.db.ExecContext(r.Context(), `
 UPDATE tv_series_identities SET status='skipped'
-WHERE lower(guessed_title) = lower(?) AND status = 'needs_fix'
+WHERE lower(guessed_title) = lower(?) AND status = 'unmatched'
 `, guessedTitle)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "tvMatchSkip", "err", err)
@@ -668,10 +668,10 @@ func (h *Handler) tvMatchRematch(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.db.ExecContext(r.Context(), `
 UPDATE tv_series_identities SET
-  status='needs_fix', provider='', series_id='',
+  status='unmatched', provider='', series_id='',
   match_confidence=0, match_method='', matched_at=''
 WHERE lower(guessed_title) = lower(?)
-  AND status IN ('resolved','skipped')
+  AND status IN ('matched','skipped')
 `, guessedTitle)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "tvMatchRematch", "err", err)
@@ -869,7 +869,7 @@ func (h *Handler) findAdjacentEpisode(ctx context.Context, seriesID string, seas
 SELECT f.id, i.episode_numbers_csv
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'resolved'
+WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'matched'
 ORDER BY i.episode_numbers_csv
 `, seriesID, seasonNum)
 	if err != nil {
