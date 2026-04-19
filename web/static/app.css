@@ -587,11 +587,24 @@ a:hover {
 }
 .artist-bio {
   color: var(--text-muted);
-  font-size: 0.85rem;
-  line-height: 1.6;
+  font-size: 0.9rem;
+  line-height: 1.7;
   margin-bottom: 0.75rem;
-  max-height: 6em;
-  overflow: hidden;
+  max-height: 14em;
+  overflow-y: auto;
+}
+.artist-bio p {
+  margin: 0;
+}
+.artist-bio-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+.artist-bio-link:hover {
+  text-decoration: underline;
 }
 .artist-actions {
   display: flex;
@@ -931,6 +944,14 @@ a:hover {
   .artist-actions {
     justify-content: center;
   }
+}
+
+/* Checkboxes */
+.tag-checkbox {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
 }
 
 /* Utilities */

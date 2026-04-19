@@ -384,6 +384,65 @@ func (h *Handler) loadLibraryList(ctx context.Context) ([]libraryRow, error) {
 	return libs, rows.Err()
 }
 
+func (h *Handler) settingsTagEditor(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	type tagSearchResult struct {
+		ID         int64
+		Title      string
+		Year       int
+		ArtPath    string
+		ArtistName string
+		TrackCount int
+	}
+
+	var results []tagSearchResult
+	if q != "" {
+		rows, err := h.db.QueryContext(r.Context(), `
+			SELECT al.id, al.title, al.year, al.art_path, ar.name,
+			       (SELECT COUNT(*) FROM music_tracks t WHERE t.album_id=al.id)
+			FROM music_albums al
+			JOIN music_artists ar ON ar.id = CASE
+			  WHEN al.album_artist_id > 0 THEN al.album_artist_id
+			  ELSE al.artist_id
+			END
+			WHERE al.title LIKE ?
+			ORDER BY lower(ar.name), al.year, lower(al.title)
+			LIMIT 50
+		`, "%"+q+"%")
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var res tagSearchResult
+			var art sql.NullString
+			if err := rows.Scan(&res.ID, &res.Title, &res.Year, &art, &res.ArtistName, &res.TrackCount); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			res.ArtPath = scanNullString(art)
+			results = append(results, res)
+		}
+		if err := rows.Err(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+	}
+
+	h.render(w, "settings_tags.html", map[string]any{
+		"Title":   "Tag Editor",
+		"Query":   q,
+		"Results": results,
+	})
+}
+
 func validLibraryType(v string) bool {
 	switch v {
 	case "music", "movies", "tv", "photos", "home_videos":
