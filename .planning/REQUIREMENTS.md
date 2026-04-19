@@ -58,22 +58,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRCK-01 | — | Pending |
-| TRCK-02 | — | Pending |
-| ART-01 | — | Pending |
-| ART-02 | — | Pending |
-| ART-03 | — | Pending |
-| ART-04 | — | Pending |
-| MTCH-01 | — | Pending |
-| MTCH-02 | — | Pending |
-| MTCH-03 | — | Pending |
-| MTCH-04 | — | Pending |
+| TRCK-01 | Phase 11 | Pending |
+| TRCK-02 | Phase 11 | Pending |
+| ART-01 | Phase 12 | Pending |
+| ART-02 | Phase 12 | Pending |
+| ART-03 | Phase 12 | Pending |
+| ART-04 | Phase 12 | Pending |
+| MTCH-01 | Phase 13 | Pending |
+| MTCH-02 | Phase 13 | Pending |
+| MTCH-03 | Phase 13 | Pending |
+| MTCH-04 | Phase 13 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-07*
-*Last updated: 2026-03-07 after initial definition*
+*Last updated: 2026-03-07 after roadmap creation*
