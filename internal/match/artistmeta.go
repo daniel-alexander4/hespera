@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -44,21 +45,61 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 
 	meta := &ArtistMeta{}
 
-	// Bio from Wikipedia.
+	// If we have a Wikidata URL, fetch the entity once and extract both
+	// the Wikipedia sitelink (for bio) and P18 image claim.
+	var wikidataEntity []byte
+	var wikidataQID string
+	if wikidataURL != "" {
+		wikidataQID = extractQID(wikidataURL)
+		if wikidataQID != "" {
+			body, err := fetchWikidataEntity(ctx, wikidataQID)
+			if err != nil {
+				slog.Warn("wikidata entity fetch failed", "qid", wikidataQID, "err", err)
+			} else {
+				wikidataEntity = body
+			}
+		}
+	}
+
+	// Bio from Wikipedia (direct link, or derived from Wikidata sitelink).
 	if wikiURL != "" {
 		bio, err := fetchWikipediaSummary(ctx, wikiURL)
-		if err == nil && bio != "" {
+		if err != nil {
+			slog.Warn("wikipedia bio fetch failed", "url", wikiURL, "err", err)
+		} else if bio != "" {
 			meta.Bio = bio
 			meta.BioSourceName = "Wikipedia"
 			meta.BioSourceURL = wikiURL
 		}
+	} else if len(wikidataEntity) > 0 {
+		derivedURL := extractEnwikiURL(wikidataEntity, wikidataQID)
+		if derivedURL != "" {
+			bio, err := fetchWikipediaSummary(ctx, derivedURL)
+			if err != nil {
+				slog.Warn("wikipedia bio fetch failed", "url", derivedURL, "err", err)
+			} else if bio != "" {
+				meta.Bio = bio
+				meta.BioSourceName = "Wikipedia"
+				meta.BioSourceURL = derivedURL
+			}
+		}
 	}
 
-	// Image from Wikidata -> Wikimedia Commons.
-	if wikidataURL != "" {
-		imgPath, err := fetchWikidataImage(ctx, wikidataURL, dataDir, artistMBID)
-		if err == nil && imgPath != "" {
-			meta.ImagePath = imgPath
+	// Image from Wikidata P18 -> Wikimedia Commons.
+	if len(wikidataEntity) > 0 {
+		filename := extractP18(wikidataEntity, wikidataQID)
+		if filename != "" {
+			slog.Info("P18 image found", "qid", wikidataQID, "filename", filename)
+			commonsURL := fmt.Sprintf("https://commons.wikimedia.org/wiki/Special:FilePath/%s?width=500",
+				url.PathEscape(filename))
+			imgPath, err := downloadArtistImage(ctx, commonsURL, dataDir, artistMBID)
+			if err != nil {
+				slog.Warn("artist image download failed", "qid", wikidataQID, "err", err)
+			} else if imgPath != "" {
+				meta.ImagePath = imgPath
+			}
+		} else {
+			slog.Info("no P18 image claim", "qid", wikidataQID)
 		}
 	}
 
@@ -115,52 +156,80 @@ func fetchWikipediaSummary(ctx context.Context, wikiURL string) (string, error) 
 	return strings.TrimSpace(result.Extract), nil
 }
 
-func fetchWikidataImage(ctx context.Context, wikidataURL, dataDir, artistMBID string) (string, error) {
-	// Extract Qid from URL: https://www.wikidata.org/wiki/Q1299 -> Q1299
-	qid := ""
-	parts := strings.Split(wikidataURL, "/")
-	for _, p := range parts {
-		if len(p) > 1 && (p[0] == 'Q' || p[0] == 'q') {
-			qid = p
-			break
-		}
-	}
-	if qid == "" {
-		return "", fmt.Errorf("no Qid in wikidata URL: %s", wikidataURL)
-	}
-
-	// Fetch entity data to get P18 (image) claim.
+// fetchWikidataEntity fetches the JSON entity data for a Wikidata QID.
+func fetchWikidataEntity(ctx context.Context, qid string) ([]byte, error) {
 	entityURL := fmt.Sprintf("https://www.wikidata.org/wiki/Special:EntityData/%s.json", qid)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, entityURL, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", mbUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("wikidata fetch: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("wikidata HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("wikidata HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20))
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("wikidata read body: %w", err)
+	}
+	slog.Info("wikidata entity fetched", "qid", qid, "body_len", len(body))
+	return body, nil
+}
+
+// extractEnwikiURL extracts the English Wikipedia URL from a Wikidata entity JSON blob.
+func extractEnwikiURL(data []byte, qid string) string {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return ""
+	}
+	entitiesRaw, ok := raw["entities"]
+	if !ok {
+		return ""
+	}
+	var entities map[string]json.RawMessage
+	if err := json.Unmarshal(entitiesRaw, &entities); err != nil {
+		return ""
+	}
+	entityRaw, ok := entities[qid]
+	if !ok {
+		entityRaw, ok = entities[strings.ToUpper(qid)]
+		if !ok {
+			return ""
+		}
 	}
 
-	filename := extractP18(body, qid)
-	if filename == "" {
-		return "", nil
+	var entity struct {
+		Sitelinks map[string]struct {
+			Title string `json:"title"`
+		} `json:"sitelinks"`
+	}
+	if err := json.Unmarshal(entityRaw, &entity); err != nil {
+		return ""
 	}
 
-	// Download from Wikimedia Commons.
-	commonsURL := fmt.Sprintf("https://commons.wikimedia.org/wiki/Special:FilePath/%s?width=500", url.PathEscape(filename))
-	return downloadArtistImage(ctx, commonsURL, dataDir, artistMBID)
+	enwiki, ok := entity.Sitelinks["enwiki"]
+	if !ok || enwiki.Title == "" {
+		return ""
+	}
+	return "https://en.wikipedia.org/wiki/" + url.PathEscape(strings.ReplaceAll(enwiki.Title, " ", "_"))
+}
+
+func extractQID(wikidataURL string) string {
+	parts := strings.Split(wikidataURL, "/")
+	for _, p := range parts {
+		if len(p) > 1 && (p[0] == 'Q' || p[0] == 'q') {
+			return p
+		}
+	}
+	return ""
 }
 
 func extractP18(data []byte, qid string) string {
@@ -180,18 +249,21 @@ func extractP18(data []byte, qid string) string {
 
 	entityRaw, ok := entities[qid]
 	if !ok {
-		// Try uppercase.
 		entityRaw, ok = entities[strings.ToUpper(qid)]
 		if !ok {
 			return ""
 		}
 	}
 
+	// Parse only the claims map with raw values, because different claims
+	// have different value types (string, object, etc.) that would break
+	// a single typed struct.
 	var entity struct {
 		Claims map[string][]struct {
 			Mainsnak struct {
 				Datavalue struct {
-					Value string `json:"value"`
+					Value json.RawMessage `json:"value"`
+					Type  string          `json:"type"`
 				} `json:"datavalue"`
 			} `json:"mainsnak"`
 		} `json:"claims"`
@@ -204,7 +276,13 @@ func extractP18(data []byte, qid string) string {
 	if len(p18Claims) == 0 {
 		return ""
 	}
-	return p18Claims[0].Mainsnak.Datavalue.Value
+
+	// P18 is a "string" type claim — unquote the JSON string value.
+	var filename string
+	if err := json.Unmarshal(p18Claims[0].Mainsnak.Datavalue.Value, &filename); err != nil {
+		return ""
+	}
+	return filename
 }
 
 func downloadArtistImage(ctx context.Context, imgURL, dataDir, artistMBID string) (string, error) {

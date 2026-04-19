@@ -27,7 +27,127 @@ func New(db *sql.DB, dataDir string) *Matcher {
 }
 
 // RunMusicMatch is the job executor for the music_match job type.
+// Phase 1: Enrich artists (MBID, bio, image).
+// Phase 2: Match albums (MusicBrainz, cover art).
 func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64) error {
+	// --- Phase 1: Artist enrichment ---
+	if err := m.enrichArtists(ctx, jobID, libraryID); err != nil {
+		return err
+	}
+
+	// --- Phase 2: Album matching ---
+	return m.matchAlbums(ctx, jobID, libraryID)
+}
+
+// enrichArtists finds all artists in the library that are missing MBID, bio, or
+// image, resolves their MusicBrainz ID, and fetches bio + image.
+func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) error {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT DISTINCT ar.id, ar.name, ar.musicbrainz_id, ar.bio, ar.art_path
+		FROM music_artists ar
+		JOIN music_albums al ON al.album_artist_id = ar.id
+		WHERE ar.library_id = ?
+		  AND ar.name NOT IN ('Unknown Artist', 'Various Artists')
+		ORDER BY ar.id
+	`, libraryID)
+	if err != nil {
+		return fmt.Errorf("query artists: %w", err)
+	}
+	defer rows.Close()
+
+	type artistInfo struct {
+		id   int64
+		name string
+		mbid string
+		bio  string
+		art  string
+	}
+	var artists []artistInfo
+	for rows.Next() {
+		var a artistInfo
+		var bio, art sql.NullString
+		if err := rows.Scan(&a.id, &a.name, &a.mbid, &bio, &art); err != nil {
+			return err
+		}
+		a.bio = scanNull(bio)
+		a.art = scanNull(art)
+		artists = append(artists, a)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, a := range artists {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		hasMBID := a.mbid != ""
+		hasBio := a.bio != ""
+		hasArt := a.art != ""
+		if hasMBID && hasBio && hasArt {
+			continue
+		}
+
+		slog.Info("enriching artist", "id", a.id, "name", a.name, "has_mbid", hasMBID)
+
+		// Step 1: Resolve MBID if missing.
+		mbid := a.mbid
+		if mbid == "" {
+			found, err := m.mb.SearchArtist(ctx, a.name)
+			if err != nil {
+				slog.Warn("artist search failed", "name", a.name, "err", err)
+				continue
+			}
+			if found == "" {
+				slog.Info("no MB match for artist", "name", a.name)
+				continue
+			}
+			mbid = found
+			_, _ = m.db.ExecContext(ctx,
+				"UPDATE music_artists SET musicbrainz_id=? WHERE id=?", mbid, a.id)
+
+			// Also set artist_musicbrainz_id on all albums under this artist.
+			_, _ = m.db.ExecContext(ctx,
+				"UPDATE music_albums SET artist_musicbrainz_id=? WHERE album_artist_id=?", mbid, a.id)
+		}
+
+		// Step 2: Fetch bio + image if missing.
+		if !hasBio || !hasArt {
+			meta, err := EnrichArtist(ctx, m.mb, mbid, m.dataDir)
+			if err != nil {
+				slog.Warn("enrich artist failed", "artist_id", a.id, "name", a.name, "err", err)
+				continue
+			}
+			if !hasBio && meta.Bio != "" {
+				_, _ = m.db.ExecContext(ctx,
+					"UPDATE music_artists SET bio=?, bio_source_name=?, bio_source_url=? WHERE id=?",
+					meta.Bio, meta.BioSourceName, meta.BioSourceURL, a.id)
+				slog.Info("artist bio saved", "name", a.name)
+			}
+			if !hasArt && meta.ImagePath != "" {
+				_, _ = m.db.ExecContext(ctx,
+					"UPDATE music_artists SET art_path=? WHERE id=?",
+					meta.ImagePath, a.id)
+				slog.Info("artist image saved", "name", a.name, "path", meta.ImagePath)
+			}
+		}
+
+		// Rate-limit between artists.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+
+	return nil
+}
+
+// matchAlbums matches unmatched albums against MusicBrainz.
+func (m *Matcher) matchAlbums(ctx context.Context, jobID, libraryID int64) error {
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT a.id, a.title, a.year, COALESCE(ar.name, '')
 		FROM music_albums a
@@ -152,54 +272,12 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 		}
 	}
 
-	// Enrich artist if we have an artist MBID and the artist lacks metadata.
-	if best.ArtistMBID != "" {
-		m.enrichArtistIfNeeded(ctx, albumID, best.ArtistMBID)
-	}
-
 	return nil
 }
 
-func (m *Matcher) enrichArtistIfNeeded(ctx context.Context, albumID int64, artistMBID string) {
-	// Find the album_artist_id for this album.
-	var artistID int64
-	var existingBio, existingArt sql.NullString
-	err := m.db.QueryRowContext(ctx, `
-		SELECT ar.id, ar.bio, ar.art_path
-		FROM music_artists ar
-		JOIN music_albums al ON al.album_artist_id = ar.id
-		WHERE al.id = ?
-	`, albumID).Scan(&artistID, &existingBio, &existingArt)
-	if err != nil {
-		return
+func scanNull(ns sql.NullString) string {
+	if ns.Valid {
+		return strings.TrimSpace(ns.String)
 	}
-
-	// Skip if artist already has both bio and art.
-	hasBio := existingBio.Valid && strings.TrimSpace(existingBio.String) != ""
-	hasArt := existingArt.Valid && strings.TrimSpace(existingArt.String) != ""
-	if hasBio && hasArt {
-		return
-	}
-
-	meta, err := EnrichArtist(ctx, m.mb, artistMBID, m.dataDir)
-	if err != nil {
-		slog.Warn("enrich artist failed", "artist_id", artistID, "err", err)
-		return
-	}
-
-	// Update MBID on the artist row.
-	_, _ = m.db.ExecContext(ctx,
-		"UPDATE music_artists SET musicbrainz_id=? WHERE id=? AND (musicbrainz_id='' OR musicbrainz_id IS NULL)",
-		artistMBID, artistID)
-
-	if !hasBio && meta.Bio != "" {
-		_, _ = m.db.ExecContext(ctx,
-			"UPDATE music_artists SET bio=?, bio_source_name=?, bio_source_url=? WHERE id=?",
-			meta.Bio, meta.BioSourceName, meta.BioSourceURL, artistID)
-	}
-	if !hasArt && meta.ImagePath != "" {
-		_, _ = m.db.ExecContext(ctx,
-			"UPDATE music_artists SET art_path=? WHERE id=?",
-			meta.ImagePath, artistID)
-	}
+	return ""
 }

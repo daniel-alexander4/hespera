@@ -240,6 +240,43 @@ func (c *MBClient) strategyC(ctx context.Context, artist, album string) ([]Candi
 	return out, nil
 }
 
+// SearchArtist searches MusicBrainz for an artist by name and returns the best match MBID.
+func (c *MBClient) SearchArtist(ctx context.Context, name string) (string, error) {
+	q := fmt.Sprintf(`artist:"%s"`, mbEscape(name))
+	path := fmt.Sprintf("/artist?query=%s&limit=5&fmt=json", url.QueryEscape(q))
+
+	body, err := c.get(ctx, path)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		Artists []struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Score int    `json:"score"`
+		} `json:"artists"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("parse artist search: %w", err)
+	}
+
+	if len(result.Artists) == 0 {
+		return "", nil
+	}
+
+	// Take the top result only if it scores well and name is close.
+	best := result.Artists[0]
+	if best.Score < 80 {
+		return "", nil
+	}
+	sim := NormalizedSimilarity(best.Name, name)
+	if sim < 0.7 {
+		return "", nil
+	}
+	return best.ID, nil
+}
+
 // LookupArtist fetches an artist with URL relations.
 func (c *MBClient) LookupArtist(ctx context.Context, mbid string) (*MBArtistFull, error) {
 	path := fmt.Sprintf("/artist/%s?inc=url-rels&fmt=json", url.PathEscape(mbid))
