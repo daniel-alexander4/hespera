@@ -22,7 +22,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SEC-01**: ensureColumn validates table and column names against a safe pattern before building SQL
+- [x] **SEC-01**: ensureColumn validates table and column names against a safe pattern before building SQL
 - [ ] **SEC-02**: HTTP error responses never contain SQL error text, filesystem paths, or internal Go error details
 
 ### Fragility Fixes
@@ -90,7 +90,7 @@ Deferred to future milestones.
 | ERR-02 | Phase 1 | Pending |
 | ERR-03 | Phase 2 | Pending |
 | ERR-04 | Phase 2 | Pending |
-| SEC-01 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Complete |
 | SEC-02 | Phase 1 | Pending |
 | FRAG-01 | Phase 3 | Pending |
 | FRAG-02 | Phase 3 | Pending |
