@@ -9,9 +9,9 @@ Requirements for TV Auto-Match Pipeline. Each maps to roadmap phases.
 
 ### Matching
 
-- [ ] **MATCH-01**: TV auto-match uses 0.80 confidence threshold for auto-accept (up from 0.45)
-- [ ] **MATCH-02**: Below-threshold TV matches stay as 'unmatched' for manual review (not silently dropped)
-- [ ] **MATCH-03**: TV match status model uses matched/unmatched (aligned with music pipeline)
+- [x] **MATCH-01**: TV auto-match uses 0.80 confidence threshold for auto-accept (up from 0.45)
+- [x] **MATCH-02**: Below-threshold TV matches stay as 'unmatched' for manual review (not silently dropped)
+- [x] **MATCH-03**: TV match status model uses matched/unmatched (aligned with music pipeline)
 
 ### Testing
 
@@ -36,9 +36,9 @@ None deferred.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MATCH-01 | Phase 9 | Pending |
-| MATCH-02 | Phase 9 | Pending |
-| MATCH-03 | Phase 9 | Pending |
+| MATCH-01 | Phase 9 | Complete |
+| MATCH-02 | Phase 9 | Complete |
+| MATCH-03 | Phase 9 | Complete |
 | TEST-01 | Phase 10 | Pending |
 | TEST-02 | Phase 10 | Pending |
 | TEST-03 | Phase 10 | Pending |
