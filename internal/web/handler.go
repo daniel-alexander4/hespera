@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -33,7 +34,7 @@ type Handler struct {
 	auth      *auth.Manager
 }
 
-func New(d Deps) *Handler {
+func New(d Deps) (*Handler, error) {
 	staticDir := filepath.Join("web", "static")
 
 	layoutPath := filepath.Join("web", "templates", "layout.html")
@@ -109,15 +110,15 @@ func New(d Deps) *Handler {
 		"mult":       mult,
 	}).ParseFiles(layoutPath)
 	if err != nil {
-		slog.Error("failed to parse layout template", "err", err)
-		layoutBase = template.Must(template.New("layout.html").Parse(`{{define "layout.html"}}<!DOCTYPE html><html><body>{{template "content" .}}</body></html>{{end}}`))
+		return nil, fmt.Errorf("layout template: %w", err)
 	}
 
+	var errs []error
 	for _, p := range pages {
 		pagePath := filepath.Join("web", "templates", p)
 		t, cloneErr := layoutBase.Clone()
 		if cloneErr != nil {
-			slog.Error("template clone failed", "page", p, "err", cloneErr)
+			errs = append(errs, fmt.Errorf("template %s: clone failed: %w", p, cloneErr))
 			continue
 		}
 		parsePaths := make([]string, 0, len(partialPaths)+1)
@@ -125,10 +126,24 @@ func New(d Deps) *Handler {
 		parsePaths = append(parsePaths, pagePath)
 		t, err = t.ParseFiles(parsePaths...)
 		if err != nil {
-			slog.Error("template parse failed", "page", p, "err", err)
+			errs = append(errs, fmt.Errorf("template %s: %w", p, err))
 			continue
 		}
 		tpls[p] = t
+	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("template compilation failed:\n%w", errors.Join(errs...))
+	}
+
+	// Post-loop validation: every page must have a compiled template.
+	var missing []string
+	for _, p := range pages {
+		if _, ok := tpls[p]; !ok {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("templates missing after compilation: %s", strings.Join(missing, ", "))
 	}
 
 	h := &Handler{
@@ -141,7 +156,7 @@ func New(d Deps) *Handler {
 		auth:      auth.New(d.Cfg, d.DB),
 	}
 
-	return h
+	return h, nil
 }
 
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {
