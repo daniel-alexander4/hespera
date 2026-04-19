@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	isodb "isomedia/internal/db"
 )
 
 // newMockMusicServer creates a single httptest.Server that routes requests by
@@ -466,10 +468,203 @@ func TestRunMusicMatchIntegrationPartialFailure(t *testing.T) {
 			"SELECT match_status FROM music_albums WHERE id=?", albumID).Scan(&matchStatus); err != nil {
 			t.Fatalf("query album: %v", err)
 		}
-		if matchStatus != "matched" && matchStatus != "uncertain" {
-			t.Fatalf("expected match_status='matched' or 'uncertain', got %q", matchStatus)
+		if matchStatus != "matched" {
+			t.Fatalf("expected match_status='matched', got %q", matchStatus)
 		}
 	})
 
 	_ = fmt.Sprint(libID, jobID) // suppress unused warnings
+}
+
+func TestMigrateUncertainToUnmatched(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	// Insert a library and artist for FK references.
+	res, err := db.ExecContext(ctx,
+		"INSERT INTO libraries (name, type, root_path) VALUES ('test', 'music', '/music')")
+	if err != nil {
+		t.Fatalf("insert library: %v", err)
+	}
+	libID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx,
+		"INSERT INTO music_artists (library_id, name) VALUES (?, 'Test Artist')", libID)
+	if err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	artistID, _ := res.LastInsertId()
+
+	// Insert albums with various match statuses including 'uncertain'.
+	for _, status := range []string{"uncertain", "unmatched", "matched", "manual", "skipped", ""} {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, match_status)
+			VALUES (?, ?, ?, ?, 2020, ?)`,
+			libID, artistID, artistID, "Album-"+status, status)
+		if err != nil {
+			t.Fatalf("insert album with status %q: %v", status, err)
+		}
+	}
+
+	// Verify uncertain row exists before migration.
+	var countBefore int
+	db.QueryRowContext(ctx, "SELECT COUNT(*) FROM music_albums WHERE match_status='uncertain'").Scan(&countBefore)
+	if countBefore != 1 {
+		t.Fatalf("expected 1 uncertain album before migration, got %d", countBefore)
+	}
+
+	// Run Migrate (which should call migrateUncertainToUnmatched).
+	if err := isodb.Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	// Verify: no uncertain rows remain.
+	var countAfter int
+	db.QueryRowContext(ctx, "SELECT COUNT(*) FROM music_albums WHERE match_status='uncertain'").Scan(&countAfter)
+	if countAfter != 0 {
+		t.Fatalf("expected 0 uncertain albums after migration, got %d", countAfter)
+	}
+
+	// Verify: the formerly uncertain album is now unmatched.
+	var status string
+	db.QueryRowContext(ctx, "SELECT match_status FROM music_albums WHERE title='Album-uncertain'").Scan(&status)
+	if status != "unmatched" {
+		t.Fatalf("expected uncertain album to become 'unmatched', got %q", status)
+	}
+
+	// Verify: other statuses are unchanged.
+	for _, expected := range []struct {
+		title  string
+		status string
+	}{
+		{"Album-unmatched", "unmatched"},
+		{"Album-matched", "matched"},
+		{"Album-manual", "manual"},
+		{"Album-skipped", "skipped"},
+		{"Album-", ""},
+	} {
+		var s string
+		db.QueryRowContext(ctx, "SELECT match_status FROM music_albums WHERE title=?", expected.title).Scan(&s)
+		if s != expected.status {
+			t.Fatalf("album %q: expected status %q, got %q", expected.title, expected.status, s)
+		}
+	}
+
+	_ = fmt.Sprint(libID, artistID) // suppress unused warnings
+}
+
+func TestMatchAlbumThresholdBehavior(t *testing.T) {
+	// This test verifies the two-state threshold:
+	// - score >= 80: matched
+	// - score < 80: unmatched (no 'uncertain' state)
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	// Create a mock server that returns candidates with controllable scores.
+	var mockScore int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		switch {
+		case path == "/ws/2/release-group" && strings.Contains(r.URL.RawQuery, "query="):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"release-groups": []map[string]interface{}{
+					{
+						"id":                 "test-rg-id",
+						"title":              "Test Album",
+						"primary-type":       "Album",
+						"score":              mockScore,
+						"first-release-date": "2020-01-01",
+						"artist-credit": []map[string]interface{}{
+							{
+								"name": "Test Artist",
+								"artist": map[string]string{
+									"id":   "test-artist-mbid",
+									"name": "Test Artist",
+								},
+							},
+						},
+						"releases": []map[string]string{
+							{"id": "test-release-id", "title": "Test Album"},
+						},
+					},
+				},
+			})
+		case path == "/release-group/test-rg-id":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"images": []map[string]interface{}{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	m := newTestMatcher(t, db, srv)
+
+	// Seed a library and artist.
+	res, err := db.ExecContext(ctx,
+		"INSERT INTO libraries (name, type, root_path) VALUES ('test', 'music', '/music')")
+	if err != nil {
+		t.Fatalf("insert library: %v", err)
+	}
+	libID, _ := res.LastInsertId()
+
+	res, err = db.ExecContext(ctx,
+		"INSERT INTO music_artists (library_id, name) VALUES (?, 'Test Artist')", libID)
+	if err != nil {
+		t.Fatalf("insert artist: %v", err)
+	}
+	artistID, _ := res.LastInsertId()
+
+	// Mock returns candidate: "Test Album" by "Test Artist", type=Album, year=2020.
+	// ScoreCandidate weights: title(38), artist(26), mb(18), type(10), year(4). Max ~96.
+	//
+	// High score: perfect title+artist match, mbScore=100 -> ~96 (>= 80 -> matched)
+	// Mid score:  different local title to reduce similarity, mbScore=100 -> ~50-75 (< 80 -> unmatched)
+	// Low score:  very different title+artist, mbScore=20 -> well below 80 (< 80 -> unmatched)
+	tests := []struct {
+		name           string
+		mbScore        int
+		localTitle     string
+		localArtist    string
+		expectedStatus string
+	}{
+		{"high_score_matched", 100, "Test Album", "Test Artist", "matched"},
+		{"mid_score_unmatched", 100, "Completely Different Title", "Test Artist", "unmatched"},
+		{"low_score_unmatched", 20, "ZZZZZ QQQQQ", "ZZZZZ QQQQQ", "unmatched"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockScore = tc.mbScore
+
+			// Insert a fresh album.
+			res, err := db.ExecContext(ctx, `
+				INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, match_status)
+				VALUES (?, ?, ?, ?, 2020, '')`,
+				libID, artistID, artistID, "Album "+tc.name)
+			if err != nil {
+				t.Fatalf("insert album: %v", err)
+			}
+			albumID, _ := res.LastInsertId()
+
+			err = m.matchAlbum(ctx, albumID, tc.localTitle, tc.localArtist, 2020)
+			if err != nil {
+				t.Fatalf("matchAlbum: %v", err)
+			}
+
+			var status string
+			if err := db.QueryRowContext(ctx,
+				"SELECT match_status FROM music_albums WHERE id=?", albumID).Scan(&status); err != nil {
+				t.Fatalf("query album: %v", err)
+			}
+			if status != tc.expectedStatus {
+				t.Fatalf("expected match_status=%q, got %q", tc.expectedStatus, status)
+			}
+		})
+	}
+
+	_ = fmt.Sprint(libID) // suppress unused
 }
