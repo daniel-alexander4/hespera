@@ -9,9 +9,9 @@ Requirements for automated music match pipeline. Each maps to roadmap phases.
 
 ### Matching
 
-- [ ] **MATCH-01**: Scanner triggers MusicBrainz search using artist name and album name from file tags
-- [ ] **MATCH-02**: Best match scoring 80% or higher is automatically accepted (highest score wins)
-- [ ] **MATCH-03**: Songs below 80% match threshold are silently skipped with no flagging or queuing
+- [x] **MATCH-01**: Scanner triggers MusicBrainz search using artist name and album name from file tags
+- [x] **MATCH-02**: Best match scoring 80% or higher is automatically accepted (highest score wins)
+- [x] **MATCH-03**: Songs below 80% match threshold are silently skipped with no flagging or queuing
 
 ### Writeback
 
@@ -48,9 +48,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MATCH-01 | Phase 6 | Pending |
-| MATCH-02 | Phase 6 | Pending |
-| MATCH-03 | Phase 6 | Pending |
+| MATCH-01 | Phase 6 | Complete |
+| MATCH-02 | Phase 6 | Complete |
+| MATCH-03 | Phase 6 | Complete |
 | WRITE-01 | Phase 7 | Pending |
 | WRITE-02 | Phase 7 | Pending |
 | WRITE-03 | Phase 7 | Pending |
