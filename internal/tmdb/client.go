@@ -23,6 +23,8 @@ type Client struct {
 	apiKey     string
 	httpClient *http.Client
 	limiter    <-chan time.Time
+	apiBase    string
+	imgBase    string
 }
 
 func NewClient(apiKey string) *Client {
@@ -30,6 +32,8 @@ func NewClient(apiKey string) *Client {
 		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 		limiter:    time.NewTicker(250 * time.Millisecond).C, // 4 req/sec
+		apiBase:    apiBase,
+		imgBase:    imgPoster,
 	}
 }
 
@@ -81,7 +85,7 @@ func (c *Client) SearchTV(ctx context.Context, query string) ([]TVSearchResult, 
 	<-c.limiter
 
 	u := fmt.Sprintf("%s/search/tv?api_key=%s&query=%s&language=en-US&page=1",
-		apiBase, url.QueryEscape(c.apiKey), url.QueryEscape(query))
+		c.apiBase, url.QueryEscape(c.apiKey), url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -110,7 +114,7 @@ func (c *Client) FetchTVShow(ctx context.Context, showID int) (*TVShow, error) {
 	<-c.limiter
 
 	u := fmt.Sprintf("%s/tv/%d?api_key=%s&language=en-US",
-		apiBase, showID, url.QueryEscape(c.apiKey))
+		c.apiBase, showID, url.QueryEscape(c.apiKey))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -137,7 +141,7 @@ func (c *Client) FetchTVSeason(ctx context.Context, showID, seasonNumber int) (*
 	<-c.limiter
 
 	u := fmt.Sprintf("%s/tv/%d/season/%d?api_key=%s&language=en-US",
-		apiBase, showID, seasonNumber, url.QueryEscape(c.apiKey))
+		c.apiBase, showID, seasonNumber, url.QueryEscape(c.apiKey))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -166,7 +170,7 @@ func (c *Client) DownloadImage(ctx context.Context, tmdbPath, destPath string) e
 	}
 	<-c.limiter
 
-	imgURL := imgPoster + tmdbPath
+	imgURL := c.imgBase + tmdbPath
 	req, err := http.NewRequestWithContext(ctx, "GET", imgURL, nil)
 	if err != nil {
 		return err
