@@ -35,10 +35,16 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 	var wikiURL, wikidataURL string
 	for _, rel := range artist.Relations {
 		res := rel.URL.Resource
-		if strings.Contains(res, "wikipedia.org/wiki/") {
+		switch {
+		case strings.Contains(res, "wikipedia.org/wiki/"):
+			wikiURL = res
+		case mb.wikiBaseURL != "" && rel.Type == "wikipedia":
 			wikiURL = res
 		}
-		if strings.Contains(res, "wikidata.org/") {
+		switch {
+		case strings.Contains(res, "wikidata.org/"):
+			wikidataURL = res
+		case mb.wikidataBaseURL != "" && rel.Type == "wikidata":
 			wikidataURL = res
 		}
 	}
