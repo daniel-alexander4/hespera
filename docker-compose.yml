@@ -1,12 +1,12 @@
 services:
   isomedia:
     build: .
-    user: "${UID:-65532}:${GID:-65532}"
+    user: "${UID:-65532}:${GID:-144}"
     ports:
       - "8080:8080"
     volumes:
       - /etc/isomedia/data:/var/lib/isomedia
-      - /media/dan/08a75612-85eb-4dd3-bc14-0bfe54ae2f88:/media:ro
+      - /media/dan/08a75612-85eb-4dd3-bc14-0bfe54ae2f88:/media
     environment:
       ISOMEDIA_LISTEN: ":8080"
       ISOMEDIA_DATA_DIR: "/var/lib/isomedia"

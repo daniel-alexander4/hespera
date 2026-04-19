@@ -3,7 +3,21 @@
   <h1>Edit Album</h1>
 </div>
 
-<form method="post" action="/music/album/edit?id={{.AlbumID}}" class="form-stack">
+{{if .Writeback}}
+<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-1); border: 1px solid var(--accent); border-radius: 6px;">
+  Tag Editor mode — changes will be written to audio files on save.
+</div>
+{{end}}
+
+{{if or .WBSuccess .WBErrors}}
+<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-1); border: 1px solid {{if .WBErrors}}#c44{{else}}#4a9{{end}}; border-radius: 6px;">
+  Tags written to {{.WBSuccess}} track{{if ne .WBSuccess 1}}s{{end}}{{if .WBErrors}}, {{.WBErrors}} error{{if ne .WBErrors 1}}s{{end}}{{end}}.
+</div>
+{{end}}
+
+<form method="post" action="/music/album/edit?id={{.AlbumID}}" class="form-stack" id="edit-form">
+  {{if .Writeback}}<input type="hidden" name="writeback" value="1" />{{end}}
+
   <div class="form-group">
     <label for="album-title">Album Title</label>
     <input type="text" id="album-title" name="title" value="{{.AlbumTitle}}" required class="input" />
@@ -19,18 +33,158 @@
     <input type="text" id="album-artist" name="artist" value="{{.ArtistName}}" required class="input" />
   </div>
 
+  {{if .Writeback}}
+  <div class="form-group">
+    <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+      <input type="checkbox" name="compilation" value="1" {{if .IsCompilation}}checked{{end}} class="tag-checkbox" />
+      Compilation
+    </label>
+  </div>
+  {{end}}
+
   <h3 style="margin-top: 1.5rem;">Tracks</h3>
+
+  {{if .Writeback}}
+  {{/* ---- Writeback mode: checkboxes + read-only display ---- */}}
+  <table class="table" id="track-table">
+    <thead>
+      <tr>
+        <th style="width:2.5rem;">
+          <input type="checkbox" id="select-all" class="tag-checkbox" />
+        </th>
+        <th style="width:3rem;">#</th>
+        <th>Title</th>
+        <th>Artist</th>
+        <th style="width:4rem;">Disc</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Tracks}}
+      <tr>
+        <td><input type="checkbox" name="selected_track" value="{{.ID}}" class="tag-checkbox track-cb" /></td>
+        <td>{{.TrackNo}}</td>
+        <td>{{.Title}}</td>
+        <td>{{.Artist}}</td>
+        <td>{{.DiscNo}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <div id="single-track-fields" style="display:none; margin-top: 1.5rem;">
+    <h3>Track Fields</h3>
+    <input type="hidden" name="single_track_id" id="single-track-id" value="" />
+    <div class="form-group">
+      <label for="st-title">Title</label>
+      <input type="text" id="st-title" name="single_track_title" value="" class="input" />
+    </div>
+    <div class="form-group">
+      <label for="st-artist">Artist</label>
+      <input type="text" id="st-artist" name="single_track_artist" value="" class="input" />
+    </div>
+    <div style="display:flex; gap:1rem;">
+      <div class="form-group" style="flex:1;">
+        <label for="st-trackno">Track #</label>
+        <input type="number" id="st-trackno" name="single_track_no" value="" min="0" class="input" />
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label for="st-discno">Disc #</label>
+        <input type="number" id="st-discno" name="single_track_disc" value="" min="0" class="input" />
+      </div>
+    </div>
+  </div>
+
+  <div class="form-actions" style="margin-top: 1rem;">
+    <button type="submit" id="save-btn" class="btn btn-primary" disabled>Save &amp; Write Tags</button>
+    <a href="/music/album/{{.AlbumID}}" class="btn">Cancel</a>
+  </div>
+
+  <script>
+  (function() {
+    var trackData = { {{range .Tracks}}{{.ID}}: {title: {{.Title}}, artist: {{.Artist}}, trackNo: {{.TrackNo}}, discNo: {{.DiscNo}} },{{end}} };
+
+    var selectAll = document.getElementById('select-all');
+    var cbs = Array.prototype.slice.call(document.querySelectorAll('.track-cb'));
+    var saveBtn = document.getElementById('save-btn');
+    var singlePanel = document.getElementById('single-track-fields');
+    var singleIdInput = document.getElementById('single-track-id');
+
+    function getSelected() {
+      return cbs.filter(function(cb) { return cb.checked; });
+    }
+
+    function updateUI() {
+      var sel = getSelected();
+      var count = sel.length;
+      var total = cbs.length;
+
+      // Button state
+      saveBtn.disabled = count === 0;
+      if (count > 0) {
+        saveBtn.textContent = 'Save & Write Tags to ' + count + ' track' + (count !== 1 ? 's' : '');
+      } else {
+        saveBtn.textContent = 'Save & Write Tags';
+      }
+
+      // Select-all state
+      if (count === 0) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+      } else if (count === total) {
+        selectAll.checked = true;
+        selectAll.indeterminate = false;
+      } else {
+        selectAll.checked = false;
+        selectAll.indeterminate = true;
+      }
+
+      // Single-track panel
+      if (count === 1) {
+        var id = sel[0].value;
+        var d = trackData[id];
+        if (d) {
+          singleIdInput.value = id;
+          document.getElementById('st-title').value = d.title;
+          document.getElementById('st-artist').value = d.artist;
+          document.getElementById('st-trackno').value = d.trackNo;
+          document.getElementById('st-discno').value = d.discNo;
+        }
+        singlePanel.style.display = '';
+      } else {
+        singlePanel.style.display = 'none';
+        singleIdInput.value = '';
+      }
+    }
+
+    selectAll.addEventListener('change', function() {
+      var checked = selectAll.checked;
+      cbs.forEach(function(cb) { cb.checked = checked; });
+      updateUI();
+    });
+
+    cbs.forEach(function(cb) {
+      cb.addEventListener('change', updateUI);
+    });
+
+    updateUI();
+  })();
+  </script>
+
+  {{else}}
+  {{/* ---- Non-writeback mode: inline title inputs (unchanged) ---- */}}
   <table class="table">
     <thead>
       <tr>
-        <th style="width:3rem;">#</th>
+        <th style="width:4rem;">#</th>
         <th>Title</th>
       </tr>
     </thead>
     <tbody>
       {{range .Tracks}}
       <tr>
-        <td>{{.TrackNo}}</td>
+        <td>
+          <input type="text" name="track_no_{{.ID}}" value="{{.TrackNo}}" class="input" style="width:100%;" />
+        </td>
         <td>
           <input type="text" name="track_title_{{.ID}}" value="{{.Title}}" class="input" style="width:100%;" />
           <input type="hidden" name="track_id" value="{{.ID}}" />
@@ -44,5 +198,6 @@
     <button type="submit" class="btn btn-primary">Save Changes</button>
     <a href="/music/album/{{.AlbumID}}" class="btn">Cancel</a>
   </div>
+  {{end}}
 </form>
 {{end}}

@@ -13,7 +13,12 @@
   </div>
   <div class="artist-side">
     {{if .ArtistBio}}
-    <p class="artist-bio">{{.ArtistBio}}</p>
+    <div class="artist-bio">
+      <p>{{.ArtistBio}}</p>
+      {{if .BioSourceURL}}
+      <a href="{{.BioSourceURL}}" class="artist-bio-link" target="_blank" rel="noopener">Read more on Wikipedia</a>
+      {{end}}
+    </div>
     {{end}}
     <div class="artist-actions">
       {{if .Tracks}}

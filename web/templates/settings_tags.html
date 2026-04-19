@@ -1,0 +1,47 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Tag Editor</h1>
+</div>
+
+<form method="get" action="/settings/tags" class="form-stack" style="margin-bottom: 1.5rem;">
+  <div class="form-group" style="display:flex; gap:0.5rem; align-items:flex-end;">
+    <input type="text" name="q" value="{{.Query}}" placeholder="Search albums by title..." class="input" style="flex:1;" autofocus />
+    <button type="submit" class="btn btn-primary">Search</button>
+  </div>
+</form>
+
+{{if .Query}}
+  {{if .Results}}
+  <table class="table">
+    <thead>
+      <tr>
+        <th style="width:3rem;"></th>
+        <th>Album</th>
+        <th>Artist</th>
+        <th style="width:4rem;">Year</th>
+        <th style="width:5rem;">Tracks</th>
+        <th style="width:5rem;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Results}}
+      <tr>
+        <td>
+          <img src="/art/album/{{.ID}}" alt="" style="width:40px; height:40px; object-fit:cover; border-radius:4px;" />
+        </td>
+        <td>{{.Title}}</td>
+        <td>{{.ArtistName}}</td>
+        <td>{{if .Year}}{{.Year}}{{end}}</td>
+        <td>{{.TrackCount}}</td>
+        <td><a href="/music/album/edit?id={{.ID}}&writeback=1" class="btn btn-sm">Edit Tags</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p>No albums found for "{{.Query}}".</p>
+  {{end}}
+{{else}}
+  <p>Search for an album to edit its file tags.</p>
+{{end}}
+{{end}}

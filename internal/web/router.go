@@ -84,6 +84,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/settings/jobs", h.settingsJobs)
 	mux.HandleFunc("/settings/jobs.json", h.settingsJobsJSON)
 	mux.HandleFunc("/settings/jobs/cancel", h.settingsJobsCancel)
+	mux.HandleFunc("/settings/tags", h.settingsTagEditor)
 
 	var handler http.Handler = mux
 	if h.auth != nil {
