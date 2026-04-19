@@ -27,9 +27,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Fragility Fixes
 
-- [ ] **FRAG-01**: URL path ID parsing uses a shared helper function instead of duplicated code across 6+ handlers
-- [ ] **FRAG-02**: Template registration validates at startup that all handler-referenced templates exist
-- [ ] **FRAG-03**: Missing or broken templates produce a clear startup error, not a runtime 500
+- [x] **FRAG-01**: URL path ID parsing uses a shared helper function instead of duplicated code across 6+ handlers
+- [x] **FRAG-02**: Template registration validates at startup that all handler-referenced templates exist
+- [x] **FRAG-03**: Missing or broken templates produce a clear startup error, not a runtime 500
 
 ### Test Coverage -- Scanner
 
@@ -92,9 +92,9 @@ Deferred to future milestones.
 | ERR-04 | Phase 2 | Complete |
 | SEC-01 | Phase 1 | Complete |
 | SEC-02 | Phase 1 | Complete |
-| FRAG-01 | Phase 3 | Pending |
-| FRAG-02 | Phase 3 | Pending |
-| FRAG-03 | Phase 3 | Pending |
+| FRAG-01 | Phase 3 | Complete |
+| FRAG-02 | Phase 3 | Complete |
+| FRAG-03 | Phase 3 | Complete |
 | TEST-01 | Phase 4 | Pending |
 | TEST-02 | Phase 4 | Pending |
 | TEST-03 | Phase 4 | Pending |
