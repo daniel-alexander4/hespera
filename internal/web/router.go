@@ -39,6 +39,14 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/art/album/", h.albumArt)
 	mux.HandleFunc("/art/artist/", h.artistArt)
 
+	// Music matching
+	mux.HandleFunc("/music/match", h.musicMatch)
+	mux.HandleFunc("/music/match/review", h.musicMatchReview)
+	mux.HandleFunc("/music/match/approve", h.musicMatchApprove)
+	mux.HandleFunc("/music/match/approve-all", h.musicMatchApproveAll)
+	mux.HandleFunc("/music/match/reject", h.musicMatchReject)
+	mux.HandleFunc("/music/match/rematch", h.musicMatchRematch)
+
 	// Other media
 	mux.HandleFunc("/tv", h.tvHome)
 	mux.HandleFunc("/movies", h.moviesHome)
