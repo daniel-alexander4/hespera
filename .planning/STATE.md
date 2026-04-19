@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: TV Auto-Match Pipeline
-status: ready_to_plan
-stopped_at: Roadmap created, ready to plan Phase 9
-last_updated: "2026-03-07"
+status: planning
+stopped_at: Phase 9 context gathered
+last_updated: "2026-03-07T13:29:36.022Z"
 last_activity: 2026-03-07 -- Roadmap created for v1.2
 progress:
   total_phases: 2
@@ -57,6 +57,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07
-Stopped at: Roadmap created for v1.2, ready to plan Phase 9
-Resume file: .planning/.continue-here.md
+Last session: 2026-03-07T13:29:36.020Z
+Stopped at: Phase 9 context gathered
+Resume file: .planning/phases/09-tv-match-threshold-and-status-alignment/09-CONTEXT.md
