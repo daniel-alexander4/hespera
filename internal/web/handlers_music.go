@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -313,11 +312,8 @@ func (h *Handler) musicArtistAlbums(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	idStr := strings.TrimPrefix(r.URL.Path, "/music/artist/")
-	idStr = path.Clean("/" + idStr)
-	idStr = strings.TrimPrefix(idStr, "/")
-	artistID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || artistID <= 0 {
+	artistID, err := pathID(r, "/music/artist/")
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -448,11 +444,8 @@ func (h *Handler) musicAlbumTracks(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	idStr := strings.TrimPrefix(r.URL.Path, "/music/album/")
-	idStr = path.Clean("/" + idStr)
-	idStr = strings.TrimPrefix(idStr, "/")
-	albumID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || albumID <= 0 {
+	albumID, err := pathID(r, "/music/album/")
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -1039,11 +1032,8 @@ func (h *Handler) streamTrack(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	idStr := strings.TrimPrefix(r.URL.Path, "/stream/track/")
-	idStr = path.Clean("/" + idStr)
-	idStr = strings.TrimPrefix(idStr, "/")
-	trackID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || trackID <= 0 {
+	trackID, err := pathID(r, "/stream/track/")
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -1221,11 +1211,8 @@ func (h *Handler) albumArt(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	idStr := strings.TrimPrefix(r.URL.Path, "/art/album/")
-	idStr = path.Clean("/" + idStr)
-	idStr = strings.TrimPrefix(idStr, "/")
-	albumID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || albumID <= 0 {
+	albumID, err := pathID(r, "/art/album/")
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -1269,11 +1256,8 @@ func (h *Handler) artistArt(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	idStr := strings.TrimPrefix(r.URL.Path, "/art/artist/")
-	idStr = path.Clean("/" + idStr)
-	idStr = strings.TrimPrefix(idStr, "/")
-	artistID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || artistID <= 0 {
+	artistID, err := pathID(r, "/art/artist/")
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}

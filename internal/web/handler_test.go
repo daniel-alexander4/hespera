@@ -123,7 +123,7 @@ func TestNewBrokenLayout(t *testing.T) {
 	setupTemplateDir(t, dir)
 	// Overwrite layout with invalid template syntax
 	layoutPath := filepath.Join(dir, "web", "templates", "layout.html")
-	os.WriteFile(layoutPath, []byte(`{{define "layout.html"}}{{ .Foo | }}}{{end}}`), 0o644)
+	os.WriteFile(layoutPath, []byte(`{{define "layout.html"}}{{ end `), 0o644)
 	withChdir(t, dir)
 
 	_, err := New(Deps{
