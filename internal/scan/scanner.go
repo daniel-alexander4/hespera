@@ -61,6 +61,7 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 	}
 
 	processed := 0
+	scanErrors := 0
 	if err := filepath.WalkDir(cleanRoot, func(p string, d fs.DirEntry, walkErr error) error {
 		select {
 		case <-ctx.Done():
@@ -78,7 +79,9 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 		}
 
 		if err := s.ScanFile(ctx, libraryID, p, thumbDir); err != nil {
-			return err
+			scanErrors++
+			slog.Warn("scan file error", "path", p, "err", err)
+			// Continue scanning -- one file's error should not abort the library scan.
 		}
 
 		processed++
@@ -93,6 +96,10 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 
 	// Final progress update.
 	_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
+
+	if scanErrors > 0 {
+		slog.Warn("scan completed with errors", "library_id", libraryID, "files_scanned", processed, "errors", scanErrors)
+	}
 
 	// Post-scan: detect compilations and merge variants (order-independent).
 	if err := s.finalizeCompilations(ctx, libraryID); err != nil {
