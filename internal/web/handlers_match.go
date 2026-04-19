@@ -76,8 +76,8 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 		       a.match_status, COALESCE(a.match_confidence, 0), COALESCE(a.musicbrainz_id, '')
 		FROM music_albums a
 		LEFT JOIN music_artists ar ON ar.id = a.album_artist_id
-		WHERE a.match_status IN ('uncertain', 'unmatched')
-		ORDER BY a.match_status ASC, a.match_confidence DESC, a.title ASC
+		WHERE a.match_status = 'unmatched'
+		ORDER BY a.match_confidence DESC, a.title ASC
 	`)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicMatchReview", "err", err)
@@ -129,7 +129,7 @@ func (h *Handler) musicMatchApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := h.db.ExecContext(r.Context(),
-		"UPDATE music_albums SET match_status='matched' WHERE id=? AND match_status='uncertain'",
+		"UPDATE music_albums SET match_status='matched' WHERE id=? AND match_status='unmatched'",
 		albumID)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "musicMatchApprove", "err", err)
@@ -156,7 +156,7 @@ func (h *Handler) musicMatchApproveAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.db.ExecContext(r.Context(),
-		"UPDATE music_albums SET match_status='matched' WHERE match_status='uncertain'")
+		"UPDATE music_albums SET match_status='matched' WHERE match_status='unmatched'")
 	if err != nil {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "musicMatchApproveAll", "err", err)
 		return

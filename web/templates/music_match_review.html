@@ -4,17 +4,14 @@
 </div>
 
 {{if .Albums}}
+{{if .LibraryID}}
 <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-  <form method="post" action="/music/match/approve-all" class="inline-form">
-    <button type="submit" class="btn btn-sm">Approve All Uncertain</button>
-  </form>
-  {{if .LibraryID}}
   <form method="post" action="/music/writeback" class="inline-form">
     <input type="hidden" name="id" value="{{.LibraryID}}" />
     <button type="submit" class="btn btn-sm">Write Tags</button>
   </form>
-  {{end}}
 </div>
+{{end}}
 
 <table class="table">
   <thead>
@@ -48,12 +45,6 @@
         {{if .MatchConfidence}}{{.MatchConfidence}}%{{else}}&mdash;{{end}}
       </td>
       <td style="white-space:nowrap;">
-        {{if eq .MatchStatus "uncertain"}}
-        <form method="post" action="/music/match/approve" class="inline-form">
-          <input type="hidden" name="album_id" value="{{.AlbumID}}" />
-          <button type="submit" class="btn btn-sm">Approve</button>
-        </form>
-        {{end}}
         <form method="post" action="/music/match/reject" class="inline-form">
           <input type="hidden" name="album_id" value="{{.AlbumID}}" />
           <button type="submit" class="btn btn-sm btn-danger">Reject</button>
