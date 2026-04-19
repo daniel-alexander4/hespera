@@ -1,0 +1,41 @@
+{{define "content"}}
+<div class="page-header">
+  {{if .BackdropPath}}
+  <div class="tv-backdrop" style="background-image:url('/art/tv/backdrop/{{.ShowID}}')"></div>
+  {{end}}
+  <h1>{{.ShowName}}</h1>
+  {{if .Year}}<span class="meta-tag">{{.Year}}</span>{{end}}
+  {{if .Status}}<span class="meta-tag">{{.Status}}</span>{{end}}
+  {{range .Genres}}<span class="meta-tag">{{.Name}}</span> {{end}}
+</div>
+
+{{if .Overview}}
+<div class="tv-overview">
+  <p>{{.Overview}}</p>
+</div>
+{{end}}
+
+<h2>Seasons</h2>
+
+{{if not .Seasons}}
+<div class="empty-state"><p>No seasons found.</p></div>
+{{else}}
+<div class="band-albums-grid">
+  {{range .Seasons}}
+  <a href="/tv/season/?series={{$.ShowID}}&season={{.SeasonNumber}}" class="band-album-card">
+    <div class="band-album-art">
+      {{if .PosterPath}}
+      <img src="/art/tv/season/{{$.ShowID}}/{{.SeasonNumber}}" alt="Season {{.SeasonNumber}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">S{{.SeasonNumber}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      <div class="artist-card-stats">{{.EpisodeCount}} episodes</div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+{{end}}

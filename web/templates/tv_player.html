@@ -1,0 +1,102 @@
+{{define "content"}}
+<div class="tv-player-page">
+  <div class="tv-player-header">
+    <h1><a href="/tv/series/{{.SeriesID}}">{{.ShowName}}</a></h1>
+    <h2>S{{.SeasonNum}} — {{.EpName}}</h2>
+  </div>
+
+  <div class="tv-player-video-wrap">
+    <video id="tvVideo" class="tv-video" controls autoplay
+           src="/stream/tv/{{.FileID}}"
+           data-file-id="{{.FileID}}"
+           data-position="{{.Position}}"
+           data-completed="{{.Completed}}"
+           data-next-file="{{.NextFileID}}">
+      Your browser does not support video playback.
+    </video>
+  </div>
+
+  <div class="tv-player-nav">
+    {{if .PrevFileID}}
+    <a href="/tv/player?file={{.PrevFileID}}" class="btn btn-sm">Previous</a>
+    {{else}}
+    <span></span>
+    {{end}}
+    <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNum}}" class="btn btn-sm">Back to Season</a>
+    {{if .NextFileID}}
+    <a href="/tv/player?file={{.NextFileID}}" class="btn btn-sm">Next</a>
+    {{else}}
+    <span></span>
+    {{end}}
+  </div>
+</div>
+
+<script>
+(() => {
+  const video = document.getElementById('tvVideo');
+  if (!video) return;
+
+  const fileID = parseInt(video.dataset.fileId, 10);
+  const savedPos = parseFloat(video.dataset.position) || 0;
+  const wasCompleted = video.dataset.completed === '1';
+  const nextFile = parseInt(video.dataset.nextFile, 10) || 0;
+  let lastReport = 0;
+
+  // Resume from saved position.
+  if (savedPos > 0 && !wasCompleted) {
+    video.addEventListener('loadedmetadata', () => {
+      video.currentTime = savedPos;
+    }, { once: true });
+  }
+
+  function reportProgress(completed) {
+    const now = Date.now();
+    if (!completed && now - lastReport < 15000) return;
+    lastReport = now;
+
+    const body = JSON.stringify({
+      file_id: fileID,
+      position_seconds: video.currentTime,
+      duration_seconds: video.duration || 0,
+      completed: !!completed
+    });
+
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/tv/playback-progress', new Blob([body], { type: 'application/json' }));
+    } else {
+      fetch('/tv/playback-progress', { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  // Report every 15 seconds during playback.
+  video.addEventListener('timeupdate', () => reportProgress(false));
+
+  // Report on pause.
+  video.addEventListener('pause', () => {
+    lastReport = 0;
+    reportProgress(false);
+  });
+
+  // Mark completed at 90%.
+  video.addEventListener('timeupdate', () => {
+    if (video.duration > 0 && video.currentTime / video.duration >= 0.9) {
+      reportProgress(true);
+    }
+  });
+
+  // Auto-advance to next episode on end.
+  video.addEventListener('ended', () => {
+    reportProgress(true);
+    if (nextFile > 0) {
+      window.location.href = '/tv/player?file=' + nextFile;
+    }
+  });
+
+  // Report on page unload.
+  window.addEventListener('beforeunload', () => {
+    lastReport = 0;
+    reportProgress(false);
+  });
+})();
+</script>
+{{end}}

@@ -2,7 +2,40 @@
 <div class="page-header">
   <h1>TV Shows</h1>
 </div>
+
+{{if not .Series}}
 <div class="empty-state">
-  <p>TV browsing coming in Phase 3. Use <a href="/libraries">Libraries</a> to add your TV collection.</p>
+  <p>No TV series found. Use <a href="/libraries">Libraries</a> to add a TV library, then scan and match.</p>
 </div>
+{{else}}
+<div class="band-albums-grid">
+  {{range .Series}}
+  {{if .IsMatched}}
+  <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
+    <div class="band-album-art">
+      {{if .PosterPath}}
+      <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">TV</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}{{.EpisodeCount}} episodes</div>
+    </div>
+  </a>
+  {{else}}
+  <div class="band-album-card band-album-card--unmatched">
+    <div class="band-album-art">
+      <div class="album-art-ph">?</div>
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      <div class="artist-card-stats">{{.EpisodeCount}} files · needs matching</div>
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}
 {{end}}

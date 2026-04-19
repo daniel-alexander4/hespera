@@ -56,6 +56,10 @@ func New(d Deps) *Handler {
 		"music_album_edit.html",
 		"music_duplicates.html",
 		"tv_home.html",
+		"tv_series.html",
+		"tv_season.html",
+		"tv_match_review.html",
+		"tv_player.html",
 		"movies_home.html",
 	}
 

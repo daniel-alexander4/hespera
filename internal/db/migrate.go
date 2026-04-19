@@ -1,6 +1,9 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"strings"
+)
 
 const schemaSQL = `
 PRAGMA foreign_keys = ON;
@@ -102,7 +105,7 @@ CREATE INDEX IF NOT EXISTS idx_tv_series_files_library_id ON tv_series_files(lib
 
 CREATE TABLE IF NOT EXISTS tv_series_identities (
   file_id INTEGER PRIMARY KEY REFERENCES tv_series_files(id) ON DELETE CASCADE,
-  status TEXT NOT NULL DEFAULT 'needs_fix' CHECK(status IN ('resolved','needs_fix')),
+  status TEXT NOT NULL DEFAULT 'needs_fix' CHECK(status IN ('resolved','needs_fix','skipped')),
   provider TEXT NOT NULL DEFAULT '',
   series_id TEXT NOT NULL DEFAULT '',
   season_number INTEGER NOT NULL DEFAULT -1,
@@ -230,7 +233,71 @@ func Migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return err
 	}
+	if err := ensureColumn(db, "tv_series_identities", "guessed_title", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := migrateIdentitiesSkippedStatus(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+// migrateIdentitiesSkippedStatus adds 'skipped' to the tv_series_identities.status CHECK constraint.
+// SQLite can't ALTER a CHECK, so we recreate the table. Idempotent: skips if already present.
+func migrateIdentitiesSkippedStatus(db *sql.DB) error {
+	var createSQL string
+	err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='tv_series_identities'").Scan(&createSQL)
+	if err != nil {
+		return nil // table doesn't exist yet (fresh install handled by schemaSQL)
+	}
+	if strings.Contains(createSQL, "'skipped'") {
+		return nil // already migrated
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`CREATE TABLE tv_series_identities_new (
+  file_id INTEGER PRIMARY KEY REFERENCES tv_series_files(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'needs_fix' CHECK(status IN ('resolved','needs_fix','skipped')),
+  provider TEXT NOT NULL DEFAULT '',
+  series_id TEXT NOT NULL DEFAULT '',
+  season_number INTEGER NOT NULL DEFAULT -1,
+  episode_numbers_csv TEXT NOT NULL DEFAULT '',
+  match_confidence REAL NOT NULL DEFAULT 0.0,
+  match_method TEXT NOT NULL DEFAULT '',
+  matched_at TEXT NOT NULL DEFAULT '',
+  guessed_title TEXT NOT NULL DEFAULT ''
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`INSERT INTO tv_series_identities_new
+SELECT file_id, status, provider, series_id, season_number, episode_numbers_csv,
+       match_confidence, match_method, matched_at, guessed_title
+FROM tv_series_identities`)
+	if err != nil {
+		return err
+	}
+
+	if _, err = tx.Exec("DROP TABLE tv_series_identities"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("ALTER TABLE tv_series_identities_new RENAME TO tv_series_identities"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_tv_series_identities_provider_series ON tv_series_identities(provider, series_id)"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_tv_series_identities_status ON tv_series_identities(status)"); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func ensureColumn(db *sql.DB, table, col, decl string) error {

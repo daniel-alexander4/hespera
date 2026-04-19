@@ -756,6 +756,150 @@ a:hover {
   cursor: pointer;
 }
 
+/* TV Episodes */
+.tv-episode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.tv-episode-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.tv-episode-row.tv-episode-completed {
+  opacity: 0.6;
+}
+.tv-episode-number {
+  min-width: 2.5rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-muted);
+}
+.tv-episode-info {
+  flex: 1;
+  min-width: 0;
+}
+.tv-episode-name a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+}
+.tv-episode-name a:hover {
+  color: var(--accent);
+}
+.tv-episode-date,
+.tv-episode-meta {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+.tv-episode-overview {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+  line-height: 1.4;
+}
+.tv-episode-progress {
+  margin-top: 0.35rem;
+  height: 4px;
+  background: var(--surface-panel);
+  border-radius: 2px;
+  max-width: 200px;
+}
+.tv-episode-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.tv-episode-actions {
+  flex-shrink: 0;
+}
+.tv-overview {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+/* TV Player */
+.tv-player-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.tv-player-header h1 {
+  margin-bottom: 0.25rem;
+}
+.tv-player-header h1 a {
+  color: var(--text);
+  text-decoration: none;
+}
+.tv-player-header h1 a:hover {
+  color: var(--accent);
+}
+.tv-player-header h2 {
+  font-size: 1rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-bottom: 1rem;
+}
+.tv-player-video-wrap {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tv-video {
+  width: 100%;
+  display: block;
+  max-height: 80vh;
+}
+.tv-player-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  gap: 0.5rem;
+}
+
+/* TV Match Review */
+.tv-match-search-wrap {
+  position: relative;
+}
+.tv-match-tmdb-input {
+  width: 100%;
+  min-width: 200px;
+}
+.tv-match-search-results {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  z-index: 10;
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.tv-match-search-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.9em;
+  border-bottom: 1px solid var(--border);
+}
+.tv-match-search-item:hover {
+  background: var(--accent);
+  color: var(--text-on-accent, #fff);
+}
+.tv-match-search-item:last-child {
+  border-bottom: none;
+}
+
 /* Responsive */
 @media (max-width: 800px) {
   .album {

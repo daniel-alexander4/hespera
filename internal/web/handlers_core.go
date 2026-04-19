@@ -110,14 +110,6 @@ func (h *Handler) authLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func (h *Handler) tvHome(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	h.render(w, "tv_home.html", map[string]any{"Title": "TV Shows"})
-}
-
 func (h *Handler) moviesHome(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
