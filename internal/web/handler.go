@@ -148,7 +148,7 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 	t, ok := h.tpls[page]
 	if !ok {
 		slog.Error("template not found", "page", page)
-		http.Error(w, fmt.Sprintf("template not found: %s", page), 500)
+		http.Error(w, "internal server error", 500)
 		return
 	}
 

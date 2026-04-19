@@ -124,6 +124,24 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "message": msg})
 }
 
+func httpError(w http.ResponseWriter, code int, msg string, logMsg string, attrs ...any) {
+	if code >= 500 {
+		slog.Error(logMsg, attrs...)
+	} else {
+		slog.Warn(logMsg, attrs...)
+	}
+	http.Error(w, msg, code)
+}
+
+func jsonErr(w http.ResponseWriter, code int, msg string, logMsg string, attrs ...any) {
+	if code >= 500 {
+		slog.Error(logMsg, attrs...)
+	} else {
+		slog.Warn(logMsg, attrs...)
+	}
+	jsonError(w, msg, code)
+}
+
 func requestWantsJSON(r *http.Request) bool {
 	accept := strings.ToLower(r.Header.Get("Accept"))
 	if strings.Contains(accept, "application/json") {
