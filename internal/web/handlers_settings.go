@@ -35,7 +35,7 @@ func (h *Handler) settingsJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	jobList, err := h.loadScanJobs(r.Context(), "", "", 0, 50)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "load jobs failed", "handler", "settingsJobs", "err", err)
 		return
 	}
 	h.render(w, "settings_jobs.html", map[string]any{
@@ -67,7 +67,7 @@ func (h *Handler) settingsJobsJSON(w http.ResponseWriter, r *http.Request) {
 
 	jobList, err := h.loadScanJobs(r.Context(), status, jobType, jobID, limit)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		jsonErr(w, 500, "internal server error", "load jobs failed", "handler", "settingsJobsJSON", "err", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -83,7 +83,7 @@ func (h *Handler) settingsJobsCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonErr(w, 400, "bad request", "parse form failed", "handler", "settingsJobsCancel", "err", err)
 		return
 	}
 	jobID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("job_id")), 10, 64)
@@ -100,7 +100,7 @@ func (h *Handler) settingsJobsCancel(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "job is not cancelable", http.StatusBadRequest)
 			return
 		}
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		jsonErr(w, 500, "internal server error", "cancel job failed", "handler", "settingsJobsCancel", "err", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -180,7 +180,7 @@ func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
 	}
 	libs, err := h.loadLibraryList(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "load libraries failed", "handler", "libraries", "err", err)
 		return
 	}
 	h.render(w, "libraries.html", map[string]any{
@@ -199,7 +199,7 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 		})
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), 400)
+			httpError(w, 400, "bad request", "parse form failed", "handler", "librariesNew", "err", err)
 			return
 		}
 		name := strings.TrimSpace(r.FormValue("name"))
@@ -215,7 +215,7 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !strings.HasPrefix(root, h.cfg.MediaRoot+"/") && root != h.cfg.MediaRoot {
-			http.Error(w, fmt.Sprintf("root_path must be under %s", h.cfg.MediaRoot), 400)
+			http.Error(w, "root_path must be under the configured media root", 400)
 			return
 		}
 		_, err := h.db.ExecContext(r.Context(),
@@ -223,7 +223,7 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 			name, libType, root,
 		)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "db insert failed", "handler", "librariesNew", "err", err)
 			return
 		}
 		http.Redirect(w, r, "/libraries", http.StatusSeeOther)
@@ -238,7 +238,7 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "librariesScan", "err", err)
 		return
 	}
 	idStr := strings.TrimSpace(r.FormValue("id"))
@@ -254,7 +254,7 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "librariesScan", "err", err)
 		return
 	}
 
@@ -295,17 +295,17 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, jobs.ErrQueueFull) {
 			if requestWantsJSON(r) {
-				jsonError(w, err.Error(), http.StatusServiceUnavailable)
+				jsonErr(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "librariesScan", "err", err)
 				return
 			}
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "librariesScan", "err", err)
 			return
 		}
 		if requestWantsJSON(r) {
-			jsonError(w, err.Error(), http.StatusInternalServerError)
+			jsonErr(w, 500, "internal server error", "enqueue scan failed", "handler", "librariesScan", "err", err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "enqueue scan failed", "handler", "librariesScan", "err", err)
 		return
 	}
 
@@ -327,7 +327,7 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "librariesDelete", "err", err)
 		return
 	}
 	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
@@ -341,15 +341,15 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "librariesDelete", "err", err)
 		return
 	}
 	if _, err := h.db.ExecContext(r.Context(), "DELETE FROM libraries WHERE id=?", id); err != nil {
 		if requestWantsJSON(r) {
-			jsonError(w, err.Error(), http.StatusInternalServerError)
+			jsonErr(w, 500, "internal server error", "db delete failed", "handler", "librariesDelete", "err", err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "db delete failed", "handler", "librariesDelete", "err", err)
 		return
 	}
 	if requestWantsJSON(r) {
@@ -416,7 +416,7 @@ func (h *Handler) settingsTagEditor(w http.ResponseWriter, r *http.Request) {
 			LIMIT 50
 		`, "%"+q+"%")
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "db query failed", "handler", "settingsTagEditor", "err", err)
 			return
 		}
 		defer rows.Close()
@@ -424,14 +424,14 @@ func (h *Handler) settingsTagEditor(w http.ResponseWriter, r *http.Request) {
 			var res tagSearchResult
 			var art sql.NullString
 			if err := rows.Scan(&res.ID, &res.Title, &res.Year, &art, &res.ArtistName, &res.TrackCount); err != nil {
-				http.Error(w, err.Error(), 500)
+				httpError(w, 500, "internal server error", "row scan failed", "handler", "settingsTagEditor", "err", err)
 				return
 			}
 			res.ArtPath = scanNullString(art)
 			results = append(results, res)
 		}
 		if err := rows.Err(); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "rows iteration failed", "handler", "settingsTagEditor", "err", err)
 			return
 		}
 	}

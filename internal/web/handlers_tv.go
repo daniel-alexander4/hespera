@@ -64,7 +64,7 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 
 	series, err := h.loadTVSeriesList(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "load tv series list failed", "handler", "tvSeriesList", "err", err)
 		return
 	}
 
@@ -203,7 +203,7 @@ GROUP BY i.season_number
 ORDER BY i.season_number
 `, seriesID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "tvSeriesDetail", "err", err)
 		return
 	}
 	defer seasonRows.Close()
@@ -212,7 +212,7 @@ ORDER BY i.season_number
 	for seasonRows.Next() {
 		var sn, count int
 		if err := seasonRows.Scan(&sn, &count); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeriesDetail", "err", err)
 			return
 		}
 		seasonName := fmt.Sprintf("Season %d", sn)
@@ -235,7 +235,7 @@ ORDER BY i.season_number
 		})
 	}
 	if err := seasonRows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvSeriesDetail", "err", err)
 		return
 	}
 
@@ -318,7 +318,7 @@ WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'resolved'
 ORDER BY i.episode_numbers_csv
 `, seriesID, seasonNum)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "tvSeasonDetail", "err", err)
 		return
 	}
 	defer fileRows.Close()
@@ -331,7 +331,7 @@ ORDER BY i.episode_numbers_csv
 		var pos, dur float64
 		var completed int
 		if err := fileRows.Scan(&fileID, &epCSV, &streamJSON, &pos, &dur, &completed); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeasonDetail", "err", err)
 			return
 		}
 		resolution, videoCodec := extractVideoInfo(streamJSON)
@@ -368,7 +368,7 @@ ORDER BY i.episode_numbers_csv
 		}
 	}
 	if err := fileRows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvSeasonDetail", "err", err)
 		return
 	}
 
@@ -390,7 +390,7 @@ func (h *Handler) tvMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvMatch", "err", err)
 		return
 	}
 	idStr := strings.TrimSpace(r.FormValue("id"))
@@ -411,10 +411,10 @@ func (h *Handler) tvMatch(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, jobs.ErrQueueFull) {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "tvMatch", "err", err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, 500, "internal server error", "enqueue tv match failed", "handler", "tvMatch", "err", err)
 		return
 	}
 
@@ -540,7 +540,7 @@ GROUP BY lower(i.guessed_title)
 ORDER BY lower(i.guessed_title)
 `)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db query failed", "handler", "tvMatchReview", "err", err)
 		return
 	}
 	defer rows.Close()
@@ -549,13 +549,13 @@ ORDER BY lower(i.guessed_title)
 	for rows.Next() {
 		var g tvMatchGroup
 		if err := rows.Scan(&g.GuessedTitle, &g.FileCount, &g.Seasons); err != nil {
-			http.Error(w, err.Error(), 500)
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvMatchReview", "err", err)
 			return
 		}
 		groups = append(groups, g)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvMatchReview", "err", err)
 		return
 	}
 
@@ -571,7 +571,7 @@ func (h *Handler) tvMatchApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvMatchApprove", "err", err)
 		return
 	}
 	guessedTitle := strings.TrimSpace(r.FormValue("guessed_title"))
@@ -600,7 +600,7 @@ UPDATE tv_series_identities SET
 WHERE lower(guessed_title) = lower(?) AND status = 'needs_fix'
 `, strconv.Itoa(tmdbID), now, guessedTitle)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db update failed", "handler", "tvMatchApprove", "err", err)
 		return
 	}
 
@@ -627,7 +627,7 @@ func (h *Handler) tvMatchSkip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvMatchSkip", "err", err)
 		return
 	}
 	guessedTitle := strings.TrimSpace(r.FormValue("guessed_title"))
@@ -641,7 +641,7 @@ UPDATE tv_series_identities SET status='skipped'
 WHERE lower(guessed_title) = lower(?) AND status = 'needs_fix'
 `, guessedTitle)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db update failed", "handler", "tvMatchSkip", "err", err)
 		return
 	}
 
@@ -659,7 +659,7 @@ func (h *Handler) tvMatchRematch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvMatchRematch", "err", err)
 		return
 	}
 	guessedTitle := strings.TrimSpace(r.FormValue("guessed_title"))
@@ -676,7 +676,7 @@ WHERE lower(guessed_title) = lower(?)
   AND status IN ('resolved','skipped')
 `, guessedTitle)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db update failed", "handler", "tvMatchRematch", "err", err)
 		return
 	}
 
@@ -708,7 +708,7 @@ func (h *Handler) tvMatchSearch(w http.ResponseWriter, r *http.Request) {
 	matcher := tmdb.NewMatcher(h.db, h.cfg.TMDBAPIKey, h.cfg.DataDir)
 	results, err := matcher.SearchTV(r.Context(), query)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "tmdb search failed", "handler", "tvMatchSearch", "err", err)
 		return
 	}
 
@@ -757,7 +757,7 @@ func (h *Handler) streamTVEpisode(w http.ResponseWriter, r *http.Request) {
 
 	st, err := f.Stat()
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "stat file failed", "handler", "streamTVEpisode", "err", err)
 		return
 	}
 
@@ -923,7 +923,7 @@ func (h *Handler) tvPlaybackProgress(w http.ResponseWriter, r *http.Request) {
 		Completed       bool    `json:"completed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), 400)
+		httpError(w, 400, "bad request", "decode json failed", "handler", "tvPlaybackProgress", "err", err)
 		return
 	}
 	if req.FileID <= 0 {
@@ -946,7 +946,7 @@ ON CONFLICT(file_id) DO UPDATE SET
   updated_at=datetime('now')
 `, req.FileID, req.PositionSeconds, req.DurationSeconds, completedInt)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		httpError(w, 500, "internal server error", "db upsert failed", "handler", "tvPlaybackProgress", "err", err)
 		return
 	}
 
