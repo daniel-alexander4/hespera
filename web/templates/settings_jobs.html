@@ -1,0 +1,69 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Job Status</h1>
+</div>
+
+<div id="jobs-container">
+{{if .Jobs}}
+<table class="table" id="jobs-table">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Progress</th>
+      <th>Duration</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Jobs}}
+    <tr data-job-id="{{.ID}}">
+      <td>{{.ID}}</td>
+      <td>{{.JobType}}</td>
+      <td>
+        <span class="badge badge-{{.Status}}">{{.Status}}</span>
+      </td>
+      <td>
+        {{if .ProgressTotal}}{{.ProgressCurrent}}/{{.ProgressTotal}}{{else}}&mdash;{{end}}
+      </td>
+      <td>
+        {{if .DurationMS}}{{.DurationMS}}ms{{else}}&mdash;{{end}}
+      </td>
+      <td>
+        {{if or (eq .Status "queued") (eq .Status "running")}}
+        <form method="post" action="/settings/jobs/cancel" class="inline-form">
+          <input type="hidden" name="job_id" value="{{.ID}}" />
+          <button type="submit" class="btn btn-sm btn-danger">Cancel</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty-state">
+  <p>No jobs found.</p>
+</div>
+{{end}}
+</div>
+
+<script>
+(() => {
+  const poll = async () => {
+    try {
+      const res = await fetch('/settings/jobs.json');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!json.ok || !json.data) return;
+      const hasActive = json.data.some(j => j.status === 'queued' || j.status === 'running');
+      if (hasActive) {
+        setTimeout(poll, 2000);
+      }
+    } catch (_) {}
+  };
+  setTimeout(poll, 2000);
+})();
+</script>
+{{end}}

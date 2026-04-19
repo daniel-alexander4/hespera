@@ -1,0 +1,97 @@
+{{define "content"}}
+<div class="login-container">
+  <h1>Sign In</h1>
+  <p class="login-subtitle">Authenticate with your SSH key</p>
+
+  <div class="login-card">
+    <div class="form-group">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" class="input" placeholder="your-username" autocomplete="username" />
+    </div>
+
+    <div class="form-group">
+      <label>Sign this challenge with your SSH key:</label>
+      <pre id="challenge-display" class="code-block">Click "Get Challenge" to start</pre>
+    </div>
+
+    <button id="btn-challenge" class="btn btn-primary" type="button">Get Challenge</button>
+
+    <div class="form-group" id="sig-group" style="display:none">
+      <label for="signature">Paste your signature:</label>
+      <textarea id="signature" name="signature" class="input textarea" rows="6" placeholder="-----BEGIN SSH SIGNATURE-----&#10;...&#10;-----END SSH SIGNATURE-----"></textarea>
+    </div>
+
+    <button id="btn-verify" class="btn btn-primary" type="button" style="display:none">Verify &amp; Login</button>
+
+    <div id="login-status" class="login-status"></div>
+
+    <details class="login-help">
+      <summary>How to sign</summary>
+      <p>Run this command in your terminal:</p>
+      <pre class="code-block">echo -n "<span id="challenge-echo"></span>" | ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n {{.Namespace}}</pre>
+    </details>
+  </div>
+</div>
+
+<script>
+(() => {
+  const btnChallenge = document.getElementById('btn-challenge');
+  const btnVerify = document.getElementById('btn-verify');
+  const challengeDisplay = document.getElementById('challenge-display');
+  const challengeEcho = document.getElementById('challenge-echo');
+  const sigGroup = document.getElementById('sig-group');
+  const sigInput = document.getElementById('signature');
+  const usernameInput = document.getElementById('username');
+  const statusEl = document.getElementById('login-status');
+  const nextURL = '{{.Next}}' || '/';
+
+  let currentChallenge = '';
+
+  const showStatus = (msg, isError) => {
+    statusEl.textContent = msg;
+    statusEl.className = 'login-status ' + (isError ? 'error' : 'success');
+  };
+
+  btnChallenge.addEventListener('click', async () => {
+    btnChallenge.disabled = true;
+    try {
+      const res = await fetch('/auth/challenge', { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.message || 'failed');
+      currentChallenge = data.data.challenge;
+      challengeDisplay.textContent = currentChallenge;
+      challengeEcho.textContent = currentChallenge;
+      sigGroup.style.display = '';
+      btnVerify.style.display = '';
+      showStatus('Challenge ready. Sign it and paste the signature below.', false);
+    } catch (err) {
+      showStatus('Failed to get challenge: ' + err.message, true);
+    } finally {
+      btnChallenge.disabled = false;
+    }
+  });
+
+  btnVerify.addEventListener('click', async () => {
+    const username = usernameInput.value.trim();
+    const signature = sigInput.value.trim();
+    if (!username) return showStatus('Username is required', true);
+    if (!signature) return showStatus('Signature is required', true);
+
+    btnVerify.disabled = true;
+    try {
+      const body = new URLSearchParams({ username, signature });
+      const res = await fetch('/auth/verify', { method: 'POST', body });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.message || 'verification failed');
+      showStatus('Authenticated! Redirecting...', false);
+      const dest = nextURL.startsWith('/') ? nextURL : '/';
+      window.location.href = dest + (dest.includes('?') ? '&' : '?') + 'auth_ok=1';
+    } catch (err) {
+      showStatus(err.message, true);
+    } finally {
+      btnVerify.disabled = false;
+    }
+  });
+})();
+</script>
+{{end}}

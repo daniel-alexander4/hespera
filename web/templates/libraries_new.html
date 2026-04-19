@@ -1,0 +1,34 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Add Library</h1>
+</div>
+
+<form method="post" action="/libraries/new" class="form-card">
+  <div class="form-group">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" class="input" required placeholder="My Music" />
+  </div>
+
+  <div class="form-group">
+    <label for="type">Type</label>
+    <select id="type" name="type" class="input" required>
+      <option value="music">Music</option>
+      <option value="tv">TV Shows</option>
+      <option value="movies">Movies</option>
+      <option value="photos">Photos</option>
+      <option value="home_videos">Home Videos</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="root_path">Root Path</label>
+    <input type="text" id="root_path" name="root_path" class="input" required placeholder="{{.MediaRoot}}/music" />
+    <small class="form-help">Must be under <code>{{.MediaRoot}}</code></small>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Create Library</button>
+    <a href="/libraries" class="btn">Cancel</a>
+  </div>
+</form>
+{{end}}

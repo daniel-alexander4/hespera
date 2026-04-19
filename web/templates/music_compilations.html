@@ -1,0 +1,27 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Compilations</h1>
+</div>
+
+{{if .Compilations}}
+<div class="band-albums-grid">
+  {{range .Compilations}}
+  <a href="/music/album/{{.ID}}" class="band-album-card">
+    <div class="band-album-art">
+      {{if .ArtPath}}
+      <img src="/art/album/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">♪</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{if .Year}}{{.Year}}{{end}} {{.DiscText}}</div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{else}}
+<div class="empty-state"><p>No compilations found.</p></div>
+{{end}}
+{{end}}

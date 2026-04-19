@@ -1,0 +1,68 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>{{.ArtistName}}</h1>
+</div>
+
+<div class="artist-header">
+  <div class="artist-header-art">
+    {{if .ArtistArt}}
+    <img src="/art/artist/{{.ArtistID}}" alt="{{.ArtistName}}" class="artist-header-img" />
+    {{else}}
+    <div class="artist-thumb-ph big">{{slice .ArtistName 0 1}}</div>
+    {{end}}
+  </div>
+  <div class="artist-side">
+    {{if .ArtistBio}}
+    <p class="artist-bio">{{.ArtistBio}}</p>
+    {{end}}
+    <div class="artist-actions">
+      {{if .Tracks}}
+      <a href="/music/player?album={{(index .Albums 0).ID}}" class="btn btn-primary">Play All</a>
+      <a href="/music/player?album={{(index .Albums 0).ID}}&shuffle=1" class="btn">Shuffle</a>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+{{if .Albums}}
+<h3 class="section-title">Albums</h3>
+<div class="band-albums-grid">
+  {{range .Albums}}
+  <a href="/music/album/{{.ID}}" class="band-album-card">
+    <div class="band-album-art">
+      {{if .ArtPath}}
+      <img src="/art/album/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">♪</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}{{.Count}} tracks</div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if .Compilations}}
+<h3 class="section-title">Appears On</h3>
+<div class="band-albums-grid">
+  {{range .Compilations}}
+  <a href="/music/album/{{.ID}}" class="band-album-card">
+    <div class="band-album-art">
+      {{if .ArtPath}}
+      <img src="/art/album/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">♪</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{if .Year}}{{.Year}}{{end}}</div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+{{end}}

@@ -1,0 +1,45 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>{{.AlbumTitle}}</h1>
+</div>
+
+<div class="album">
+  <div class="album-art-wrap">
+    {{if .AlbumArt}}
+    <img src="/art/album/{{.AlbumID}}" alt="{{.AlbumTitle}}" class="album-art-img" />
+    {{else}}
+    <div class="album-art-ph big">♪</div>
+    {{end}}
+    <div class="album-cover-meta">
+      <a href="/music/artist/{{.ArtistID}}" class="album-artist-link">{{.ArtistName}}</a>
+      {{if .AlbumYear}}<div class="text-muted">{{.AlbumYear}}</div>{{end}}
+    </div>
+  </div>
+
+  <div class="album-content">
+    <div class="album-actions">
+      <a href="/music/player?album={{.AlbumID}}" class="btn btn-primary">Play All</a>
+      <a href="/music/player?album={{.AlbumID}}&shuffle=1" class="btn">Shuffle</a>
+    </div>
+
+    {{range .DiscTracks}}
+    {{if $.MultiDisc}}
+    <div class="disc-divider">Disc {{.DiscNo}}</div>
+    {{end}}
+    <ol class="tracks">
+      {{range .Tracks}}
+      <li class="track" data-track-id="{{.ID}}" data-album-id="{{.AlbumID}}">
+        <span class="track-row-number">{{.TrackNo}}</span>
+        <a href="/music/player?album={{$.AlbumID}}&track={{.ID}}" class="track-play-btn" title="Play from here">
+          {{.Title}}
+        </a>
+        {{if $.IsCompilation}}
+        <span class="track-artist">{{.ArtistDisplay}}</span>
+        {{end}}
+      </li>
+      {{end}}
+    </ol>
+    {{end}}
+  </div>
+</div>
+{{end}}

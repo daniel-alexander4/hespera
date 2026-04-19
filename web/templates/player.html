@@ -1,0 +1,217 @@
+{{define "content"}}
+<h1>{{.PlayerTitle}}</h1>
+
+<p><a href="{{.BackURL}}">&#8592; Back</a></p>
+
+<div class="player-page">
+  <div class="player-cover">
+    <img id="player-cover-img" alt="current album cover" class="hidden" />
+    <div id="player-cover-ph" class="album-art-ph big" aria-hidden="true">&#9834;</div>
+  </div>
+
+  <div class="player-main">
+    <div class="text-muted"><strong>Album:</strong> <span id="player-album-title">&#8212;</span></div>
+    <div class="text-muted"><strong>Track:</strong> <span id="player-track-title">&#8212;</span></div>
+
+    <audio id="player-audio" class="player-audio" controls preload="none" autoplay playsinline></audio>
+
+    <div class="player-controls">
+      <button id="player-prev-btn" type="button" class="btn btn-sm" aria-label="Previous or restart" title="Previous or restart">&#9198;</button>
+      <button id="player-rewind-btn" type="button" class="btn btn-sm" aria-label="Rewind 10s" title="Rewind 10s">&#9194;</button>
+      <button id="player-toggle-btn" type="button" class="btn btn-primary btn-sm" aria-label="Pause" title="Pause">&#9208;</button>
+      <button id="player-forward-btn" type="button" class="btn btn-sm" aria-label="Forward 10s" title="Forward 10s">&#9193;</button>
+      <button id="player-next-btn" type="button" class="btn btn-sm" aria-label="Next track" title="Next track">&#9197;</button>
+    </div>
+
+    <div id="player-karaoke" class="player-shell-karaoke text-muted">
+      <div id="player-karaoke-current" class="player-shell-karaoke-current">Lyrics unavailable</div>
+      <div id="player-karaoke-next" class="player-shell-karaoke-next"></div>
+    </div>
+
+    <button id="playlist-open-btn" type="button" class="btn btn-sm" aria-label="Show playlist" title="Show playlist">Playlist</button>
+  </div>
+</div>
+
+<div id="playlist-modal" class="playlist-modal hidden">
+  <div class="playlist-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+      <strong>Playlist</strong>
+      <button id="playlist-close-btn" type="button" class="btn btn-sm">Close</button>
+    </div>
+    <ol id="playlist-list" class="tracks"></ol>
+  </div>
+</div>
+
+<script>
+(() => {
+  const tracks = [
+    {{range $i, $t := .QueueTracks}}{{if $i}},{{end}}{id: {{$t.ID}}, albumId: {{$t.AlbumID}}, album: {{printf "%q" $t.AlbumTitle}}, title: {{printf "%q" $t.Title}}, artist: {{printf "%q" $t.Artist}}}{{end}}
+  ];
+  if (!tracks.length) return;
+
+  const audio = document.getElementById('player-audio');
+  const coverImg = document.getElementById('player-cover-img');
+  const coverPh = document.getElementById('player-cover-ph');
+  const albumTitle = document.getElementById('player-album-title');
+  const trackTitle = document.getElementById('player-track-title');
+  const playlistOpenBtn = document.getElementById('playlist-open-btn');
+  const playlistCloseBtn = document.getElementById('playlist-close-btn');
+  const playlistModal = document.getElementById('playlist-modal');
+  const playlistList = document.getElementById('playlist-list');
+  const karaokeCurrent = document.getElementById('player-karaoke-current');
+  const karaokeNext = document.getElementById('player-karaoke-next');
+  const prevBtn = document.getElementById('player-prev-btn');
+  const rewindBtn = document.getElementById('player-rewind-btn');
+  const toggleBtn = document.getElementById('player-toggle-btn');
+  const forwardBtn = document.getElementById('player-forward-btn');
+  const nextBtn = document.getElementById('player-next-btn');
+
+  const shuffle = {{if .Shuffle}}true{{else}}false{{end}};
+  const startTrackID = {{.StartTrackID}};
+  const MIN_REPORT_MS = 15 * 1000;
+
+  let queue = tracks.map((_, i) => i);
+  let currentPos = 0;
+  let currentTrackReported = false;
+
+  const shuffleArray = (xs) => {
+    const copy = xs.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  if (shuffle) queue = shuffleArray(queue);
+  if (startTrackID > 0) {
+    const at = queue.findIndex(idx => tracks[idx].id === startTrackID);
+    if (at >= 0) {
+      if (shuffle) {
+        const sel = queue.splice(at, 1)[0];
+        queue.unshift(sel);
+      } else {
+        queue = queue.slice(at);
+      }
+    }
+  }
+  if (!queue.length) return;
+
+  const reportPlayEvent = (payload, opts) => {
+    if (!payload || !payload.track_id) return;
+    const body = JSON.stringify(payload);
+    if (opts && opts.beacon && navigator.sendBeacon) {
+      navigator.sendBeacon('/music/play-event', new Blob([body], {type:'application/json'}));
+      return;
+    }
+    fetch('/music/play-event', {method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true}).catch(() => {});
+  };
+
+  const reportCurrentTrack = (completed, opts) => {
+    if (currentTrackReported) return;
+    if (currentPos < 0 || currentPos >= queue.length) return;
+    const t = tracks[queue[currentPos]];
+    if (!t) return;
+    const playedMs = Math.max(0, Math.floor((audio.currentTime || 0) * 1000));
+    if (!completed && playedMs < MIN_REPORT_MS) return;
+    currentTrackReported = true;
+    reportPlayEvent({track_id:t.id, played_ms:playedMs, completed:!!completed, source:'page'}, opts);
+  };
+
+  const renderPlaylist = () => {
+    playlistList.innerHTML = '';
+    queue.forEach((trackIdx, idx) => {
+      const t = tracks[trackIdx];
+      const li = document.createElement('li');
+      li.className = 'track playlist-item';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'track-play-btn';
+      let prefix = '';
+      if (idx < currentPos) prefix = '\u2713 ';
+      else if (idx === currentPos) prefix = '\u25B6 ';
+      btn.textContent = prefix + t.album + ' \u2014 ' + t.title;
+      btn.addEventListener('click', () => { playAt(idx); playlistModal.classList.add('hidden'); });
+      li.appendChild(btn);
+      playlistList.appendChild(li);
+    });
+  };
+
+  const playAt = (pos) => {
+    if (pos < 0 || pos >= queue.length) return;
+    reportCurrentTrack(false);
+    currentPos = pos;
+    currentTrackReported = false;
+    const t = tracks[queue[currentPos]];
+    albumTitle.textContent = t.album;
+    const artistText = (t.artist || '').trim();
+    trackTitle.textContent = artistText ? (t.title + ' \u2014 ' + artistText) : t.title;
+
+    delete coverImg.dataset.fallbackApplied;
+    coverImg.src = '/art/album/' + t.albumId;
+    coverImg.classList.remove('hidden');
+    coverPh.classList.add('hidden');
+
+    audio.src = '/stream/track/' + t.id;
+    audio.play().catch(() => {});
+    karaokeCurrent.textContent = '';
+    karaokeNext.textContent = '';
+    renderPlaylist();
+  };
+
+  const playNext = () => {
+    const next = currentPos + 1;
+    if (next < queue.length) { playAt(next); return true; }
+    return false;
+  };
+
+  audio.addEventListener('ended', () => {
+    reportCurrentTrack(true);
+    playNext();
+  });
+  window.addEventListener('beforeunload', () => reportCurrentTrack(false, {beacon:true}));
+
+  prevBtn.addEventListener('click', () => {
+    if (audio.currentTime > 10 || currentPos === 0) { audio.currentTime = 0; return; }
+    playAt(currentPos - 1);
+  });
+  rewindBtn.addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
+  toggleBtn.addEventListener('click', () => {
+    if (audio.paused) audio.play().catch(() => {});
+    else audio.pause();
+  });
+  forwardBtn.addEventListener('click', () => {
+    if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      audio.currentTime = Math.min(audio.duration, audio.currentTime + 10);
+    } else {
+      audio.currentTime = audio.currentTime + 10;
+    }
+  });
+  nextBtn.addEventListener('click', () => playNext());
+
+  coverImg.addEventListener('error', () => {
+    if (coverImg.dataset.fallbackApplied === '1') {
+      coverImg.classList.add('hidden');
+      coverPh.classList.remove('hidden');
+      return;
+    }
+    coverImg.dataset.fallbackApplied = '1';
+    coverImg.src = '/static/missing.album.webp';
+    coverImg.classList.remove('hidden');
+    coverPh.classList.add('hidden');
+  });
+  coverImg.addEventListener('load', () => {
+    coverImg.classList.remove('hidden');
+    coverPh.classList.add('hidden');
+  });
+
+  playlistOpenBtn.addEventListener('click', () => playlistModal.classList.remove('hidden'));
+  if (playlistCloseBtn) playlistCloseBtn.addEventListener('click', () => playlistModal.classList.add('hidden'));
+  playlistModal.addEventListener('click', (e) => {
+    if (e.target === playlistModal) playlistModal.classList.add('hidden');
+  });
+
+  playAt(0);
+})();
+</script>
+{{end}}

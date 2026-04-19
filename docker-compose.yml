@@ -1,0 +1,15 @@
+services:
+  isomedia:
+    build: .
+    user: "${UID:-65532}:${GID:-65532}"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/var/lib/isomedia
+      - /media:/media:ro
+    environment:
+      ISOMEDIA_LISTEN: ":8080"
+      ISOMEDIA_DATA_DIR: "/var/lib/isomedia"
+      ISOMEDIA_MEDIA_ROOT: "/media"
+      AUTH_ENABLED: "false"
+    restart: unless-stopped
