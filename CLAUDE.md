@@ -1,10 +1,8 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
-isomedia is a locally-hosted media server built from scratch in Go. Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite for storage, server-rendered HTML templates with vanilla CSS/JS. Four direct dependencies: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`.
+Locally-hosted media server in Go: Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite storage, server-rendered HTML templates with vanilla CSS/JS. Four direct deps: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`.
 
 ## Build & Run Commands
 
@@ -16,18 +14,9 @@ go build -o ./bin/isocli ./cmd/isocli
 # Build and run with Docker
 docker compose up --build
 
-# Run all tests
+# Tests: all / one package / one test
 go test ./...
-
-# Run tests for a specific package
 go test ./internal/config
-go test ./internal/db
-go test ./internal/auth
-go test ./internal/pathguard
-go test ./internal/jobs
-go test ./internal/match
-
-# Run a single test
 go test ./internal/config -run TestFromEnvDefaults
 
 # Format and vet
@@ -39,7 +28,7 @@ go vet ./...
 
 ### Entry Points
 
-- `cmd/isomedia/main.go` — Web server: loads config, opens SQLite with WAL mode, runs migrations, creates Handler, starts HTTP server with graceful shutdown (10s timeout).
+- `cmd/isomedia/main.go` — Web server: config → SQLite (WAL) → migrations → Handler → HTTP server, graceful shutdown (10s timeout).
 - `cmd/isocli/main.go` — CLI stub for future user/key management.
 
 ### Core Packages
@@ -58,21 +47,20 @@ go vet ./...
 
 ### Key Patterns
 
-- **Handler dependency injection**: `web.Handler` receives `web.Deps{Cfg, DB}`. Constructor `web.New(d)` compiles templates, starts job service, initializes auth.
-- **Routing**: stdlib `http.ServeMux`. All routes registered in `web.Router()`. Auth middleware wraps entire mux if enabled.
-- **Templates**: Go `html/template` loaded from `web/templates/` at startup. Layout base cloned per page, merged with `partials_*.html` glob. FuncMap: `staticv` (cache-bust), `humanBytes`, `mult`.
-- **Database**: Pure Go SQLite via `modernc.org/sqlite`. WAL mode, 8 max open / 4 idle, 5s busy timeout, FK on. Migrations in `db.Migrate()` with `ensureColumn()` for schema evolution.
-- **Jobs**: `jobs.Service` with `Enqueue(jobType, libraryID, createdBy, executor)`. Job states: queued → running → done/failed/canceled. Progress tracked in `scan_jobs` table.
+- **Handler DI**: `web.Handler` receives `web.Deps{Cfg, DB}`; `web.New(d)` compiles templates, starts job service, initializes auth.
+- **Routing**: stdlib `http.ServeMux`, routes registered in `web.Router()`. Auth middleware wraps entire mux if enabled.
+- **Templates**: `html/template` from `web/templates/` at startup. Layout base cloned per page, merged with `partials_*.html` glob. FuncMap: `staticv` (cache-bust), `humanBytes`, `mult`.
+- **Database**: `modernc.org/sqlite`, WAL, 8 max open / 4 idle, 5s busy timeout, FK on. Migrations in `db.Migrate()` with `ensureColumn()` for schema evolution.
+- **Jobs**: `jobs.Service.Enqueue(jobType, libraryID, createdBy, executor)`. States: queued → running → done/failed/canceled. Progress in `scan_jobs` table.
 - **Scanner pattern**: `scan.New(cfg, db)` / `match.New(db, dataDir)` constructed inline per handler call, passed as executor closure to `jobs.Enqueue`.
-- **Logging**: `slog` structured JSON logging to stdout.
+- **Logging**: `slog` structured JSON to stdout.
 
 ### Match Pipeline
 
-The `internal/match` package implements music metadata matching:
-- **MBClient**: MusicBrainz API with 1 req/sec rate limiter, 3-strategy query cascade (strict release-group → loose release → artist fallback)
-- **Scorer**: Weighted scoring (title 0-38, artist 0-26, MB score 0-18, type 0-10, year 0-4). Thresholds: ≥70 matched, 45-69 uncertain, <45 unmatched
-- **CAAClient**: Cover Art Archive fetch with release-group → release fallback, thumbnail size preference
-- **Artist enrichment**: MusicBrainz URL relations → Wikipedia REST API for bio → Wikidata/Wikimedia Commons for artist image
+- **MBClient**: MusicBrainz API, 1 req/sec rate limiter, 3-strategy query cascade (strict release-group → loose release → artist fallback)
+- **Scorer**: weighted (title 0-38, artist 0-26, MB score 0-18, type 0-10, year 0-4). Thresholds: ≥70 matched, 45-69 uncertain, <45 unmatched
+- **CAAClient**: Cover Art Archive, release-group → release fallback, thumbnail size preference
+- **Artist enrichment**: MusicBrainz URL relations → Wikipedia REST API (bio) → Wikidata/Wikimedia Commons (image)
 - **Pipeline**: `Matcher.RunMusicMatch()` iterates albums, scores candidates, fetches art, enriches artists. Non-fatal per-album errors.
 
 ### Test Patterns
@@ -97,4 +85,4 @@ The `internal/match` package implements music metadata matching:
 
 ### Docker
 
-Multi-stage build: Go 1.23 builder (`CGO_ENABLED=0 -trimpath -ldflags="-s -w"`) → Ubuntu 24.04 runtime with ffmpeg/openssh-client/ca-certificates. Runs as non-root (UID 65532). Port 8080.
+Multi-stage: Go 1.23 builder (`CGO_ENABLED=0 -trimpath -ldflags="-s -w"`) → Ubuntu 24.04 runtime with ffmpeg/openssh-client/ca-certificates. Non-root (UID 65532). Port 8080.
