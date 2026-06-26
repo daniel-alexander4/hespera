@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -275,10 +276,12 @@ func (h *Handler) tvSeasonDetail(w http.ResponseWriter, r *http.Request) {
 		showName = "Series " + seriesID
 	}
 
-	// Load season metadata from cache.
+	// Load season metadata from cache and unmarshal once, reusing it for the
+	// season name/overview and the per-episode lookup map.
 	seasonKey := fmt.Sprintf("show:%s:season:%d", seriesID, seasonNum)
 	var seasonPayload string
 	var seasonName, seasonOverview string
+	epCacheMap := make(map[int]tmdb.TVEpisode)
 	if err := h.db.QueryRowContext(r.Context(),
 		"SELECT payload_json FROM tv_series_metadata_cache WHERE entity_key=? AND lang='en'",
 		seasonKey,
@@ -287,21 +290,13 @@ func (h *Handler) tvSeasonDetail(w http.ResponseWriter, r *http.Request) {
 		if json.Unmarshal([]byte(seasonPayload), &season) == nil {
 			seasonName = season.Name
 			seasonOverview = season.Overview
-		}
-	}
-	if seasonName == "" {
-		seasonName = fmt.Sprintf("Season %d", seasonNum)
-	}
-
-	// Build episode list from cached episode metadata + file info.
-	epCacheMap := make(map[int]tmdb.TVEpisode)
-	if seasonPayload != "" {
-		var season tmdb.TVSeason
-		if json.Unmarshal([]byte(seasonPayload), &season) == nil {
 			for _, ep := range season.Episodes {
 				epCacheMap[ep.EpisodeNumber] = ep
 			}
 		}
+	}
+	if seasonName == "" {
+		seasonName = fmt.Sprintf("Season %d", seasonNum)
 	}
 
 	// Query files for this series+season, with playback progress.
@@ -336,6 +331,11 @@ ORDER BY i.episode_numbers_csv
 		progressPct := 0
 		if dur > 0 {
 			progressPct = int(pos / dur * 100)
+			if progressPct < 0 {
+				progressPct = 0
+			} else if progressPct > 100 {
+				progressPct = 100
+			}
 		}
 
 		for _, epStr := range strings.Split(epCSV, ",") {
@@ -368,6 +368,12 @@ ORDER BY i.episode_numbers_csv
 		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvSeasonDetail", "err", err)
 		return
 	}
+
+	// episode_numbers_csv is TEXT, so the SQL ORDER BY sorts lexically
+	// ("10" before "2"). Order numerically by parsed episode number here.
+	sort.Slice(episodes, func(i, j int) bool {
+		return episodes[i].EpisodeNumber < episodes[j].EpisodeNumber
+	})
 
 	h.render(w, "tv_season.html", map[string]any{
 		"Title":          fmt.Sprintf("%s — %s", showName, seasonName),
@@ -864,6 +870,17 @@ WHERE f.id = ?
 	})
 }
 
+// firstEpNum parses the first episode number from an episode_numbers_csv
+// value for numeric ordering. Malformed rows sort last.
+func firstEpNum(csv string) int {
+	for _, s := range strings.Split(csv, ",") {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			return n
+		}
+	}
+	return 1 << 30
+}
+
 func (h *Handler) findAdjacentEpisode(ctx context.Context, seriesID string, seasonNum int, currentEpCSV string, currentFileID int64) (prevID, nextID int64) {
 	rows, err := h.db.QueryContext(ctx, `
 SELECT f.id, i.episode_numbers_csv
@@ -888,6 +905,12 @@ ORDER BY i.episode_numbers_csv
 			entries = append(entries, e)
 		}
 	}
+
+	// episode_numbers_csv is TEXT; sort numerically so prev/next navigation is
+	// correct past episode 9 (lexical order puts "10" before "2").
+	sort.Slice(entries, func(i, j int) bool {
+		return firstEpNum(entries[i].epCSV) < firstEpNum(entries[j].epCSV)
+	})
 
 	for i, e := range entries {
 		if e.id == currentFileID {

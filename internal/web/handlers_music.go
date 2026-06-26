@@ -765,8 +765,8 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 	// Determine where tracks ended up after rescan.
 	var newAlbumID int64
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT album_id FROM music_tracks WHERE abs_path=?",
-		successPaths[0]).Scan(&newAlbumID); err != nil {
+		"SELECT album_id FROM music_tracks WHERE abs_path=? AND library_id=?",
+		successPaths[0], libraryID).Scan(&newAlbumID); err != nil {
 		newAlbumID = albumID
 	}
 
@@ -834,8 +834,8 @@ func (h *Handler) musicAlbumRescan(w http.ResponseWriter, r *http.Request) {
 	// Determine where tracks ended up.
 	var newAlbumID int64
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT album_id FROM music_tracks WHERE abs_path=?",
-		paths[0]).Scan(&newAlbumID); err != nil {
+		"SELECT album_id FROM music_tracks WHERE abs_path=? AND library_id=?",
+		paths[0], libraryID).Scan(&newAlbumID); err != nil {
 		newAlbumID = albumID
 	}
 
