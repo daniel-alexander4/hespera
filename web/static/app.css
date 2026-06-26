@@ -366,6 +366,10 @@ a:hover {
 .badge-done { background: #13261a; color: #5bbf80; }
 .badge-failed { background: #2a1515; color: #ff8a8a; }
 .badge-canceled { background: #2a2515; color: #d4a855; }
+.badge-matched { background: #13261a; color: #5bbf80; }
+.badge-uncertain { background: #2a2515; color: #d4a855; }
+.badge-unmatched { background: #2a1515; color: #ff8a8a; }
+.badge-manual { background: #1a2a3a; color: #5bb8ff; }
 
 /* Empty state */
 .empty-state {
@@ -467,6 +471,28 @@ a:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(61, 143, 99, 0.3);
   color: var(--page-fg);
+}
+.band-album-card--unmatched {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.tv-backdrop {
+  width: 100%;
+  height: 240px;
+  background-size: cover;
+  background-position: center;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.meta-tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  margin-right: 0.35rem;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--text-soft);
 }
 .band-album-art {
   aspect-ratio: 1;
@@ -780,7 +806,7 @@ a:hover {
   align-items: flex-start;
   gap: 1rem;
   padding: 0.75rem 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
 }
 .tv-episode-row.tv-episode-completed {
   opacity: 0.6;
@@ -796,7 +822,7 @@ a:hover {
   min-width: 0;
 }
 .tv-episode-name a {
-  color: var(--text);
+  color: var(--page-fg);
   text-decoration: none;
   font-weight: 500;
 }
@@ -845,7 +871,7 @@ a:hover {
   margin-bottom: 0.25rem;
 }
 .tv-player-header h1 a {
-  color: var(--text);
+  color: var(--page-fg);
   text-decoration: none;
 }
 .tv-player-header h1 a:hover {
@@ -892,7 +918,7 @@ a:hover {
   left: 0;
   right: 0;
   background: var(--surface-panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: 4px;
   z-index: 10;
   max-height: 300px;
@@ -903,7 +929,7 @@ a:hover {
   padding: 0.5rem 0.75rem;
   cursor: pointer;
   font-size: 0.9em;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
 }
 .tv-match-search-item:hover {
   background: var(--accent);

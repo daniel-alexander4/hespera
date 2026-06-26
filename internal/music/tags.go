@@ -115,7 +115,7 @@ func ReadTrackMeta(path string) (TrackMeta, error) {
 		ExplicitNotCompilation: explicitNotComp,
 	}
 
-	if isGenericCompilationArtist(artist) {
+	if IsGenericCompilationArtist(artist) {
 		if parsedArtist, parsedTitle := ParseFilenameArtistTitle(baseNoExt); parsedArtist != "" {
 			meta.Artist = parsedArtist
 			if strings.TrimSpace(m.Title()) == "" && parsedTitle != "" {
@@ -566,11 +566,6 @@ func parseTrackIndexFromRaw(raw map[string]interface{}, keys []string) int {
 func IsGenericCompilationArtist(artist string) bool {
 	v := strings.ToLower(strings.TrimSpace(artist))
 	return v == "various artists" || v == "various artist" || v == "va"
-}
-
-// isGenericCompilationArtist is the unexported variant used internally.
-func isGenericCompilationArtist(artist string) bool {
-	return IsGenericCompilationArtist(artist)
 }
 
 func ParseFilenameArtistTitle(baseNoExt string) (artist string, title string) {
