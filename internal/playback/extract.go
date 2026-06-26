@@ -14,6 +14,13 @@ var textSubtitleCodecs = set(
 	"subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text", "eia_608", "eia_708",
 )
 
+// IsTextSubtitle reports whether a subtitle codec is text (extractable to a
+// WebVTT sidecar). Bitmap subs (PGS/DVD/DVB) and unknown codecs return false,
+// so they fail safe to burn-in.
+func IsTextSubtitle(codec string) bool {
+	return textSubtitleCodecs[strings.ToLower(strings.TrimSpace(codec))]
+}
+
 // FromProbe resolves the SELECTED tracks of a probed source into a MediaInfo.
 // audioOrdinal/subOrdinal are 1-based among streams of that type; 0 selects the
 // default (or first) audio track and selects no subtitle. An out-of-range audio
@@ -46,7 +53,7 @@ func FromProbe(p *video.ProbeResult, container string, fileSizeBytes int64, audi
 	}
 	if subOrdinal > 0 && subOrdinal <= len(subs) {
 		m.HasSubtitle = true
-		m.SubtitleIsText = textSubtitleCodecs[strings.ToLower(subs[subOrdinal-1].CodecName)]
+		m.SubtitleIsText = IsTextSubtitle(subs[subOrdinal-1].CodecName)
 	}
 	m.BitrateBPS = bitrate(p.Format, fileSizeBytes)
 	return m
