@@ -30,53 +30,53 @@ type Config struct {
 }
 
 func FromEnv() Config {
-	listen := getenv("ISOMEDIA_LISTEN", ":8080")
-	dataDir := getenv("ISOMEDIA_DATA_DIR", "/var/lib/isomedia")
-	dbPath := getenv("ISOMEDIA_DB_PATH", dataDir+"/isomedia.sqlite")
-	mediaRoot := getenv("ISOMEDIA_MEDIA_ROOT", "/media")
+	listen := getenv("HESPERA_LISTEN", ":8080")
+	dataDir := getenv("HESPERA_DATA_DIR", "/var/lib/hespera")
+	dbPath := getenv("HESPERA_DB_PATH", dataDir+"/hespera.sqlite")
+	mediaRoot := getenv("HESPERA_MEDIA_ROOT", "/media")
 
 	return Config{
 		Listen:     listen,
 		DataDir:    dataDir,
 		DBPath:     dbPath,
 		MediaRoot:  mediaRoot,
-		TMDBAPIKey: getenv("ISOMEDIA_TMDB_API_KEY", ""),
+		TMDBAPIKey: getenv("HESPERA_TMDB_API_KEY", ""),
 		AuthEnabled: parseBoolDefaultTrue(
 			os.Getenv("AUTH_ENABLED"),
 		),
 		AuthSessionSecret: getenv("AUTH_SESSION_SECRET", ""),
-		SSHAuthNamespace:  getenv("SSH_AUTH_NAMESPACE", "isomedia"),
+		SSHAuthNamespace:  getenv("SSH_AUTH_NAMESPACE", "hespera"),
 		SSHKeygenPath:     getenv("SSH_KEYGEN_PATH", "ssh-keygen"),
 		FFmpegConcurrentLimit: parsePositiveIntDefault(
-			os.Getenv("ISOMEDIA_FFMPEG_CONCURRENCY"), 4,
+			os.Getenv("HESPERA_FFMPEG_CONCURRENCY"), 4,
 		),
 		FFmpegAcquireTimeout: parseDurationDefault(
-			os.Getenv("ISOMEDIA_FFMPEG_ACQUIRE_TIMEOUT"), 2*time.Second,
+			os.Getenv("HESPERA_FFMPEG_ACQUIRE_TIMEOUT"), 2*time.Second,
 		),
 		TVTranscodedCacheMaxBytes: parsePositiveInt64Default(
-			os.Getenv("ISOMEDIA_TV_TRANSCODED_CACHE_MAX_BYTES"), 20<<30,
+			os.Getenv("HESPERA_TV_TRANSCODED_CACHE_MAX_BYTES"), 20<<30,
 		),
 		TVHLSCacheMaxBytes: parsePositiveInt64Default(
-			os.Getenv("ISOMEDIA_TV_HLS_CACHE_MAX_BYTES"), 20<<30,
+			os.Getenv("HESPERA_TV_HLS_CACHE_MAX_BYTES"), 20<<30,
 		),
 		TVCacheMaxAge: parseDurationDefault(
-			os.Getenv("ISOMEDIA_TV_CACHE_MAX_AGE"), 72*time.Hour,
+			os.Getenv("HESPERA_TV_CACHE_MAX_AGE"), 72*time.Hour,
 		),
 	}
 }
 
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.Listen) == "" {
-		return errors.New("ISOMEDIA_LISTEN is required")
+		return errors.New("HESPERA_LISTEN is required")
 	}
 	if !strings.HasPrefix(c.DataDir, "/") {
-		return fmt.Errorf("ISOMEDIA_DATA_DIR must be absolute: %q", c.DataDir)
+		return fmt.Errorf("HESPERA_DATA_DIR must be absolute: %q", c.DataDir)
 	}
 	if !strings.HasPrefix(c.DBPath, "/") {
-		return fmt.Errorf("ISOMEDIA_DB_PATH must be absolute: %q", c.DBPath)
+		return fmt.Errorf("HESPERA_DB_PATH must be absolute: %q", c.DBPath)
 	}
 	if !strings.HasPrefix(c.MediaRoot, "/") {
-		return fmt.Errorf("ISOMEDIA_MEDIA_ROOT must be absolute: %q", c.MediaRoot)
+		return fmt.Errorf("HESPERA_MEDIA_ROOT must be absolute: %q", c.MediaRoot)
 	}
 	if c.AuthEnabled && strings.TrimSpace(c.AuthSessionSecret) == "" {
 		return errors.New("AUTH_SESSION_SECRET is required when AUTH_ENABLED=true")
@@ -85,19 +85,19 @@ func (c Config) Validate() error {
 		return errors.New("AUTH_SESSION_SECRET must be a non-placeholder value and at least 16 characters")
 	}
 	if c.FFmpegConcurrentLimit < 0 {
-		return errors.New("ISOMEDIA_FFMPEG_CONCURRENCY must be >= 0")
+		return errors.New("HESPERA_FFMPEG_CONCURRENCY must be >= 0")
 	}
 	if c.FFmpegAcquireTimeout < 0 {
-		return errors.New("ISOMEDIA_FFMPEG_ACQUIRE_TIMEOUT must be >= 0")
+		return errors.New("HESPERA_FFMPEG_ACQUIRE_TIMEOUT must be >= 0")
 	}
 	if c.TVTranscodedCacheMaxBytes < 0 {
-		return errors.New("ISOMEDIA_TV_TRANSCODED_CACHE_MAX_BYTES must be >= 0")
+		return errors.New("HESPERA_TV_TRANSCODED_CACHE_MAX_BYTES must be >= 0")
 	}
 	if c.TVHLSCacheMaxBytes < 0 {
-		return errors.New("ISOMEDIA_TV_HLS_CACHE_MAX_BYTES must be >= 0")
+		return errors.New("HESPERA_TV_HLS_CACHE_MAX_BYTES must be >= 0")
 	}
 	if c.TVCacheMaxAge < 0 {
-		return errors.New("ISOMEDIA_TV_CACHE_MAX_AGE must be >= 0")
+		return errors.New("HESPERA_TV_CACHE_MAX_AGE must be >= 0")
 	}
 	return nil
 }

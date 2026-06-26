@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"isomedia/internal/config"
-	"isomedia/internal/db"
+	"hespera/internal/config"
+	"hespera/internal/db"
 )
 
 func newTestManager(t *testing.T) *Manager {
@@ -27,7 +27,7 @@ func newTestManager(t *testing.T) *Manager {
 	cfg := config.Config{
 		AuthEnabled:       true,
 		AuthSessionSecret: "test-secret-at-least-16-chars!!",
-		SSHAuthNamespace:  "isomedia",
+		SSHAuthNamespace:  "hespera",
 		SSHKeygenPath:     "ssh-keygen",
 	}
 	return New(cfg, conn)
@@ -42,8 +42,8 @@ func TestManagerEnabled(t *testing.T) {
 
 func TestManagerNamespace(t *testing.T) {
 	m := newTestManager(t)
-	if m.Namespace() != "isomedia" {
-		t.Fatalf("expected namespace=isomedia, got %q", m.Namespace())
+	if m.Namespace() != "hespera" {
+		t.Fatalf("expected namespace=hespera, got %q", m.Namespace())
 	}
 }
 

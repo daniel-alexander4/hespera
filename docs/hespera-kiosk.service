@@ -1,9 +1,9 @@
-# Sample systemd --user unit for an isomedia couch-mode kiosk.
+# Sample systemd --user unit for a Hespera couch-mode kiosk.
 # Install: see docs/tv-mode.md. Adjust the chromium path/flags and the URL for
-# your device. Assumes an isomedia instance is already reachable at the URL
+# your device. Assumes a Hespera instance is already reachable at the URL
 # below (run it with AUTH_ENABLED=false bound to loopback — see the runbook).
 [Unit]
-Description=isomedia couch-mode kiosk (fullscreen browser)
+Description=Hespera couch-mode kiosk (fullscreen browser)
 After=graphical-session.target
 PartOf=graphical-session.target
 

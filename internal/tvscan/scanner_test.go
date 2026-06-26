@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	isodb "isomedia/internal/db"
+	isodb "hespera/internal/db"
 )
 
 func openTestDB(t *testing.T) *sql.DB {

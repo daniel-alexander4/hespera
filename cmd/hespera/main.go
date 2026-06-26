@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"isomedia/internal/config"
-	"isomedia/internal/db"
-	"isomedia/internal/video"
-	"isomedia/internal/web"
+	"hespera/internal/config"
+	"hespera/internal/db"
+	"hespera/internal/video"
+	"hespera/internal/web"
 )
 
 func main() {

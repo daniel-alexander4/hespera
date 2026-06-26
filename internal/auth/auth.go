@@ -21,12 +21,12 @@ import (
 	"sync"
 	"time"
 
-	"isomedia/internal/config"
+	"hespera/internal/config"
 )
 
 const (
-	sessionCookieName = "isomedia_session"
-	preAuthCookieName = "isomedia_preauth"
+	sessionCookieName = "hespera_session"
+	preAuthCookieName = "hespera_preauth"
 )
 
 var (
@@ -94,7 +94,7 @@ func New(cfg config.Config, db *sql.DB) *Manager {
 		MaxVerifyPerMin: 10,
 	}
 	if strings.TrimSpace(ac.Namespace) == "" {
-		ac.Namespace = "isomedia"
+		ac.Namespace = "hespera"
 	}
 	if strings.TrimSpace(ac.SSHKeygenPath) == "" {
 		ac.SSHKeygenPath = "ssh-keygen"
@@ -115,7 +115,7 @@ func (m *Manager) Enabled() bool {
 
 func (m *Manager) Namespace() string {
 	if m == nil {
-		return "isomedia"
+		return "hespera"
 	}
 	return m.cfg.Namespace
 }
@@ -596,7 +596,7 @@ func verifyWithSSHKeygen(ctx context.Context, in VerifyInput) error {
 		return err
 	}
 
-	tmpDir, err := os.MkdirTemp("", "isomedia-auth-")
+	tmpDir, err := os.MkdirTemp("", "hespera-auth-")
 	if err != nil {
 		return err
 	}

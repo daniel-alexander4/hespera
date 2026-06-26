@@ -8,8 +8,8 @@ import (
 func TestFromEnvDefaults(t *testing.T) {
 	// Clear any env vars that might interfere.
 	for _, k := range []string{
-		"ISOMEDIA_LISTEN", "ISOMEDIA_DATA_DIR", "ISOMEDIA_DB_PATH",
-		"ISOMEDIA_MEDIA_ROOT", "AUTH_ENABLED", "AUTH_SESSION_SECRET",
+		"HESPERA_LISTEN", "HESPERA_DATA_DIR", "HESPERA_DB_PATH",
+		"HESPERA_MEDIA_ROOT", "AUTH_ENABLED", "AUTH_SESSION_SECRET",
 	} {
 		os.Unsetenv(k)
 	}
@@ -18,11 +18,11 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.Listen != ":8080" {
 		t.Fatalf("expected Listen=:8080, got %q", cfg.Listen)
 	}
-	if cfg.DataDir != "/var/lib/isomedia" {
-		t.Fatalf("expected DataDir=/var/lib/isomedia, got %q", cfg.DataDir)
+	if cfg.DataDir != "/var/lib/hespera" {
+		t.Fatalf("expected DataDir=/var/lib/hespera, got %q", cfg.DataDir)
 	}
-	if cfg.DBPath != "/var/lib/isomedia/isomedia.sqlite" {
-		t.Fatalf("expected DBPath=/var/lib/isomedia/isomedia.sqlite, got %q", cfg.DBPath)
+	if cfg.DBPath != "/var/lib/hespera/hespera.sqlite" {
+		t.Fatalf("expected DBPath=/var/lib/hespera/hespera.sqlite, got %q", cfg.DBPath)
 	}
 	if cfg.MediaRoot != "/media" {
 		t.Fatalf("expected MediaRoot=/media, got %q", cfg.MediaRoot)
@@ -36,12 +36,12 @@ func TestFromEnvDefaults(t *testing.T) {
 }
 
 func TestFromEnvCustom(t *testing.T) {
-	os.Setenv("ISOMEDIA_LISTEN", ":9090")
-	os.Setenv("ISOMEDIA_DATA_DIR", "/tmp/iso")
+	os.Setenv("HESPERA_LISTEN", ":9090")
+	os.Setenv("HESPERA_DATA_DIR", "/tmp/iso")
 	os.Setenv("AUTH_ENABLED", "false")
 	defer func() {
-		os.Unsetenv("ISOMEDIA_LISTEN")
-		os.Unsetenv("ISOMEDIA_DATA_DIR")
+		os.Unsetenv("HESPERA_LISTEN")
+		os.Unsetenv("HESPERA_DATA_DIR")
 		os.Unsetenv("AUTH_ENABLED")
 	}()
 

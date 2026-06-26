@@ -1,4 +1,4 @@
-# isomedia — Project Plan
+# Hespera — Project Plan
 
 A locally-hosted media server built from scratch. Music, TV, Movies. Automatic metadata matching. Clean architecture.
 
@@ -15,8 +15,8 @@ A locally-hosted media server built from scratch. Music, TV, Movies. Automatic m
 
 ```
 cmd/
-  isomedia/main.go          — Web server entry point
-  isocli/main.go            — CLI for user/key management
+  hespera/main.go          — Web server entry point
+  hescli/main.go            — CLI for user/key management
 
 internal/
   config/                   — Env-based config, validation
@@ -59,9 +59,9 @@ web/
 ## Phase 1: Foundation
 
 ### 1.1 Project Skeleton
-- [ ] `go mod init isomedia`
-- [ ] cmd/isomedia/main.go — load config, open DB, run migrations, create handler, start HTTP server with graceful shutdown
-- [ ] internal/config — Config struct from env vars (prefixed ISOMEDIA_)
+- [ ] `go mod init hespera`
+- [ ] cmd/hespera/main.go — load config, open DB, run migrations, create handler, start HTTP server with graceful shutdown
+- [ ] internal/config — Config struct from env vars (prefixed HESPERA_)
 - [ ] internal/db — SQLite WAL setup (8 max open, 4 idle, 5s busy timeout, FK on), migration runner
 - [ ] internal/pathguard — ResolveExistingUnderRoot (resolve symlinks, check containment)
 - [ ] Dockerfile + docker-compose.yml — multi-stage build, Ubuntu 24.04 runtime with ffmpeg/openssh-client

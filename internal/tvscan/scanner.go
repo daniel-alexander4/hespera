@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"isomedia/internal/config"
-	"isomedia/internal/pathguard"
-	"isomedia/internal/video"
+	"hespera/internal/config"
+	"hespera/internal/pathguard"
+	"hespera/internal/video"
 )
 
 type Scanner struct {

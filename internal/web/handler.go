@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"isomedia/internal/auth"
-	"isomedia/internal/config"
-	"isomedia/internal/jobs"
+	"hespera/internal/auth"
+	"hespera/internal/config"
+	"hespera/internal/jobs"
 )
 
 type Deps struct {

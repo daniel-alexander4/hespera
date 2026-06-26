@@ -14,7 +14,7 @@ import (
 
 const (
 	mbBaseURL   = "https://musicbrainz.org/ws/2"
-	mbUserAgent = "isomedia/1.0 (https://github.com/isomedia)"
+	mbUserAgent = "hespera/1.0"
 )
 
 // rateLimiter enforces a minimum interval between successive calls across all

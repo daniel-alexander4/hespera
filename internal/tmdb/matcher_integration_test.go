@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	isodb "isomedia/internal/db"
+	isodb "hespera/internal/db"
 )
 
 func openTestDB(t *testing.T) *sql.DB {

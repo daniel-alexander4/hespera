@@ -14,10 +14,10 @@ import (
 	"strconv"
 	"strings"
 
-	"isomedia/internal/match"
-	"isomedia/internal/music"
-	"isomedia/internal/pathguard"
-	"isomedia/internal/scan"
+	"hespera/internal/match"
+	"hespera/internal/music"
+	"hespera/internal/pathguard"
+	"hespera/internal/scan"
 )
 
 // --- Row types ---

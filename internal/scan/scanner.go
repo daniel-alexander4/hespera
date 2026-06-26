@@ -14,9 +14,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"isomedia/internal/config"
-	"isomedia/internal/music"
-	"isomedia/internal/pathguard"
+	"hespera/internal/config"
+	"hespera/internal/music"
+	"hespera/internal/pathguard"
 )
 
 type Scanner struct {
