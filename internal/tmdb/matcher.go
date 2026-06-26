@@ -200,18 +200,7 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 			}
 
 			// Cache episode metadata.
-			for _, ep := range season.Episodes {
-				epKey := fmt.Sprintf("show:%d:season:%d:episode:%d", showID, sn, ep.EpisodeNumber)
-				epJSON, _ := json.Marshal(ep)
-				_, _ = m.db.ExecContext(ctx, `
-INSERT INTO tv_series_metadata_cache (entity_key, lang, payload_json, fetched_at)
-VALUES (?, 'en', ?, datetime('now'))
-ON CONFLICT(entity_key, lang) DO UPDATE SET
-  payload_json=excluded.payload_json,
-  fetched_at=excluded.fetched_at,
-  updated_at=datetime('now')
-`, epKey, string(epJSON))
-			}
+			m.cacheEpisodes(ctx, showID, sn, season.Episodes)
 		}
 
 		// Update identities for all files in this group.
@@ -320,21 +309,41 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 			}
 		}
 
-		for _, ep := range season.Episodes {
-			epKey := fmt.Sprintf("show:%d:season:%d:episode:%d", showID, sn, ep.EpisodeNumber)
-			epJSON, _ := json.Marshal(ep)
-			_, _ = m.db.ExecContext(ctx, `
+		m.cacheEpisodes(ctx, showID, sn, season.Episodes)
+	}
+
+	return nil
+}
+
+// cacheEpisodes upserts episode metadata for one season in a single
+// transaction, instead of one autocommit per episode.
+func (m *Matcher) cacheEpisodes(ctx context.Context, showID, seasonNum int, episodes []TVEpisode) {
+	if len(episodes) == 0 {
+		return
+	}
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	for _, ep := range episodes {
+		epKey := fmt.Sprintf("show:%d:season:%d:episode:%d", showID, seasonNum, ep.EpisodeNumber)
+		epJSON, err := json.Marshal(ep)
+		if err != nil {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
 INSERT INTO tv_series_metadata_cache (entity_key, lang, payload_json, fetched_at)
 VALUES (?, 'en', ?, datetime('now'))
 ON CONFLICT(entity_key, lang) DO UPDATE SET
   payload_json=excluded.payload_json,
   fetched_at=excluded.fetched_at,
   updated_at=datetime('now')
-`, epKey, string(epJSON))
+`, epKey, string(epJSON)); err != nil {
+			return
 		}
 	}
-
-	return nil
+	_ = tx.Commit()
 }
 
 // SearchTV proxies a TMDB search and returns results. Used by the match search endpoint.
