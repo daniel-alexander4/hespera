@@ -8,9 +8,30 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"isomedia/internal/config"
 )
+
+// waitForJobTerminal blocks until the most recent job of the given type
+// reaches a terminal status (done/failed/canceled), so a background job's
+// side effects can't outlive the test and race TempDir cleanup.
+func waitForJobTerminal(t *testing.T, db *sql.DB, jobType string) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		var status string
+		err := db.QueryRow(
+			"SELECT status FROM scan_jobs WHERE job_type=? ORDER BY id DESC LIMIT 1",
+			jobType,
+		).Scan(&status)
+		if err == nil && (status == "done" || status == "failed" || status == "canceled") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("job %q did not reach a terminal state within timeout", jobType)
+}
 
 // seedTVMetadata inserts a tv_series_metadata_cache row so tvSeriesDetail
 // can find a show entry for the given seriesID.
@@ -170,6 +191,12 @@ func TestTVMatchReviewHandlers(t *testing.T) {
 		if seriesID != "12345" {
 			t.Fatalf("expected series_id '12345', got '%s'", seriesID)
 		}
+
+		// The approve handler enqueues a background tv_metadata_fetch job that
+		// writes into DataDir (the test's TempDir). Wait for it to reach a
+		// terminal state before the subtest returns, otherwise its filesystem
+		// writes race t.TempDir cleanup.
+		waitForJobTerminal(t, approveDB, "tv_metadata_fetch")
 	})
 
 	t.Run("POST_approve_missing_params", func(t *testing.T) {
