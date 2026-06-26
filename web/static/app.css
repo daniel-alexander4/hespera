@@ -895,6 +895,29 @@ a:hover {
   display: block;
   max-height: 80vh;
 }
+.tv-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+.tv-track-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.tv-track-pick select {
+  font: inherit;
+}
+.tv-playback-mode {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
 .tv-player-nav {
   display: flex;
   justify-content: space-between;

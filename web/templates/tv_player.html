@@ -7,13 +7,20 @@
 
   <div class="tv-player-video-wrap">
     <video id="tvVideo" class="tv-video" controls autoplay
-           src="/stream/tv/{{.FileID}}"
            data-file-id="{{.FileID}}"
-           data-position="{{.Position}}"
-           data-completed="{{.Completed}}"
            data-next-file="{{.NextFileID}}">
       Your browser does not support video playback.
     </video>
+  </div>
+
+  <div class="tv-player-controls">
+    <label class="tv-track-pick" id="audioPick" hidden>Audio
+      <select id="audioSelect"></select>
+    </label>
+    <label class="tv-track-pick" id="subPick" hidden>Subtitles
+      <select id="subSelect"></select>
+    </label>
+    <span id="playbackMode" class="tv-playback-mode"></span>
   </div>
 
   <div class="tv-player-nav">
@@ -31,72 +38,143 @@
   </div>
 </div>
 
+<script src="{{staticv "/static/hls.light.min.js"}}"></script>
 <script>
 (() => {
   const video = document.getElementById('tvVideo');
   if (!video) return;
 
   const fileID = parseInt(video.dataset.fileId, 10);
-  const savedPos = parseFloat(video.dataset.position) || 0;
-  const wasCompleted = video.dataset.completed === '1';
   const nextFile = parseInt(video.dataset.nextFile, 10) || 0;
+  const audioSelect = document.getElementById('audioSelect');
+  const subSelect = document.getElementById('subSelect');
+  const modeLabel = document.getElementById('playbackMode');
+
+  let hls = null;          // active hls.js instance, if any
+  let currentAud = 0, currentSub = 0;
+  let selectsBuilt = false;
   let lastReport = 0;
 
-  // Resume from saved position.
-  if (savedPos > 0 && !wasCompleted) {
-    video.addEventListener('loadedmetadata', () => {
-      video.currentTime = savedPos;
-    }, { once: true });
+  const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
+
+  function teardownHLS() {
+    if (hls) { hls.destroy(); hls = null; }
   }
 
+  function attachSource(session, seekTo) {
+    teardownHLS();
+    const onReady = () => { if (seekTo > 0) { try { video.currentTime = seekTo; } catch (e) {} } };
+
+    if (session.protocol === 'hls' && !nativeHLS && window.Hls && Hls.isSupported()) {
+      hls = new Hls({ enableWorker: true });
+      hls.loadSource(session.url);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, onReady);
+    } else {
+      // Direct play, remux, native-HLS (Safari): the element loads the URL directly.
+      video.src = session.url;
+      video.addEventListener('loadedmetadata', onReady, { once: true });
+      video.load();
+    }
+    video.play().catch(() => {}); // autoplay may be blocked; user can press play
+  }
+
+  function attachSubtitle(session) {
+    for (const t of [...video.querySelectorAll('track')]) t.remove();
+    if (session.subtitle_url) {
+      const track = document.createElement('track');
+      track.kind = 'subtitles';
+      track.src = session.subtitle_url;
+      track.default = true;
+      track.label = 'Subtitles';
+      video.appendChild(track);
+    }
+  }
+
+  function buildSelects(session) {
+    const audio = session.audio_tracks || [];
+    if (audio.length > 1) {
+      audioSelect.innerHTML = '';
+      audio.forEach((a) => {
+        const o = document.createElement('option');
+        o.value = a.ordinal;
+        o.textContent = [a.language, a.title, a.codec].filter(Boolean).join(' · ') || ('Track ' + a.ordinal);
+        if (a.default) o.selected = true;
+        audioSelect.appendChild(o);
+      });
+      document.getElementById('audioPick').hidden = false;
+    }
+    const subs = session.subtitle_tracks || [];
+    if (subs.length > 0) {
+      subSelect.innerHTML = '';
+      const off = document.createElement('option');
+      off.value = 0; off.textContent = 'Off'; off.selected = true;
+      subSelect.appendChild(off);
+      subs.forEach((s) => {
+        const o = document.createElement('option');
+        o.value = s.ordinal;
+        o.textContent = [s.language, s.title].filter(Boolean).join(' · ') || ('Subtitle ' + s.ordinal);
+        subSelect.appendChild(o);
+      });
+      document.getElementById('subPick').hidden = false;
+    }
+    selectsBuilt = true;
+  }
+
+  async function loadFromSession(aud, sub, seekTo) {
+    currentAud = aud; currentSub = sub;
+    let session;
+    try {
+      const resp = await fetch(`/tv/playback-session?file=${fileID}&aud=${aud}&sub=${sub}`, { headers: { Accept: 'application/json' } });
+      session = await resp.json();
+    } catch (e) {
+      modeLabel.textContent = 'Unable to start playback';
+      return;
+    }
+    if (!session || !session.ok) { modeLabel.textContent = 'Unable to start playback'; return; }
+
+    if (!selectsBuilt) buildSelects(session);
+    modeLabel.textContent = session.decision.replace('_', ' ');
+    if (session.protocol === 'hls' && !nativeHLS && !(window.Hls && Hls.isSupported())) {
+      modeLabel.textContent = 'This browser cannot play the transcoded stream';
+    }
+    const resume = (seekTo != null) ? seekTo : (session.completed ? 0 : (session.resume_position_seconds || 0));
+    attachSource(session, resume);
+    attachSubtitle(session);
+  }
+
+  if (audioSelect) audioSelect.addEventListener('change', () => loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, video.currentTime));
+  if (subSelect) subSelect.addEventListener('change', () => loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, video.currentTime));
+
+  // --- progress reporting (unchanged behaviour) ---
   function reportProgress(completed) {
     const now = Date.now();
     if (!completed && now - lastReport < 15000) return;
     lastReport = now;
-
     const body = JSON.stringify({
       file_id: fileID,
       position_seconds: video.currentTime,
       duration_seconds: video.duration || 0,
-      completed: !!completed
+      completed: !!completed,
     });
-
     if (navigator.sendBeacon) {
       navigator.sendBeacon('/tv/playback-progress', new Blob([body], { type: 'application/json' }));
     } else {
       fetch('/tv/playback-progress', { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
     }
   }
-
-  // Report every 15 seconds during playback.
-  video.addEventListener('timeupdate', () => reportProgress(false));
-
-  // Report on pause.
-  video.addEventListener('pause', () => {
-    lastReport = 0;
-    reportProgress(false);
-  });
-
-  // Mark completed at 90%.
   video.addEventListener('timeupdate', () => {
-    if (video.duration > 0 && video.currentTime / video.duration >= 0.9) {
-      reportProgress(true);
-    }
+    reportProgress(false);
+    if (video.duration > 0 && video.currentTime / video.duration >= 0.9) reportProgress(true);
   });
-
-  // Auto-advance to next episode on end.
+  video.addEventListener('pause', () => { lastReport = 0; reportProgress(false); });
   video.addEventListener('ended', () => {
     reportProgress(true);
-    if (nextFile > 0) {
-      window.location.href = '/tv/player?file=' + nextFile;
-    }
+    if (nextFile > 0) window.location.href = '/tv/player?file=' + nextFile;
   });
+  window.addEventListener('beforeunload', () => { lastReport = 0; reportProgress(false); });
 
-  // Report on page unload.
-  window.addEventListener('beforeunload', () => {
-    lastReport = 0;
-    reportProgress(false);
-  });
+  loadFromSession(0, 0, null);
 })();
 </script>
 {{end}}
