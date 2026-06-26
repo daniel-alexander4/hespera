@@ -6,10 +6,10 @@ services:
       - "8080:8080"
     volumes:
       - /etc/hespera/data:/var/lib/hespera
-      - /media/hespera:/media
+      - /media/hespera:/media/hespera
     environment:
       HESPERA_LISTEN: ":8080"
       HESPERA_DATA_DIR: "/var/lib/hespera"
-      HESPERA_MEDIA_ROOT: "/media"
+      HESPERA_MEDIA_ROOT: "/media/hespera"
       AUTH_ENABLED: "false"
     restart: unless-stopped
