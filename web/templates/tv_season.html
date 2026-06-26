@@ -9,16 +9,19 @@
 </div>
 {{end}}
 
+{{if .MissingEpisodes}}<p class="tv-missing-note">{{.MissingEpisodes}} episode(s) missing from your library</p>{{end}}
+
 {{if not .Episodes}}
 <div class="empty-state"><p>No episodes found for this season.</p></div>
 {{else}}
 <div class="tv-episode-list">
   {{range .Episodes}}
-  <div class="tv-episode-row{{if .Completed}} tv-episode-completed{{end}}">
+  <div class="tv-episode-row{{if .Completed}} tv-episode-completed{{end}}{{if .Missing}} tv-episode-missing{{end}}">
     <div class="tv-episode-number">{{.EpisodeNumber}}</div>
     <div class="tv-episode-info">
       <div class="tv-episode-name">
         {{if .FileID}}<a href="/tv/player?file={{.FileID}}">{{if .Name}}{{.Name}}{{else}}Episode {{.EpisodeNumber}}{{end}}</a>{{else}}{{if .Name}}{{.Name}}{{else}}Episode {{.EpisodeNumber}}{{end}}{{end}}
+        {{if .Missing}}<span class="tv-missing-badge">Missing</span>{{end}}
       </div>
       {{if .AirDate}}<div class="tv-episode-date">{{.AirDate}}</div>{{end}}
       {{if .Resolution}}<div class="tv-episode-meta">{{.Resolution}} · {{.VideoCodec}}</div>{{end}}
