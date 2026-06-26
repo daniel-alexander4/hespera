@@ -232,7 +232,7 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 	}
 
 	best, score, ok := BestCandidate(candidates, title, artist, year)
-	if !ok || score < 80 {
+	if !ok || score < matchThreshold {
 		_, _ = m.db.ExecContext(ctx,
 			"UPDATE music_albums SET match_status='unmatched' WHERE id=?", albumID)
 		return nil
