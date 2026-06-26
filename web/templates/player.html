@@ -70,6 +70,19 @@
   const startTrackID = {{.StartTrackID}};
   const MIN_REPORT_MS = 15 * 1000;
 
+  const hasMediaSession = 'mediaSession' in navigator;
+  const setMediaMetadata = (t) => {
+    if (!hasMediaSession) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.title || '',
+        artist: t.artist || '',
+        album: t.album || '',
+        artwork: [{ src: '/art/album/' + t.albumId, sizes: '512x512', type: 'image/jpeg' }],
+      });
+    } catch (_) {}
+  };
+
   let queue = tracks.map((_, i) => i);
   let currentPos = 0;
   let currentTrackReported = false;
@@ -146,6 +159,7 @@
     albumTitle.textContent = t.album;
     const artistText = (t.artist || '').trim();
     trackTitle.textContent = artistText ? (t.title + ' \u2014 ' + artistText) : t.title;
+    setMediaMetadata(t);
 
     delete coverImg.dataset.fallbackApplied;
     coverImg.src = '/art/album/' + t.albumId;
@@ -171,10 +185,12 @@
   });
   window.addEventListener('beforeunload', () => reportCurrentTrack(false, {beacon:true}));
 
-  prevBtn.addEventListener('click', () => {
+  const playPrev = () => {
     if (audio.currentTime > 10 || currentPos === 0) { audio.currentTime = 0; return; }
     playAt(currentPos - 1);
-  });
+  };
+
+  prevBtn.addEventListener('click', playPrev);
   rewindBtn.addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
   toggleBtn.addEventListener('click', () => {
     if (audio.paused) audio.play().catch(() => {});
@@ -188,6 +204,20 @@
     }
   });
   nextBtn.addEventListener('click', () => playNext());
+
+  if (hasMediaSession) {
+    const setHandler = (action, handler) => {
+      try { navigator.mediaSession.setActionHandler(action, handler); } catch (_) {}
+    };
+    setHandler('play', () => audio.play().catch(() => {}));
+    setHandler('pause', () => audio.pause());
+    setHandler('previoustrack', playPrev);
+    setHandler('nexttrack', () => playNext());
+    setHandler('seekbackward', (d) => { audio.currentTime = Math.max(0, audio.currentTime - ((d && d.seekOffset) || 10)); });
+    setHandler('seekforward', (d) => { audio.currentTime = audio.currentTime + ((d && d.seekOffset) || 10); });
+    audio.addEventListener('play', () => { navigator.mediaSession.playbackState = 'playing'; });
+    audio.addEventListener('pause', () => { navigator.mediaSession.playbackState = 'paused'; });
+  }
 
   coverImg.addEventListener('error', () => {
     if (coverImg.dataset.fallbackApplied === '1') {

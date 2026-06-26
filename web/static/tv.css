@@ -1,0 +1,61 @@
+/* tv.css — "couch mode" 10-foot skin.
+ * Loaded on every page but scoped entirely under html[data-couch="1"], so it
+ * has zero effect on the normal desktop UI. It re-themes the existing pages by
+ * overriding the shared CSS custom properties from app.css and bumping the
+ * rem-based root font-size, then hides the desktop chrome and adds a
+ * high-contrast focus ring for remote/keyboard navigation (see couch.js).
+ * tv.css is linked after app.css, so these equal-specificity rules win. */
+
+html[data-couch="1"] {
+  /* Bigger across the board: all app.css sizes are rem-based, so this scales
+     the whole UI for a across-the-room read. Overrides data-font-size. */
+  font-size: 24px;
+  scroll-behavior: smooth;
+
+  /* Higher-contrast palette for a TV/projector. */
+  --page-bg: #05070a;
+  --page-fg: #ffffff;
+  --surface-card: #121a26;
+  --surface-panel: #0c121b;
+  --border-default: #33425a;
+  --text-muted: #c8d4e4;
+  --text-soft: #aebfd6;
+  --link-color: #9bdcff;
+  --link-hover-color: #d6f0ff;
+}
+
+/* Hide desktop chrome — the remote navigates within the page content. */
+html[data-couch="1"] .topbar,
+html[data-couch="1"] .footer {
+  display: none;
+}
+
+html[data-couch="1"] .main {
+  max-width: none;
+  margin: 0;
+  padding: 3vh 5vw;
+}
+
+/* Visible focus ring — the single most important couch-mode affordance.
+   app.css has no focus-visible system today, so this is net-new and scoped. */
+html[data-couch="1"] :focus,
+html[data-couch="1"] :focus-visible {
+  outline: 4px solid var(--accent-hover);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Roomier, easier-to-hit targets. */
+html[data-couch="1"] .card {
+  padding: 1.5rem;
+}
+
+html[data-couch="1"] .btn {
+  font-size: 1.05rem;
+  padding: 0.6rem 1.1rem;
+}
+
+/* Let the album art breathe on the player page. */
+html[data-couch="1"] .player-audio {
+  width: 100%;
+}

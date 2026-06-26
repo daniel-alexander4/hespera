@@ -19,10 +19,19 @@
         if (palette) document.documentElement.setAttribute('data-palette', palette);
         if (fontTheme) document.documentElement.setAttribute('data-font-theme', fontTheme);
         if (fontSize) document.documentElement.setAttribute('data-font-size', fontSize);
+
+        // Couch mode: ?couch=1 enables (and is remembered), ?couch=0 clears.
+        const couchParam = new URLSearchParams(location.search).get('couch');
+        let couch = localStorage.getItem('iso_couch') === '1';
+        if (couchParam === '1') { couch = true; localStorage.setItem('iso_couch', '1'); }
+        else if (couchParam === '0') { couch = false; localStorage.removeItem('iso_couch'); }
+        if (couch) document.documentElement.setAttribute('data-couch', '1');
       } catch (_) {}
     })();
   </script>
   <link rel="stylesheet" href="{{staticv "/static/app.css"}}" />
+  <link rel="stylesheet" href="{{staticv "/static/tv.css"}}" />
+  <script src="{{staticv "/static/couch.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
