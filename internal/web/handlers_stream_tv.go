@@ -235,17 +235,27 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir, err := video.EnsureHLS(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080)
-	if err != nil {
-		if r.Context().Err() != nil {
-			return // client gave up while the build ran
+	isManifest := strings.HasSuffix(name, ".m3u8")
+	var dir string
+	if isManifest {
+		// Returns as soon as the first segment exists; the encode continues in
+		// the background and the event playlist grows.
+		d, err := video.EnsureHLS(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080)
+		if err != nil {
+			if r.Context().Err() != nil {
+				return // client gave up while the build started
+			}
+			httpError(w, http.StatusInternalServerError, "transcode failed", "hls build", "handler", "streamTVHLS", "file_id", fileID, "err", err)
+			return
 		}
-		httpError(w, http.StatusInternalServerError, "transcode failed", "hls build", "handler", "streamTVHLS", "file_id", fileID, "err", err)
-		return
+		dir = d
+	} else {
+		// Segments are only requested for entries the playlist already lists, so
+		// they exist on disk — don't re-trigger a build.
+		dir = video.HLSDir(h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080)
 	}
 
-	asset := filepath.Join(dir, name)
-	f, err := os.Open(asset)
+	f, err := os.Open(filepath.Join(dir, name))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -256,10 +266,12 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if strings.HasSuffix(name, ".m3u8") {
+	if isManifest {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Cache-Control", "no-store") // event playlist grows during transcode
 	} else {
 		w.Header().Set("Content-Type", "video/mp2t")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	}
 	http.ServeContent(w, r, name, fi.ModTime(), f)
 }
