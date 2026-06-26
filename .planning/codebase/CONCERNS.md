@@ -74,6 +74,18 @@
 - Current mitigation: The goroutine only fetches metadata, not critical data. Failure is logged.
 - Recommendations: Route this through the `jobs.Service` queue instead of a raw goroutine, so it gets tracking, cancellation support, and error visibility.
 
+**CSRF Check Permissive When Origin and Referer Both Absent:** _(deferred, added 2026-06-25 code-review)_
+- Risk: `isSameOriginUnsafeRequest` returns allow when an unsafe-method request carries neither `Origin` nor `Referer`, so a non-browser client can skip the same-origin CSRF check.
+- Files: `internal/auth/auth.go` (lines 497-521)
+- Current mitigation: Session cookies are `SameSite=Lax`, which already blocks the cross-site authenticated POST that CSRF relies on; the Origin/Referer check is defense-in-depth. Deliberately left permissive — tightening to "deny when a session cookie is present but both headers are absent" would break legitimate same-origin JSON/CLI clients that omit `Referer`.
+- Revisit trigger: if a first-party client appears that relies on a non-`Lax` cookie, or the cookie's `SameSite` is ever loosened.
+
+**Rate Limiting Keys on RemoteAddr Only (no trusted-proxy support):** _(deferred, added 2026-06-25 code-review)_
+- Risk: `clientIP` derives the rate-limit/CSRF key solely from `r.RemoteAddr`, ignoring `X-Forwarded-For`. Behind a reverse proxy, every request would share the proxy's address and collapse the 10/min verify limiter into one global bucket.
+- Files: `internal/auth/auth.go` (lines 444-450)
+- Current mitigation: No reverse proxy is deployed — `docker-compose.yml` publishes `8080` directly — so every client already has a distinct `RemoteAddr` and the limiter works correctly. Naively trusting `X-Forwarded-For` now would *introduce* a spoofing vector (anyone could forge the header).
+- Revisit trigger: if a reverse proxy is put in front of the app, add trusted-proxy-gated XFF parsing behind an explicit allowlist (e.g. `ISOMEDIA_TRUSTED_PROXIES`).
+
 ## Performance Bottlenecks
 
 **Music Home Page N+1 Query Pattern:**

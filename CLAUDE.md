@@ -58,7 +58,7 @@ go vet ./...
 ### Match Pipeline
 
 - **MBClient**: MusicBrainz API, 1 req/sec rate limiter, 3-strategy query cascade (strict release-group → loose release → artist fallback)
-- **Scorer**: weighted (title 0-38, artist 0-26, MB score 0-18, type 0-10, year 0-4). Thresholds: ≥70 matched, 45-69 uncertain, <45 unmatched
+- **Scorer**: weighted (title 0-38, artist 0-26, MB score 0-18, type 0-10, year 0-4; max ~96). Single threshold `matchThreshold` (=80): score ≥80 matched, else unmatched. The former "uncertain" tier was retired (migrated to unmatched in `db.Migrate`).
 - **CAAClient**: Cover Art Archive, release-group → release fallback, thumbnail size preference
 - **Artist enrichment**: MusicBrainz URL relations → Wikipedia REST API (bio) → Wikidata/Wikimedia Commons (image)
 - **Pipeline**: `Matcher.RunMusicMatch()` iterates albums, scores candidates, fetches art, enriches artists. Non-fatal per-album errors.

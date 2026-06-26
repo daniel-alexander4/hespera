@@ -2,6 +2,11 @@ package match
 
 import "math"
 
+// matchThreshold is the minimum ScoreCandidate result (max ~96) for a candidate
+// to be accepted as a match; anything below is treated as unmatched. There is a
+// single cutoff — the former "uncertain" tier was retired (see db.Migrate).
+const matchThreshold = 80
+
 // ScoreCandidate scores a MusicBrainz candidate against local album metadata.
 // Max score is ~96.
 func ScoreCandidate(c Candidate, localTitle, localArtist string, localYear int) float64 {
