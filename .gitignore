@@ -25,3 +25,6 @@ thumbs/
 
 # Project memory
 MEMORY.md
+
+# Local scripts
+full.docker.reset.sh
