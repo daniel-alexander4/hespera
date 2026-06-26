@@ -8,21 +8,32 @@ import (
 	"time"
 )
 
-// ffmpegSem bounds concurrent ffprobe/ffmpeg processes. nil means unlimited.
-// Configured once at startup via SetConcurrency, before any Probe call.
+// ffmpegSem bounds total concurrent ffprobe/ffmpeg processes. bgSem is a
+// sub-cap on long-running background builds (whole-file HLS transcodes), held
+// below the global limit so interactive work — probe, remux, live transcode —
+// always keeps headroom and can't be starved by background builds. nil means
+// unlimited. Configured once at startup via SetConcurrency, before any use.
 var (
 	ffmpegSem     chan struct{}
+	bgSem         chan struct{}
 	ffmpegTimeout time.Duration
 )
 
 // SetConcurrency configures the global ffprobe/ffmpeg concurrency cap. A limit
-// of <= 0 means unlimited (no semaphore). acquireTimeout bounds how long Probe
-// waits for a slot; <= 0 waits indefinitely (subject to the caller's context).
+// of <= 0 means unlimited (no semaphore). acquireTimeout bounds how long
+// foreground work waits for a slot; <= 0 waits indefinitely (subject to the
+// caller's context). The background-build sub-cap is half the global limit (at
+// least 1), reserving the remainder for interactive playback.
 func SetConcurrency(limit int, acquireTimeout time.Duration) {
 	if limit <= 0 {
-		ffmpegSem = nil
+		ffmpegSem, bgSem = nil, nil
 	} else {
 		ffmpegSem = make(chan struct{}, limit)
+		bg := limit / 2
+		if bg < 1 {
+			bg = 1
+		}
+		bgSem = make(chan struct{}, bg)
 	}
 	ffmpegTimeout = acquireTimeout
 }
@@ -42,6 +53,29 @@ func acquire(ctx context.Context) (func(), error) {
 	case ffmpegSem <- struct{}{}:
 		return func() { <-ffmpegSem }, nil
 	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// acquireBackground reserves a slot for a long-running background build. It
+// takes a background slot (capped below the global limit) and then a global
+// slot, so background builds can never consume the capacity reserved for
+// interactive playback. It is not bounded by ffmpegTimeout — it waits, subject
+// to ctx, rather than failing fast, since builds are not latency-sensitive.
+func acquireBackground(ctx context.Context) (func(), error) {
+	if ffmpegSem == nil {
+		return func() {}, nil
+	}
+	select {
+	case bgSem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case ffmpegSem <- struct{}{}:
+		return func() { <-ffmpegSem; <-bgSem }, nil
+	case <-ctx.Done():
+		<-bgSem
 		return nil, ctx.Err()
 	}
 }
