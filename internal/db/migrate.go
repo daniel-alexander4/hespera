@@ -229,6 +229,22 @@ CREATE TABLE IF NOT EXISTS auth_user_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_auth_user_keys_user_id ON auth_user_keys(user_id);
+
+CREATE TABLE IF NOT EXISTS lyrics_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  track_id INTEGER NOT NULL REFERENCES music_tracks(id) ON DELETE CASCADE,
+  provider_key TEXT NOT NULL DEFAULT '',
+  lyrics_text TEXT NOT NULL DEFAULT '',
+  synced_lyrics TEXT NOT NULL DEFAULT '',
+  has_synced INTEGER NOT NULL DEFAULT 0,
+  provider_track_id INTEGER NOT NULL DEFAULT 0,
+  match_track TEXT NOT NULL DEFAULT '',
+  match_artist TEXT NOT NULL DEFAULT '',
+  match_album TEXT NOT NULL DEFAULT '',
+  fetched_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(track_id, provider_key)
+);
 `
 
 func Migrate(db *sql.DB) error {

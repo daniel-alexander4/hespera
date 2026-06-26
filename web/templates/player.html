@@ -86,6 +86,8 @@
   let queue = tracks.map((_, i) => i);
   let currentPos = 0;
   let currentTrackReported = false;
+  let karaokeLines = [];
+  let karaokeToken = 0; // guards against a stale fetch overwriting a newer track
 
   const shuffleArray = (xs) => {
     const copy = xs.slice();
@@ -131,6 +133,57 @@
     reportPlayEvent({track_id:t.id, played_ms:playedMs, completed:!!completed, source:'page'}, opts);
   };
 
+  // --- Synced lyrics (karaoke) ---
+  const parseSyncedLyrics = (text) => {
+    const out = [];
+    const re = /^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/;
+    for (const raw of (text || '').split('\n')) {
+      const m = raw.match(re);
+      if (!m) continue;
+      const frac = m[3] ? parseInt(m[3].padEnd(3, '0'), 10) / 1000 : 0;
+      out.push({ start: parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + frac, text: (m[4] || '').trim() });
+    }
+    out.sort((a, b) => a.start - b.start);
+    return out;
+  };
+
+  const renderKaraokeAt = (pos) => {
+    if (!karaokeLines.length) return;
+    let idx = -1;
+    for (let i = 0; i < karaokeLines.length; i++) {
+      if (karaokeLines[i].start <= pos + 0.02) idx = i; else break;
+    }
+    karaokeCurrent.textContent = idx >= 0 ? karaokeLines[idx].text : '';
+    karaokeNext.textContent = (idx + 1 < karaokeLines.length) ? karaokeLines[idx + 1].text : '';
+  };
+
+  const loadKaraokeForTrack = (t) => {
+    karaokeLines = [];
+    const token = ++karaokeToken;
+    karaokeCurrent.textContent = 'Loading lyrics…';
+    karaokeNext.textContent = '';
+    fetch('/music/lyrics/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'track_id=' + encodeURIComponent(t.id),
+    }).then(r => r.json()).then(payload => {
+      if (token !== karaokeToken) return; // a newer track took over
+      const d = (payload && payload.data) || {};
+      const synced = (d.synced_lyrics || '').trim();
+      if (synced) {
+        karaokeLines = parseSyncedLyrics(synced);
+        renderKaraokeAt(audio.currentTime || 0);
+      } else {
+        karaokeCurrent.textContent = (d.lyrics || '').trim() ? 'Synced lyrics unavailable' : 'Lyrics unavailable';
+        karaokeNext.textContent = '';
+      }
+    }).catch(() => {
+      if (token !== karaokeToken) return;
+      karaokeCurrent.textContent = 'Lyrics unavailable';
+      karaokeNext.textContent = '';
+    });
+  };
+
   const renderPlaylist = () => {
     playlistList.innerHTML = '';
     queue.forEach((trackIdx, idx) => {
@@ -168,8 +221,7 @@
 
     audio.src = '/stream/track/' + t.id;
     audio.play().catch(() => {});
-    karaokeCurrent.textContent = '';
-    karaokeNext.textContent = '';
+    loadKaraokeForTrack(t);
     renderPlaylist();
   };
 
@@ -183,6 +235,7 @@
     reportCurrentTrack(true);
     playNext();
   });
+  audio.addEventListener('timeupdate', () => renderKaraokeAt(audio.currentTime || 0));
   window.addEventListener('beforeunload', () => reportCurrentTrack(false, {beacon:true}));
 
   const playPrev = () => {
