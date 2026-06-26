@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -128,6 +130,17 @@ func (s *Service) runJob(req JobRequest) {
 	defer func() {
 		s.unregisterCancel(req.JobID)
 		cancel()
+	}()
+	// Isolate executor panics: an unrecovered panic here would kill the only
+	// worker goroutine and silently freeze the queue. Registered after the
+	// cancel defer so it runs first (LIFO) and marks the job failed before
+	// the cancel cleanup fires.
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("job executor panicked",
+				"job_id", req.JobID, "panic", r, "stack", string(debug.Stack()))
+			s.finishJob(req.JobID, "failed", fmt.Sprintf("panic: %v", r), startedAt)
+		}
 	}()
 
 	err := req.Executor(ctx, req.JobID, req.LibraryID)
