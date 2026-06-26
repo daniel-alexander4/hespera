@@ -1,0 +1,75 @@
+// couch.js — 10-foot "couch mode" remote/keyboard navigation layer.
+// Active only when <html data-couch="1"> (set by the layout bootstrap from
+// ?couch=1 / localStorage). It makes the existing pages navigable with a TV
+// remote that emits standard key events (e.g. a Flirc dongle or BT remote):
+// arrow keys move a visible focus ring between focusable elements, Enter/OK
+// activates natively, and Backspace/Escape goes back. No server involvement.
+(() => {
+  if (document.documentElement.getAttribute('data-couch') !== '1') return;
+
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  const visible = (el) => {
+    if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const candidates = () => Array.from(document.querySelectorAll(FOCUSABLE)).filter(visible);
+
+  const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+
+  // Pick the nearest candidate in the given direction from the active element.
+  // Score = primary-axis distance + a cross-axis misalignment penalty, so the
+  // focus moves to the geometrically closest item that genuinely lies that way.
+  const move = (dir) => {
+    const all = candidates();
+    if (!all.length) return;
+    const active = document.activeElement;
+    if (!active || !all.includes(active)) { all[0].focus(); return; }
+    const from = center(active.getBoundingClientRect());
+
+    let best = null;
+    let bestScore = Infinity;
+    for (const el of all) {
+      if (el === active) continue;
+      const to = center(el.getBoundingClientRect());
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      let primary, cross;
+      if (dir === 'left') { if (dx >= -1) continue; primary = -dx; cross = Math.abs(dy); }
+      else if (dir === 'right') { if (dx <= 1) continue; primary = dx; cross = Math.abs(dy); }
+      else if (dir === 'up') { if (dy >= -1) continue; primary = -dy; cross = Math.abs(dx); }
+      else { if (dy <= 1) continue; primary = dy; cross = Math.abs(dx); }
+      const score = primary + cross * 2;
+      if (score < bestScore) { bestScore = score; best = el; }
+    }
+    if (best) {
+      best.focus();
+      best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    }
+  };
+
+  const DIRS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+
+  document.addEventListener('keydown', (e) => {
+    const target = e.target;
+    const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+    if (e.key in DIRS) {
+      if (typing) return; // let arrows edit text
+      e.preventDefault();
+      move(DIRS[e.key]);
+      return;
+    }
+    if ((e.key === 'Backspace' || e.key === 'Escape' || e.key === 'BrowserBack') && !typing) {
+      e.preventDefault();
+      history.back();
+    }
+    // Enter / OK is left to native behavior (activates links and buttons).
+  });
+
+  // Land focus somewhere sensible on first paint so the remote has a starting point.
+  const first = candidates()[0];
+  if (first) first.focus();
+})();
