@@ -36,6 +36,7 @@ type tvSeasonRow struct {
 	Name         string
 	PosterPath   string
 	EpisodeCount int
+	Missing      bool // in TMDB metadata but no files present locally
 }
 
 type tvEpisodeRow struct {
@@ -48,6 +49,7 @@ type tvEpisodeRow struct {
 	FileID        int64
 	ProgressPct   int
 	Completed     bool
+	Missing       bool // in TMDB metadata but no file present locally
 }
 
 // --- TV Series List ---
@@ -299,22 +301,55 @@ ORDER BY i.season_number
 		return
 	}
 
+	// Surface seasons TMDB knows about that have no local files. Reflects
+	// last-match-time cache.
+	present := make(map[int]bool, len(seasons))
+	for _, s := range seasons {
+		present[s.SeasonNumber] = true
+	}
+	missing := missingSeasons(show, present)
+	seasons = append(seasons, missing...)
+	sort.Slice(seasons, func(i, j int) bool { return seasons[i].SeasonNumber < seasons[j].SeasonNumber })
+
 	year := ""
 	if len(show.FirstAirDate) >= 4 {
 		year = show.FirstAirDate[:4]
 	}
 
 	h.render(w, "tv_series.html", map[string]any{
-		"Title":        show.Name,
-		"ShowID":       seriesID,
-		"ShowName":     show.Name,
-		"Year":         year,
-		"Status":       show.Status,
-		"Overview":     show.Overview,
-		"Genres":       show.Genres,
-		"BackdropPath": show.BackdropPath,
-		"Seasons":      seasons,
+		"Title":          show.Name,
+		"ShowID":         seriesID,
+		"ShowName":       show.Name,
+		"Year":           year,
+		"Status":         show.Status,
+		"Overview":       show.Overview,
+		"Genres":         show.Genres,
+		"BackdropPath":   show.BackdropPath,
+		"Seasons":        seasons,
+		"MissingSeasons": len(missing),
 	})
+}
+
+// missingSeasons returns rows for TMDB seasons that have no local files.
+// Specials (season 0) are excluded as noise.
+func missingSeasons(show tmdb.TVShow, present map[int]bool) []tvSeasonRow {
+	var out []tvSeasonRow
+	for _, s := range show.Seasons {
+		if s.SeasonNumber <= 0 || present[s.SeasonNumber] {
+			continue
+		}
+		name := s.Name
+		if name == "" {
+			name = fmt.Sprintf("Season %d", s.SeasonNumber)
+		}
+		out = append(out, tvSeasonRow{
+			SeasonNumber: s.SeasonNumber,
+			Name:         name,
+			PosterPath:   s.PosterPath,
+			Missing:      true,
+		})
+	}
+	return out
 }
 
 // --- TV Season Detail ---
@@ -431,6 +466,11 @@ ORDER BY i.episode_numbers_csv
 		return
 	}
 
+	// Surface episodes TMDB knows about for this season that have no local
+	// file, as greyed rows. Reflects last-match-time cache.
+	missingEps := missingEpisodes(epCacheMap, episodeSeen)
+	episodes = append(episodes, missingEps...)
+
 	// episode_numbers_csv is TEXT, so the SQL ORDER BY sorts lexically
 	// ("10" before "2"). Order numerically by parsed episode number here.
 	sort.Slice(episodes, func(i, j int) bool {
@@ -438,13 +478,33 @@ ORDER BY i.episode_numbers_csv
 	})
 
 	h.render(w, "tv_season.html", map[string]any{
-		"Title":          fmt.Sprintf("%s — %s", showName, seasonName),
-		"ShowID":         seriesID,
-		"ShowName":       showName,
-		"SeasonName":     seasonName,
-		"SeasonOverview": seasonOverview,
-		"Episodes":       episodes,
+		"Title":           fmt.Sprintf("%s — %s", showName, seasonName),
+		"ShowID":          seriesID,
+		"ShowName":        showName,
+		"SeasonName":      seasonName,
+		"SeasonOverview":  seasonOverview,
+		"Episodes":        episodes,
+		"MissingEpisodes": len(missingEps),
 	})
+}
+
+// missingEpisodes returns rows for episodes in the cached TMDB season that have
+// no local file present.
+func missingEpisodes(epCache map[int]tmdb.TVEpisode, present map[int]bool) []tvEpisodeRow {
+	var out []tvEpisodeRow
+	for epNum, ep := range epCache {
+		if epNum <= 0 || present[epNum] {
+			continue
+		}
+		out = append(out, tvEpisodeRow{
+			EpisodeNumber: epNum,
+			Name:          ep.Name,
+			AirDate:       ep.AirDate,
+			Overview:      ep.Overview,
+			Missing:       true,
+		})
+	}
+	return out
 }
 
 // --- TV Match ---
