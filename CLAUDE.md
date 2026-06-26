@@ -73,6 +73,11 @@ go vet ./...
 - **Execution** (`internal/video`): `StreamFFmpeg` (gated, kill-on-disconnect) for remux/subtitles; `EnsureHLS` builds a single-rendition VOD HLS asset — per-key in-process lock + unique temp + atomic rename (no dogpile/corruption), detached build context, background-build sub-cap so it can't starve interactive playback. `PruneCache` bounds the cache under `DataDir/cache/tv-hls`.
 - **Endpoints** (`internal/web`): `GET /tv/playback-session` returns the decision + source URL + track lists; `/stream/tv/` (direct), `/stream/tv-remux/`, `/stream/tv-hls/` (manifest+segments), `/stream/tv-subtitles/` (WebVTT). HLS asset names are regex-whitelisted; all paths go through `pathguard`.
 - **Client**: `tv_player.html` calls the session, then plays via `<video>` (direct/remux/native-HLS) or vendored hls.js (`web/static/hls.light.min.js`, Apache-2.0). Single-rendition by design — HLS is for seeking, not adaptive bitrate (a ladder is a future enhancement).
+- **Missing seasons/episodes**: `tvSeriesDetail`/`tvSeasonDetail` diff the cached TMDB metadata against present (matched) files and grey out the gaps — pure `missingSeasons`/`missingEpisodes` helpers, no new endpoints/queries/fetches. Specials (season 0) excluded. Reflects last-match-time cache (no live refetch).
+
+### Lyrics / Karaoke
+
+- Synced lyrics via **LRCLIB** (free, no key). `POST /music/lyrics/fetch` (`handlers_music_lyrics.go`) is cache-first against the `lyrics_cache` table, else fetches (exact `get` then fuzzy `search` scored by `pickBestLrcLibCandidate`) and caches the result — **hits and misses both cached**, so a track is fetched at most once. Lazy per-track (no scan job), always on (no integrations gate, consistent with MB/CAA/Wikipedia). `player.html` parses the synced LRC and advances current/next line on `timeupdate`. (No duration tiebreaker — match precision caveat tracked in pending.)
 
 ### Test Patterns
 
