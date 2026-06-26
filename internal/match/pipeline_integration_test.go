@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	isodb "isomedia/internal/db"
+	isodb "hespera/internal/db"
 )
 
 // newMockMusicServer creates a single httptest.Server that routes requests by

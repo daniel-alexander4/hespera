@@ -3,7 +3,7 @@ package playback
 import (
 	"testing"
 
-	"isomedia/internal/video"
+	"hespera/internal/video"
 )
 
 func TestFromProbeTrackSelection(t *testing.T) {

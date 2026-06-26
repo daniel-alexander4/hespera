@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"isomedia/internal/video"
+	"hespera/internal/video"
 )
 
 // textSubtitleCodecs are subtitle codecs that can be extracted to a text sidecar

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"isomedia/internal/jobs"
-	"isomedia/internal/match"
-	"isomedia/internal/scan"
-	"isomedia/internal/tmdb"
-	"isomedia/internal/tvscan"
+	"hespera/internal/jobs"
+	"hespera/internal/match"
+	"hespera/internal/scan"
+	"hespera/internal/tmdb"
+	"hespera/internal/tvscan"
 )
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {

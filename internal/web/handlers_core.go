@@ -32,7 +32,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	ns := "isomedia"
+	ns := "hespera"
 	if h.auth != nil {
 		ns = h.auth.Namespace()
 	}

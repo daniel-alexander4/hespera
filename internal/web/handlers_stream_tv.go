@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"isomedia/internal/pathguard"
-	"isomedia/internal/playback"
-	"isomedia/internal/video"
+	"hespera/internal/pathguard"
+	"hespera/internal/playback"
+	"hespera/internal/video"
 )
 
 // tvHLSCacheRoot is where built HLS assets live, under the data dir (not /tmp).

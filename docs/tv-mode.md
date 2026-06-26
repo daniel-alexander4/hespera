@@ -1,6 +1,6 @@
 # Couch Mode (TV + remote)
 
-Couch mode turns the normal isomedia web UI into a 10-foot experience you can
+Couch mode turns the normal Hespera web UI into a 10-foot experience you can
 drive from the sofa with a remote control — for a Raspberry Pi or laptop wired
 to a TV over HDMI. It is **purely a front-end layer**: the same pages, restyled
 large and dark, made navigable by arrow keys with a visible focus ring. There is
@@ -43,15 +43,15 @@ any remote that emits keycodes:
 
 ## Running the couch appliance
 
-isomedia's auth is SSH-pubkey challenge-response with a 24h session — awkward for
-an unattended TV box. For a single-purpose device where isomedia and the browser
+Hespera's auth is SSH-pubkey challenge-response with a 24h session — awkward for
+an unattended TV box. For a single-purpose device where Hespera and the browser
 run on the same machine, run that instance with auth off and bound to loopback so
 only the box itself can reach it:
 
 ```bash
-ISOMEDIA_LISTEN=127.0.0.1:8080 \
+HESPERA_LISTEN=127.0.0.1:8080 \
 AUTH_ENABLED=false \
-isomedia
+hespera
 ```
 
 Then launch a fullscreen kiosk browser pointed at couch mode:
@@ -72,14 +72,14 @@ xset s off -dpms          # X11
 ## Autostart
 
 A sample `systemd --user` unit is committed at
-[`docs/isomedia-kiosk.service`](./isomedia-kiosk.service) — the portable choice
+[`docs/hespera-kiosk.service`](./hespera-kiosk.service) — the portable choice
 across X11, Wayland, and laptop distros. Install it per-user:
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp docs/isomedia-kiosk.service ~/.config/systemd/user/
+cp docs/hespera-kiosk.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now isomedia-kiosk.service
+systemctl --user enable --now hespera-kiosk.service
 loginctl enable-linger "$USER"   # start at boot without an interactive login
 ```
 

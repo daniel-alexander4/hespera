@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"isomedia/internal/jobs"
-	"isomedia/internal/pathguard"
-	"isomedia/internal/tmdb"
+	"hespera/internal/jobs"
+	"hespera/internal/pathguard"
+	"hespera/internal/tmdb"
 )
 
 // --- Row types ---

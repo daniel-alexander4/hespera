@@ -1,4 +1,4 @@
-module isomedia
+module hespera
 
 go 1.23
 

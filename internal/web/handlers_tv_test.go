@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"isomedia/internal/config"
+	"hespera/internal/config"
 )
 
 // waitForJobTerminal blocks until the most recent job of the given type

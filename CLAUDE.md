@@ -8,8 +8,8 @@ Locally-hosted media server in Go: Music, TV, Movies with automatic metadata mat
 
 ```bash
 # Build binaries locally
-go build -o ./bin/isomedia ./cmd/isomedia
-go build -o ./bin/isocli ./cmd/isocli
+go build -o ./bin/hespera ./cmd/hespera
+go build -o ./bin/hescli ./cmd/hescli
 
 # Build and run with Docker
 docker compose up --build
@@ -28,14 +28,14 @@ go vet ./...
 
 ### Entry Points
 
-- `cmd/isomedia/main.go` — Web server: config → SQLite (WAL) → migrations → Handler → HTTP server, graceful shutdown (10s timeout).
-- `cmd/isocli/main.go` — CLI stub for future user/key management.
+- `cmd/hespera/main.go` — Web server: config → SQLite (WAL) → migrations → Handler → HTTP server, graceful shutdown (10s timeout).
+- `cmd/hescli/main.go` — CLI stub for future user/key management.
 
 ### Core Packages
 
 | Package | Role |
 |---------|------|
-| `internal/config` | Config struct from env vars (ISOMEDIA_ prefix), validation |
+| `internal/config` | Config struct from env vars (HESPERA_ prefix), validation |
 | `internal/db` | SQLite WAL setup, connection pooling, schema migrations |
 | `internal/auth` | SSH pubkey challenge-response + HMAC-SHA256 session cookies, rate limiting (10/min/IP) |
 | `internal/pathguard` | Path traversal prevention (symlink resolution + containment check) |
@@ -85,17 +85,17 @@ go vet ./...
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| ISOMEDIA_LISTEN | :8080 | HTTP listen address |
-| ISOMEDIA_DATA_DIR | /var/lib/isomedia | Data directory |
-| ISOMEDIA_DB_PATH | {DATA_DIR}/isomedia.sqlite | Database path |
-| ISOMEDIA_MEDIA_ROOT | /media | Media root directory |
-| ISOMEDIA_TMDB_API_KEY | | TMDB API key |
+| HESPERA_LISTEN | :8080 | HTTP listen address |
+| HESPERA_DATA_DIR | /var/lib/hespera | Data directory |
+| HESPERA_DB_PATH | {DATA_DIR}/hespera.sqlite | Database path |
+| HESPERA_MEDIA_ROOT | /media | Media root directory |
+| HESPERA_TMDB_API_KEY | | TMDB API key |
 | AUTH_ENABLED | true | Enable SSH key auth |
 | AUTH_SESSION_SECRET | | HMAC secret (16+ chars) |
-| ISOMEDIA_FFMPEG_CONCURRENCY | 4 | Max concurrent ffmpeg/ffprobe processes (background HLS builds get half, min 1) |
-| ISOMEDIA_FFMPEG_ACQUIRE_TIMEOUT | 2s | How long foreground ffmpeg work waits for a slot |
-| ISOMEDIA_TV_HLS_CACHE_MAX_BYTES | 20GiB | HLS cache size budget (`DataDir/cache/tv-hls`) |
-| ISOMEDIA_TV_CACHE_MAX_AGE | 72h | HLS cache entry max age |
+| HESPERA_FFMPEG_CONCURRENCY | 4 | Max concurrent ffmpeg/ffprobe processes (background HLS builds get half, min 1) |
+| HESPERA_FFMPEG_ACQUIRE_TIMEOUT | 2s | How long foreground ffmpeg work waits for a slot |
+| HESPERA_TV_HLS_CACHE_MAX_BYTES | 20GiB | HLS cache size budget (`DataDir/cache/tv-hls`) |
+| HESPERA_TV_CACHE_MAX_AGE | 72h | HLS cache entry max age |
 
 ### Docker
 

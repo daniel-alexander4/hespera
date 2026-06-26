@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"isomedia/internal/db"
+	"hespera/internal/db"
 )
 
 func TestEnqueueAndRun(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"isomedia/internal/music"
+	"hespera/internal/music"
 )
 
 // RunTagWriteback is the job executor for the tag_writeback job type.

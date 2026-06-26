@@ -1,6 +1,6 @@
 # Predecessor Knowledge Base
 
-Complete technical reference extracted from the predecessor codebase. This documents what works, what's fragile, and what isomedia should preserve or improve.
+Complete technical reference extracted from the predecessor codebase. This documents what works, what's fragile, and what Hespera should preserve or improve.
 
 ---
 
@@ -160,7 +160,7 @@ Clean, simple: resolve symlinks, check containment within root. Prevents `/media
 
 ---
 
-## What's Fragile (Fix in isomedia)
+## What's Fragile (Fix in Hespera)
 
 ### 1. Monolithic Handler File
 
@@ -394,20 +394,20 @@ auth_user_keys (id, user_id FK, public_key, UNIQUE(user_id, public_key))
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| ISOMEDIA_LISTEN | :8080 | HTTP listen address |
-| ISOMEDIA_DATA_DIR | /var/lib/isomedia | SQLite DB + cached artwork |
-| ISOMEDIA_DB_PATH | {DATA_DIR}/isomedia.sqlite | Database path |
-| ISOMEDIA_MEDIA_ROOT | /media | Bind-mounted media directory |
-| ISOMEDIA_TMDB_API_KEY | | TMDB API key for TV/movie metadata |
+| HESPERA_LISTEN | :8080 | HTTP listen address |
+| HESPERA_DATA_DIR | /var/lib/hespera | SQLite DB + cached artwork |
+| HESPERA_DB_PATH | {DATA_DIR}/hespera.sqlite | Database path |
+| HESPERA_MEDIA_ROOT | /media | Bind-mounted media directory |
+| HESPERA_TMDB_API_KEY | | TMDB API key for TV/movie metadata |
 | AUTH_ENABLED | true | Enable SSH key auth |
 | AUTH_SESSION_SECRET | | HMAC secret (16+ chars, rejects weak values) |
-| SSH_AUTH_NAMESPACE | isomedia | SSH signature namespace |
+| SSH_AUTH_NAMESPACE | hespera | SSH signature namespace |
 | SSH_KEYGEN_PATH | ssh-keygen | Path to ssh-keygen binary |
-| ISOMEDIA_FFMPEG_CONCURRENCY | 4 | Max concurrent FFmpeg processes |
-| ISOMEDIA_FFMPEG_ACQUIRE_TIMEOUT | 2s | Timeout to acquire FFmpeg slot |
-| ISOMEDIA_TV_TRANSCODED_CACHE_MAX_BYTES | 20GB | Transcoded cache size limit |
-| ISOMEDIA_TV_HLS_CACHE_MAX_BYTES | 20GB | HLS cache size limit |
-| ISOMEDIA_TV_CACHE_MAX_AGE | 72h | Cache entry max age |
+| HESPERA_FFMPEG_CONCURRENCY | 4 | Max concurrent FFmpeg processes |
+| HESPERA_FFMPEG_ACQUIRE_TIMEOUT | 2s | Timeout to acquire FFmpeg slot |
+| HESPERA_TV_TRANSCODED_CACHE_MAX_BYTES | 20GB | Transcoded cache size limit |
+| HESPERA_TV_HLS_CACHE_MAX_BYTES | 20GB | HLS cache size limit |
+| HESPERA_TV_CACHE_MAX_AGE | 72h | Cache entry max age |
 
 ---
 
@@ -419,13 +419,13 @@ FROM golang:1.23 AS builder
 COPY go.mod go.sum .
 RUN go mod download  # with retry logic
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bin/isomedia ./cmd/isomedia
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bin/isocli ./cmd/isocli
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bin/hespera ./cmd/hespera
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bin/hescli ./cmd/hescli
 
 # Stage 2: Runtime
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y ca-certificates openssh-client ffmpeg
-COPY --from=builder /bin/isomedia /bin/isocli /usr/local/bin/
+COPY --from=builder /bin/hespera /bin/hescli /usr/local/bin/
 COPY web/ /app/web/
 USER 65532
 EXPOSE 8080

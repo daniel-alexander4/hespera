@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"isomedia/internal/jobs"
-	"isomedia/internal/match"
+	"hespera/internal/jobs"
+	"hespera/internal/match"
 )
 
 // musicLibraryExists reports whether id refers to an existing music library.

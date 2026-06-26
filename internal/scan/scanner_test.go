@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	isodb "isomedia/internal/db"
+	isodb "hespera/internal/db"
 
-	"isomedia/internal/config"
+	"hespera/internal/config"
 )
 
 // openTestDB creates a temp SQLite database with migrations applied.

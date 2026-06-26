@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"isomedia/internal/video"
+	"hespera/internal/video"
 )
 
 func insertTVFileWithProbe(t *testing.T, db *sql.DB, container string, probe video.ProbeResult, size int64) int64 {
