@@ -15,8 +15,12 @@ no separate server mode and no new playback state.
   the top nav and footer, scales the rem-based UI up, and adds a high-contrast
   focus ring.
 - `web/static/couch.js` provides remote/keyboard navigation: arrow keys move
-  focus geometrically, **Enter/OK** activates the focused link or button, and
-  **Backspace/Escape** goes back.
+  focus geometrically (tracking the row/column so focus doesn't drift
+  diagonally on dense grids), **Enter/OK** activates the focused link or button,
+  and **Backspace/Escape** goes back. When an overlay is open (anything tagged
+  `[data-couch-overlay]`, e.g. the player's playlist modal), arrows stay trapped
+  inside it and Back dismisses it — via its `[data-couch-dismiss]` control —
+  instead of leaving the page.
 - The player wires the browser **Media Session API**, so a remote's dedicated
   play/pause/next/previous keys — and the TV/OS now-playing widget — control
   playback.
