@@ -241,6 +241,8 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 	status := "matched"
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
+	// Title is normalized to the MusicBrainz canonical name in the same
+	// statement; the CASE leaves it untouched when MB returned no title.
 	_, err = m.db.ExecContext(ctx, `
 		UPDATE music_albums SET
 			match_status = ?,
@@ -248,19 +250,12 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 			match_source = 'musicbrainz',
 			matched_at = ?,
 			musicbrainz_id = ?,
-			artist_musicbrainz_id = ?
+			artist_musicbrainz_id = ?,
+			title = CASE WHEN ? <> '' THEN ? ELSE title END
 		WHERE id = ?
-	`, status, int(score), now, best.ReleaseGroupID, best.ArtistMBID, albumID)
+	`, status, int(score), now, best.ReleaseGroupID, best.ArtistMBID, best.Title, best.Title, albumID)
 	if err != nil {
 		return fmt.Errorf("update album: %w", err)
-	}
-
-	// Normalize album title to MusicBrainz canonical name.
-	if best.Title != "" {
-		if _, err := m.db.ExecContext(ctx,
-			"UPDATE music_albums SET title=? WHERE id=?", best.Title, albumID); err != nil {
-			slog.Warn("normalize album title failed", "album_id", albumID, "err", err)
-		}
 	}
 
 	// Normalize artist name to MusicBrainz canonical name.

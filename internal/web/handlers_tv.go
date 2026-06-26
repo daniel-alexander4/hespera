@@ -91,27 +91,42 @@ ORDER BY i.series_id
 	}
 	defer matchedRows.Close()
 
+	type matchedSeries struct {
+		seriesID string
+		count    int
+	}
+	var matched []matchedSeries
 	for matchedRows.Next() {
 		var seriesID string
 		var count int
 		if err := matchedRows.Scan(&seriesID, &count); err != nil {
 			return nil, err
 		}
-		name, year, posterPath := h.loadShowMetaSummary(ctx, seriesID)
-		if name == "" {
-			name = "Unknown Series (TMDB " + seriesID + ")"
-		}
-		out = append(out, tvSeriesRow{
-			SeriesID:     seriesID,
-			Name:         name,
-			Year:         year,
-			PosterPath:   posterPath,
-			EpisodeCount: count,
-			IsMatched:    true,
-		})
+		matched = append(matched, matchedSeries{seriesID, count})
 	}
 	if err := matchedRows.Err(); err != nil {
 		return nil, err
+	}
+
+	// Batch-fetch all series metadata in one query instead of one per series.
+	ids := make([]string, len(matched))
+	for i, m := range matched {
+		ids[i] = m.seriesID
+	}
+	metas := h.loadShowMetaSummaries(ctx, ids)
+	for _, m := range matched {
+		meta := metas[m.seriesID]
+		if meta.name == "" {
+			meta.name = "Unknown Series (TMDB " + m.seriesID + ")"
+		}
+		out = append(out, tvSeriesRow{
+			SeriesID:     m.seriesID,
+			Name:         meta.name,
+			Year:         meta.year,
+			PosterPath:   meta.posterPath,
+			EpisodeCount: m.count,
+			IsMatched:    true,
+		})
 	}
 
 	// Unmatched series (unmatched, grouped by guessed_title).
@@ -141,6 +156,53 @@ ORDER BY lower(i.guessed_title)
 		})
 	}
 	return out, unmatchedRows.Err()
+}
+
+type showMetaSummary struct {
+	name       string
+	year       string
+	posterPath string
+}
+
+// loadShowMetaSummaries fetches metadata for many series in a single query,
+// keyed by series id, to avoid an N+1 over tv_series_metadata_cache.
+func (h *Handler) loadShowMetaSummaries(ctx context.Context, seriesIDs []string) map[string]showMetaSummary {
+	out := make(map[string]showMetaSummary, len(seriesIDs))
+	if len(seriesIDs) == 0 {
+		return out
+	}
+	placeholders := make([]string, len(seriesIDs))
+	args := make([]any, len(seriesIDs))
+	keyToSeries := make(map[string]string, len(seriesIDs))
+	for i, sid := range seriesIDs {
+		key := "show:" + sid
+		placeholders[i] = "?"
+		args[i] = key
+		keyToSeries[key] = sid
+	}
+	query := "SELECT entity_key, payload_json FROM tv_series_metadata_cache WHERE lang='en' AND entity_key IN (" +
+		strings.Join(placeholders, ",") + ")"
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var entityKey, payload string
+		if rows.Scan(&entityKey, &payload) != nil {
+			continue
+		}
+		var show tmdb.TVShow
+		if json.Unmarshal([]byte(payload), &show) != nil {
+			continue
+		}
+		var year string
+		if len(show.FirstAirDate) >= 4 {
+			year = show.FirstAirDate[:4]
+		}
+		out[keyToSeries[entityKey]] = showMetaSummary{name: show.Name, year: year, posterPath: show.PosterPath}
+	}
+	return out
 }
 
 func (h *Handler) loadShowMetaSummary(ctx context.Context, seriesID string) (name, year, posterPath string) {
