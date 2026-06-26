@@ -6,7 +6,7 @@ services:
       - "8080:8080"
     volumes:
       - /etc/hespera/data:/var/lib/hespera
-      - /media/dan/08a75612-85eb-4dd3-bc14-0bfe54ae2f88:/media
+      - /media/hespera:/media
     environment:
       HESPERA_LISTEN: ":8080"
       HESPERA_DATA_DIR: "/var/lib/hespera"
