@@ -48,20 +48,10 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 		return err
 	}
 
-	// Count files for progress.
-	totalFiles := 0
-	_ = filepath.WalkDir(cleanRoot, func(_ string, d fs.DirEntry, _ error) error {
-		if d != nil && !d.IsDir() && music.IsAudioExt(filepath.Ext(d.Name())) {
-			totalFiles++
-		}
-		return nil
-	})
-	if totalFiles > 0 {
-		_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", totalFiles, jobID)
-	}
-
-	processed := 0
-	scanErrors := 0
+	// Enumerate audio files in a single walk, then process them. One traversal
+	// gives an accurate progress total without a second walk, and the
+	// enumeration itself honors cancellation.
+	var audioPaths []string
 	if err := filepath.WalkDir(cleanRoot, func(p string, d fs.DirEntry, walkErr error) error {
 		select {
 		case <-ctx.Done():
@@ -71,11 +61,27 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() {
+		if d.IsDir() || !music.IsAudioExt(filepath.Ext(p)) {
 			return nil
 		}
-		if !music.IsAudioExt(filepath.Ext(p)) {
-			return nil
+		audioPaths = append(audioPaths, p)
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	totalFiles := len(audioPaths)
+	if totalFiles > 0 {
+		_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", totalFiles, jobID)
+	}
+
+	processed := 0
+	scanErrors := 0
+	for _, p := range audioPaths {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
 
 		if err := s.ScanFile(ctx, libraryID, p, thumbDir); err != nil {
@@ -88,10 +94,6 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 		if processed%50 == 0 || processed == totalFiles {
 			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
 		}
-
-		return nil
-	}); err != nil {
-		return err
 	}
 
 	// Final progress update.
@@ -294,8 +296,19 @@ SELECT id FROM music_albums WHERE library_id=? AND artist_id=? AND title=? AND y
 // Runs after all files are scanned so artist diversity is computed from the full track set,
 // making results independent of filesystem walk order (BUG-02 fix).
 func (s *Scanner) finalizeCompilations(ctx context.Context, libraryID int64) error {
+	// Run the whole consolidation in one transaction so an interrupted run
+	// rolls back to the clean pre-finalize state rather than leaving a
+	// half-merged library (some albums marked compilation and reparented,
+	// others not). There is no file or network I/O in the loop, so the write
+	// transaction is brief.
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	// Find albums with tracks from multiple artists that aren't already marked as compilations.
-	rows, err := s.DB.QueryContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 SELECT al.id, al.title, al.year
 FROM music_albums al
 WHERE al.library_id = ?
@@ -305,7 +318,6 @@ WHERE al.library_id = ?
 	if err != nil {
 		return fmt.Errorf("find multi-artist albums: %w", err)
 	}
-	defer rows.Close()
 
 	type albumInfo struct {
 		id    int64
@@ -316,13 +328,17 @@ WHERE al.library_id = ?
 	for rows.Next() {
 		var a albumInfo
 		if err := rows.Scan(&a.id, &a.title, &a.year); err != nil {
+			rows.Close()
 			return err
 		}
 		candidates = append(candidates, a)
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
 		return err
 	}
+	// Close before issuing writes: the transaction holds a single connection.
+	rows.Close()
 
 	for _, a := range candidates {
 		select {
@@ -334,7 +350,7 @@ WHERE al.library_id = ?
 		// Skip if this album's tracks were already merged into another candidate
 		// earlier in this loop (same title+year variant that was processed first).
 		var trackCount int
-		if err := s.DB.QueryRowContext(ctx,
+		if err := tx.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM music_tracks WHERE album_id = ?", a.id,
 		).Scan(&trackCount); err != nil {
 			return err
@@ -344,11 +360,11 @@ WHERE al.library_id = ?
 		}
 
 		// Mark this album as compilation with "Various Artists" album artist.
-		vaID, err := s.ensureArtistDB(ctx, libraryID, "Various Artists")
+		vaID, err := ensureArtist(ctx, tx, libraryID, "Various Artists")
 		if err != nil {
 			return err
 		}
-		_, err = s.DB.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 UPDATE music_albums SET is_compilation = 1, artist_id = ?, album_artist_id = ? WHERE id = ?
 `, vaID, vaID, a.id)
 		if err != nil {
@@ -357,7 +373,7 @@ UPDATE music_albums SET is_compilation = 1, artist_id = ?, album_artist_id = ? W
 
 		// Merge any other album records with the same title+year into this one (BUG-03 fix).
 		// Now safe because all tracks are already inserted -- no more files will create new variants.
-		_, err = s.DB.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 UPDATE music_tracks SET album_id = ?
 WHERE library_id = ?
   AND album_id IN (
@@ -373,29 +389,7 @@ WHERE library_id = ?
 		}
 	}
 
-	return nil
-}
-
-// ensureArtistDB is like ensureArtist but uses *sql.DB instead of *sql.Tx for post-scan use.
-func (s *Scanner) ensureArtistDB(ctx context.Context, libraryID int64, name string) (int64, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "Unknown Artist"
-	}
-	_, err := s.DB.ExecContext(ctx, `
-INSERT INTO music_artists (library_id, name) VALUES (?, ?)
-ON CONFLICT(library_id, name) DO NOTHING
-`, libraryID, name)
-	if err != nil {
-		return 0, err
-	}
-	var id int64
-	if err := s.DB.QueryRowContext(ctx, `
-SELECT id FROM music_artists WHERE library_id=? AND name=?
-`, libraryID, name).Scan(&id); err != nil {
-		return 0, err
-	}
-	return id, nil
+	return tx.Commit()
 }
 
 // --- Checksum ---
