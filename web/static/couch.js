@@ -19,31 +19,41 @@
 
   const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 
-  // Pick the nearest candidate in the given direction from the active element.
-  // Score = primary-axis distance + a cross-axis misalignment penalty, so the
-  // focus moves to the geometrically closest item that genuinely lies that way.
+  // Pick the next candidate in the given direction from the active element.
+  // Prefer a candidate whose cross-axis extent overlaps the active element's —
+  // i.e. one in the same row (for left/right) or column (for up/down) — ranked
+  // by how close it is along the press direction. This keeps focus tracking the
+  // row/column instead of drifting diagonally on dense grids. Only when nothing
+  // aligns do we fall back to the nearest item overall, so every focusable stays
+  // reachable.
   const move = (dir) => {
     const all = candidates();
     if (!all.length) return;
     const active = document.activeElement;
     if (!active || !all.includes(active)) { all[0].focus(); return; }
-    const from = center(active.getBoundingClientRect());
+    const a = active.getBoundingClientRect();
+    const ac = center(a);
 
-    let best = null;
-    let bestScore = Infinity;
+    let aligned = null, alignedGap = Infinity;   // overlaps the cross axis
+    let nearest = null, nearestScore = Infinity;  // fallback: closest overall
     for (const el of all) {
       if (el === active) continue;
-      const to = center(el.getBoundingClientRect());
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      let primary, cross;
-      if (dir === 'left') { if (dx >= -1) continue; primary = -dx; cross = Math.abs(dy); }
-      else if (dir === 'right') { if (dx <= 1) continue; primary = dx; cross = Math.abs(dy); }
-      else if (dir === 'up') { if (dy >= -1) continue; primary = -dy; cross = Math.abs(dx); }
-      else { if (dy <= 1) continue; primary = dy; cross = Math.abs(dx); }
+      const r = el.getBoundingClientRect();
+      const c = center(r);
+      const dx = c.x - ac.x;
+      const dy = c.y - ac.y;
+      let primary, cross, overlap;
+      if (dir === 'left') { if (dx >= -1) continue; primary = -dx; cross = Math.abs(dy); overlap = r.bottom > a.top && r.top < a.bottom; }
+      else if (dir === 'right') { if (dx <= 1) continue; primary = dx; cross = Math.abs(dy); overlap = r.bottom > a.top && r.top < a.bottom; }
+      else if (dir === 'up') { if (dy >= -1) continue; primary = -dy; cross = Math.abs(dx); overlap = r.right > a.left && r.left < a.right; }
+      else { if (dy <= 1) continue; primary = dy; cross = Math.abs(dx); overlap = r.right > a.left && r.left < a.right; }
+
       const score = primary + cross * 2;
-      if (score < bestScore) { bestScore = score; best = el; }
+      if (score < nearestScore) { nearestScore = score; nearest = el; }
+      if (overlap && primary < alignedGap) { alignedGap = primary; aligned = el; }
     }
+
+    const best = aligned || nearest;
     if (best) {
       best.focus();
       best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
