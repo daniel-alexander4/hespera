@@ -3,6 +3,7 @@ package tmdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,8 @@ const (
 	imgPoster   = "https://image.tmdb.org/t/p/w500"
 	imgBackdrop = "https://image.tmdb.org/t/p/w1280"
 	imgStill    = "https://image.tmdb.org/t/p/w300"
+
+	maxImageBytes = 20 << 20 // 20 MiB cap on downloaded artwork
 )
 
 type Client struct {
@@ -35,6 +38,27 @@ func NewClient(apiKey string) *Client {
 		apiBase:    apiBase,
 		imgBase:    imgPoster,
 	}
+}
+
+// do issues the request and, on a transport error, strips the URL's query
+// string before returning. The query carries the api_key, and a *url.Error
+// embeds the full URL in its message, which would otherwise leak the key
+// into logs when callers wrap the error with %w.
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			if u, perr := url.Parse(ue.URL); perr == nil {
+				u.RawQuery = ""
+				ue.URL = u.String()
+			} else {
+				ue.URL = "[redacted]"
+			}
+		}
+		return nil, err
+	}
+	return resp, nil
 }
 
 type TVSearchResult struct {
@@ -91,7 +115,7 @@ func (c *Client) SearchTV(ctx context.Context, query string) ([]TVSearchResult, 
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tmdb search: %w", err)
 	}
@@ -120,7 +144,7 @@ func (c *Client) FetchTVShow(ctx context.Context, showID int) (*TVShow, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tmdb show: %w", err)
 	}
@@ -147,7 +171,7 @@ func (c *Client) FetchTVSeason(ctx context.Context, showID, seasonNumber int) (*
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tmdb season: %w", err)
 	}
@@ -175,7 +199,7 @@ func (c *Client) DownloadImage(ctx context.Context, tmdbPath, destPath string) e
 	if err != nil {
 		return err
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("tmdb image: %w", err)
 	}
@@ -193,7 +217,7 @@ func (c *Client) DownloadImage(ctx context.Context, tmdbPath, destPath string) e
 		return err
 	}
 	defer f.Close()
-	_, err = io.Copy(f, resp.Body)
+	_, err = io.Copy(f, io.LimitReader(resp.Body, maxImageBytes))
 	return err
 }
 
