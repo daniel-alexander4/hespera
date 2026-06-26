@@ -1,6 +1,8 @@
 # Binaries
 bin/
 *.exe
+/isomedia
+/hespera
 
 # IDE / editor
 .idea/
