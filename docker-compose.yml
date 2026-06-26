@@ -12,4 +12,6 @@ services:
       HESPERA_DATA_DIR: "/var/lib/hespera"
       HESPERA_MEDIA_ROOT: "/media/hespera"
       AUTH_ENABLED: "false"
+      # Value supplied via the gitignored .env file (TMDB v3 API key)
+      HESPERA_TMDB_API_KEY: "${HESPERA_TMDB_API_KEY:-}"
     restart: unless-stopped
