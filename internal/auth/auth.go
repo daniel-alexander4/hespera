@@ -425,6 +425,23 @@ func (m *Manager) pruneLocked(now time.Time) {
 			delete(m.challenges, k)
 		}
 	}
+	// Evict rate-limiter entries for IPs with no attempts in the current
+	// window; otherwise the map grows unbounded, one entry per distinct IP
+	// that ever made a request.
+	windowStart := now.Add(-time.Minute)
+	for ip, ts := range m.rateByIP {
+		fresh := ts[:0]
+		for _, t := range ts {
+			if t.After(windowStart) {
+				fresh = append(fresh, t)
+			}
+		}
+		if len(fresh) == 0 {
+			delete(m.rateByIP, ip)
+		} else {
+			m.rateByIP[ip] = fresh
+		}
+	}
 }
 
 func signHMACSHA256(secret []byte, payload string) []byte {

@@ -13,6 +13,21 @@ import (
 	"isomedia/internal/match"
 )
 
+// musicLibraryExists reports whether id refers to an existing music library.
+// Enqueue only rejects negative ids, so without this guard any positive int is
+// accepted and dispatched as a job that runs against an empty result set.
+func (h *Handler) musicLibraryExists(ctx context.Context, id int64) (bool, error) {
+	var one int
+	err := h.db.QueryRowContext(ctx, "SELECT 1 FROM libraries WHERE id=? AND type='music'", id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -26,6 +41,13 @@ func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
 		http.Error(w, "invalid id", 400)
+		return
+	}
+	if ok, err := h.musicLibraryExists(r.Context(), id); err != nil {
+		httpError(w, 500, "internal server error", "library lookup failed", "handler", "musicMatch", "err", err)
+		return
+	} else if !ok {
+		http.Error(w, "music library not found", 404)
 		return
 	}
 
@@ -209,6 +231,13 @@ func (h *Handler) musicWriteback(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
 		http.Error(w, "invalid id", 400)
+		return
+	}
+	if ok, err := h.musicLibraryExists(r.Context(), id); err != nil {
+		httpError(w, 500, "internal server error", "library lookup failed", "handler", "musicWriteback", "err", err)
+		return
+	} else if !ok {
+		http.Error(w, "music library not found", 404)
 		return
 	}
 
