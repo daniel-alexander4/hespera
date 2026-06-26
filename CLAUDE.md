@@ -43,7 +43,11 @@ go vet ./...
 | `internal/music` | Audio tag reader (`dhowden/tag` wrapper), TrackMeta struct, compilation detection |
 | `internal/scan` | Music library scanner: walk dirs, read tags, ensure artist/album/track, art extraction, prune/cleanup |
 | `internal/match` | MusicBrainz matching pipeline, Cover Art Archive, artist enrichment (Wikipedia/Wikimedia), scoring |
-| `internal/web` | HTTP handlers, routing (`http.ServeMux`), template rendering, logging middleware |
+| `internal/tmdb` | TMDB client + movie/TV matcher |
+| `internal/tvscan` | TV file identification + scanner (writes `stream_info_json` = marshaled `video.ProbeResult`) |
+| `internal/video` | ffprobe wrapper + gated ffmpeg execution (`StreamFFmpeg`, `EnsureHLS`), concurrency caps, HLS cache |
+| `internal/playback` | Pure TV playback-decision layer: per-client container↔codec matrix → direct-play / remux / transcode |
+| `internal/web` | HTTP handlers, routing (`http.ServeMux`), template rendering, logging middleware, TV streaming endpoints |
 
 ### Key Patterns
 
@@ -63,6 +67,13 @@ go vet ./...
 - **Artist enrichment**: MusicBrainz URL relations → Wikipedia REST API (bio) → Wikidata/Wikimedia Commons (image)
 - **Pipeline**: `Matcher.RunMusicMatch()` iterates albums, scores candidates, fetches art, enriches artists. Non-fatal per-album errors.
 
+### TV Streaming
+
+- **Decision** (`internal/playback`): pure, per-client. `Decide()` validates the container↔codec *combination* (not independent codec sets) and returns direct-play / direct-stream (remux) / transcode, failing safe toward transcode on any uncertainty. Text subtitles deliver as a WebVTT sidecar; only bitmap subs force burn-in. Profiles for chrome/firefox/safari with UA inference.
+- **Execution** (`internal/video`): `StreamFFmpeg` (gated, kill-on-disconnect) for remux/subtitles; `EnsureHLS` builds a single-rendition VOD HLS asset — per-key in-process lock + unique temp + atomic rename (no dogpile/corruption), detached build context, background-build sub-cap so it can't starve interactive playback. `PruneCache` bounds the cache under `DataDir/cache/tv-hls`.
+- **Endpoints** (`internal/web`): `GET /tv/playback-session` returns the decision + source URL + track lists; `/stream/tv/` (direct), `/stream/tv-remux/`, `/stream/tv-hls/` (manifest+segments), `/stream/tv-subtitles/` (WebVTT). HLS asset names are regex-whitelisted; all paths go through `pathguard`.
+- **Client**: `tv_player.html` calls the session, then plays via `<video>` (direct/remux/native-HLS) or vendored hls.js (`web/static/hls.light.min.js`, Apache-2.0). Single-rendition by design — HLS is for seeking, not adaptive bitrate (a ladder is a future enhancement).
+
 ### Test Patterns
 
 - Standard `testing` package with table-driven tests
@@ -81,7 +92,10 @@ go vet ./...
 | ISOMEDIA_TMDB_API_KEY | | TMDB API key |
 | AUTH_ENABLED | true | Enable SSH key auth |
 | AUTH_SESSION_SECRET | | HMAC secret (16+ chars) |
-| ISOMEDIA_FFMPEG_CONCURRENCY | 4 | Max concurrent ffmpeg processes |
+| ISOMEDIA_FFMPEG_CONCURRENCY | 4 | Max concurrent ffmpeg/ffprobe processes (background HLS builds get half, min 1) |
+| ISOMEDIA_FFMPEG_ACQUIRE_TIMEOUT | 2s | How long foreground ffmpeg work waits for a slot |
+| ISOMEDIA_TV_HLS_CACHE_MAX_BYTES | 20GiB | HLS cache size budget (`DataDir/cache/tv-hls`) |
+| ISOMEDIA_TV_CACHE_MAX_AGE | 72h | HLS cache entry max age |
 
 ### Docker
 
