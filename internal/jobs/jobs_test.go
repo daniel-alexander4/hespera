@@ -36,22 +36,88 @@ func TestEnqueueAndRun(t *testing.T) {
 		t.Fatalf("expected positive jobID, got %d", jobID)
 	}
 
-	// Wait for the job to run.
+	// Wait for the job to reach its terminal DB status. Polling the `ran`
+	// counter is not enough: it is incremented at the start of the executor,
+	// before runJob writes status='done', so asserting status right after
+	// ran==1 races finishJob.
 	deadline := time.Now().Add(5 * time.Second)
-	for ran.Load() == 0 && time.Now().Before(deadline) {
+	var status string
+	for time.Now().Before(deadline) {
+		if err := conn.QueryRow("SELECT status FROM scan_jobs WHERE id=?", jobID).Scan(&status); err == nil {
+			if status == "done" {
+				break
+			}
+		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if status != "done" {
+		t.Fatalf("expected status=done, got %q", status)
 	}
 	if ran.Load() != 1 {
 		t.Fatalf("expected job to run once, ran %d times", ran.Load())
 	}
+}
 
-	// Check status in DB.
+func TestPanicInExecutorIsIsolated(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.sqlite")
+	conn, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+	if err := db.Migrate(conn); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	svc := New(conn)
+
+	// A panicking executor must not kill the worker goroutine.
+	panicID, err := svc.Enqueue("scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
+		panic("boom")
+	})
+	if err != nil {
+		t.Fatalf("Enqueue panic job: %v", err)
+	}
+
+	// The panicking job should end up failed, not stuck running.
+	deadline := time.Now().Add(5 * time.Second)
 	var status string
-	if err := conn.QueryRow("SELECT status FROM scan_jobs WHERE id=?", jobID).Scan(&status); err != nil {
-		t.Fatalf("query status: %v", err)
+	for time.Now().Before(deadline) {
+		if err := conn.QueryRow("SELECT status FROM scan_jobs WHERE id=?", panicID).Scan(&status); err == nil {
+			if status == "failed" {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if status != "failed" {
+		t.Fatalf("expected panicking job status=failed, got %q", status)
+	}
+
+	// The worker must still drain subsequent jobs.
+	var ran atomic.Int32
+	nextID, err := svc.Enqueue("scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
+		ran.Add(1)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Enqueue follow-up job: %v", err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := conn.QueryRow("SELECT status FROM scan_jobs WHERE id=?", nextID).Scan(&status); err == nil {
+			if status == "done" {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if status != "done" {
-		t.Fatalf("expected status=done, got %q", status)
+		t.Fatalf("worker did not survive the panic: follow-up job status=%q", status)
+	}
+	if ran.Load() != 1 {
+		t.Fatalf("expected follow-up job to run once, ran %d times", ran.Load())
 	}
 }
 
