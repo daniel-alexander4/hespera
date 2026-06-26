@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	isodb "isomedia/internal/db"
 )
@@ -161,7 +160,7 @@ func newMockMusicServer(t *testing.T) *httptest.Server {
 }
 
 // newTestMatcher creates a Matcher wired to the given test DB and mock server.
-// The MBClient's lastReq is set to zero so throttle() never sleeps.
+// A zero-interval shared limiter is used so throttle() never sleeps.
 func newTestMatcher(t *testing.T, db *sql.DB, srv *httptest.Server) *Matcher {
 	t.Helper()
 	dataDir := t.TempDir()
@@ -170,22 +169,24 @@ func newTestMatcher(t *testing.T, db *sql.DB, srv *httptest.Server) *Matcher {
 		t.Fatalf("mkdir thumbs: %v", err)
 	}
 
+	limiter := newRateLimiter(0)
 	return &Matcher{
 		db:      db,
 		dataDir: dataDir,
 		mb: &MBClient{
 			client:          srv.Client(),
 			baseURL:         srv.URL + "/ws/2",
+			limiter:         limiter,
 			wikiClient:      srv.Client(),
 			wikiBaseURL:     srv.URL,
 			wikidataBaseURL: srv.URL,
 			commonsBaseURL:  srv.URL,
-			lastReq:         time.Time{},
 		},
 		caa: &CAAClient{
 			client:   srv.Client(),
 			baseURL:  srv.URL,
 			thumbDir: thumbDir,
+			limiter:  limiter,
 		},
 	}
 }

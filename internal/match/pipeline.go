@@ -18,11 +18,14 @@ type Matcher struct {
 }
 
 func New(db *sql.DB, dataDir string) *Matcher {
+	// One shared limiter so MusicBrainz and Cover Art Archive requests stay
+	// within a single 1 req/sec MetaBrainz-family budget.
+	limiter := newRateLimiter(time.Second)
 	return &Matcher{
 		db:      db,
 		dataDir: dataDir,
-		mb:      NewMBClient(),
-		caa:     NewCAAClient(dataDir),
+		mb:      NewMBClient(limiter),
+		caa:     NewCAAClient(dataDir, limiter),
 	}
 }
 

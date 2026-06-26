@@ -17,35 +17,52 @@ const (
 	mbUserAgent = "isomedia/1.0 (https://github.com/isomedia)"
 )
 
-// MBClient queries the MusicBrainz API with a 1 req/sec rate limiter.
+// rateLimiter enforces a minimum interval between successive calls across all
+// holders of the same instance. Safe for concurrent use. The MusicBrainz and
+// Cover Art Archive clients share one instance so they stay within a single
+// MetaBrainz-family request budget.
+type rateLimiter struct {
+	mu       sync.Mutex
+	last     time.Time
+	interval time.Duration
+}
+
+func newRateLimiter(interval time.Duration) *rateLimiter {
+	return &rateLimiter{interval: interval}
+}
+
+func (l *rateLimiter) wait() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if since := time.Since(l.last); since < l.interval {
+		time.Sleep(l.interval - since)
+	}
+	l.last = time.Now()
+}
+
+// MBClient queries the MusicBrainz API with a shared 1 req/sec rate limiter.
 type MBClient struct {
 	client  *http.Client
 	baseURL string
+	limiter *rateLimiter
 	// wikiClient is used by enrichment functions for Wikipedia/Wikidata/Commons.
 	// If nil, enrichment functions create their own ad-hoc clients.
 	wikiClient      *http.Client
 	wikiBaseURL     string // e.g. "https://en.wikipedia.org"
 	wikidataBaseURL string // e.g. "https://www.wikidata.org"
 	commonsBaseURL  string // e.g. "https://commons.wikimedia.org"
-	mu              sync.Mutex
-	lastReq         time.Time
 }
 
-func NewMBClient() *MBClient {
+func NewMBClient(limiter *rateLimiter) *MBClient {
 	return &MBClient{
 		client:  &http.Client{Timeout: 15 * time.Second},
 		baseURL: mbBaseURL,
+		limiter: limiter,
 	}
 }
 
 func (c *MBClient) throttle() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	since := time.Since(c.lastReq)
-	if since < time.Second {
-		time.Sleep(time.Second - since)
-	}
-	c.lastReq = time.Now()
+	c.limiter.wait()
 }
 
 func (c *MBClient) get(ctx context.Context, path string) ([]byte, error) {

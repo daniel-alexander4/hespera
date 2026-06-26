@@ -21,13 +21,15 @@ type CAAClient struct {
 	client   *http.Client
 	baseURL  string
 	thumbDir string
+	limiter  *rateLimiter
 }
 
-func NewCAAClient(dataDir string) *CAAClient {
+func NewCAAClient(dataDir string, limiter *rateLimiter) *CAAClient {
 	return &CAAClient{
 		client:   &http.Client{Timeout: 30 * time.Second},
 		baseURL:  caaBaseURL,
 		thumbDir: filepath.Join(dataDir, "thumbs", "music"),
+		limiter:  limiter,
 	}
 }
 
@@ -84,6 +86,7 @@ func (c *CAAClient) FetchCover(ctx context.Context, releaseGroupID string, relea
 }
 
 func (c *CAAClient) findCoverURL(ctx context.Context, endpoint string) (string, error) {
+	c.limiter.wait()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", err
