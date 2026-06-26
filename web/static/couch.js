@@ -4,6 +4,12 @@
 // remote that emits standard key events (e.g. a Flirc dongle or BT remote):
 // arrow keys move a visible focus ring between focusable elements, Enter/OK
 // activates natively, and Backspace/Escape goes back. No server involvement.
+//
+// Overlay contract: an element tagged [data-couch-overlay] that is currently
+// visible (any hide mechanism — display:none via class, attribute, or inline
+// style all read as not-visible) traps couch focus inside itself, and Back
+// dismisses it instead of navigating history by clicking its [data-couch-dismiss]
+// control (so "how to close" stays owned by the overlay's own template/handler).
 (() => {
   if (document.documentElement.getAttribute('data-couch') !== '1') return;
 
@@ -15,7 +21,12 @@
     return r.width > 0 && r.height > 0;
   };
 
-  const candidates = () => Array.from(document.querySelectorAll(FOCUSABLE)).filter(visible);
+  // The currently-open overlay, if any: the first visible [data-couch-overlay].
+  const openOverlay = () => Array.from(document.querySelectorAll('[data-couch-overlay]')).find(visible) || null;
+
+  // Focus candidates are scoped to the open overlay when one is present, so
+  // arrows can't drift to the dimmed page behind it; otherwise the whole page.
+  const candidates = () => Array.from((openOverlay() || document).querySelectorAll(FOCUSABLE)).filter(visible);
 
   const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 
@@ -74,6 +85,12 @@
     }
     if ((e.key === 'Backspace' || e.key === 'Escape' || e.key === 'BrowserBack') && !typing) {
       e.preventDefault();
+      const overlay = openOverlay();
+      if (overlay) {
+        const dismiss = overlay.querySelector('[data-couch-dismiss]');
+        if (dismiss) dismiss.click();
+        return; // dismiss the overlay instead of leaving the page
+      }
       history.back();
     }
     // Enter / OK is left to native behavior (activates links and buttons).

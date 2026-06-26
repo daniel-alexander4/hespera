@@ -32,11 +32,11 @@
   </div>
 </div>
 
-<div id="playlist-modal" class="playlist-modal hidden">
+<div id="playlist-modal" class="playlist-modal hidden" data-couch-overlay>
   <div class="playlist-panel">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
       <strong>Playlist</strong>
-      <button id="playlist-close-btn" type="button" class="btn btn-sm">Close</button>
+      <button id="playlist-close-btn" type="button" class="btn btn-sm" data-couch-dismiss>Close</button>
     </div>
     <ol id="playlist-list" class="tracks"></ol>
   </div>
