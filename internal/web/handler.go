@@ -134,6 +134,8 @@ func New(d Deps) (*Handler, error) {
 		auth:      auth.New(d.Cfg, d.DB),
 	}
 
+	go h.pruneTVCacheLoop()
+
 	return h, nil
 }
 
