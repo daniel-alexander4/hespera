@@ -65,24 +65,6 @@ func New(d Deps) (*Handler, error) {
 		"movies_home.html",
 	}
 
-	humanBytes := func(b int64) string {
-		const (
-			kb = 1024
-			mb = 1024 * kb
-			gb = 1024 * mb
-		)
-		switch {
-		case b >= gb:
-			return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
-		case b >= mb:
-			return fmt.Sprintf("%.1f MB", float64(b)/float64(mb))
-		case b >= kb:
-			return fmt.Sprintf("%.0f KB", float64(b)/float64(kb))
-		default:
-			return fmt.Sprintf("%d B", b)
-		}
-	}
-
 	tpls := make(map[string]*template.Template, len(pages))
 	staticURL := func(rawPath string) string {
 		p := strings.TrimSpace(rawPath)
@@ -102,12 +84,8 @@ func New(d Deps) (*Handler, error) {
 		return p + sep + "v=" + v
 	}
 
-	mult := func(a, b int) int { return a * b }
-
 	layoutBase, err := template.New("layout.html").Funcs(template.FuncMap{
-		"staticv":    staticURL,
-		"humanBytes": humanBytes,
-		"mult":       mult,
+		"staticv": staticURL,
 	}).ParseFiles(layoutPath)
 	if err != nil {
 		return nil, fmt.Errorf("layout template: %w", err)

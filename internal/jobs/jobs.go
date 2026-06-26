@@ -17,6 +17,15 @@ var (
 	ErrQueueFull    = errors.New("job queue is full")
 )
 
+// Job status values, matching the scan_jobs.status column.
+const (
+	statusQueued   = "queued"
+	statusRunning  = "running"
+	statusDone     = "done"
+	statusFailed   = "failed"
+	statusCanceled = "canceled"
+)
+
 type JobRequest struct {
 	JobID     int64
 	LibraryID int64
@@ -53,8 +62,8 @@ func (s *Service) Enqueue(jobType string, libraryID int64, createdBy string, exe
 		`INSERT INTO scan_jobs (
 			library_id, job_type, status, progress_current, progress_total, payload_json,
 			created_by, duration_ms, cancel_requested, created_at, error, started_at, ended_at
-		) VALUES (?, ?, 'queued', 0, 0, '', ?, 0, 0, ?, '', '', '')`,
-		libraryID, jobType, createdBy, now,
+		) VALUES (?, ?, ?, 0, 0, '', ?, 0, 0, ?, '', '', '')`,
+		libraryID, jobType, statusQueued, createdBy, now,
 	)
 	if err != nil {
 		return 0, err
@@ -71,8 +80,8 @@ func (s *Service) Enqueue(jobType string, libraryID int64, createdBy string, exe
 	default:
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		_, _ = s.db.Exec(
-			`UPDATE scan_jobs SET status='failed', error=?, ended_at=?, duration_ms=0 WHERE id=?`,
-			ErrQueueFull.Error(), now, jobID,
+			`UPDATE scan_jobs SET status=?, error=?, ended_at=?, duration_ms=0 WHERE id=?`,
+			statusFailed, ErrQueueFull.Error(), now, jobID,
 		)
 		return 0, ErrQueueFull
 	}
@@ -83,8 +92,8 @@ func (s *Service) RequestCancel(jobID int64) error {
 		return errors.New("invalid job id")
 	}
 	res, err := s.db.Exec(
-		`UPDATE scan_jobs SET cancel_requested=1 WHERE id=? AND status IN ('queued','running')`,
-		jobID,
+		`UPDATE scan_jobs SET cancel_requested=1 WHERE id=? AND status IN (?,?)`,
+		jobID, statusQueued, statusRunning,
 	)
 	if err != nil {
 		return err
@@ -115,14 +124,14 @@ func (s *Service) runJob(req JobRequest) {
 		return
 	}
 	if s.cancelRequested(req.JobID) {
-		s.finishJob(req.JobID, "canceled", "", time.Now().UTC())
+		s.finishJob(req.JobID, statusCanceled, "", time.Now().UTC())
 		return
 	}
 
 	startedAt := time.Now().UTC()
 	_, _ = s.db.Exec(
-		`UPDATE scan_jobs SET status='running', error='', started_at=?, ended_at='', duration_ms=0 WHERE id=?`,
-		startedAt.Format(time.RFC3339Nano), req.JobID,
+		`UPDATE scan_jobs SET status=?, error='', started_at=?, ended_at='', duration_ms=0 WHERE id=?`,
+		statusRunning, startedAt.Format(time.RFC3339Nano), req.JobID,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -139,24 +148,24 @@ func (s *Service) runJob(req JobRequest) {
 		if r := recover(); r != nil {
 			slog.Error("job executor panicked",
 				"job_id", req.JobID, "panic", r, "stack", string(debug.Stack()))
-			s.finishJob(req.JobID, "failed", fmt.Sprintf("panic: %v", r), startedAt)
+			s.finishJob(req.JobID, statusFailed, fmt.Sprintf("panic: %v", r), startedAt)
 		}
 	}()
 
 	err := req.Executor(ctx, req.JobID, req.LibraryID)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || s.cancelRequested(req.JobID) {
-			s.finishJob(req.JobID, "canceled", "", startedAt)
+			s.finishJob(req.JobID, statusCanceled, "", startedAt)
 			return
 		}
-		s.finishJob(req.JobID, "failed", err.Error(), startedAt)
+		s.finishJob(req.JobID, statusFailed, err.Error(), startedAt)
 		return
 	}
 	if s.cancelRequested(req.JobID) {
-		s.finishJob(req.JobID, "canceled", "", startedAt)
+		s.finishJob(req.JobID, statusCanceled, "", startedAt)
 		return
 	}
-	s.finishJob(req.JobID, "done", "", startedAt)
+	s.finishJob(req.JobID, statusDone, "", startedAt)
 }
 
 func (s *Service) finishJob(jobID int64, status, errText string, startedAt time.Time) {

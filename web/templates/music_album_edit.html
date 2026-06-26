@@ -4,13 +4,13 @@
 </div>
 
 {{if .Writeback}}
-<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-1); border: 1px solid var(--accent); border-radius: 6px;">
+<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-panel); border: 1px solid var(--accent); border-radius: 6px;">
   Tag Editor mode — changes will be written to audio files on save.
 </div>
 {{end}}
 
 {{if or .WBSuccess .WBErrors}}
-<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-1); border: 1px solid {{if .WBErrors}}#c44{{else}}#4a9{{end}}; border-radius: 6px;">
+<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-panel); border: 1px solid {{if .WBErrors}}#c44{{else}}#4a9{{end}}; border-radius: 6px;">
   Tags written to {{.WBSuccess}} track{{if ne .WBSuccess 1}}s{{end}}{{if .WBErrors}}, {{.WBErrors}} error{{if ne .WBErrors 1}}s{{end}}{{end}}.
 </div>
 {{end}}

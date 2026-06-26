@@ -32,9 +32,9 @@
       <a href="/music" class="nav-link">Music</a>
       <a href="/movies" class="nav-link">Movies</a>
       <a href="/tv" class="nav-link">TV Shows</a>
-      <div class="entity-menu nav-settings" data-menu>
+      <div class="nav-settings" data-menu>
         <a href="/settings" class="nav-link nav-menu-trigger" data-menu-trigger aria-haspopup="true" aria-expanded="false">Settings</a>
-        <div class="entity-menu-panel nav-settings-panel">
+        <div class="nav-settings-panel">
           <a href="/libraries" class="nav-sub-link">Libraries</a>
           <a href="/settings/jobs" class="nav-sub-link">Job Status</a>
           <a href="/music/match/review" class="nav-sub-link">Match Review</a>
@@ -100,23 +100,6 @@
       document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
         menus.forEach(closeMenu);
-      });
-    })();
-  </script>
-  <script>
-    (() => {
-      const toggles = Array.from(document.querySelectorAll('[data-section-toggle]'));
-      if (!toggles.length) return;
-      toggles.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const targetID = String(btn.getAttribute('data-section-toggle') || '').trim();
-          if (!targetID) return;
-          const panel = document.getElementById(targetID);
-          if (!panel) return;
-          const expanded = !panel.classList.contains('hidden');
-          panel.classList.toggle('hidden', expanded);
-          btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-        });
       });
     })();
   </script>

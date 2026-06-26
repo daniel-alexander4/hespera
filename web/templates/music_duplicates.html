@@ -21,12 +21,12 @@
     <tbody>
       {{$best := .BestAlbumID}}
       {{range .Albums}}
-      <tr{{if eq .ID $best}} style="background:var(--clr-surface-2);"{{end}}>
+      <tr{{if eq .ID $best}} style="background:var(--surface-panel);"{{end}}>
         <td>
           {{if .ArtPath}}
           <img src="/art/album/{{.ID}}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:4px;" />
           {{else}}
-          <span style="display:inline-block;width:40px;height:40px;background:var(--clr-surface-2);border-radius:4px;"></span>
+          <span style="display:inline-block;width:40px;height:40px;background:var(--surface-panel);border-radius:4px;"></span>
           {{end}}
         </td>
         <td><a href="/music/album/{{.ID}}">{{.Title}}</a></td>

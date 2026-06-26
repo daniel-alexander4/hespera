@@ -11,6 +11,7 @@ import (
 
 	"isomedia/internal/config"
 	"isomedia/internal/db"
+	"isomedia/internal/video"
 	"isomedia/internal/web"
 )
 
@@ -22,6 +23,8 @@ func main() {
 		slog.Error("config validation failed", "err", err)
 		os.Exit(1)
 	}
+
+	video.SetConcurrency(cfg.FFmpegConcurrentLimit, cfg.FFmpegAcquireTimeout)
 
 	dbConn, err := db.Open(cfg.DBPath)
 	if err != nil {
