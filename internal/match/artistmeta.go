@@ -24,9 +24,13 @@ type ArtistMeta struct {
 	ImagePath     string
 }
 
-// EnrichArtist fetches artist bio from Wikipedia and image from Wikimedia
-// using MusicBrainz URL relations to find the right Wikipedia/Wikidata pages.
-func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string) (*ArtistMeta, error) {
+// EnrichArtist fetches artist bio from Wikipedia and image from Wikimedia using
+// MusicBrainz URL relations. fanart and audiodb are optional (may be nil)
+// backfill providers, tried only when Wikipedia/Wikidata leave a gap: fanart.tv
+// for the image, TheAudioDB for the bio (and a last-resort image). Both are
+// keyed by the artist MBID, so they stay correct even though album release-group
+// MBIDs can mis-match.
+func EnrichArtist(ctx context.Context, mb *MBClient, fanart *FanartClient, audiodb *AudioDBClient, artistMBID, dataDir string) (*ArtistMeta, error) {
 	artist, err := mb.LookupArtist(ctx, artistMBID)
 	if err != nil {
 		return nil, fmt.Errorf("lookup artist: %w", err)
@@ -110,6 +114,36 @@ func EnrichArtist(ctx context.Context, mb *MBClient, artistMBID, dataDir string)
 			}
 		} else {
 			slog.Info("no P18 image claim", "qid", wikidataQID)
+		}
+	}
+
+	// Backfill from optional providers only where Wikipedia/Wikidata left a gap.
+	// Image: fanart.tv (purpose-built artist art) then TheAudioDB. Bio: TheAudioDB.
+	if meta.ImagePath == "" && fanart != nil {
+		if imgURL := fanart.ArtistImageURL(ctx, artistMBID); imgURL != "" {
+			if p, err := downloadArtistImage(ctx, imgURL, dataDir, artistMBID, nil); err != nil {
+				slog.Warn("fanart artist image download failed", "mbid", artistMBID, "err", err)
+			} else if p != "" {
+				meta.ImagePath = p
+			}
+		}
+	}
+	if audiodb != nil {
+		if meta.Bio == "" {
+			if bio := audiodb.ArtistBio(ctx, artistMBID); bio != "" {
+				meta.Bio = bio
+				meta.BioSourceName = "TheAudioDB"
+				meta.BioSourceURL = "https://www.theaudiodb.com/artist/" + artistMBID
+			}
+		}
+		if meta.ImagePath == "" {
+			if imgURL := audiodb.ArtistImageURL(ctx, artistMBID); imgURL != "" {
+				if p, err := downloadArtistImage(ctx, imgURL, dataDir, artistMBID, nil); err != nil {
+					slog.Warn("audiodb artist image download failed", "mbid", artistMBID, "err", err)
+				} else if p != "" {
+					meta.ImagePath = p
+				}
+			}
 		}
 	}
 

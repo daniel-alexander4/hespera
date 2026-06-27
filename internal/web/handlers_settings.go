@@ -42,6 +42,27 @@ func (h *Handler) effectiveTMDBKey(ctx context.Context) string {
 	return h.cfg.TMDBAPIKey
 }
 
+// effectiveFanartKey / effectiveAudioDBKey resolve the optional artist-backfill
+// provider keys the same way as effectiveTMDBKey: the app_settings (UI) value
+// wins, else the env default. Both are optional — empty disables the provider.
+func (h *Handler) effectiveFanartKey(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='fanarttv_api_key'").Scan(&v)
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	return h.cfg.FanartTVAPIKey
+}
+
+func (h *Handler) effectiveAudioDBKey(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='audiodb_api_key'").Scan(&v)
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	return h.cfg.TheAudioDBAPIKey
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -55,6 +76,33 @@ func maskKey(k string) string {
 	return "••••" + k[len(k)-4:]
 }
 
+// keyStatus reports an API key's display state: whether an effective value
+// exists, its source (custom DB value / env / none), and a masked rendering.
+func (h *Handler) keyStatus(ctx context.Context, dbKey, envVal, effective string) (configured bool, source, masked string) {
+	var dbVal string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key=?", dbKey).Scan(&dbVal)
+	source = "none"
+	switch {
+	case strings.TrimSpace(dbVal) != "":
+		source = "custom"
+	case strings.TrimSpace(envVal) != "":
+		source = "env"
+	}
+	return effective != "", source, maskKey(effective)
+}
+
+// saveAPIKey upserts a non-empty value or clears the row (revert to env) on empty.
+func (h *Handler) saveAPIKey(ctx context.Context, dbKey, value string) error {
+	if value == "" {
+		_, err := h.db.ExecContext(ctx, "DELETE FROM app_settings WHERE key=?", dbKey)
+		return err
+	}
+	_, err := h.db.ExecContext(ctx,
+		"INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+		dbKey, value)
+	return err
+}
+
 // settingsAPIKeys renders (GET) and persists (POST) user-configurable API keys.
 // Today the only key is TMDB. A stored value overrides the env default; an empty
 // submission clears it (reverting to env). The raw key is never rendered back or
@@ -64,58 +112,65 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	switch r.Method {
 	case http.MethodGet:
-		var dbVal string
-		_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='tmdb_api_key'").Scan(&dbVal)
-		dbVal = strings.TrimSpace(dbVal)
-		effective := h.effectiveTMDBKey(ctx)
-		source := "none"
-		switch {
-		case dbVal != "":
-			source = "custom"
-		case strings.TrimSpace(h.cfg.TMDBAPIKey) != "":
-			source = "env"
-		}
+		tmdbCfg, tmdbSrc, tmdbMask := h.keyStatus(ctx, "tmdb_api_key", h.cfg.TMDBAPIKey, h.effectiveTMDBKey(ctx))
+		fanCfg, fanSrc, fanMask := h.keyStatus(ctx, "fanarttv_api_key", h.cfg.FanartTVAPIKey, h.effectiveFanartKey(ctx))
+		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
 		h.render(w, "settings_apikeys.html", map[string]any{
-			"Title":      "API Keys",
-			"Configured": effective != "",
-			"Source":     source,
-			"Masked":     maskKey(effective),
-			"Saved":      r.URL.Query().Get("saved"),
-			"Valid":      r.URL.Query().Get("valid"),
+			"Title":             "API Keys",
+			"TMDBConfigured":    tmdbCfg,
+			"TMDBSource":        tmdbSrc,
+			"TMDBMasked":        tmdbMask,
+			"FanartConfigured":  fanCfg,
+			"FanartSource":      fanSrc,
+			"FanartMasked":      fanMask,
+			"AudioDBConfigured": adbCfg,
+			"AudioDBSource":     adbSrc,
+			"AudioDBMasked":     adbMask,
+			"Saved":             r.URL.Query().Get("saved"),
+			"Valid":             r.URL.Query().Get("valid"),
 		})
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
 			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsAPIKeys", "err", err)
 			return
 		}
-		key := strings.TrimSpace(r.FormValue("tmdb_api_key"))
-		if key == "" {
-			if _, err := h.db.ExecContext(ctx, "DELETE FROM app_settings WHERE key='tmdb_api_key'"); err != nil {
-				httpError(w, 500, "internal server error", "clear api key failed", "handler", "settingsAPIKeys", "err", err)
+		// Each key has its own form, so exactly one field is present per submit;
+		// a blank value for that field clears it. This avoids one form's empty
+		// fields wiping the other keys.
+		if _, ok := r.Form["tmdb_api_key"]; ok {
+			key := strings.TrimSpace(r.FormValue("tmdb_api_key"))
+			if err := h.saveAPIKey(ctx, "tmdb_api_key", key); err != nil {
+				httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
 				return
 			}
-			http.Redirect(w, r, "/settings/api-keys?saved=cleared", http.StatusSeeOther)
-			return
-		}
-		// Persist first — validation is non-blocking so a transiently-unreachable
-		// TMDB never prevents saving a (possibly valid) key.
-		if _, err := h.db.ExecContext(ctx,
-			"INSERT INTO app_settings (key, value) VALUES ('tmdb_api_key', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-			key); err != nil {
-			httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
-			return
-		}
-		valid := "unknown"
-		if h.tmdbValidate != nil {
-			if ok, verr := h.tmdbValidate(ctx, key); verr == nil {
-				if ok {
-					valid = "1"
-				} else {
-					valid = "0"
+			if key == "" {
+				http.Redirect(w, r, "/settings/api-keys?saved=cleared", http.StatusSeeOther)
+				return
+			}
+			valid := "unknown"
+			if h.tmdbValidate != nil {
+				if ok, verr := h.tmdbValidate(ctx, key); verr == nil {
+					if ok {
+						valid = "1"
+					} else {
+						valid = "0"
+					}
 				}
 			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
+			return
 		}
-		http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
+		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key"} {
+			if _, ok := r.Form[field]; ok {
+				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
+					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
+					return
+				}
+				http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+				return
+			}
+		}
+		http.Redirect(w, r, "/settings/api-keys", http.StatusSeeOther)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -360,7 +415,7 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			// Chain a music_match job after scan completes.
-			matcher := match.New(h.db, h.cfg.DataDir)
+			matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx))
 			_, _ = h.jobs.Enqueue("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 				return matcher.RunMusicMatch(ctx, mJID, mLibID)
 			})
