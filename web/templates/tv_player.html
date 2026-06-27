@@ -13,6 +13,12 @@
     </video>
   </div>
 
+  <div class="player-controls tv-transport" id="tvTransport">
+    <button id="tvRewindBtn" type="button" class="btn btn-sm" aria-label="Rewind 10 seconds" title="Rewind 10s">{{template "icon-rewind"}}</button>
+    <button id="tvToggleBtn" type="button" class="btn btn-primary btn-sm" aria-label="Play or pause" title="Play / Pause"><span class="tv-glyph-play">{{template "icon-play"}}</span><span class="tv-glyph-pause">{{template "icon-pause"}}</span></button>
+    <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Forward 10 seconds" title="Forward 10s">{{template "icon-fast-forward"}}</button>
+  </div>
+
   <div class="tv-player-controls">
     <label class="tv-track-pick" id="audioPick" hidden>Audio
       <select id="audioSelect"></select>
@@ -145,6 +151,24 @@
 
   if (audioSelect) audioSelect.addEventListener('change', () => loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, video.currentTime));
   if (subSelect) subSelect.addEventListener('change', () => loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, video.currentTime));
+
+  // --- transport controls (focusable, so a TV remote in couch mode can seek;
+  //     the native <video controls> scrubber isn't remote-reachable) ---
+  const transport = document.getElementById('tvTransport');
+  const rewindBtn = document.getElementById('tvRewindBtn');
+  const toggleBtn = document.getElementById('tvToggleBtn');
+  const forwardBtn = document.getElementById('tvForwardBtn');
+  const seekBy = (delta) => {
+    let t = video.currentTime + delta;
+    if (t < 0) t = 0;
+    if (Number.isFinite(video.duration) && video.duration > 0 && t > video.duration) t = video.duration;
+    video.currentTime = t;
+  };
+  if (rewindBtn) rewindBtn.addEventListener('click', () => seekBy(-10));
+  if (forwardBtn) forwardBtn.addEventListener('click', () => seekBy(10));
+  if (toggleBtn) toggleBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause(); });
+  video.addEventListener('play', () => { if (transport) transport.classList.add('playing'); });
+  video.addEventListener('pause', () => { if (transport) transport.classList.remove('playing'); });
 
   // --- progress reporting (unchanged behaviour) ---
   function reportProgress(completed) {

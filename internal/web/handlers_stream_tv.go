@@ -196,10 +196,12 @@ func (h *Handler) streamTVRemux(w http.ResponseWriter, r *http.Request) {
 
 var hlsAssetName = regexp.MustCompile(`^(index\.m3u8|seg\d+\.ts)$`)
 
-// streamTVHLS serves the single-rendition HLS playlist and segments for a file,
-// building (and caching) the asset on first request. The manifest request
-// blocks until the whole-file transcode completes; segment requests are served
-// from the published cache directory.
+// streamTVHLS serves a segment-on-demand HLS asset for a file. The manifest is a
+// synthetic VOD playlist (all segments listed up front from the source duration,
+// #EXT-X-ENDLIST) so the player knows the full episode length immediately and
+// can seek anywhere; each segment is transcoded lazily on first request and
+// cached. This is what lets the scrubber span the whole episode and seek
+// forward/back during a transcode, instead of waiting for a linear encode.
 func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -235,27 +237,41 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isManifest := strings.HasSuffix(name, ".m3u8")
-	var dir string
-	if isManifest {
-		// Returns as soon as the first segment exists; the encode continues in
-		// the background and the event playlist grows.
-		d, err := video.EnsureHLS(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080)
-		if err != nil {
-			if r.Context().Err() != nil {
-				return // client gave up while the build started
-			}
-			httpError(w, http.StatusInternalServerError, "transcode failed", "hls build", "handler", "streamTVHLS", "file_id", fileID, "err", err)
-			return
-		}
-		dir = d
-	} else {
-		// Segments are only requested for entries the playlist already lists, so
-		// they exist on disk — don't re-trigger a build.
-		dir = video.HLSDir(h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080)
+	dur := h.tvDuration(r.Context(), src, clean)
+	if dur <= 0 {
+		httpError(w, http.StatusInternalServerError, "transcode failed", "unknown source duration", "handler", "streamTVHLS", "file_id", fileID)
+		return
 	}
 
-	f, err := os.Open(filepath.Join(dir, name))
+	if strings.HasSuffix(name, ".m3u8") {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method == http.MethodHead {
+			return
+		}
+		fmt.Fprint(w, video.VODPlaylist(dur))
+		return
+	}
+
+	w.Header().Set("Content-Type", "video/mp2t")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if r.Method == http.MethodHead {
+		return // don't transcode a segment just to answer a HEAD
+	}
+	index, err := segmentIndex(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	segPath, err := video.EnsureSegment(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080, index, dur)
+	if err != nil {
+		if r.Context().Err() != nil {
+			return // client gave up while the segment built
+		}
+		httpError(w, http.StatusInternalServerError, "transcode failed", "hls segment", "handler", "streamTVHLS", "file_id", fileID, "seg", index, "err", err)
+		return
+	}
+	f, err := os.Open(segPath)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -266,14 +282,28 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if isManifest {
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		w.Header().Set("Cache-Control", "no-store") // event playlist grows during transcode
-	} else {
-		w.Header().Set("Content-Type", "video/mp2t")
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	}
 	http.ServeContent(w, r, name, fi.ModTime(), f)
+}
+
+// tvDuration returns the source's duration in seconds, preferring the stored
+// probe (written at scan time) and falling back to a live ffprobe only when it's
+// absent — the synthetic VOD manifest needs the full length up front.
+func (h *Handler) tvDuration(ctx context.Context, src tvFileSource, clean string) float64 {
+	var probe video.ProbeResult
+	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
+	if d := durationSeconds(probe.Format.Duration); d > 0 {
+		return d
+	}
+	if p, err := video.Probe(ctx, clean); err == nil {
+		return durationSeconds(p.Format.Duration)
+	}
+	return 0
+}
+
+// segmentIndex parses the N from a "segNNNNN.ts" asset name (already whitelisted
+// by hlsAssetName).
+func segmentIndex(name string) (int, error) {
+	return strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(name, "seg"), ".ts"))
 }
 
 // streamTVSubtitles extracts a text subtitle track and streams it as WebVTT.

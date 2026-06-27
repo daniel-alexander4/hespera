@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,8 +20,8 @@ import (
 
 const (
 	hlsSegmentSeconds = 6
-	hlsPlaylistName   = "index.m3u8"
-	buildTimeout      = 2 * time.Hour
+	segBuildTimeout   = 5 * time.Minute // ceiling for one on-demand segment transcode
+	buildTimeout      = 2 * time.Hour   // staleness threshold for sweeping abandoned build temp dirs
 	tmpDirPrefix      = ".build-"
 )
 
@@ -63,32 +64,57 @@ func RemuxArgs(src string, audioOrdinal int) []string {
 	}
 }
 
-// HLSArgs builds ffmpeg args for a single-rendition HLS transcode of src into
-// outDir. It uses an *event* playlist: ffmpeg appends each segment to the
-// playlist as it is written and finalises it with #EXT-X-ENDLIST when the encode
-// completes — so playback can begin from the first segment while the rest is
-// still transcoding (progressive start), yet it remains a single continuous
-// encode (timestamps, keyframes, and segment durations all correct). Video is
-// scaled down to maxHeight (never up) and re-encoded to H.264/AAC.
-func HLSArgs(src, outDir string, maxHeight, audioOrdinal int) []string {
+// SegmentArgs builds ffmpeg args to transcode a single HLS segment: the
+// durSec-second window of src starting at startSec, re-encoded to H.264/AAC and
+// written to outPath as MPEG-TS. The window is seeked accurately (input -ss), a
+// keyframe is forced on its first frame so the segment is independently
+// decodable, and -output_ts_offset places its timestamps at the segment's
+// position on the full timeline so the player stitches segments seamlessly and
+// the scrubber maps to real episode time. -fps_mode cfr keeps each full segment
+// exactly hls_time of video, so the synthetic VOD manifest's EXTINF values stay
+// accurate over a whole episode (no cumulative drift). Video is scaled down to
+// maxHeight (never up). Producing any segment on demand at constant cost is what
+// makes seeking work, regardless of how far into the file the segment sits.
+func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audioOrdinal int) []string {
+	ss := strconv.FormatFloat(startSec, 'f', -1, 64)
 	return []string{
 		"-hide_banner", "-loglevel", "error", "-y",
-		"-i", src,
+		"-ss", ss, "-i", src, "-t", strconv.FormatFloat(durSec, 'f', -1, 64),
 		"-map", "0:v:0", "-map", audioMap(audioOrdinal),
 		"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'",
+		"-fps_mode", "cfr",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
-		// Force a keyframe every hls_time seconds so segments are actually that
-		// length (otherwise libx264's default GOP dictates boundaries, making the
-		// first segment — and thus startup latency and seek granularity — coarse).
-		"-force_key_frames", "expr:gte(t,n_forced*" + strconv.Itoa(hlsSegmentSeconds) + ")",
+		"-force_key_frames", "expr:eq(n,0)",
 		"-c:a", "aac", "-ac", "2", "-b:a", "160k",
-		"-f", "hls",
-		"-hls_time", strconv.Itoa(hlsSegmentSeconds),
-		"-hls_playlist_type", "event",
-		"-hls_flags", "independent_segments",
-		"-hls_segment_filename", filepath.Join(outDir, "seg%05d.ts"),
-		filepath.Join(outDir, hlsPlaylistName),
+		"-output_ts_offset", ss, "-muxdelay", "0", "-muxpreload", "0",
+		"-f", "mpegts", outPath,
 	}
+}
+
+// VODPlaylist synthesises the complete VOD HLS manifest for a source of the
+// given duration: every hls_time segment listed up front, finalised with
+// #EXT-X-ENDLIST, so the player knows the full episode length immediately and
+// can seek anywhere. The segments themselves are produced on demand as the
+// player requests them (see EnsureSegment) — the manifest is pure computation,
+// no transcode needed to serve it. Returns "" if duration is not positive.
+func VODPlaylist(durationSec float64) string {
+	if durationSec <= 0 {
+		return ""
+	}
+	const seg = float64(hlsSegmentSeconds)
+	n := int(math.Ceil(durationSec / seg))
+	var b strings.Builder
+	b.WriteString("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-INDEPENDENT-SEGMENTS\n")
+	fmt.Fprintf(&b, "#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:0\n", hlsSegmentSeconds)
+	for i := 0; i < n; i++ {
+		d := seg
+		if rem := durationSec - float64(i)*seg; rem < seg {
+			d = rem
+		}
+		fmt.Fprintf(&b, "#EXTINF:%.6f,\nseg%05d.ts\n", d, i)
+	}
+	b.WriteString("#EXT-X-ENDLIST\n")
+	return b.String()
 }
 
 func audioMap(ordinal int) string {
@@ -98,40 +124,34 @@ func audioMap(ordinal int) string {
 	return "0:a:0?"
 }
 
-// HLSDir returns the cache directory for a source without starting a build —
-// used to serve already-listed segments (the playlist only references segments
-// that exist) without re-triggering EnsureHLS.
-func HLSDir(cacheRoot, src string, modTime time.Time, size int64, maxHeight int) string {
-	return filepath.Join(cacheRoot, hlsKey(src, modTime, size, maxHeight))
-}
-
-// hlsBuild tracks one in-flight transcode so concurrent callers share it.
-type hlsBuild struct {
-	ready chan struct{} // closed once the playlist is playable (≥1 segment) or the build failed
-	err   error         // non-nil only if the build failed before becoming playable
+// segBuild tracks one in-flight segment transcode so concurrent callers for the
+// same segment share it (e.g. hls.js prefetch racing a seek to the same point).
+type segBuild struct {
+	ready chan struct{} // closed once the segment is on disk or the build failed
+	err   error
 }
 
 var (
-	hlsBuildsMu sync.Mutex
-	hlsBuilds   = map[string]*hlsBuild{}
+	segBuildsMu sync.Mutex
+	segBuilds   = map[string]*segBuild{}
 )
 
-// EnsureHLS ensures a progressive HLS transcode of src exists under cacheRoot
-// (keyed by path+mtime+size+maxHeight) and returns its directory once playback
-// can begin — i.e. as soon as the event playlist has its first segment, NOT
-// after the whole file is transcoded. The encode continues in the background,
-// appending segments; the client's playlist polls pick them up. Concurrent
-// callers for the same source share a single build. A build that fails before
-// becoming playable leaves no directory, so the next request retries cleanly.
-func EnsureHLS(ctx context.Context, cacheRoot, src string, modTime time.Time, size int64, maxHeight int) (string, error) {
-	key := hlsKey(src, modTime, size, maxHeight)
-	dir := filepath.Join(cacheRoot, key)
-	if hlsReady(dir) { // already fully transcoded
+// EnsureSegment ensures segment index of a segment-on-demand HLS transcode of
+// src exists under cacheRoot (same key as the manifest) and returns its path.
+// Segments are produced lazily — one ffmpeg invocation per hls_time window — so
+// a seek to any point costs only that segment's transcode, not a wait for a
+// linear encode to reach it. A finished segment is cached and reused; concurrent
+// callers for the same segment share one build. The transcode writes to a temp
+// file and atomically renames, so a partial segment is never served, and it runs
+// on its own context so a near-done segment still caches if the caller gives up.
+func EnsureSegment(ctx context.Context, cacheRoot, src string, modTime time.Time, size int64, maxHeight, index int, totalDur float64) (string, error) {
+	dir := filepath.Join(cacheRoot, hlsKey(src, modTime, size, maxHeight))
+	path := filepath.Join(dir, fmt.Sprintf("seg%05d.ts", index))
+	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
 		touch(dir)
-		return dir, nil
+		return path, nil
 	}
-
-	b := startOrJoinHLSBuild(key, dir, cacheRoot, src, maxHeight)
+	b := startOrJoinSegBuild(dir, src, maxHeight, index, totalDur)
 	select {
 	case <-b.ready:
 	case <-ctx.Done():
@@ -141,94 +161,69 @@ func EnsureHLS(ctx context.Context, cacheRoot, src string, modTime time.Time, si
 		return "", b.err
 	}
 	touch(dir)
-	return dir, nil
+	return path, nil
 }
 
-func startOrJoinHLSBuild(key, dir, cacheRoot, src string, maxHeight int) *hlsBuild {
-	hlsBuildsMu.Lock()
-	defer hlsBuildsMu.Unlock()
-	if b, ok := hlsBuilds[key]; ok {
+func startOrJoinSegBuild(dir, src string, maxHeight, index int, totalDur float64) *segBuild {
+	key := dir + "|" + strconv.Itoa(index)
+	segBuildsMu.Lock()
+	defer segBuildsMu.Unlock()
+	if b, ok := segBuilds[key]; ok {
 		return b
 	}
-	b := &hlsBuild{ready: make(chan struct{})}
-	hlsBuilds[key] = b
-	go runHLSBuild(b, key, dir, cacheRoot, src, maxHeight)
+	b := &segBuild{ready: make(chan struct{})}
+	segBuilds[key] = b
+	go runSegBuild(b, key, dir, src, maxHeight, index, totalDur)
 	return b
 }
 
-func runHLSBuild(b *hlsBuild, key, dir, cacheRoot, src string, maxHeight int) {
+func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalDur float64) {
 	defer func() {
-		hlsBuildsMu.Lock()
-		delete(hlsBuilds, key)
-		hlsBuildsMu.Unlock()
+		segBuildsMu.Lock()
+		delete(segBuilds, key)
+		segBuildsMu.Unlock()
 	}()
+	finish := func(err error) { b.err = err; close(b.ready) }
 
-	readyOnce := sync.Once{}
-	fail := func(err error) {
-		readyOnce.Do(func() { b.err = err; close(b.ready) })
+	start := float64(index * hlsSegmentSeconds)
+	dur := float64(hlsSegmentSeconds)
+	if rem := totalDur - start; rem < dur {
+		dur = rem
 	}
-	playable := func() { readyOnce.Do(func() { close(b.ready) }) }
+	if dur <= 0 {
+		finish(fmt.Errorf("segment %d out of range (duration %.3f)", index, totalDur))
+		return
+	}
 
-	release, err := acquireBackground(context.Background())
+	buildCtx, cancel := context.WithTimeout(context.Background(), segBuildTimeout)
+	defer cancel()
+	release, err := acquire(buildCtx)
 	if err != nil {
-		fail(err)
+		finish(err)
 		return
 	}
 	defer release()
 
-	_ = os.RemoveAll(dir) // clear any stale partial from a prior failed run
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fail(err)
+		finish(err)
 		return
 	}
-
-	buildCtx, cancel := context.WithTimeout(context.Background(), buildTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(buildCtx, "ffmpeg", HLSArgs(src, dir, maxHeight, 0)...)
+	final := filepath.Join(dir, fmt.Sprintf("seg%05d.ts", index))
+	tmp := filepath.Join(dir, fmt.Sprintf(".seg%05d.ts.tmp", index))
+	cmd := exec.CommandContext(buildCtx, "ffmpeg", SegmentArgs(src, tmp, start, dur, maxHeight, 0)...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	if err := cmd.Start(); err != nil {
-		_ = os.RemoveAll(dir)
-		fail(fmt.Errorf("ffmpeg start: %w", err))
+	if err := cmd.Run(); err != nil {
+		_ = os.Remove(tmp)
+		finish(fmt.Errorf("ffmpeg segment %d: %w: %s", index, err, tail(errBuf.String(), 300)))
 		return
 	}
-
-	waitErr := make(chan error, 1)
-	go func() { waitErr <- cmd.Wait() }()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case e := <-waitErr:
-			// Build finished. If it errored before producing a complete playlist,
-			// treat as failure and remove the dir so the next request rebuilds.
-			if e != nil && !hlsReady(dir) {
-				_ = os.RemoveAll(dir)
-				fail(fmt.Errorf("ffmpeg hls: %w: %s", e, tail(errBuf.String(), 300)))
-				return
-			}
-			playable() // complete (or already playable)
-			return
-		case <-ticker.C:
-			if hlsPlayable(dir) {
-				playable()
-			}
-		}
+	if err := os.Rename(tmp, final); err != nil {
+		_ = os.Remove(tmp)
+		finish(err)
+		return
 	}
-}
-
-// hlsReady reports whether dir holds a finished playlist (#EXT-X-ENDLIST, which
-// ffmpeg writes only when the whole transcode completes).
-func hlsReady(dir string) bool {
-	b, err := os.ReadFile(filepath.Join(dir, hlsPlaylistName))
-	return err == nil && bytes.Contains(b, []byte("#EXT-X-ENDLIST"))
-}
-
-// hlsPlayable reports whether the playlist exists and references at least one
-// segment — i.e. playback can begin even though the encode may still be running.
-func hlsPlayable(dir string) bool {
-	b, err := os.ReadFile(filepath.Join(dir, hlsPlaylistName))
-	return err == nil && bytes.Contains(b, []byte(".ts"))
+	finish(nil)
 }
 
 func hlsKey(src string, modTime time.Time, size int64, maxHeight int) string {

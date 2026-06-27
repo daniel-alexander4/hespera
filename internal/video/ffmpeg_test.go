@@ -22,18 +22,39 @@ func TestAudioMap(t *testing.T) {
 	}
 }
 
-func TestHLSArgs(t *testing.T) {
-	args := HLSArgs("/m/ep.mkv", "/cache/x", 720, 0)
+func TestSegmentArgs(t *testing.T) {
+	args := SegmentArgs("/m/ep.mkv", "/cache/x/seg00010.ts", 60, 6, 720, 0)
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
-		"-i /m/ep.mkv", "-c:v libx264", "-c:a aac", "-f hls",
-		"-hls_playlist_type event", "scale=-2:'min(ih,720)'",
-		"-force_key_frames expr:gte(t,n_forced*6)",
-		filepath.Join("/cache/x", hlsPlaylistName),
+		"-ss 60", "-i /m/ep.mkv", "-t 6", "-c:v libx264", "-c:a aac", "-f mpegts",
+		"scale=-2:'min(ih,720)'", "-force_key_frames expr:eq(n,0)",
+		"-output_ts_offset 60", "/cache/x/seg00010.ts",
 	} {
 		if !strings.Contains(joined, want) {
-			t.Fatalf("HLSArgs missing %q in: %s", want, joined)
+			t.Fatalf("SegmentArgs missing %q in: %s", want, joined)
 		}
+	}
+}
+
+func TestVODPlaylist(t *testing.T) {
+	if VODPlaylist(0) != "" || VODPlaylist(-5) != "" {
+		t.Fatal("non-positive duration should yield an empty playlist")
+	}
+	pl := VODPlaylist(20) // 6+6+6+2 → 4 segments
+	for _, want := range []string{
+		"#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-ENDLIST", "#EXT-X-TARGETDURATION:6",
+		"seg00000.ts", "seg00003.ts",
+		"#EXTINF:2.000000,\nseg00003.ts", // last segment is the 2s remainder
+	} {
+		if !strings.Contains(pl, want) {
+			t.Fatalf("VODPlaylist missing %q in:\n%s", want, pl)
+		}
+	}
+	if strings.Contains(pl, "seg00004.ts") {
+		t.Fatalf("too many segments:\n%s", pl)
+	}
+	if n := strings.Count(pl, "#EXTINF:"); n != 4 {
+		t.Fatalf("EXTINF count = %d, want 4", n)
 	}
 }
 
@@ -65,22 +86,15 @@ func TestHLSKeyStableAndDistinct(t *testing.T) {
 	}
 }
 
-func TestSetConcurrencyReservesBackground(t *testing.T) {
+func TestSetConcurrency(t *testing.T) {
 	defer SetConcurrency(0, 0) // restore unlimited for other tests
 	SetConcurrency(4, time.Second)
 	if cap(ffmpegSem) != 4 {
-		t.Fatalf("global cap = %d, want 4", cap(ffmpegSem))
-	}
-	if cap(bgSem) != 2 {
-		t.Fatalf("background cap = %d, want 2 (half of global)", cap(bgSem))
-	}
-	SetConcurrency(1, time.Second)
-	if cap(bgSem) != 1 {
-		t.Fatalf("background cap = %d, want 1 (floor)", cap(bgSem))
+		t.Fatalf("cap = %d, want 4", cap(ffmpegSem))
 	}
 	SetConcurrency(0, 0)
-	if ffmpegSem != nil || bgSem != nil {
-		t.Fatal("limit 0 should disable both semaphores")
+	if ffmpegSem != nil {
+		t.Fatal("limit 0 should disable the semaphore")
 	}
 }
 
@@ -173,80 +187,57 @@ func sampleClipDur(t *testing.T, seconds int) (path string, modTime time.Time, s
 	return path, info.ModTime(), info.Size()
 }
 
-// waitForComplete blocks until the HLS dir has a finished (#EXT-X-ENDLIST)
-// playlist or the timeout elapses.
-func waitForComplete(t *testing.T, dir string, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if hlsReady(dir) {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("HLS build did not complete within %s", timeout)
-}
-
-func TestEnsureHLSBuildsAndReuses(t *testing.T) {
+func TestEnsureSegmentBuildsAndReuses(t *testing.T) {
 	ffmpegAvailable(t)
-	src, mt, size := sampleClip(t)
+	src, mt, size := sampleClipDur(t, 12) // 2 full segments
 	cacheRoot := t.TempDir()
 
-	dir, err := EnsureHLS(context.Background(), cacheRoot, src, mt, size, 240)
+	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12)
 	if err != nil {
-		t.Fatalf("EnsureHLS: %v", err)
+		t.Fatalf("EnsureSegment: %v", err)
 	}
-	if !hlsPlayable(dir) {
-		t.Fatal("playlist not playable on return")
-	}
-	waitForComplete(t, dir, 30*time.Second) // background encode finishes
-	segs, _ := filepath.Glob(filepath.Join(dir, "seg*.ts"))
-	if len(segs) == 0 {
-		t.Fatal("no segments produced")
+	if fi, err := os.Stat(p); err != nil || fi.Size() == 0 {
+		t.Fatalf("segment not produced: %v", err)
 	}
 
-	// Second call reuses the same dir via the completed-cache fast path.
-	dir2, err := EnsureHLS(context.Background(), cacheRoot, src, mt, size, 240)
-	if err != nil || dir2 != dir {
-		t.Fatalf("reuse: dir=%q dir2=%q err=%v", dir, dir2, err)
+	// Second call reuses the cached segment (same path, no rebuild).
+	p2, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12)
+	if err != nil || p2 != p {
+		t.Fatalf("reuse: p=%q p2=%q err=%v", p, p2, err)
 	}
 }
 
-// A long source must become playable well before it finishes transcoding —
-// that is the whole point of progressive HLS.
-func TestEnsureHLSProgressiveStart(t *testing.T) {
+// Requesting a later segment must NOT linearly encode the ones before it — that
+// constant-cost random access is what makes seeking work.
+func TestEnsureSegmentRandomAccess(t *testing.T) {
 	ffmpegAvailable(t)
-	src, mt, size := sampleClipDur(t, 60)
+	src, mt, size := sampleClipDur(t, 18) // 3 segments
 	cacheRoot := t.TempDir()
 
-	dir, err := EnsureHLS(context.Background(), cacheRoot, src, mt, size, 240)
+	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 2, 18)
 	if err != nil {
-		t.Fatalf("EnsureHLS: %v", err)
+		t.Fatalf("EnsureSegment: %v", err)
 	}
-	if !hlsPlayable(dir) {
-		t.Fatal("expected a playable playlist on return")
+	segs, _ := filepath.Glob(filepath.Join(filepath.Dir(p), "seg*.ts"))
+	if len(segs) != 1 {
+		t.Fatalf("expected only the requested segment on disk, got %v", segs)
 	}
-	// It should have returned before the whole 60s was transcoded.
-	if hlsReady(dir) {
-		t.Log("note: build already complete on return (encode outran the first-segment check)")
-	}
-	waitForComplete(t, dir, 60*time.Second)
 }
 
-func TestEnsureHLSConcurrentSharesOneBuild(t *testing.T) {
+func TestEnsureSegmentConcurrentSharesOneBuild(t *testing.T) {
 	ffmpegAvailable(t)
-	src, mt, size := sampleClip(t)
+	src, mt, size := sampleClipDur(t, 12)
 	cacheRoot := t.TempDir()
 
 	const n = 5
 	var wg sync.WaitGroup
-	dirs := make([]string, n)
+	paths := make([]string, n)
 	errs := make([]error, n)
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			dirs[i], errs[i] = EnsureHLS(context.Background(), cacheRoot, src, mt, size, 240)
+			paths[i], errs[i] = EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 0, 12)
 		}(i)
 	}
 	wg.Wait()
@@ -255,29 +246,32 @@ func TestEnsureHLSConcurrentSharesOneBuild(t *testing.T) {
 		if errs[i] != nil {
 			t.Fatalf("goroutine %d: %v", i, errs[i])
 		}
-		if dirs[i] != dirs[0] {
-			t.Fatalf("goroutines disagreed on dir: %q vs %q", dirs[i], dirs[0])
+		if paths[i] != paths[0] {
+			t.Fatalf("goroutines disagreed on path: %q vs %q", paths[i], paths[0])
 		}
 	}
-	waitForComplete(t, dirs[0], 30*time.Second)
-	// One shared build → exactly one asset dir, no leftovers.
-	entries, _ := os.ReadDir(cacheRoot)
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 asset dir, got %d: %v", len(entries), entries)
+	dir := filepath.Dir(paths[0])
+	if segs, _ := filepath.Glob(filepath.Join(dir, "seg*.ts")); len(segs) != 1 {
+		t.Fatalf("expected 1 segment, got %d: %v", len(segs), segs)
+	}
+	// Atomic rename leaves no temp file behind.
+	if tmps, _ := filepath.Glob(filepath.Join(dir, ".seg*.tmp")); len(tmps) != 0 {
+		t.Fatalf("leftover temp files: %v", tmps)
 	}
 }
 
-func TestEnsureHLSFailedBuildLeavesNoDir(t *testing.T) {
+func TestEnsureSegmentFailedBuildLeavesNoSegment(t *testing.T) {
 	ffmpegAvailable(t)
 	cacheRoot := t.TempDir()
 	// A nonexistent source makes ffmpeg fail before producing anything.
 	bogus := filepath.Join(t.TempDir(), "does-not-exist.mkv")
-	_, err := EnsureHLS(context.Background(), cacheRoot, bogus, time.Unix(1, 0), 1, 240)
+	_, err := EnsureSegment(context.Background(), cacheRoot, bogus, time.Unix(1, 0), 1, 240, 0, 12)
 	if err == nil {
 		t.Fatal("expected an error for a missing source")
 	}
-	if entries, _ := os.ReadDir(cacheRoot); len(entries) != 0 {
-		t.Fatalf("failed build should leave no dir, found: %v", entries)
+	dir := filepath.Join(cacheRoot, hlsKey(bogus, time.Unix(1, 0), 1, 240))
+	if segs, _ := filepath.Glob(filepath.Join(dir, "seg*.ts")); len(segs) != 0 {
+		t.Fatalf("failed build should leave no segment, found: %v", segs)
 	}
 }
 
