@@ -302,3 +302,66 @@ func TestTVHandlers(t *testing.T) {
 		}
 	})
 }
+
+// TestTvArtSeasonFallback covers the season-card art cascade: a season's own
+// poster, then the series poster, then the placeholder redirect.
+func TestTvArtSeasonFallback(t *testing.T) {
+	h, db := newTestHandler(t)
+	artDir := filepath.Join(h.cfg.DataDir, "thumbs", "tv")
+	if err := os.MkdirAll(artDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeArt := func(name string, body []byte) string {
+		p := filepath.Join(artDir, name)
+		if err := os.WriteFile(p, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	insertArt := func(artType string, seriesID, season int, path string) {
+		if _, err := db.Exec(
+			"INSERT INTO tv_series_art (art_type, tmdb_series_id, season_number, episode_number, art_path) VALUES (?,?,?,?,?)",
+			artType, seriesID, season, -1, path,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	seasonBytes := []byte("SEASON-POSTER")
+	seriesBytes := []byte("SERIES-POSTER")
+	// 100: own season poster + a series poster. 200: series poster only. 300: nothing.
+	insertArt("season_poster", 100, 1, writeArt("s100_season1.jpg", seasonBytes))
+	insertArt("series_poster", 100, -1, writeArt("s100_poster.jpg", seriesBytes))
+	insertArt("series_poster", 200, -1, writeArt("s200_poster.jpg", seriesBytes))
+
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.tvArt(rr, req)
+		return rr
+	}
+
+	t.Run("season poster used when present", func(t *testing.T) {
+		rr := get("/art/tv/season/100/1")
+		if rr.Code != http.StatusOK || rr.Body.String() != string(seasonBytes) {
+			t.Fatalf("code=%d body=%q, want 200 + season poster", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("falls back to series poster", func(t *testing.T) {
+		rr := get("/art/tv/season/200/2")
+		if rr.Code != http.StatusOK || rr.Body.String() != string(seriesBytes) {
+			t.Fatalf("code=%d body=%q, want 200 + series poster", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("placeholder redirect when no art at all", func(t *testing.T) {
+		rr := get("/art/tv/season/300/1")
+		if rr.Code != http.StatusFound {
+			t.Fatalf("code=%d, want 302", rr.Code)
+		}
+		if loc := rr.Header().Get("Location"); loc != "/static/"+tvPosterPlaceholder {
+			t.Fatalf("Location=%q, want placeholder", loc)
+		}
+	})
+}
