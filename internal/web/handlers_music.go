@@ -563,12 +563,13 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 	var albumTitle string
 	var albumYear int
 	var artistName string
+	var matchStatus string
 	if err := h.db.QueryRowContext(r.Context(), `
-		SELECT al.title, al.year, ar.name
+		SELECT al.title, al.year, ar.name, al.match_status
 		FROM music_albums al
 		JOIN music_artists ar ON ar.id = al.album_artist_id
 		WHERE al.id=?
-	`, albumID).Scan(&albumTitle, &albumYear, &artistName); err != nil {
+	`, albumID).Scan(&albumTitle, &albumYear, &artistName, &matchStatus); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -626,6 +627,7 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 		"AlbumTitle": albumTitle,
 		"AlbumYear":  albumYear,
 		"ArtistName": artistName,
+		"IsMatched":  matchStatus == "matched",
 		"Tracks":     tracks,
 		"Mode":       mode,
 		"Success":    successCount,
@@ -885,6 +887,65 @@ func (h *Handler) musicAlbumArtUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", albumID), http.StatusSeeOther)
+}
+
+// musicAlbumArtClear removes an album's cover art (art_path='') and resets its
+// art-check timestamp so the next match run re-fetches it. Used from the album
+// edit page when the current cover is wrong or absent.
+func (h *Handler) musicAlbumArtClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicAlbumArtClear", "err", err)
+		return
+	}
+	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
+	if err != nil || albumID <= 0 {
+		http.Error(w, "invalid album_id", 400)
+		return
+	}
+	if _, err := h.db.ExecContext(r.Context(),
+		"UPDATE music_albums SET art_path='', art_checked_at='' WHERE id=?", albumID); err != nil {
+		httpError(w, 500, "internal server error", "db update failed", "handler", "musicAlbumArtClear", "err", err)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d", albumID), http.StatusSeeOther)
+}
+
+// musicAlbumUnmatch fully resets an album's match — identity and cover art — so
+// the next match run re-matches it from scratch. Mirrors musicMatchRematch and
+// also clears art_path/art_checked_at.
+func (h *Handler) musicAlbumUnmatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicAlbumUnmatch", "err", err)
+		return
+	}
+	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
+	if err != nil || albumID <= 0 {
+		http.Error(w, "invalid album_id", 400)
+		return
+	}
+	if _, err := h.db.ExecContext(r.Context(), `
+		UPDATE music_albums SET
+			match_status='',
+			musicbrainz_id='',
+			artist_musicbrainz_id='',
+			match_confidence=0,
+			matched_at='',
+			art_path='',
+			art_checked_at=''
+		WHERE id=?
+	`, albumID); err != nil {
+		httpError(w, 500, "internal server error", "db update failed", "handler", "musicAlbumUnmatch", "err", err)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d", albumID), http.StatusSeeOther)
 }
 
 func (h *Handler) musicAlbumRescan(w http.ResponseWriter, r *http.Request) {

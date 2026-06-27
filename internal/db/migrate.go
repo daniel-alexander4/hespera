@@ -257,6 +257,12 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "tv_series_identities", "air_date", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// art_checked_at records the last time the cover-art re-fetch pass probed a
+	// matched-but-art-less album, so genuinely art-less albums aren't re-probed
+	// on every match run (a TTL re-sweep retries them since CAA accrues art).
+	if err := ensureColumn(db, "music_albums", "art_checked_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
 		return err
 	}
