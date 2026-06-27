@@ -15,17 +15,24 @@ type Matcher struct {
 	dataDir string
 	mb      *MBClient
 	caa     *CAAClient
+	fanart  *FanartClient  // optional artist-image backfill; nil when no key
+	audiodb *AudioDBClient // optional artist bio/image backfill; nil when no key
 }
 
-func New(db *sql.DB, dataDir string) *Matcher {
+// New builds a matcher. fanartKey/audiodbKey are optional, user-supplied API
+// keys for the artist backfill providers — empty disables that provider.
+func New(db *sql.DB, dataDir, fanartKey, audiodbKey string) *Matcher {
 	// One shared limiter so MusicBrainz and Cover Art Archive requests stay
-	// within a single 1 req/sec MetaBrainz-family budget.
+	// within a single 1 req/sec MetaBrainz-family budget. The backfill providers
+	// are separate hosts with their own limiters (built inside their clients).
 	limiter := newRateLimiter(time.Second)
 	return &Matcher{
 		db:      db,
 		dataDir: dataDir,
 		mb:      NewMBClient(limiter),
 		caa:     NewCAAClient(dataDir, limiter),
+		fanart:  NewFanartClient(fanartKey),
+		audiodb: NewAudioDBClient(audiodbKey),
 	}
 }
 
@@ -225,7 +232,7 @@ func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) err
 
 		// Step 2: Fetch bio + image if missing.
 		if !hasBio || !hasArt {
-			meta, err := EnrichArtist(ctx, m.mb, mbid, m.dataDir)
+			meta, err := EnrichArtist(ctx, m.mb, m.fanart, m.audiodb, mbid, m.dataDir)
 			if err != nil {
 				slog.Warn("enrich artist failed", "artist_id", a.id, "name", a.name, "err", err)
 				continue

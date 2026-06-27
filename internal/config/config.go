@@ -15,7 +15,9 @@ type Config struct {
 	DBPath    string
 	MediaRoot string
 
-	TMDBAPIKey string
+	TMDBAPIKey       string
+	FanartTVAPIKey   string
+	TheAudioDBAPIKey string
 
 	AuthEnabled       bool
 	AuthSessionSecret string
@@ -39,7 +41,9 @@ func FromEnv() Config {
 		DataDir:    dataDir,
 		DBPath:     dbPath,
 		MediaRoot:  mediaRoot,
-		TMDBAPIKey: getenv("HESPERA_TMDB_API_KEY", ""),
+		TMDBAPIKey:       getenv("HESPERA_TMDB_API_KEY", ""),
+		FanartTVAPIKey:   getenv("HESPERA_FANARTTV_API_KEY", ""),
+		TheAudioDBAPIKey: getenv("HESPERA_THEAUDIODB_API_KEY", ""),
 		AuthEnabled: parseBoolDefaultTrue(
 			os.Getenv("AUTH_ENABLED"),
 		),

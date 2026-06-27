@@ -51,7 +51,7 @@ func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matcher := match.New(h.db, h.cfg.DataDir)
+	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
 	jobID, err := h.jobs.Enqueue("music_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunMusicMatch(ctx, jobID, libraryID)
 	})
@@ -241,7 +241,7 @@ func (h *Handler) musicWriteback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matcher := match.New(h.db, h.cfg.DataDir)
+	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
 	jobID, err := h.jobs.Enqueue("tag_writeback", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunTagWriteback(ctx, jobID, libraryID)
 	})
