@@ -281,6 +281,40 @@ func TestUpsertTVFile(t *testing.T) {
 	})
 }
 
+func TestUpsertIdentityRefreshesUnchangedUnmatched(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	libID := seedLibrary(t, db, "tvref", "tv", "/media/tv")
+	s := &Scanner{DB: db}
+
+	// Seed a file whose identity was parsed with stale logic (empty title).
+	path := "/media/tv/Monty Pythons Flying Circus/s1/1x01 Whither Canada.mkv"
+	if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", &EpisodeIdentity{
+		ShowTitle: "", SeasonNumber: 1, EpisodeNumbers: []int{1}, Confidence: 0.55, Method: "x_format",
+	}); err != nil {
+		t.Fatalf("seed upsert: %v", err)
+	}
+
+	var fileID int64
+	if err := db.QueryRow("SELECT id FROM tv_series_files WHERE library_id=? AND abs_path=?", libID, path).Scan(&fileID); err != nil {
+		t.Fatalf("get file id: %v", err)
+	}
+
+	// A re-scan of the unchanged file re-runs IdentifyFile and refreshes the
+	// derived identity — this is the cheap path taken for unchanged files.
+	if err := s.upsertIdentity(ctx, fileID, IdentifyFile(path)); err != nil {
+		t.Fatalf("refresh upsertIdentity: %v", err)
+	}
+
+	var title string
+	if err := db.QueryRow(`SELECT guessed_title FROM tv_series_identities WHERE file_id=?`, fileID).Scan(&title); err != nil {
+		t.Fatalf("query identity: %v", err)
+	}
+	if title != "Monty Pythons Flying Circus" {
+		t.Fatalf("guessed_title = %q, want Monty Pythons Flying Circus", title)
+	}
+}
+
 func TestPruneMissingFiles(t *testing.T) {
 	ctx := context.Background()
 

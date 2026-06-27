@@ -1,7 +1,6 @@
 package tvscan
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -48,6 +47,34 @@ func TestIdentifyFile(t *testing.T) {
 			wantS:     2,
 			wantE:     nil,
 			wantConf:  0.30,
+		},
+		{
+			// Short "sN" season dir is recognized; show title comes from the
+			// show folder, not the inconsistent filename (year stripped by
+			// folder authority, not text munging).
+			path:      "/tv/Murderbot/s1/Murderbot (2025) - S01E01 - FreeCommerce.mkv",
+			wantTitle: "Murderbot",
+			wantS:     1,
+			wantE:     []int{1},
+			wantConf:  0.72,
+		},
+		{
+			// Sibling file with a different release style resolves to the SAME
+			// title via the show folder — the two group together.
+			path:      "/tv/Murderbot/s1/Murderbot.S01E01.1080p.WEB.h264-ETHEL.mkv",
+			wantTitle: "Murderbot",
+			wantS:     1,
+			wantE:     []int{1},
+			wantConf:  0.72,
+		},
+		{
+			// x_format with no title in the filename recovers the show name from
+			// the folder above the season dir (two levels up).
+			path:      "/tv/Monty Pythons Flying Circus/s1/1x01 Whither Canada.mkv",
+			wantTitle: "Monty Pythons Flying Circus",
+			wantS:     1,
+			wantE:     []int{1},
+			wantConf:  0.55,
 		},
 		{
 			path:    "/tv/random.txt",
@@ -100,6 +127,9 @@ func TestParseSeasonDir(t *testing.T) {
 		{"season 3", 3, true},
 		{"Season03", 3, true},
 		{"season 12", 12, true},
+		{"s1", 1, true},
+		{"S01", 1, true},
+		{"s 2", 2, true},
 		{"Specials", 0, false},
 		{"S01E01", 0, false},
 	}
@@ -147,5 +177,25 @@ func TestIdentifyXFormat(t *testing.T) {
 	if len(id.EpisodeNumbers) != 1 || id.EpisodeNumbers[0] != 14 {
 		t.Fatalf("episodes = %v, want [14]", id.EpisodeNumbers)
 	}
-	fmt.Printf("title=%q\n", id.ShowTitle)
+	if id.ShowTitle != "Friends" {
+		t.Fatalf("title = %q, want Friends (from filename, no season dir)", id.ShowTitle)
+	}
+}
+
+// Without a season directory and without a title in the filename, the
+// identifier must NOT manufacture a show title from an arbitrary container
+// folder — it leaves the title empty, consistent across sxe and x_format.
+func TestIdentifyNoJunkTitle(t *testing.T) {
+	for _, path := range []string{
+		"/downloads/1x05.mkv",
+		"/downloads/S01E05.mkv",
+	} {
+		id := IdentifyFile(path)
+		if id == nil {
+			t.Fatalf("%s: expected non-nil identity", path)
+		}
+		if id.ShowTitle != "" {
+			t.Fatalf("%s: ShowTitle = %q, want empty", path, id.ShowTitle)
+		}
+	}
 }

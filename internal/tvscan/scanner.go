@@ -84,14 +84,24 @@ func (s *Scanner) ScanTV(ctx context.Context, jobID, libraryID int64) error {
 		fileSize := info.Size()
 		mtimeUnix := info.ModTime().UTC().Unix()
 
-		// Check if file is unchanged.
-		var existingSize int64
-		var existingMtime int64
+		// Identify episode from filename. This is pure path parsing (no I/O), so
+		// it runs on every scan — including for unchanged files below — letting a
+		// re-scan reconverge existing identities when the parsing logic improves.
+		ident := IdentifyFile(resolvedPath)
+
+		// Check if file is unchanged. If so, skip the expensive probe but still
+		// refresh the (cheap, derived) identity so re-scans pick up better
+		// filename parsing without the file itself having to change.
+		var existingID, existingSize, existingMtime int64
 		err = s.DB.QueryRowContext(ctx,
-			"SELECT file_size_bytes, mtime_unix FROM tv_series_files WHERE library_id=? AND abs_path=?",
+			"SELECT id, file_size_bytes, mtime_unix FROM tv_series_files WHERE library_id=? AND abs_path=?",
 			libraryID, resolvedPath,
-		).Scan(&existingSize, &existingMtime)
+		).Scan(&existingID, &existingSize, &existingMtime)
 		if err == nil && existingSize == fileSize && existingMtime == mtimeUnix {
+			if err := s.upsertIdentity(ctx, existingID, ident); err != nil {
+				scanErrors++
+				slog.Warn("tvscan identity refresh", "path", resolvedPath, "err", err)
+			}
 			processed++
 			if processed%50 == 0 {
 				_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
@@ -110,9 +120,6 @@ func (s *Scanner) ScanTV(ctx context.Context, jobID, libraryID int64) error {
 			b, _ := json.Marshal(probeResult)
 			streamInfoJSON = string(b)
 		}
-
-		// Identify episode from filename.
-		ident := IdentifyFile(resolvedPath)
 
 		// Upsert file record and identity; log and continue on per-file DB errors.
 		if err := s.upsertTVFile(ctx, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, ident); err != nil {
@@ -169,10 +176,17 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
 		}
 	}
 
-	// Upsert tv_series_identities.
+	return s.upsertIdentity(ctx, fileID, ident)
+}
+
+// upsertIdentity inserts or refreshes the tv_series_identities row for a file.
+// The status guard means a re-scan only overwrites 'unmatched' rows — matched
+// and user-skipped rows keep their data. A nil identity never clobbers an
+// existing row. Safe to call on every scan, including for unchanged files.
+func (s *Scanner) upsertIdentity(ctx context.Context, fileID int64, ident *EpisodeIdentity) error {
 	if ident != nil {
 		epCSV := episodeNumbersCSV(ident.EpisodeNumbers)
-		_, err = s.DB.ExecContext(ctx, `
+		_, err := s.DB.ExecContext(ctx, `
 INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method)
 VALUES (?, 'unmatched', ?, ?, ?, ?, ?)
 ON CONFLICT(file_id) DO UPDATE SET
@@ -186,17 +200,16 @@ WHERE status NOT IN ('matched', 'skipped')
 		if err != nil {
 			return fmt.Errorf("upsert tv_series_identities: %w", err)
 		}
-	} else {
-		_, err = s.DB.ExecContext(ctx, `
+		return nil
+	}
+	_, err := s.DB.ExecContext(ctx, `
 INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method)
 VALUES (?, 'unmatched', '', -1, '', 0.0, '')
 ON CONFLICT(file_id) DO NOTHING
 `, fileID)
-		if err != nil {
-			return fmt.Errorf("upsert tv_series_identities fallback: %w", err)
-		}
+	if err != nil {
+		return fmt.Errorf("upsert tv_series_identities fallback: %w", err)
 	}
-
 	return nil
 }
 
