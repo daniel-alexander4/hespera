@@ -35,35 +35,13 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 	// Try SXE pattern first: S01E01, S02E01E02
 	if m := reSXE.FindStringSubmatchIndex(base); m != nil {
 		season, _ := strconv.Atoi(base[m[2]:m[3]])
-		epBlock := base[m[4]:m[5]]
-		episodes := parseEpisodeNumbers(epBlock)
-		title := cleanTitle(base[:m[0]])
-
-		if title != "" {
-			return &EpisodeIdentity{
-				ShowTitle:      title,
-				SeasonNumber:   season,
-				EpisodeNumbers: episodes,
-				Confidence:     0.72,
-				Method:         "sxe",
-			}
-		}
-		// No title from filename — try parent dir
-		seasonFromDir, _ := ParseSeasonDir(filepath.Base(dir))
-		if seasonFromDir > 0 {
-			parentTitle := cleanTitle(filepath.Base(filepath.Dir(dir)))
-			return &EpisodeIdentity{
-				ShowTitle:      parentTitle,
-				SeasonNumber:   season,
-				EpisodeNumbers: episodes,
-				Confidence:     0.55,
-				Method:         "sxe",
-			}
-		}
+		episodes := parseEpisodeNumbers(base[m[4]:m[5]])
+		title, conf := resolveTitle(dir, cleanTitle(base[:m[0]]))
 		return &EpisodeIdentity{
+			ShowTitle:      title,
 			SeasonNumber:   season,
 			EpisodeNumbers: episodes,
-			Confidence:     0.55,
+			Confidence:     conf,
 			Method:         "sxe",
 		}
 	}
@@ -72,31 +50,20 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 	if m := reXFormat.FindStringSubmatchIndex(base); m != nil {
 		season, _ := strconv.Atoi(base[m[2]:m[3]])
 		ep, _ := strconv.Atoi(base[m[4]:m[5]])
-		title := cleanTitle(base[:m[0]])
-
-		if title != "" {
-			return &EpisodeIdentity{
-				ShowTitle:      title,
-				SeasonNumber:   season,
-				EpisodeNumbers: []int{ep},
-				Confidence:     0.72,
-				Method:         "x_format",
-			}
-		}
+		title, conf := resolveTitle(dir, cleanTitle(base[:m[0]]))
 		return &EpisodeIdentity{
+			ShowTitle:      title,
 			SeasonNumber:   season,
 			EpisodeNumbers: []int{ep},
-			Confidence:     0.55,
+			Confidence:     conf,
 			Method:         "x_format",
 		}
 	}
 
 	// Try season dir fallback — no episode pattern in filename
-	dirName := filepath.Base(dir)
-	if seasonNum, ok := ParseSeasonDir(dirName); ok {
-		parentTitle := cleanTitle(filepath.Base(filepath.Dir(dir)))
+	if seasonNum, ok := ParseSeasonDir(filepath.Base(dir)); ok {
 		return &EpisodeIdentity{
-			ShowTitle:    parentTitle,
+			ShowTitle:    showTitleFromSeasonDir(dir),
 			SeasonNumber: seasonNum,
 			Confidence:   0.30,
 			Method:       "season_dir",
@@ -104,6 +71,44 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 	}
 
 	return nil
+}
+
+// resolveTitle picks the show title for an episode whose season/episode were
+// parsed from the filename. A season-directory layout (Show/Season 1/, Show/s1/)
+// is authoritative for show identity, so the show folder — the season dir's
+// parent — wins over any title parsed from the filename. That unifies a show
+// whose files use inconsistent naming (e.g. one with a "(2025)" year and one
+// without) under a single grouping key, while a library that distinguishes two
+// same-named shows by folder year keeps them apart. With no season directory,
+// the filename title is used. Confidence is 0.72 when the filename carried a
+// title, 0.55 when it had to be inferred from the directory.
+func resolveTitle(dir, fileTitle string) (string, float64) {
+	if dirTitle := showTitleFromSeasonDir(dir); dirTitle != "" {
+		if fileTitle != "" {
+			return dirTitle, 0.72
+		}
+		return dirTitle, 0.55
+	}
+	if fileTitle != "" {
+		return fileTitle, 0.72
+	}
+	return "", 0.55
+}
+
+// showTitleFromSeasonDir returns the show title for a file whose parent is a
+// season directory: the season dir's own parent. Returns "" when the parent is
+// not a season directory, or when the show folder resolves to a filesystem
+// root rather than a real show name (so callers never manufacture a title from
+// an arbitrary container folder).
+func showTitleFromSeasonDir(dir string) string {
+	if _, ok := ParseSeasonDir(filepath.Base(dir)); !ok {
+		return ""
+	}
+	base := filepath.Base(filepath.Dir(dir))
+	if base == "/" || base == "." {
+		return ""
+	}
+	return cleanTitle(base)
 }
 
 func parseEpisodeNumbers(block string) []int {
@@ -116,7 +121,9 @@ func parseEpisodeNumbers(block string) []int {
 	return eps
 }
 
-var reSeasonDir = regexp.MustCompile(`(?i)^season\s*(\d{1,2})$`)
+// reSeasonDir matches both the long form (Season 1, season03) and the short
+// form (s1, S01) used for per-season subdirectories.
+var reSeasonDir = regexp.MustCompile(`(?i)^s(?:eason)?\s*(\d{1,2})$`)
 
 func ParseSeasonDir(dirName string) (int, bool) {
 	m := reSeasonDir.FindStringSubmatch(strings.TrimSpace(dirName))
