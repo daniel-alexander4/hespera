@@ -1462,6 +1462,11 @@ ORDER BY year, lower(title)
 
 // --- Player ---
 
+// popularPerArtistLimit caps how many of each artist's top tracks the "Most
+// Popular" shuffle pools, so the playlist is each artist's hits rather than the
+// whole library, and isn't skewed entirely toward the most-famous artists.
+const popularPerArtistLimit = 10
+
 // playerTrackSelect is the shared column list + joins for building a player
 // queue; callers append their own WHERE/ORDER/LIMIT. Column order matches
 // queryPlayerTracks' scan.
@@ -1500,11 +1505,17 @@ func (h *Handler) musicPlayer(w http.ResponseWriter, r *http.Request) {
 			playerTrackSelect+` WHERE t.library_id=? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID)
 		playerTitle = "All Songs"
 	case "popular":
+		// Each artist's most popular songs (global ListenBrainz listen counts,
+		// filled by the match popularity phase), pooled: the top per-artist tracks
+		// across the library. Excludes popularity=0 (unknown/unmatched).
 		libraryID := h.resolveMusicLibraryID(r)
 		tracks, err = h.queryPlayerTracks(r.Context(),
-			playerTrackSelect+` JOIN (SELECT track_id, COUNT(*) AS plays FROM play_history WHERE library_id=? GROUP BY track_id) ph ON ph.track_id=t.id
-WHERE t.library_id=? ORDER BY ph.plays DESC, t.id LIMIT 100`, libraryID, libraryID)
-		playerTitle = "Most Played"
+			playerTrackSelect+` JOIN (
+  SELECT id, ROW_NUMBER() OVER (PARTITION BY artist_id ORDER BY popularity DESC, id) AS rn
+  FROM music_tracks WHERE library_id=? AND popularity>0
+) pop ON pop.id=t.id
+WHERE pop.rn<=? ORDER BY t.popularity DESC, t.id`, libraryID, popularPerArtistLimit)
+		playerTitle = "Most Popular"
 	case "era":
 		libraryID := h.resolveMusicLibraryID(r)
 		from, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("from")))

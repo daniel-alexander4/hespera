@@ -81,25 +81,24 @@ func TestMusicPlayerSources(t *testing.T) {
 		}
 	})
 
-	t.Run("source=popular: cold redirects, then ranks by plays", func(t *testing.T) {
-		// No plays yet → empty queue → redirect rather than a broken player.
+	t.Run("source=popular: cold redirects, then ranks by popularity", func(t *testing.T) {
+		// No popularity set yet → empty queue → redirect rather than a broken player.
 		if rec := get("/music/player?source=popular&library=" + lib); rec.Code != http.StatusSeeOther {
 			t.Fatalf("cold popular = %d, want 303", rec.Code)
 		}
-		for i := 0; i < 3; i++ {
-			mustExec(`INSERT INTO play_history (track_id,library_id,artist_id,album_id,completed) VALUES (?,?,?,?,1)`, t3, libID, artistID, albNew)
-		}
-		mustExec(`INSERT INTO play_history (track_id,library_id,artist_id,album_id,completed) VALUES (?,?,?,?,1)`, t1, libID, artistID, albOld)
+		// Popularity is the global listen count filled by the match phase; t2 stays 0.
+		mustExec(`UPDATE music_tracks SET popularity=900000 WHERE id=?`, t3)
+		mustExec(`UPDATE music_tracks SET popularity=5000 WHERE id=?`, t1)
 		rec := get("/music/player?source=popular&shuffle=1&library=" + lib)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("popular = %d, want 200", rec.Code)
 		}
 		b := rec.Body.String()
 		if !has(b, t3) || !has(b, t1) {
-			t.Fatalf("popular missing the played tracks")
+			t.Fatalf("popular missing the tracks with popularity")
 		}
 		if has(b, t2) {
-			t.Fatalf("popular included never-played track")
+			t.Fatalf("popular included a popularity=0 track")
 		}
 	})
 
