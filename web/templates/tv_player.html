@@ -94,6 +94,10 @@
       track.default = true;
       track.label = 'Subtitles';
       video.appendChild(track);
+      // A dynamically-added <track default> doesn't reliably auto-show across
+      // browsers; force the cue track on explicitly.
+      const tt = video.textTracks[video.textTracks.length - 1];
+      if (tt) tt.mode = 'showing';
     }
   }
 
@@ -110,7 +114,11 @@
       });
       document.getElementById('audioPick').hidden = false;
     }
-    const subs = session.subtitle_tracks || [];
+    // Only text subtitles are offered: they deliver as a WebVTT sidecar.
+    // Bitmap subs (PGS/DVD/DVB) would need burn-in, which isn't implemented, so
+    // listing them would be a control that silently does nothing. Each kept
+    // track keeps its original 1-based ordinal (what the server expects).
+    const subs = (session.subtitle_tracks || []).filter((s) => s.text);
     if (subs.length > 0) {
       subSelect.innerHTML = '';
       const off = document.createElement('option');
