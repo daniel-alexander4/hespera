@@ -245,6 +245,14 @@ CREATE TABLE IF NOT EXISTS lyrics_cache (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(track_id, provider_key)
 );
+
+-- Runtime-mutable application settings (key/value). Currently holds the
+-- user-configurable TMDB API key ('tmdb_api_key'); a row overrides the env
+-- default, and deleting it reverts to the env value.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
 `
 
 func Migrate(db *sql.DB) error {

@@ -28,6 +28,99 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// effectiveTMDBKey returns the runtime-configured TMDB API key: the value set
+// via the settings UI (app_settings) if non-empty, otherwise the env-provided
+// key from config. This is the single source of truth for the key across
+// handlers — reading the DB per call lets a UI change take effect without a
+// restart, and avoids the previously-duplicated h.cfg.TMDBAPIKey reads drifting.
+func (h *Handler) effectiveTMDBKey(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='tmdb_api_key'").Scan(&v)
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	return h.cfg.TMDBAPIKey
+}
+
+// maskKey renders an API key for display without exposing it: the last 4
+// characters behind a dot mask, or just the mask for very short values.
+func maskKey(k string) string {
+	k = strings.TrimSpace(k)
+	if k == "" {
+		return ""
+	}
+	if len(k) <= 4 {
+		return "••••"
+	}
+	return "••••" + k[len(k)-4:]
+}
+
+// settingsAPIKeys renders (GET) and persists (POST) user-configurable API keys.
+// Today the only key is TMDB. A stored value overrides the env default; an empty
+// submission clears it (reverting to env). The raw key is never rendered back or
+// logged. POST is protected by the same auth + same-origin CSRF as every other
+// /settings route.
+func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	switch r.Method {
+	case http.MethodGet:
+		var dbVal string
+		_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='tmdb_api_key'").Scan(&dbVal)
+		dbVal = strings.TrimSpace(dbVal)
+		effective := h.effectiveTMDBKey(ctx)
+		source := "none"
+		switch {
+		case dbVal != "":
+			source = "custom"
+		case strings.TrimSpace(h.cfg.TMDBAPIKey) != "":
+			source = "env"
+		}
+		h.render(w, "settings_apikeys.html", map[string]any{
+			"Title":      "API Keys",
+			"Configured": effective != "",
+			"Source":     source,
+			"Masked":     maskKey(effective),
+			"Saved":      r.URL.Query().Get("saved"),
+			"Valid":      r.URL.Query().Get("valid"),
+		})
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsAPIKeys", "err", err)
+			return
+		}
+		key := strings.TrimSpace(r.FormValue("tmdb_api_key"))
+		if key == "" {
+			if _, err := h.db.ExecContext(ctx, "DELETE FROM app_settings WHERE key='tmdb_api_key'"); err != nil {
+				httpError(w, 500, "internal server error", "clear api key failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=cleared", http.StatusSeeOther)
+			return
+		}
+		// Persist first — validation is non-blocking so a transiently-unreachable
+		// TMDB never prevents saving a (possibly valid) key.
+		if _, err := h.db.ExecContext(ctx,
+			"INSERT INTO app_settings (key, value) VALUES ('tmdb_api_key', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+			key); err != nil {
+			httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
+			return
+		}
+		valid := "unknown"
+		if h.tmdbValidate != nil {
+			if ok, verr := h.tmdbValidate(ctx, key); verr == nil {
+				if ok {
+					valid = "1"
+				} else {
+					valid = "0"
+				}
+			}
+		}
+		http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 func (h *Handler) settingsJobs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -280,8 +373,8 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			// Chain a tv_match job after scan completes if TMDB key is configured.
-			if h.cfg.TMDBAPIKey != "" {
-				tvMatcher := tmdb.NewMatcher(h.db, h.cfg.TMDBAPIKey, h.cfg.DataDir)
+			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" {
+				tvMatcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
 				_, _ = h.jobs.Enqueue("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 					return tvMatcher.RunTVMatch(ctx, mJID, mLibID)
 				})

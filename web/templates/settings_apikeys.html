@@ -1,0 +1,32 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>API Keys</h1>
+</div>
+
+{{if eq .Saved "cleared"}}
+<p class="form-help">Custom TMDB key cleared — now using the environment value (if any).</p>
+{{else if eq .Saved "1"}}
+  {{if eq .Valid "1"}}<p class="form-help">Saved. TMDB accepted the key.</p>
+  {{else if eq .Valid "0"}}<p class="form-help">Saved, but TMDB rejected this key (401) — double-check it.</p>
+  {{else}}<p class="form-help">Saved. Couldn't reach TMDB to validate it right now.</p>
+  {{end}}
+{{end}}
+
+<form method="post" action="/settings/api-keys" class="form-card">
+  <div class="form-group">
+    <label for="tmdb_api_key">TMDB API Key</label>
+    {{if .Configured}}
+    <small class="form-help">Currently set ({{.Source}}): <code>{{.Masked}}</code></small>
+    {{else}}
+    <small class="form-help">Not configured. TV matching requires a TMDB key.</small>
+    {{end}}
+    <input type="password" id="tmdb_api_key" name="tmdb_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to clear" />
+    <small class="form-help">Stored in the database; overrides the <code>HESPERA_TMDB_API_KEY</code> environment value. Submit blank to clear and revert to the environment value. Changes take effect immediately — no restart.</small>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
+{{end}}

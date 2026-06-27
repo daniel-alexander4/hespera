@@ -105,6 +105,33 @@ type Genre struct {
 	Name string `json:"name"`
 }
 
+// ValidateKey reports whether TMDB accepts the API key. A nil error with
+// valid=false means TMDB rejected the key (HTTP 401); a non-nil error means
+// TMDB could not be reached, so the key's validity is unknown.
+func (c *Client) ValidateKey(ctx context.Context) (valid bool, err error) {
+	<-c.limiter
+
+	u := fmt.Sprintf("%s/configuration?api_key=%s", c.apiBase, url.QueryEscape(c.apiKey))
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return false, fmt.Errorf("tmdb validate: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case 200:
+		return true, nil
+	case 401:
+		return false, nil
+	default:
+		return false, fmt.Errorf("tmdb validate: status %d", resp.StatusCode)
+	}
+}
+
 func (c *Client) SearchTV(ctx context.Context, query string) ([]TVSearchResult, error) {
 	<-c.limiter
 

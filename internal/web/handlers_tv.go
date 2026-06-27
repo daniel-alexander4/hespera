@@ -524,12 +524,13 @@ func (h *Handler) tvMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.cfg.TMDBAPIKey == "" {
+	tmdbKey := h.effectiveTMDBKey(r.Context())
+	if tmdbKey == "" {
 		http.Error(w, "TMDB API key not configured", 400)
 		return
 	}
 
-	matcher := tmdb.NewMatcher(h.db, h.cfg.TMDBAPIKey, h.cfg.DataDir)
+	matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
 	jobID, err := h.jobs.Enqueue("tv_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunTVMatch(ctx, jobID, libraryID)
 	})
@@ -720,7 +721,8 @@ func (h *Handler) tvMatchApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.cfg.TMDBAPIKey == "" {
+	tmdbKey := h.effectiveTMDBKey(r.Context())
+	if tmdbKey == "" {
 		http.Error(w, "TMDB API key not configured", 400)
 		return
 	}
@@ -743,7 +745,7 @@ WHERE lower(guessed_title) = lower(?) AND status = 'unmatched'
 	}
 
 	// Fetch metadata via job queue (not detached goroutine).
-	matcher := tmdb.NewMatcher(h.db, h.cfg.TMDBAPIKey, h.cfg.DataDir)
+	matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
 	capturedTmdbID := tmdbID
 	_, enqErr := h.jobs.Enqueue("tv_metadata_fetch", 0, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.FetchShowMetadata(ctx, capturedTmdbID)
@@ -839,12 +841,13 @@ func (h *Handler) tvMatchSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.cfg.TMDBAPIKey == "" {
+	tmdbKey := h.effectiveTMDBKey(r.Context())
+	if tmdbKey == "" {
 		http.Error(w, "TMDB API key not configured", 400)
 		return
 	}
 
-	matcher := tmdb.NewMatcher(h.db, h.cfg.TMDBAPIKey, h.cfg.DataDir)
+	matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
 	results, err := matcher.SearchTV(r.Context(), query)
 	if err != nil {
 		httpError(w, 500, "internal server error", "tmdb search failed", "handler", "tvMatchSearch", "err", err)

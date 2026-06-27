@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"hespera/internal/auth"
 	"hespera/internal/config"
 	"hespera/internal/jobs"
+	"hespera/internal/tmdb"
 )
 
 type Deps struct {
@@ -32,6 +34,9 @@ type Handler struct {
 	jobs      *jobs.Service
 	startedAt time.Time
 	auth      *auth.Manager
+	// tmdbValidate checks whether a TMDB key is accepted (best-effort, used by
+	// the API-keys settings page). A field so tests can stub the network call.
+	tmdbValidate func(ctx context.Context, key string) (bool, error)
 }
 
 func New(d Deps) (*Handler, error) {
@@ -57,6 +62,7 @@ func New(d Deps) (*Handler, error) {
 		"music_album_edit.html",
 		"music_duplicates.html",
 		"settings_tags.html",
+		"settings_apikeys.html",
 		"tv_home.html",
 		"tv_series.html",
 		"tv_season.html",
@@ -132,6 +138,9 @@ func New(d Deps) (*Handler, error) {
 		jobs:      jobs.New(d.DB),
 		startedAt: time.Now().UTC(),
 		auth:      auth.New(d.Cfg, d.DB),
+		tmdbValidate: func(ctx context.Context, key string) (bool, error) {
+			return tmdb.NewClient(key).ValidateKey(ctx)
+		},
 	}
 
 	go h.pruneTVCacheLoop()
