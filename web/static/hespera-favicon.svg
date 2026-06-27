@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Hespera">
+  <defs>
+    <linearGradient id="hespera-fav-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset=".5" stop-color="#c026d3"/>
+      <stop offset=".66" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="hespera-fav-sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b45309"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <radialGradient id="hespera-fav-sun" gradientUnits="userSpaceOnUse" cx="120" cy="138" r="70">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset=".55" stop-color="#fcd34d"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </radialGradient>
+    <clipPath id="hespera-fav-frame"><rect width="240" height="240" rx="48"/></clipPath>
+  </defs>
+  <g clip-path="url(#hespera-fav-frame)">
+    <rect width="240" height="240" fill="url(#hespera-fav-sky)"/>
+    <g fill="url(#hespera-fav-sun)">
+      <rect x="68" y="114" width="16" height="36" rx="6"/>
+      <rect x="90" y="95" width="16" height="55" rx="6"/>
+      <rect x="112" y="92" width="16" height="58" rx="6"/>
+      <rect x="134" y="98" width="16" height="52" rx="6"/>
+      <rect x="156" y="110" width="16" height="40" rx="6"/>
+    </g>
+    <rect x="0" y="150" width="240" height="90" fill="url(#hespera-fav-sea)"/>
+    <rect x="0" y="148" width="240" height="3" fill="#fff7d6" opacity=".5"/>
+    <g fill="url(#hespera-fav-sun)" opacity=".34">
+      <rect x="68" y="150" width="16" height="16" rx="6"/>
+      <rect x="90" y="150" width="16" height="25" rx="6"/>
+      <rect x="112" y="150" width="16" height="26" rx="6"/>
+      <rect x="134" y="150" width="16" height="23" rx="6"/>
+      <rect x="156" y="150" width="16" height="18" rx="6"/>
+    </g>
+  </g>
+</svg>

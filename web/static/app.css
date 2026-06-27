@@ -110,9 +110,20 @@ a:hover {
 }
 
 .brand a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 700;
   font-size: 1.1rem;
   color: var(--page-fg);
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .nav {
