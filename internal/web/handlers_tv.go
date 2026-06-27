@@ -34,10 +34,13 @@ type tvSeriesRow struct {
 type tvSeasonRow struct {
 	SeasonNumber int
 	Name         string
-	PosterPath   string
 	EpisodeCount int
 	Missing      bool // in TMDB metadata but no files present locally
 }
+
+// tvPosterPlaceholder is the static asset served for a season card when no
+// season or series artwork is available (see tvArt).
+const tvPosterPlaceholder = "tv-poster-placeholder.webp"
 
 type tvEpisodeRow struct {
 	EpisodeNumber int
@@ -278,21 +281,18 @@ ORDER BY i.season_number
 			return
 		}
 		seasonName := fmt.Sprintf("Season %d", sn)
-		posterPath := ""
-		// Try to find cached season info.
+		// Use the cached season name when available.
 		for _, s := range show.Seasons {
 			if s.SeasonNumber == sn {
 				if s.Name != "" {
 					seasonName = s.Name
 				}
-				posterPath = s.PosterPath
 				break
 			}
 		}
 		seasons = append(seasons, tvSeasonRow{
 			SeasonNumber: sn,
 			Name:         seasonName,
-			PosterPath:   posterPath,
 			EpisodeCount: count,
 		})
 	}
@@ -345,7 +345,6 @@ func missingSeasons(show tmdb.TVShow, present map[int]bool) []tvSeasonRow {
 		out = append(out, tvSeasonRow{
 			SeasonNumber: s.SeasonNumber,
 			Name:         name,
-			PosterPath:   s.PosterPath,
 			Missing:      true,
 		})
 	}
@@ -610,6 +609,14 @@ func (h *Handler) tvArt(w http.ResponseWriter, r *http.Request) {
 			"SELECT art_path FROM tv_series_art WHERE art_type=? AND tmdb_series_id=? AND season_number=?",
 			dbArtType, tmdbID, seasonNum,
 		).Scan(&artPath)
+		// A season with no poster of its own falls back to the series poster.
+		if err != nil || artPath == "" {
+			artPath = ""
+			err = h.db.QueryRowContext(r.Context(),
+				"SELECT art_path FROM tv_series_art WHERE art_type='series_poster' AND tmdb_series_id=?",
+				tmdbID,
+			).Scan(&artPath)
+		}
 	} else {
 		err = h.db.QueryRowContext(r.Context(),
 			"SELECT art_path FROM tv_series_art WHERE art_type=? AND tmdb_series_id=?",
@@ -617,6 +624,12 @@ func (h *Handler) tvArt(w http.ResponseWriter, r *http.Request) {
 		).Scan(&artPath)
 	}
 	if err != nil || artPath == "" {
+		// Season cards show a placeholder image rather than a broken image
+		// when neither a season nor a series poster is available.
+		if artType == "season" {
+			http.Redirect(w, r, "/static/"+tvPosterPlaceholder, http.StatusFound)
+			return
+		}
 		http.NotFound(w, r)
 		return
 	}
