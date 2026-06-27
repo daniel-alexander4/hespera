@@ -129,22 +129,34 @@ func ReadTrackMeta(path string) (TrackMeta, error) {
 		meta.HasArt = true
 		meta.ArtMIME = pic.MIMEType
 		meta.ArtBytes = pic.Data
-
-		pm := strings.ToLower(strings.TrimSpace(strings.Split(meta.ArtMIME, ";")[0]))
-		if pm == "" || strings.Contains(pm, "(null)") || pm == "image/" || !strings.HasPrefix(pm, "image/") {
-			meta.ArtMIME = http.DetectContentType(pic.Data)
-		} else {
-			meta.ArtMIME = pm
-		}
-
-		if len(meta.ArtBytes) > 15*1024*1024 {
-			meta.HasArt = false
-			meta.ArtBytes = nil
-			meta.ArtMIME = ""
-		}
+		meta.normalizeArt()
 	}
 
 	return meta, nil
+}
+
+// normalizeArt validates and normalizes the embedded-art fields: it derives the
+// MIME from the bytes when the declared type is missing or bogus, and drops art
+// that exceeds the 15 MiB cap. Shared by the dhowden/tag path and the MP3
+// fallback so both apply the same rules.
+func (m *TrackMeta) normalizeArt() {
+	if !m.HasArt || len(m.ArtBytes) == 0 {
+		m.HasArt = false
+		m.ArtBytes = nil
+		m.ArtMIME = ""
+		return
+	}
+	pm := strings.ToLower(strings.TrimSpace(strings.Split(m.ArtMIME, ";")[0]))
+	if pm == "" || strings.Contains(pm, "(null)") || pm == "image/" || !strings.HasPrefix(pm, "image/") {
+		m.ArtMIME = http.DetectContentType(m.ArtBytes)
+	} else {
+		m.ArtMIME = pm
+	}
+	if len(m.ArtBytes) > 15*1024*1024 {
+		m.HasArt = false
+		m.ArtBytes = nil
+		m.ArtMIME = ""
+	}
 }
 
 func readTrackMetaMP3Fallback(path string) (TrackMeta, error) {
@@ -186,7 +198,7 @@ func readTrackMetaMP3Fallback(path string) (TrackMeta, error) {
 	explicitNotComp := isExplicitlyNotCompilationString(strings.TrimSpace(frames["TCMP"]))
 	isCompilation := !explicitNotComp && (parseTruthyString(strings.TrimSpace(frames["TCMP"])) || strings.EqualFold(strings.TrimSpace(albumArtist), "Various Artists"))
 
-	return TrackMeta{
+	meta := TrackMeta{
 		Artist:                 artist,
 		AlbumArtist:            albumArtist,
 		Album:                  album,
@@ -197,7 +209,20 @@ func readTrackMetaMP3Fallback(path string) (TrackMeta, error) {
 		IsCompilation:          isCompilation,
 		ExplicitNotCompilation: explicitNotComp,
 		MIMEType:               sniffMIME(path),
-	}, nil
+	}
+
+	// Recover the embedded cover art too. dhowden/tag aborts the whole parse on
+	// a single malformed text frame (e.g. an odd-length UTF-16 TXXX), which is
+	// why this fallback runs at all — but the intact APIC/PIC picture frame is
+	// still recoverable, so pull it directly rather than losing the cover.
+	if mimeType, data := extractID3v2Picture(raw); len(data) > 0 {
+		meta.HasArt = true
+		meta.ArtMIME = mimeType
+		meta.ArtBytes = data
+		meta.normalizeArt()
+	}
+
+	return meta, nil
 }
 
 func parseSlashNumber(v string) int {
@@ -226,89 +251,207 @@ func firstNonEmpty(values ...string) string {
 
 // --- ID3v2 binary parser ---
 
-func parseID3v2TextFrames(raw []byte) (map[string]string, error) {
+// forEachID3v2Frame walks the frames of an ID3v2.2/2.3/2.4 tag, invoking fn(id,
+// payload) for each (id is 3 chars for v2.2, 4 for v2.3/2.4). fn returns true to
+// stop the walk early. It returns an error only for a missing/invalid tag
+// header; at the frame level it is deliberately tolerant — it stops at the first
+// unparseable frame rather than failing. That tolerance is the whole point of
+// this hand-rolled path: it recovers what dhowden/tag rejects.
+func forEachID3v2Frame(raw []byte, fn func(id string, payload []byte) bool) error {
 	if len(raw) < 10 || string(raw[:3]) != "ID3" {
-		return nil, errors.New("no id3v2 header")
+		return errors.New("no id3v2 header")
 	}
 	version := int(raw[3])
 	if version != 2 && version != 3 && version != 4 {
-		return nil, errors.New("unsupported id3v2 version")
+		return errors.New("unsupported id3v2 version")
 	}
 	tagSize := synchsafeToInt(raw[6:10])
 	if tagSize <= 0 || 10+tagSize > len(raw) {
-		return nil, errors.New("invalid id3v2 size")
+		return errors.New("invalid id3v2 size")
 	}
 	body := raw[10 : 10+tagSize]
-	out := map[string]string{}
 
+	// v2.2 frames have a 6-byte header (3-char id + 3-byte size); v2.3/2.4 have a
+	// 10-byte header (4-char id + 4-byte size + 2-byte flags). v2.4 sizes are
+	// synchsafe; v2.3 plain big-endian.
+	hdrLen := 10
+	idLen := 4
 	if version == 2 {
-		pos := 0
-		for pos+6 <= len(body) {
-			hdr := body[pos : pos+6]
-			if bytes.Equal(hdr, make([]byte, 6)) {
-				break
-			}
-			id := string(hdr[:3])
+		hdrLen = 6
+		idLen = 3
+	}
+	for pos := 0; pos+hdrLen <= len(body); {
+		hdr := body[pos : pos+hdrLen]
+		if bytes.Equal(hdr, make([]byte, hdrLen)) {
+			break // padding
+		}
+		id := string(hdr[:idLen])
+		if version == 2 {
 			if !isFrameIDv22(id) {
 				break
 			}
-			sz := int(hdr[3])<<16 | int(hdr[4])<<8 | int(hdr[5])
-			pos += 6
-			if sz <= 0 || pos+sz > len(body) {
-				break
-			}
-			payload := body[pos : pos+sz]
-			pos += sz
-			if !strings.HasPrefix(id, "T") || id == "TXX" {
-				continue
-			}
-			fullID := mapID3v22ToV23(id)
-			if fullID == "" {
-				fullID = id
-			}
-			if _, ok := out[fullID]; ok {
-				continue
-			}
-			if s := decodeID3TextPayload(payload); s != "" {
-				out[fullID] = s
-			}
-		}
-		return out, nil
-	}
-
-	pos := 0
-	for pos+10 <= len(body) {
-		hdr := body[pos : pos+10]
-		if bytes.Equal(hdr, make([]byte, 10)) {
-			break
-		}
-		id := string(hdr[:4])
-		if !isFrameID(id) {
+		} else if !isFrameID(id) {
 			break
 		}
 		var sz int
-		if version == 4 {
+		switch {
+		case version == 2:
+			sz = int(hdr[3])<<16 | int(hdr[4])<<8 | int(hdr[5])
+		case version == 4:
 			sz = synchsafeToInt(hdr[4:8])
-		} else {
+		default:
 			sz = int(binary.BigEndian.Uint32(hdr[4:8]))
 		}
-		pos += 10
+		pos += hdrLen
 		if sz <= 0 || pos+sz > len(body) {
 			break
 		}
 		payload := body[pos : pos+sz]
 		pos += sz
-		if !strings.HasPrefix(id, "T") || id == "TXXX" {
-			continue
-		}
-		if _, ok := out[id]; ok {
-			continue
-		}
-		if s := decodeID3TextPayload(payload); s != "" {
-			out[id] = s
+		if fn(id, payload) {
+			break
 		}
 	}
+	return nil
+}
+
+func parseID3v2TextFrames(raw []byte) (map[string]string, error) {
+	out := map[string]string{}
+	err := forEachID3v2Frame(raw, func(id string, payload []byte) bool {
+		// Normalize v2.2 3-char ids to their v2.3/2.4 names; skip non-text and
+		// user-defined (TXX/TXXX) frames; keep the first occurrence of each.
+		key := id
+		switch {
+		case len(id) == 3: // v2.2
+			if !strings.HasPrefix(id, "T") || id == "TXX" {
+				return false
+			}
+			if mapped := mapID3v22ToV23(id); mapped != "" {
+				key = mapped
+			}
+		default: // v2.3/2.4
+			if !strings.HasPrefix(id, "T") || id == "TXXX" {
+				return false
+			}
+		}
+		if _, ok := out[key]; ok {
+			return false
+		}
+		if s := decodeID3TextPayload(payload); s != "" {
+			out[key] = s
+		}
+		return false
+	})
+	if err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// extractID3v2Picture returns the embedded cover art (MIME, bytes) from an
+// ID3v2 tag's APIC (v2.3/2.4) or PIC (v2.2) frame, preferring a front cover
+// (picture type 0x03) over any other embedded image. It returns ("", nil) when
+// there is no usable picture frame. Used only by the MP3 fallback: when
+// dhowden/tag rejects a file, its art is otherwise lost even though the picture
+// frame is intact.
+func extractID3v2Picture(raw []byte) (mimeType string, data []byte) {
+	var firstMIME string
+	var firstData []byte
+	_ = forEachID3v2Frame(raw, func(id string, payload []byte) bool {
+		var m string
+		var picType byte
+		var d []byte
+		switch id {
+		case "APIC": // v2.3 / v2.4
+			m, picType, d = parseAPICFrame(payload)
+		case "PIC": // v2.2
+			m, picType, d = parsePICFrame(payload)
+		default:
+			return false
+		}
+		if len(d) == 0 {
+			return false
+		}
+		if picType == 0x03 { // front cover — prefer it, stop early
+			firstMIME, firstData = m, d
+			return true
+		}
+		if firstData == nil { // otherwise keep the first picture as a fallback
+			firstMIME, firstData = m, d
+		}
+		return false
+	})
+	return firstMIME, firstData
+}
+
+// parseAPICFrame parses a v2.3/2.4 APIC payload:
+// enc(1) | mime(ISO-8859-1, NUL-terminated) | picType(1) | desc(enc-terminated) | image.
+func parseAPICFrame(payload []byte) (mimeType string, picType byte, data []byte) {
+	if len(payload) < 4 {
+		return "", 0, nil
+	}
+	enc := payload[0]
+	rest := payload[1:]
+	nul := bytes.IndexByte(rest, 0) // MIME is always ISO-8859-1, single NUL.
+	if nul < 0 {
+		return "", 0, nil
+	}
+	mimeType = string(rest[:nul])
+	rest = rest[nul+1:]
+	if len(rest) < 1 {
+		return "", 0, nil
+	}
+	picType = rest[0]
+	rest = rest[1:]
+	d := descriptorEnd(rest, enc)
+	if d < 0 {
+		return "", 0, nil
+	}
+	return mimeType, picType, rest[d:]
+}
+
+// parsePICFrame parses a v2.2 PIC payload:
+// enc(1) | format(3 chars, e.g. "JPG") | picType(1) | desc(enc-terminated) | image.
+func parsePICFrame(payload []byte) (mimeType string, picType byte, data []byte) {
+	if len(payload) < 6 {
+		return "", 0, nil
+	}
+	enc := payload[0]
+	format := strings.ToUpper(strings.TrimRight(string(payload[1:4]), "\x00"))
+	picType = payload[4]
+	rest := payload[5:]
+	d := descriptorEnd(rest, enc)
+	if d < 0 {
+		return "", 0, nil
+	}
+	switch format {
+	case "JPG", "JPEG":
+		mimeType = "image/jpeg"
+	case "PNG":
+		mimeType = "image/png"
+	}
+	// An empty/unknown mimeType is fine — normalizeArt detects it from the bytes.
+	return mimeType, picType, rest[d:]
+}
+
+// descriptorEnd returns the offset in b just past the encoding-terminated
+// description string (i.e. where the picture data begins), or -1 if unterminated.
+// ISO-8859-1/UTF-8 (enc 0/3) terminate with a single 0x00; UTF-16 (enc 1/2)
+// terminate with a 0x00 0x00 pair on an even boundary.
+func descriptorEnd(b []byte, enc byte) int {
+	if enc == 1 || enc == 2 {
+		for i := 0; i+1 < len(b); i += 2 {
+			if b[i] == 0 && b[i+1] == 0 {
+				return i + 2
+			}
+		}
+		return -1
+	}
+	nul := bytes.IndexByte(b, 0)
+	if nul < 0 {
+		return -1
+	}
+	return nul + 1
 }
 
 func isFrameID(id string) bool {
