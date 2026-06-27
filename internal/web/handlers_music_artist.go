@@ -51,8 +51,16 @@ func (h *Handler) musicArtistDisambiguateGET(w http.ResponseWriter, r *http.Requ
 	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
 	candidates, err := matcher.ResolveArtistCandidates(r.Context(), name)
 	if err != nil {
-		httpError(w, http.StatusBadGateway, "bad gateway", "musicbrainz artist search failed",
+		// MusicBrainz is unreachable (DNS/timeout/outage). Degrade to a readable
+		// page with a retry rather than a raw 502 Bad Gateway in the browser.
+		slog.Warn("musicbrainz artist search failed",
 			"handler", "musicArtistDisambiguate", "artist_id", artistID, "err", err)
+		h.render(w, "music_artist_disambiguate.html", map[string]any{
+			"Title":      "Fix artist — " + name,
+			"ArtistID":   artistID,
+			"ArtistName": name,
+			"Error":      true,
+		})
 		return
 	}
 

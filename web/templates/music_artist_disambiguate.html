@@ -3,13 +3,20 @@
   <h1>Fix artist match</h1>
 </div>
 
+{{if not .Error}}
 <p class="disambig-intro">
   Pick the correct MusicBrainz artist for <strong>{{.ArtistName}}</strong>.
   Choosing one sets the artist's identity and re-fetches its bio and image — this
   can take a few seconds. Album matches are unaffected.
 </p>
+{{end}}
 
-{{if .Candidates}}
+{{if .Error}}
+<div class="disambig-error" style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-panel); border: 1px solid #c44; border-radius: 6px;">
+  Couldn't reach MusicBrainz for <strong>{{.ArtistName}}</strong> right now — check the server's internet connection and try again.
+  <a href="/music/artist/disambiguate?id={{.ArtistID}}">Retry</a>
+</div>
+{{else if .Candidates}}
 <ul class="disambig-list">
   {{range .Candidates}}
   <li class="disambig-card{{if .IsCurrent}} is-current{{end}}">
