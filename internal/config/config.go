@@ -22,11 +22,10 @@ type Config struct {
 	SSHAuthNamespace  string
 	SSHKeygenPath     string
 
-	FFmpegConcurrentLimit     int
-	FFmpegAcquireTimeout      time.Duration
-	TVTranscodedCacheMaxBytes int64
-	TVHLSCacheMaxBytes        int64
-	TVCacheMaxAge             time.Duration
+	FFmpegConcurrentLimit int
+	FFmpegAcquireTimeout  time.Duration
+	TVHLSCacheMaxBytes    int64
+	TVCacheMaxAge         time.Duration
 }
 
 func FromEnv() Config {
@@ -52,9 +51,6 @@ func FromEnv() Config {
 		),
 		FFmpegAcquireTimeout: parseDurationDefault(
 			os.Getenv("HESPERA_FFMPEG_ACQUIRE_TIMEOUT"), 2*time.Second,
-		),
-		TVTranscodedCacheMaxBytes: parsePositiveInt64Default(
-			os.Getenv("HESPERA_TV_TRANSCODED_CACHE_MAX_BYTES"), 20<<30,
 		),
 		TVHLSCacheMaxBytes: parsePositiveInt64Default(
 			os.Getenv("HESPERA_TV_HLS_CACHE_MAX_BYTES"), 20<<30,
@@ -89,9 +85,6 @@ func (c Config) Validate() error {
 	}
 	if c.FFmpegAcquireTimeout < 0 {
 		return errors.New("HESPERA_FFMPEG_ACQUIRE_TIMEOUT must be >= 0")
-	}
-	if c.TVTranscodedCacheMaxBytes < 0 {
-		return errors.New("HESPERA_TV_TRANSCODED_CACHE_MAX_BYTES must be >= 0")
 	}
 	if c.TVHLSCacheMaxBytes < 0 {
 		return errors.New("HESPERA_TV_HLS_CACHE_MAX_BYTES must be >= 0")
