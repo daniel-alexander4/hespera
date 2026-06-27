@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -223,6 +224,35 @@ func (h *Handler) settingsJobsJSON(w http.ResponseWriter, r *http.Request) {
 		"ok":   true,
 		"data": jobList,
 	})
+}
+
+// settingsJobsFragment renders just the jobs table (the `jobs-container`
+// template block) as an HTML fragment. The jobs page polls it and swaps it into
+// `#jobs-container` for a live view — so the row markup lives in exactly one
+// place (the template), shared by the initial server render and the live update.
+func (h *Handler) settingsJobsFragment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	jobList, err := h.loadScanJobs(r.Context(), "", "", 0, 50)
+	if err != nil {
+		httpError(w, 500, "internal server error", "load jobs failed", "handler", "settingsJobsFragment", "err", err)
+		return
+	}
+	t, ok := h.tpls["settings_jobs.html"]
+	if !ok {
+		httpError(w, 500, "internal server error", "jobs template missing", "handler", "settingsJobsFragment")
+		return
+	}
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, "jobs-container", map[string]any{"Jobs": jobList}); err != nil {
+		httpError(w, 500, "internal server error", "render fragment failed", "handler", "settingsJobsFragment", "err", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(buf.Bytes())
 }
 
 func (h *Handler) settingsJobsCancel(w http.ResponseWriter, r *http.Request) {

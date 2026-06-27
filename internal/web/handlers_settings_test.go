@@ -33,6 +33,63 @@ func TestSettingsHandlers(t *testing.T) {
 	})
 }
 
+func TestSettingsJobsFragment(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+
+	res, err := db.Exec("INSERT INTO libraries (name, type, root_path) VALUES ('TV','tv','/media/tv')")
+	if err != nil {
+		t.Fatalf("seed library: %v", err)
+	}
+	libID, _ := res.LastInsertId()
+	if _, err := db.Exec(
+		"INSERT INTO scan_jobs (library_id, job_type, status, progress_current, progress_total, created_at) VALUES (?, 'tvscan', 'done', 76, 76, datetime('now'))",
+		libID); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+
+	t.Run("GET fragment renders just the job table", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/settings/jobs/fragment", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, "tvscan") {
+			t.Fatalf("fragment missing the tvscan row: %s", body)
+		}
+		if !strings.Contains(body, "badge-done") {
+			t.Fatalf("fragment missing the status badge")
+		}
+		// It is a fragment, not the full page — no layout chrome.
+		if strings.Contains(body, "<html") || strings.Contains(body, "page-header") {
+			t.Fatalf("fragment should be only the table, got full page")
+		}
+	})
+
+	t.Run("POST fragment 405", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/settings/jobs/fragment", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("status = %d, want 405", rec.Code)
+		}
+	})
+
+	t.Run("jobs page renders the row and the fragment template", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/settings/jobs", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "tvscan") {
+			t.Fatalf("jobs page missing the tvscan row")
+		}
+	})
+}
+
 func TestLibraryHandlers(t *testing.T) {
 	h, db := newTestHandler(t)
 	router := h.Router()
