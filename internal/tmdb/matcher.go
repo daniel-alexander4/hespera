@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hespera/internal/match"
+	"hespera/internal/thumbgc"
 )
 
 type Matcher struct {
@@ -260,6 +261,17 @@ WHERE file_id=?
 
 		// Update progress.
 		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", gi+1, jobID)
+	}
+
+	// Sweep orphaned TV thumbnails (non-fatal). Runs last, after all art writes
+	// are committed; the single-worker job queue serializes this against every
+	// other art writer.
+	if n, err := thumbgc.Sweep(ctx, m.db, m.artDir, thumbgc.Grace,
+		"SELECT art_path FROM tv_series_art WHERE art_path != ''",
+	); err != nil {
+		slog.Warn("thumb gc tv", "err", err)
+	} else if n > 0 {
+		slog.Info("thumb gc tv", "deleted", n)
 	}
 
 	return nil
