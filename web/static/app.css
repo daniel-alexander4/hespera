@@ -977,6 +977,15 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
 .tv-episode-row.tv-episode-completed {
   opacity: 0.6;
 }
+.tv-episode-watched {
+  color: var(--badge-success-fg);
+  margin-right: 0.35em;
+}
+.tv-episode-watched .icon {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.18em;
+}
 .tv-episode-row.tv-episode-missing {
   opacity: 0.5;
 }

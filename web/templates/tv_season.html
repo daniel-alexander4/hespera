@@ -20,13 +20,12 @@
     <div class="tv-episode-number">{{.EpisodeNumber}}</div>
     <div class="tv-episode-info">
       <div class="tv-episode-name">
+        {{if .Completed}}<span class="tv-episode-watched" title="Watched" aria-label="Watched">{{template "icon-check"}}</span>{{end}}
         {{if .FileID}}<a href="/tv/player?file={{.FileID}}">{{if .Name}}{{.Name}}{{else}}Episode {{.EpisodeNumber}}{{end}}</a>{{else}}{{if .Name}}{{.Name}}{{else}}Episode {{.EpisodeNumber}}{{end}}{{end}}
         {{if .Missing}}<span class="tv-missing-badge">Missing</span>{{end}}
       </div>
       {{if .AirDate}}<div class="tv-episode-date">{{.AirDate}}</div>{{end}}
-      {{if .Resolution}}<div class="tv-episode-meta">{{.Resolution}} · {{.VideoCodec}}</div>{{end}}
       {{if and .ProgressPct (not .Completed)}}<div class="tv-episode-progress"><div class="tv-episode-progress-bar" style="width:{{.ProgressPct}}%"></div></div>{{end}}
-      {{if .Completed}}<div class="tv-episode-meta">Watched</div>{{end}}
       {{if .Overview}}<div class="tv-episode-overview">{{.Overview}}</div>{{end}}
     </div>
     {{if .FileID}}
