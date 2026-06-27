@@ -36,6 +36,16 @@ func TestTrackMetaFromTags(t *testing.T) {
 			wantYear: 1973, wantTrack: 2, wantDisc: 1,
 		},
 		{
+			name: "placeholder track artist falls back to a real album artist",
+			tags: map[string]string{
+				"title": "Hush", "artist": "Unknown Artist",
+				"album_artist": "Deep Purple", "album": "Shades of Deep Purple", "date": "1968",
+			},
+			path:      "/m/02 Hush.mp3",
+			wantTitle: "Hush", wantArt: "Deep Purple",
+			wantAlb: "Shades of Deep Purple", wantYear: 1968,
+		},
+		{
 			name: "albumartist marks compilation via Various Artists",
 			tags: map[string]string{
 				"title": "Song", "artist": "Some Band", "album": "Hits",
