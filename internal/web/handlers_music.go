@@ -787,6 +787,124 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", newAlbumID), http.StatusSeeOther)
 }
 
+// musicTrackEdit serves the per-track tag editor (the "Edit" button on each row of
+// the album track list). GET renders a form pre-filled with the track's current
+// tags; POST writes them to the file and rescans. Editing Album/AlbumArtist/Year
+// can move the track to a different album (the scan re-derives album membership).
+func (h *Handler) musicTrackEdit(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimSpace(r.URL.Query().Get("id"))
+	trackID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || trackID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		h.musicTrackEditGET(w, r, trackID)
+	case http.MethodPost:
+		h.musicTrackEditPOST(w, r, trackID)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) musicTrackEditGET(w http.ResponseWriter, r *http.Request, trackID int64) {
+	var (
+		title, trackArtist, album, albumArtist string
+		year, trackNo, discNo                  int
+		albumID                                int64
+	)
+	// Pre-fill from the DB (which mirrors the file tags after the last scan),
+	// mirroring musicAlbumEditGET. The track's album-level fields come from its
+	// album row; the per-track fields from the track row.
+	if err := h.db.QueryRowContext(r.Context(), `
+		SELECT t.title, ar.name, al.title, aa.name, al.year, t.track_no, t.disc_no, al.id
+		FROM music_tracks t
+		JOIN music_artists ar ON ar.id = t.artist_id
+		JOIN music_albums al ON al.id = t.album_id
+		JOIN music_artists aa ON aa.id = al.album_artist_id
+		WHERE t.id=?
+	`, trackID).Scan(&title, &trackArtist, &album, &albumArtist, &year, &trackNo, &discNo, &albumID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	h.render(w, "music_track_edit.html", map[string]any{
+		"Title":       "Edit Track",
+		"TrackID":     trackID,
+		"AlbumID":     albumID,
+		"TrackTitle":  title,
+		"TrackArtist": trackArtist,
+		"Album":       album,
+		"AlbumArtist": albumArtist,
+		"Year":        year,
+		"TrackNo":     trackNo,
+		"DiscNo":      discNo,
+		"Error":       r.URL.Query().Get("error") == "1",
+	})
+}
+
+func (h *Handler) musicTrackEditPOST(w http.ResponseWriter, r *http.Request, trackID int64) {
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicTrackEditPOST", "err", err)
+		return
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	album := strings.TrimSpace(r.FormValue("album"))
+	albumArtist := strings.TrimSpace(r.FormValue("album_artist"))
+	artist := strings.TrimSpace(r.FormValue("artist"))
+	year, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("year")))
+	trackNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("track_no")))
+	discNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("disc_no")))
+
+	if title == "" || album == "" || albumArtist == "" {
+		http.Error(w, "title, album, and album artist are required", 400)
+		return
+	}
+
+	var absPath string
+	var libraryID int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT abs_path, library_id FROM music_tracks WHERE id=?", trackID).Scan(&absPath, &libraryID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Empty/zero fields are left untouched on the file (WriteTrackTags guards each
+	// field), so a cleared input means "keep current", not "blank it".
+	fields := music.TagWriteFields{
+		Title:       title,
+		Artist:      artist,
+		Album:       album,
+		AlbumArtist: albumArtist,
+		Year:        year,
+		TrackNo:     trackNo,
+		DiscNo:      discNo,
+	}
+	if err := music.WriteTrackTags(absPath, fields); err != nil {
+		// Most likely the file is missing/moved (run a Scan first) or an
+		// unsupported container. Surface it rather than failing silently.
+		slog.Error("track edit: write tags failed", "path", absPath, "err", err)
+		http.Redirect(w, r, fmt.Sprintf("/music/track/edit?id=%d&error=1", trackID), http.StatusSeeOther)
+		return
+	}
+
+	scanner := scan.New(h.cfg, h.db)
+	if err := scanner.ScanFiles(r.Context(), libraryID, []string{absPath}); err != nil {
+		slog.Error("track edit: rescan failed", "err", err)
+	}
+
+	// The track row keeps its id (abs_path is unchanged) but its album_id may now
+	// point at a different/new album when Album/AlbumArtist/Year changed.
+	var newAlbumID int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT album_id FROM music_tracks WHERE id=?", trackID).Scan(&newAlbumID); err != nil || newAlbumID == 0 {
+		http.Redirect(w, r, "/music", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", newAlbumID), http.StatusSeeOther)
+}
+
 // musicAlbumArtUpload lets a user manually set an album's cover art when none
 // could be matched (Cover Art Archive has no image, or the album mis-matched).
 // The uploaded file is validated as a real image, stored under thumbs/music, and

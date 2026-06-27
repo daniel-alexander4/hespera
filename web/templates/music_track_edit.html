@@ -1,0 +1,54 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Edit Track</h1>
+</div>
+
+{{if .Error}}
+<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-panel); border: 1px solid #c44; border-radius: 6px;">
+  Could not write tags — the file may be missing/moved or an unsupported format. If you renamed or moved files, run a Scan first, then try again.
+</div>
+{{end}}
+
+<form method="post" action="/music/track/edit?id={{.TrackID}}" class="form-stack">
+  <div class="form-group">
+    <label for="t-title">Title</label>
+    <input type="text" id="t-title" name="title" value="{{.TrackTitle}}" required class="input" />
+  </div>
+
+  <div class="form-group">
+    <label for="t-artist">Artist</label>
+    <input type="text" id="t-artist" name="artist" value="{{.TrackArtist}}" class="input" />
+  </div>
+
+  <div class="form-group">
+    <label for="t-album">Album</label>
+    <input type="text" id="t-album" name="album" value="{{.Album}}" required class="input" />
+  </div>
+
+  <div class="form-group">
+    <label for="t-album-artist">Album Artist</label>
+    <input type="text" id="t-album-artist" name="album_artist" value="{{.AlbumArtist}}" required class="input" />
+  </div>
+
+  <div style="display:flex; gap:1rem;">
+    <div class="form-group" style="flex:1;">
+      <label for="t-year">Year</label>
+      <input type="number" id="t-year" name="year" value="{{.Year}}" min="0" max="9999" class="input" />
+    </div>
+    <div class="form-group" style="flex:1;">
+      <label for="t-trackno">Track #</label>
+      <input type="number" id="t-trackno" name="track_no" value="{{.TrackNo}}" min="0" class="input" />
+    </div>
+    <div class="form-group" style="flex:1;">
+      <label for="t-discno">Disc #</label>
+      <input type="number" id="t-discno" name="disc_no" value="{{.DiscNo}}" min="0" class="input" />
+    </div>
+  </div>
+
+  <div class="form-actions" style="margin-top: 1rem;">
+    <button type="submit" class="btn btn-primary">Save &amp; Write Tags</button>
+    <a href="/music/album/{{.AlbumID}}" class="btn">Cancel</a>
+  </div>
+  <p class="form-hint">Changes are written to the file's tags and rescanned. Editing Album, Album Artist, or Year may move this track to a different album. A cleared field is left unchanged on the file.</p>
+</form>
+{{end}}

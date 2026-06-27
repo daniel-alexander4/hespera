@@ -99,6 +99,17 @@ they only parse filenames/tags and probe streams. Matchers
 - `ScanFile` reads tags (`music.ReadTrackMeta`), `ensureArtist` /`ensureAlbum`
   (conflict-update touches only `album_artist_id`/`is_compilation` — it **never**
   overwrites curated album fields), then upserts the track.
+- `finalizeCompilations` infers a compilation only when **no single track-artist
+  holds a strict majority** of the album's tracks (so a mis-tagged single-artist
+  album with an outlier track is *not* promoted to "Various Artists"), and is
+  **collision-safe**: when a `(Various Artists, title, year)` album already
+  exists it merges into it (or drops it if it's an empty orphan, preserving the
+  candidate's match/art) instead of a blind reparent that would hit the
+  `UNIQUE(library_id, artist_id, title, year)` constraint and abort the scan.
+- Per-track tag edits (`/music/track/edit`, the **Edit** button on each track
+  row) write the file's tags via `WriteTrackTags` then `ScanFiles`, so a track
+  whose Album/Album Artist/Year changed is re-derived onto a different album row
+  and its old album is GC'd if it empties — same tag-is-truth path as a rescan.
 - `resolveTrackChecksum` reuses the stored SHA-256 when size+mtime are unchanged;
   otherwise re-hashes file contents.
 

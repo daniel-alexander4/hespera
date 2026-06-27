@@ -833,6 +833,18 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   white-space: nowrap;
 }
 .text-muted { color: var(--text-muted); }
+.track-edit-btn {
+  flex-shrink: 0;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  text-decoration: none;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+}
+.track-edit-btn:hover {
+  color: var(--accent-hover);
+  background: var(--accent-bg);
+}
 
 /* Player page */
 .player-page {
