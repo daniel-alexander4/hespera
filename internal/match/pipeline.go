@@ -267,16 +267,15 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 		}
 	}
 
-	// Fetch cover art if we got a match.
+	// Fetch cover art. Try the matched release-group first (with its release
+	// fallback). If it has no Cover Art Archive image, fall back to other
+	// above-threshold candidates — but only clean, same-artist studio-album
+	// editions of the same title, so we never attach a live/compilation/
+	// different-album cover. Cover Art Archive returns "" (not an error) when a
+	// release-group has no front image, so iterating is safe.
 	if best.ReleaseGroupID != "" {
-		var releaseIDs []string
-		if best.ReleaseID != "" {
-			releaseIDs = append(releaseIDs, best.ReleaseID)
-		}
-		artPath, artErr := m.caa.FetchCover(ctx, best.ReleaseGroupID, releaseIDs)
-		if artErr != nil {
-			slog.Warn("cover art fetch failed", "album_id", albumID, "err", artErr)
-		} else if artPath != "" {
+		artPath := m.fetchAlbumArt(ctx, albumID, best, CandidatesAboveThreshold(candidates, title, artist, year))
+		if artPath != "" {
 			// Only update art_path if currently empty (don't overwrite embedded art).
 			_, _ = m.db.ExecContext(ctx,
 				"UPDATE music_albums SET art_path=? WHERE id=? AND (art_path='' OR art_path IS NULL)",
@@ -290,6 +289,74 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 	}
 
 	return nil
+}
+
+// maxArtFallbackCandidates caps how many sibling release-groups (beyond the
+// matched one) are probed for cover art when the match itself has none.
+const maxArtFallbackCandidates = 3
+
+// fetchAlbumArt returns a saved cover-art path for the album, or "" if none was
+// found. It tries the matched candidate's release-group first (including its
+// single linked release), then a few sibling candidates — restricted to clean,
+// same-artist studio-album editions within a small score window of the best, so
+// only a same-album cover can ever be reused. Each sibling is tried at the
+// release-group level only (a release-group with no front image has no
+// art-bearing releases either, so the per-release fallback adds cost, not hits).
+func (m *Matcher) fetchAlbumArt(ctx context.Context, albumID int64, best Candidate, scored []ScoredCandidate) string {
+	// The matched release-group, with its linked release as a fallback.
+	var bestReleaseIDs []string
+	if best.ReleaseID != "" {
+		bestReleaseIDs = append(bestReleaseIDs, best.ReleaseID)
+	}
+	if art := m.tryCover(ctx, albumID, best.ReleaseGroupID, bestReleaseIDs); art != "" {
+		return art
+	}
+
+	// Sibling editions: same artist, clean studio album, close score.
+	bestScore := 0.0
+	if len(scored) > 0 {
+		bestScore = scored[0].Score
+	}
+	tried := 0
+	for _, sc := range scored {
+		select {
+		case <-ctx.Done():
+			return ""
+		default:
+		}
+		c := sc.Candidate
+		if c.ReleaseGroupID == "" || c.ReleaseGroupID == best.ReleaseGroupID {
+			continue
+		}
+		if sc.Score < bestScore-8 {
+			break // scored is descending; nothing further is in the window
+		}
+		if c.ArtistMBID != best.ArtistMBID || !isCleanAlbum(c) {
+			continue
+		}
+		if art := m.tryCover(ctx, albumID, c.ReleaseGroupID, nil); art != "" {
+			return art
+		}
+		tried++
+		if tried >= maxArtFallbackCandidates {
+			break
+		}
+	}
+	return ""
+}
+
+// tryCover fetches cover art for one release-group, logging (but not failing on)
+// a fetch error.
+func (m *Matcher) tryCover(ctx context.Context, albumID int64, releaseGroupID string, releaseIDs []string) string {
+	if releaseGroupID == "" {
+		return ""
+	}
+	art, err := m.caa.FetchCover(ctx, releaseGroupID, releaseIDs)
+	if err != nil {
+		slog.Warn("cover art fetch failed", "album_id", albumID, "release_group", releaseGroupID, "err", err)
+		return ""
+	}
+	return art
 }
 
 func scanNull(ns sql.NullString) string {

@@ -1,6 +1,9 @@
 package match
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 // matchThreshold is the minimum ScoreCandidate result (max ~96) for a candidate
 // to be accepted as a match; anything below is treated as unmatched. There is a
@@ -45,8 +48,7 @@ func typeBonus(primaryType string, secondaryTypes []string) float64 {
 	// Album (e.g. a live or greatest-hits album). Soundtrack/Spokenword are
 	// legitimate primary uses and are intentionally not penalized.
 	for _, st := range secondaryTypes {
-		switch st {
-		case "Compilation", "Live", "Remix", "Demo", "Interview", "DJ-mix", "Mixtape/Street":
+		if altSecondaryTypes[st] {
 			base -= 6
 		}
 	}
@@ -54,6 +56,30 @@ func typeBonus(primaryType string, secondaryTypes []string) float64 {
 		base = 0
 	}
 	return base
+}
+
+// altSecondaryTypes are MusicBrainz release-group secondary types that mark a
+// non-primary edition (greatest-hits, live, demos), which usually carries
+// different — or no — cover art than the canonical studio album.
+var altSecondaryTypes = map[string]bool{
+	"Compilation": true, "Live": true, "Remix": true, "Demo": true,
+	"Interview": true, "DJ-mix": true, "Mixtape/Street": true,
+}
+
+// isCleanAlbum reports whether a candidate is a canonical studio album — a
+// primary type of Album with no alternate-edition secondary type. Used to gate
+// which sibling release-groups may donate cover art to a matched album: only a
+// clean same-album edition's cover is safe to reuse.
+func isCleanAlbum(c Candidate) bool {
+	if c.PrimaryType != "Album" {
+		return false
+	}
+	for _, st := range c.SecondaryTypes {
+		if altSecondaryTypes[st] {
+			return false
+		}
+	}
+	return true
 }
 
 func yearBonus(mbYear, localYear int) float64 {
@@ -87,4 +113,25 @@ func BestCandidate(candidates []Candidate, localTitle, localArtist string, local
 		}
 	}
 	return candidates[bestIdx], bestScore, true
+}
+
+// ScoredCandidate pairs a candidate with its computed score.
+type ScoredCandidate struct {
+	Candidate Candidate
+	Score     float64
+}
+
+// CandidatesAboveThreshold returns every candidate scoring >= matchThreshold,
+// sorted by score descending. The first element matches BestCandidate's pick.
+// Used to broaden cover-art search beyond the single best match.
+func CandidatesAboveThreshold(candidates []Candidate, localTitle, localArtist string, localYear int) []ScoredCandidate {
+	var out []ScoredCandidate
+	for _, c := range candidates {
+		s := ScoreCandidate(c, localTitle, localArtist, localYear)
+		if s >= matchThreshold {
+			out = append(out, ScoredCandidate{Candidate: c, Score: s})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	return out
 }
