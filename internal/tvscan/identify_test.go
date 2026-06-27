@@ -68,6 +68,23 @@ func TestIdentifyFile(t *testing.T) {
 			wantConf:  0.72,
 		},
 		{
+			// Real library file: flat SxE specials (season 0).
+			path:      "/tv/Burnistoun/Burnistoun S00E00 Pilot.mkv",
+			wantTitle: "Burnistoun",
+			wantS:     0,
+			wantE:     []int{0},
+			wantConf:  0.72,
+		},
+		{
+			// Real library file: trailing [release.tracker] tag after the episode
+			// must not be eaten into the episode block.
+			path:      "/tv/Murderbot/s1/Murderbot.S01E01.1080p.WEB.h264-ETHEL[EZTVx.to].mkv",
+			wantTitle: "Murderbot",
+			wantS:     1,
+			wantE:     []int{1},
+			wantConf:  0.72,
+		},
+		{
 			// x_format with no title in the filename recovers the show name from
 			// the folder above the season dir (two levels up).
 			path:      "/tv/Monty Pythons Flying Circus/s1/1x01 Whither Canada.mkv",
@@ -75,6 +92,94 @@ func TestIdentifyFile(t *testing.T) {
 			wantS:     1,
 			wantE:     []int{1},
 			wantConf:  0.55,
+		},
+		{
+			// SxE with a separator between S and E.
+			path:      "/tv/Show/Season 1/Show.S01.E07.mkv",
+			wantTitle: "Show",
+			wantS:     1,
+			wantE:     []int{7},
+			wantConf:  0.72,
+		},
+		{
+			path:      "/tv/Show/Season 1/Show S01 E08.mkv",
+			wantTitle: "Show",
+			wantS:     1,
+			wantE:     []int{8},
+			wantConf:  0.72,
+		},
+		{
+			// SxE range — both episodes recovered, not just the first.
+			path:      "/tv/Show/Season 1/Show.S01E01-E02.mkv",
+			wantTitle: "Show",
+			wantS:     1,
+			wantE:     []int{1, 2},
+			wantConf:  0.72,
+		},
+		{
+			path:      "/tv/Show/Season 1/Show.S01E05-07.mkv",
+			wantTitle: "Show",
+			wantS:     1,
+			wantE:     []int{5, 6, 7},
+			wantConf:  0.72,
+		},
+		{
+			// NxM range (no filename title → dir-inferred, 0.55).
+			path:     "/tv/Show/Season 1/1x05-06 Title.mkv",
+			wantS:    1,
+			wantE:    []int{5, 6},
+			wantConf: 0.55,
+		},
+		{
+			// Live bug guard: a resolution string must NOT parse as season/episode.
+			// With an explicit SxE present, SxE wins and 1280x720 is ignored.
+			path:      "/tv/Show/Season 1/Show.S01E01.1280x720.x264.mkv",
+			wantTitle: "Show",
+			wantS:     1,
+			wantE:     []int{1},
+			wantConf:  0.72,
+		},
+		{
+			// A bare resolution / NxN-with-1-digit-episode yields no identity.
+			path:    "/downloads/1280x720.mkv",
+			wantNil: true,
+		},
+		{
+			path:    "/downloads/720x480.mkv",
+			wantNil: true,
+		},
+		{
+			path:    "/downloads/4x4.mkv",
+			wantNil: true,
+		},
+		{
+			// Season-dir-relative: "Episode N" resolves against the season folder.
+			path:     "/tv/Show/Season 2/Show - Episode 5.mkv",
+			wantS:    2,
+			wantE:    []int{5},
+			wantConf: 0.60,
+		},
+		{
+			// Bare-number file under a season dir is the episode.
+			path:     "/tv/Show/Season 3/07.mkv",
+			wantS:    3,
+			wantE:    []int{7},
+			wantConf: 0.60,
+		},
+		{
+			// E-only marker under a season dir.
+			path:     "/tv/Show/Season 1/Show E09.mkv",
+			wantS:    1,
+			wantE:    []int{9},
+			wantConf: 0.60,
+		},
+		{
+			// Group-tagged release: the [group] prefix is stripped from the title.
+			path:      "/tv/[RlsGroup] Some Show - S01E04.mkv",
+			wantTitle: "Some Show",
+			wantS:     1,
+			wantE:     []int{4},
+			wantConf:  0.72,
 		},
 		{
 			path:    "/tv/random.txt",
@@ -130,8 +235,18 @@ func TestParseSeasonDir(t *testing.T) {
 		{"s1", 1, true},
 		{"S01", 1, true},
 		{"s 2", 2, true},
-		{"Specials", 0, false},
+		{"Specials", 0, true},
+		{"specials", 0, true},
+		{"Series 2", 2, true},
+		{"Saison 1", 1, true},
+		{"Staffel 3", 3, true},
+		{"Temporada 4", 4, true},
+		{"Season.1", 1, true},
+		{"Season_1", 1, true},
 		{"S01E01", 0, false},
+		{"Extras", 0, false},
+		{"5", 0, false},
+		{"Downloads", 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.dir, func(t *testing.T) {
@@ -152,6 +267,10 @@ func TestCleanTitle(t *testing.T) {
 		{"The_Office_US", "The Office US"},
 		{"Show.Name.720p.BluRay", "Show Name"},
 		{"Show-Name-x265", "Show Name"},
+		{"[RlsGroup] Some Show", "Some Show"},
+		{"{abc123} Show Name", "Show Name"},
+		{"www.site.com - Show Name", "Show Name"},
+		{"[A][B] Show Name", "Show Name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -222,6 +341,42 @@ func TestIdentifyAirDate(t *testing.T) {
 		id := IdentifyFile(path)
 		if id != nil && id.Method == "airdate" {
 			t.Fatalf("%s: should not parse as airdate, got %+v", path, id)
+		}
+	}
+}
+
+func TestIsJunkFile(t *testing.T) {
+	junk := []string{
+		"Show.S01E01.720p.WEB-DL.sample",
+		"Show S01E01 sample",
+		"movie-sample",
+	}
+	for _, s := range junk {
+		if !IsJunkFile(s) {
+			t.Errorf("IsJunkFile(%q) = false, want true", s)
+		}
+	}
+	keep := []string{
+		"Trailer Park Boys S01E01", // leading "Trailer" is a title word
+		"Show S01E01",
+		"Sample Text Show S01E01", // "Sample" leading is a title word, not a tag
+	}
+	for _, s := range keep {
+		if IsJunkFile(s) {
+			t.Errorf("IsJunkFile(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestIsJunkDirName(t *testing.T) {
+	for _, d := range []string{"Sample", "samples", "Extras", "Trailers", "Featurettes"} {
+		if !IsJunkDirName(d) {
+			t.Errorf("IsJunkDirName(%q) = false, want true", d)
+		}
+	}
+	for _, d := range []string{"Breaking Bad", "Season 1", "Extra Life", "Trailer Park Boys"} {
+		if IsJunkDirName(d) {
+			t.Errorf("IsJunkDirName(%q) = true, want false", d)
 		}
 	}
 }

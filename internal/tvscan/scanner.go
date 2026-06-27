@@ -65,9 +65,21 @@ func (s *Scanner) ScanTV(ctx context.Context, jobID, libraryID int64) error {
 			return walkErr
 		}
 		if d.IsDir() {
+			// Skip extras/sample subdirectories, but only when nested inside a
+			// show — a top-level folder of the same name (the show "Extras",
+			// "Trailers"…) is a real library entry and is kept.
+			if p != cleanRoot && IsJunkDirName(d.Name()) {
+				if rel, relErr := filepath.Rel(cleanRoot, p); relErr == nil && strings.ContainsRune(rel, filepath.Separator) {
+					return fs.SkipDir
+				}
+			}
 			return nil
 		}
 		if !video.IsVideoExt(filepath.Ext(p)) {
+			return nil
+		}
+		// Skip sample/extra clips by their release-tag token (never a real episode).
+		if IsJunkFile(strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))) {
 			return nil
 		}
 
