@@ -1,55 +1,66 @@
+/* Catppuccin theme. Dark = Mocha (default), light = Latte (html[data-mode="light"]).
+   Set pre-paint by the bootstrap in layout.html; toggled by the sun/moon button. */
 :root {
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "Consolas", "Lucida Console", monospace;
-  --page-bg: #1a1f28;
-  --page-fg: #e8eef7;
-  --surface-topbar: #141a24;
-  --surface-card: #1e2838;
-  --surface-panel: #141a24;
-  --border-default: #2d3a4e;
-  --text-muted: #a5b7cf;
-  --text-soft: #8aa3bf;
-  --link-color: #8bd3ff;
-  --link-hover-color: #c6e9ff;
-  --accent: #3d8f63;
-  --accent-bg: #13261a;
-  --accent-hover: #4ca878;
-  --danger: #cf4c4c;
-  --danger-hover: #df6363;
+
+  /* Catppuccin Mocha */
+  --page-bg: #1e1e2e;        /* base */
+  --page-fg: #cdd6f4;        /* text */
+  --surface-topbar: #181825; /* mantle */
+  --surface-card: #313244;   /* surface0 */
+  --surface-panel: #181825;  /* mantle */
+  --border-default: #45475a; /* surface1 */
+  --text-muted: #a6adc8;     /* subtext0 */
+  --text-soft: #9399b2;      /* overlay2 */
+  --link-color: #89b4fa;     /* blue */
+  --link-hover-color: #b4befe;/* lavender */
+  --accent: #cba6f7;         /* mauve */
+  --accent-bg: #2a2440;      /* muted mauve surface */
+  --accent-hover: #d8b9fb;
+  --text-on-accent: #1e1e2e; /* dark text on the light accent */
+  --danger: #f38ba8;         /* red */
+  --danger-hover: #f5a3bd;
   --field-bg: var(--surface-panel);
-  --field-border: rgba(61, 143, 99, 0.45);
+  --field-border: rgba(203, 166, 247, 0.45);
+  --media-bg: #11111b;       /* crust — video letterbox */
+
+  /* Status badges */
+  --badge-neutral-bg: #313244; --badge-neutral-fg: #a6adc8;
+  --badge-info-bg: #1e2a3a;    --badge-info-fg: #89b4fa;
+  --badge-success-bg: #1e3326; --badge-success-fg: #a6e3a1;
+  --badge-error-bg: #3a1f28;   --badge-error-fg: #f38ba8;
+  --badge-warn-bg: #3a3320;    --badge-warn-fg: #f9e2af;
 }
 
-html[data-bg-tone="midnight"] {
-  --page-bg: #0b0f14;
-  --surface-topbar: #0b111a;
-  --surface-card: #101a26;
-  --surface-panel: #0b111a;
-  --border-default: #1c2a3a;
-}
+html[data-mode="light"] {
+  /* Catppuccin Latte */
+  --page-bg: #eff1f5;        /* base */
+  --page-fg: #4c4f69;        /* text */
+  --surface-topbar: #e6e9ef; /* mantle */
+  --surface-card: #ffffff;   /* raised card */
+  --surface-panel: #e6e9ef;  /* mantle */
+  --border-default: #ccd0da; /* surface0 */
+  --text-muted: #6c6f85;     /* subtext0 */
+  --text-soft: #8c8fa1;      /* overlay1 */
+  --link-color: #1e66f5;     /* blue */
+  --link-hover-color: #7287fd;/* lavender */
+  --accent: #8839ef;         /* mauve */
+  --accent-bg: #f0e6fb;      /* light mauve surface */
+  --accent-hover: #9a4ff5;
+  --text-on-accent: #eff1f5; /* light text on the dark accent */
+  --danger: #d20f39;         /* red */
+  --danger-hover: #b00c30;
+  --field-bg: #ffffff;
+  --field-border: rgba(136, 57, 239, 0.4);
+  --media-bg: #11111b;       /* video letterbox stays dark */
 
-html[data-bg-tone="slate"] {
-  --page-bg: #1a1f28;
-  --surface-topbar: #141a24;
-  --surface-card: #1e2838;
-  --surface-panel: #141a24;
-  --border-default: #2d3a4e;
+  --badge-neutral-bg: #dce0e8; --badge-neutral-fg: #5c5f77;
+  --badge-info-bg: #dce6fb;    --badge-info-fg: #1e66f5;
+  --badge-success-bg: #dcf0d6; --badge-success-fg: #40a02b;
+  --badge-error-bg: #fbdce3;   --badge-error-fg: #d20f39;
+  --badge-warn-bg: #fbeed0;    --badge-warn-fg: #b5790f;
 }
-
-html[data-bg-tone="graphite"] {
-  --page-bg: #12161b;
-  --surface-topbar: #171d25;
-  --surface-card: #1c242f;
-  --surface-panel: #171e27;
-  --border-default: #2a3647;
-}
-
-html[data-palette="emerald"] { --accent: #2d9b5e; --accent-bg: #122b1f; --accent-hover: #3db874; }
-html[data-palette="ocean"] { --accent: #3085c6; --accent-bg: #0f2236; --accent-hover: #4aa0e0; }
-html[data-palette="violet"] { --accent: #7c5cbf; --accent-bg: #1e1538; --accent-hover: #9878d9; }
-html[data-palette="amber"] { --accent: #c68d30; --accent-bg: #2a1f0f; --accent-hover: #daa64a; }
-html[data-palette="rose"] { --accent: #c6547a; --accent-bg: #2a0f1a; --accent-hover: #e06e94; }
-html[data-palette="teal"] { --accent: #2d9b8e; --accent-bg: #0f2a28; --accent-hover: #45b5a8; }
 
 html {
   font-size: 14px;
@@ -121,6 +132,33 @@ a:hover {
   background: var(--accent-bg);
   color: var(--page-fg);
 }
+
+/* Light/dark toggle — pushed to the top-right of the topbar */
+.theme-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.theme-toggle:hover {
+  color: var(--page-fg);
+  border-color: var(--accent);
+}
+.theme-toggle svg { width: 1.05rem; height: 1.05rem; display: block; }
+/* Show the icon for the current mode (sun = light, moon = dark). */
+.theme-toggle .icon-sun { display: none; }
+.theme-toggle .icon-moon { display: block; }
+html[data-mode="light"] .theme-toggle .icon-sun { display: block; }
+html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
 
 /* Settings dropdown */
 .nav-settings {
@@ -248,7 +286,7 @@ a:hover {
 }
 .btn-primary:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .btn-danger {
@@ -257,7 +295,7 @@ a:hover {
 }
 .btn-danger:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .btn-sm {
@@ -361,15 +399,15 @@ a:hover {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.badge-queued { background: #2a3040; color: #8aa3bf; }
-.badge-running { background: #1a2a3a; color: #5bb8ff; }
-.badge-done { background: #13261a; color: #5bbf80; }
-.badge-failed { background: #2a1515; color: #ff8a8a; }
-.badge-canceled { background: #2a2515; color: #d4a855; }
-.badge-matched { background: #13261a; color: #5bbf80; }
-.badge-uncertain { background: #2a2515; color: #d4a855; }
-.badge-unmatched { background: #2a1515; color: #ff8a8a; }
-.badge-manual { background: #1a2a3a; color: #5bb8ff; }
+.badge-queued { background: var(--badge-neutral-bg); color: var(--badge-neutral-fg); }
+.badge-running { background: var(--badge-info-bg); color: var(--badge-info-fg); }
+.badge-done { background: var(--badge-success-bg); color: var(--badge-success-fg); }
+.badge-failed { background: var(--badge-error-bg); color: var(--badge-error-fg); }
+.badge-canceled { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
+.badge-matched { background: var(--badge-success-bg); color: var(--badge-success-fg); }
+.badge-uncertain { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
+.badge-unmatched { background: var(--badge-error-bg); color: var(--badge-error-fg); }
+.badge-manual { background: var(--badge-info-bg); color: var(--badge-info-fg); }
 
 /* Empty state */
 .empty-state {
@@ -908,7 +946,7 @@ a:hover {
 .tv-player-video-wrap {
   position: relative;
   width: 100%;
-  background: #000;
+  background: var(--media-bg);
   border-radius: 8px;
   overflow: hidden;
 }

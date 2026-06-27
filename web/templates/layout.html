@@ -7,17 +7,15 @@
   <script>
     (() => {
       try {
-        const defaultBgTone = 'slate';
-        const defaultPalette = 'violet';
-        const defaultFontTheme = 'system-ui';
-        const defaultFontSize = 'compact';
-        const bgTone = String(localStorage.getItem('iso_theme_bg_tone') || defaultBgTone).trim();
-        const palette = String(localStorage.getItem('iso_theme_palette') || defaultPalette).trim();
-        const fontTheme = String(localStorage.getItem('iso_theme_font') || defaultFontTheme).trim();
-        const fontSize = String(localStorage.getItem('iso_theme_font_size') || defaultFontSize).trim();
-        if (bgTone) document.documentElement.setAttribute('data-bg-tone', bgTone);
-        if (palette) document.documentElement.setAttribute('data-palette', palette);
-        if (fontTheme) document.documentElement.setAttribute('data-font-theme', fontTheme);
+        // Light/dark mode (Catppuccin Latte/Mocha). Stored choice wins; first
+        // visit follows the OS preference, falling back to dark.
+        const storedMode = localStorage.getItem('iso_theme_mode');
+        const mode = (storedMode === 'light' || storedMode === 'dark')
+          ? storedMode
+          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-mode', mode);
+
+        const fontSize = String(localStorage.getItem('iso_theme_font_size') || 'compact').trim();
         if (fontSize) document.documentElement.setAttribute('data-font-size', fontSize);
 
         // Couch mode: ?couch=1 enables (and is remembered), ?couch=0 clears.
@@ -56,6 +54,22 @@
         </div>
       </div>
     </nav>
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle light and dark theme">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+    </button>
   </header>
 
   <main class="main">
@@ -109,6 +123,24 @@
       document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
         menus.forEach(closeMenu);
+      });
+    })();
+
+    (() => {
+      const btn = document.querySelector('[data-theme-toggle]');
+      if (!btn) return;
+      const root = document.documentElement;
+      const sync = () => {
+        const light = root.getAttribute('data-mode') === 'light';
+        btn.setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
+        btn.setAttribute('aria-pressed', String(light));
+      };
+      sync();
+      btn.addEventListener('click', () => {
+        const next = root.getAttribute('data-mode') === 'light' ? 'dark' : 'light';
+        root.setAttribute('data-mode', next);
+        try { localStorage.setItem('iso_theme_mode', next); } catch (_) {}
+        sync();
       });
     })();
   </script>
