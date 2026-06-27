@@ -1,0 +1,47 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Fix artist match</h1>
+</div>
+
+<p class="disambig-intro">
+  Pick the correct MusicBrainz artist for <strong>{{.ArtistName}}</strong>.
+  Choosing one sets the artist's identity and re-fetches its bio and image — this
+  can take a few seconds. Album matches are unaffected.
+</p>
+
+{{if .Candidates}}
+<ul class="disambig-list">
+  {{range .Candidates}}
+  <li class="disambig-card{{if .IsCurrent}} is-current{{end}}">
+    <div class="disambig-info">
+      <div class="disambig-name">
+        {{.Name}}
+        {{if .IsCurrent}}<span class="badge">current</span>{{end}}
+      </div>
+      {{if .Disambiguation}}<div class="disambig-disambig">{{.Disambiguation}}</div>{{end}}
+      <div class="disambig-meta">
+        {{if .Type}}<span>{{.Type}}</span>{{end}}
+        {{if .Country}}<span>{{.Country}}</span>{{end}}
+        {{if or .BeginDate .EndDate}}<span>{{.BeginDate}}{{if .EndDate}}–{{.EndDate}}{{end}}</span>{{end}}
+        <span class="disambig-score">MB score {{.Score}}</span>
+      </div>
+      <div class="disambig-mbid">{{.MBID}}</div>
+    </div>
+    <form method="post" action="/music/artist/disambiguate" class="disambig-action">
+      <input type="hidden" name="artist_id" value="{{$.ArtistID}}" />
+      <input type="hidden" name="mbid" value="{{.MBID}}" />
+      <button type="submit" class="btn btn-primary"{{if .IsCurrent}} disabled{{end}}>
+        {{if .IsCurrent}}Selected{{else}}Use this artist{{end}}
+      </button>
+    </form>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="disambig-empty">No MusicBrainz artist candidates found for this name.</p>
+{{end}}
+
+<div class="artist-actions">
+  <a href="/music/artist/{{.ArtistID}}" class="btn">Back to artist</a>
+</div>
+{{end}}

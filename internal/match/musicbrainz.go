@@ -320,6 +320,67 @@ func (c *MBClient) SearchArtist(ctx context.Context, name string) (string, error
 	return best.ID, nil
 }
 
+// ArtistCandidate is a MusicBrainz artist search result, carrying the fields a
+// human needs to disambiguate same-named artists (disambiguation comment, type,
+// country, life span). Used by the manual artist-disambiguation control.
+type ArtistCandidate struct {
+	MBID           string
+	Name           string
+	Disambiguation string
+	Type           string // Person / Group / ...
+	Country        string
+	BeginDate      string
+	EndDate        string
+	Score          int
+}
+
+// SearchArtistCandidates returns up to 10 MusicBrainz artist candidates for a
+// name, ordered by MB relevance. Unlike SearchArtist (which blindly takes the
+// top result), this surfaces the full set so a user can pick the correct one
+// when several artists share a name.
+func (c *MBClient) SearchArtistCandidates(ctx context.Context, name string) ([]ArtistCandidate, error) {
+	q := fmt.Sprintf(`artist:"%s"`, mbEscape(name))
+	path := fmt.Sprintf("/artist?query=%s&limit=10&fmt=json", url.QueryEscape(q))
+
+	body, err := c.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Artists []struct {
+			ID             string `json:"id"`
+			Name           string `json:"name"`
+			Disambiguation string `json:"disambiguation"`
+			Type           string `json:"type"`
+			Country        string `json:"country"`
+			LifeSpan       struct {
+				Begin string `json:"begin"`
+				End   string `json:"end"`
+			} `json:"life-span"`
+			Score int `json:"score"`
+		} `json:"artists"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parse artist search: %w", err)
+	}
+
+	out := make([]ArtistCandidate, 0, len(result.Artists))
+	for _, a := range result.Artists {
+		out = append(out, ArtistCandidate{
+			MBID:           a.ID,
+			Name:           a.Name,
+			Disambiguation: a.Disambiguation,
+			Type:           a.Type,
+			Country:        a.Country,
+			BeginDate:      a.LifeSpan.Begin,
+			EndDate:        a.LifeSpan.End,
+			Score:          a.Score,
+		})
+	}
+	return out, nil
+}
+
 // LookupArtist fetches an artist with URL relations.
 func (c *MBClient) LookupArtist(ctx context.Context, mbid string) (*MBArtistFull, error) {
 	path := fmt.Sprintf("/artist/%s?inc=url-rels&fmt=json", url.PathEscape(mbid))

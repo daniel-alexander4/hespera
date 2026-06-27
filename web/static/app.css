@@ -675,6 +675,71 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   gap: 0.5rem;
 }
 
+/* Artist disambiguation chooser */
+.disambig-intro {
+  color: var(--text-muted);
+  max-width: 60ch;
+  margin: 0 0 1.25rem;
+}
+.disambig-empty {
+  color: var(--text-muted);
+  margin: 0 0 1.25rem;
+}
+.disambig-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.disambig-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+.disambig-card.is-current {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.disambig-name {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.disambig-card .badge {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+.disambig-disambig {
+  color: var(--page-fg);
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+}
+.disambig-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+.disambig-mbid {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  margin-top: 0.35rem;
+}
+.disambig-action {
+  flex-shrink: 0;
+}
+
 /* Album detail */
 .album {
   display: grid;
