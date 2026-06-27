@@ -97,6 +97,14 @@ func setupTemplateDir(t *testing.T, dir string) {
 	if err := os.WriteFile(filepath.Join(tplDir, "settings_jobs.html"), []byte(jobsTpl), 0o644); err != nil {
 		t.Fatalf("WriteFile settings_jobs.html override: %v", err)
 	}
+
+	// Overwrite player.html with a functional stub exposing the queue (title +
+	// per-track ids) so player-queue handler tests can assert what's queued.
+	playerTpl := `{{define "content"}}<h1>{{.PlayerTitle}}</h1>` +
+		`{{range .QueueTracks}}<span data-track="{{.ID}}">{{.Title}}</span>{{end}}{{end}}`
+	if err := os.WriteFile(filepath.Join(tplDir, "player.html"), []byte(playerTpl), 0o644); err != nil {
+		t.Fatalf("WriteFile player.html override: %v", err)
+	}
 }
 
 // withChdir changes to dir for the duration of the test and restores on cleanup.
