@@ -68,10 +68,11 @@ func ReadTrackMeta(path string) (TrackMeta, error) {
 	}
 
 	artist := strings.TrimSpace(m.Artist())
+	albumArtist := parseAlbumArtist(m.Raw())
+	artist = resolveTrackArtist(artist, albumArtist)
 	if artist == "" {
 		artist = "Unknown Artist"
 	}
-	albumArtist := parseAlbumArtist(m.Raw())
 	if albumArtist == "" {
 		albumArtist = artist
 	}
@@ -164,7 +165,10 @@ func TrackMetaFromTags(tags map[string]string, path string) TrackMeta {
 		return ""
 	}
 
-	artist := firstNonEmpty(get("artist"), "Unknown Artist")
+	artist := resolveTrackArtist(get("artist"), get("album_artist", "albumartist", "album artist"))
+	if artist == "" {
+		artist = "Unknown Artist"
+	}
 	albumArtist := firstNonEmpty(get("album_artist", "albumartist", "album artist"), artist)
 	album := firstNonEmpty(get("album"), "Unknown Album")
 
@@ -255,7 +259,10 @@ func readTrackMetaMP3Fallback(path string) (TrackMeta, error) {
 		return TrackMeta{}, err
 	}
 
-	artist := firstNonEmpty(frames["TPE1"], "Unknown Artist")
+	artist := resolveTrackArtist(strings.TrimSpace(frames["TPE1"]), strings.TrimSpace(frames["TPE2"]))
+	if artist == "" {
+		artist = "Unknown Artist"
+	}
 	albumArtist := firstNonEmpty(frames["TPE2"], artist)
 	album := firstNonEmpty(frames["TALB"], "Unknown Album")
 	title := strings.TrimSpace(frames["TIT2"])
@@ -790,6 +797,35 @@ func parseTrackIndexFromRaw(raw map[string]interface{}, keys []string) int {
 		}
 	}
 	return 0
+}
+
+// isUnknownArtist reports whether an artist string is a missing/placeholder
+// credit (not a real artist name) — the case where the album artist, if real,
+// is a strictly better track credit than the placeholder.
+func isUnknownArtist(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "unknown artist", "unknown":
+		return true
+	default:
+		return false
+	}
+}
+
+// resolveTrackArtist credits a track to its album artist when the track's own
+// artist is a missing/placeholder value ("Unknown Artist") but the album artist
+// names a real, specific artist — common in rips that leave TPE1 as "Unknown
+// Artist" while TPE2 carries the real name. It never fires for a real track
+// artist, and never adopts a generic/Various-Artists album artist (so genuine
+// compilations are untouched), so it only ever improves a placeholder credit.
+func resolveTrackArtist(artist, albumArtist string) string {
+	if !isUnknownArtist(artist) {
+		return strings.TrimSpace(artist)
+	}
+	aa := strings.TrimSpace(albumArtist)
+	if aa != "" && !isUnknownArtist(aa) && !IsGenericCompilationArtist(aa) {
+		return aa
+	}
+	return strings.TrimSpace(artist)
 }
 
 func IsGenericCompilationArtist(artist string) bool {
