@@ -18,8 +18,8 @@
 
   <div class="album-content">
     <div class="album-actions">
-      <a href="/music/player?album={{.AlbumID}}" class="btn btn-primary">{{template "icon-play"}}Play All</a>
-      <a href="/music/player?album={{.AlbumID}}&shuffle=1" class="btn">{{template "icon-shuffle"}}Shuffle</a>
+      <a href="/music/player?album={{.AlbumID}}" class="btn btn-primary" data-play>{{template "icon-play"}}Play All</a>
+      <a href="/music/player?album={{.AlbumID}}&shuffle=1" class="btn" data-play>{{template "icon-shuffle"}}Shuffle</a>
       <a href="/music/album/edit?id={{.AlbumID}}" class="btn">{{template "icon-pencil"}}Edit</a>
     </div>
 
@@ -31,7 +31,7 @@
       {{range .Tracks}}
       <li class="track" data-track-id="{{.ID}}" data-album-id="{{.AlbumID}}">
         <span class="track-row-number">{{.TrackNo}}</span>
-        <a href="/music/player?album={{$.AlbumID}}&track={{.ID}}" class="track-play-btn" title="Play from here">
+        <a href="/music/player?album={{$.AlbumID}}&track={{.ID}}" class="track-play-btn" title="Play from here" data-play>
           {{.Title}}
         </a>
         {{if $.IsCompilation}}

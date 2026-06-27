@@ -44,7 +44,6 @@
   </div>
 </div>
 
-<script src="{{staticv "/static/hls.light.min.js"}}"></script>
 <script>
 (() => {
   const video = document.getElementById('tvVideo');
@@ -205,6 +204,15 @@
     if (nextFile > 0) window.location.href = '/tv/player?file=' + nextFile;
   });
   window.addEventListener('beforeunload', () => { lastReport = 0; reportProgress(false); });
+
+  // Turbo swaps the page without a full unload: send a final progress report and
+  // tear down the hls.js worker before this page is cached/replaced. once:true so
+  // it doesn't accumulate across repeat visits.
+  document.addEventListener('turbo:before-cache', () => {
+    lastReport = 0;
+    reportProgress(false);
+    teardownHLS();
+  }, { once: true });
 
   loadFromSession(0, 0, null);
 })();

@@ -1481,92 +1481,122 @@ JOIN music_artists ar ON ar.id=t.artist_id`
 // the most-played tracks (popular), or a year range (era, ?from=&to=). All of
 // them reuse the player's existing client-side queue/shuffle/stream/lyrics; the
 // collection playlists pass &shuffle=1.
-func (h *Handler) musicPlayer(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
+// playerQueue is an ordered, source-resolved track queue plus its display
+// metadata — the single shape the now-playing view (musicPlayer) and the JSON
+// queue endpoint (musicQueue) both consume, built once by buildPlayerQueue.
+type playerQueue struct {
+	Title   string
+	BackURL string
+	Tracks  []trackRow
+}
 
-	shuffle := strings.TrimSpace(r.URL.Query().Get("shuffle")) == "1"
+// buildPlayerQueue resolves the ?source= switch (single album / all / popular /
+// era) into an ordered queue. notFound signals invalid params (→ 404); err is a
+// server error. It is the one owner of player queue-building; both the HTML
+// now-playing view and the /music/queue JSON endpoint route through it so the
+// queue never grows a second, drifting copy.
+func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound bool, err error) {
 	source := strings.TrimSpace(r.URL.Query().Get("source"))
-
-	var (
-		tracks       []trackRow
-		err          error
-		playerTitle  string
-		backURL      = "/music"
-		startTrackID int64
-	)
+	q.BackURL = "/music"
 
 	switch source {
 	case "all":
 		libraryID := h.resolveMusicLibraryID(r)
-		tracks, err = h.queryPlayerTracks(r.Context(),
+		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.library_id=? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID)
-		playerTitle = "All Songs"
+		q.Title = "All Songs"
 	case "popular":
 		// Each artist's most popular songs (global ListenBrainz listen counts,
 		// filled by the match popularity phase), pooled: the top per-artist tracks
 		// across the library. Excludes popularity=0 (unknown/unmatched).
 		libraryID := h.resolveMusicLibraryID(r)
-		tracks, err = h.queryPlayerTracks(r.Context(),
+		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` JOIN (
   SELECT id, ROW_NUMBER() OVER (PARTITION BY artist_id ORDER BY popularity DESC, id) AS rn
   FROM music_tracks WHERE library_id=? AND popularity>0
 ) pop ON pop.id=t.id
 WHERE pop.rn<=? ORDER BY t.popularity DESC, t.id`, libraryID, popularPerArtistLimit)
-		playerTitle = "Most Popular"
+		q.Title = "Most Popular"
 	case "era":
 		libraryID := h.resolveMusicLibraryID(r)
 		from, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("from")))
 		to, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("to")))
 		if from <= 0 || to <= 0 || to < from {
-			http.NotFound(w, r)
-			return
+			return q, true, nil
 		}
-		tracks, err = h.queryPlayerTracks(r.Context(),
+		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.library_id=? AND al.year BETWEEN ? AND ? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID, from, to)
-		playerTitle = fmt.Sprintf("%d–%d", from, to)
+		q.Title = fmt.Sprintf("%d–%d", from, to)
 	default: // single album
 		albumID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("album")), 10, 64)
 		if perr != nil || albumID <= 0 {
-			http.NotFound(w, r)
-			return
+			return q, true, nil
 		}
 		if qerr := h.db.QueryRowContext(r.Context(),
-			"SELECT title FROM music_albums WHERE id=?", albumID).Scan(&playerTitle); qerr != nil {
-			http.NotFound(w, r)
-			return
+			"SELECT title FROM music_albums WHERE id=?", albumID).Scan(&q.Title); qerr != nil {
+			return q, true, nil
 		}
-		backURL = fmt.Sprintf("/music/album/%d", albumID)
-		tracks, err = h.queryPlayerTracks(r.Context(),
+		q.BackURL = fmt.Sprintf("/music/album/%d", albumID)
+		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.album_id=? ORDER BY t.disc_no, t.track_no, lower(t.title)`, albumID)
-		if v := strings.TrimSpace(r.URL.Query().Get("track")); v != "" {
-			if n, perr := strconv.ParseInt(v, 10, 64); perr == nil {
-				startTrackID = n
-			}
-		}
 	}
+	return q, false, err
+}
 
-	if err != nil {
-		httpError(w, 500, "internal server error", "load player tracks failed", "handler", "musicPlayer", "err", err)
+// musicPlayer renders the now-playing view — a static shell that player.js binds
+// to the persistent (Turbo-permanent) audio element. It carries no server-built
+// queue: playback is started by data-play controls that POST nothing and fetch
+// /music/queue, so the audio survives navigation. When loaded with queue params
+// directly (an old deep link, or the data-play href fallback when JS is off),
+// AutoloadQuery is handed to player.js to load that queue on arrival.
+func (h *Handler) musicPlayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	// Nothing to play (e.g. "Most Played" before any listening, or an empty era)
-	// — don't render a player with an empty queue; go back where we came from.
-	if len(tracks) == 0 {
-		http.Redirect(w, r, backURL, http.StatusSeeOther)
-		return
+	autoload := ""
+	if q := r.URL.RawQuery; q != "" && (strings.Contains(q, "album=") || strings.Contains(q, "source=")) {
+		autoload = q
 	}
-
 	h.render(w, "player.html", map[string]any{
-		"Title":        "Player",
-		"PlayerTitle":  playerTitle,
-		"BackURL":      backURL,
-		"QueueTracks":  tracks,
-		"Shuffle":      shuffle,
-		"StartTrackID": startTrackID,
+		"Title":         "Player",
+		"AutoloadQuery": autoload,
 	})
+}
+
+// musicQueue returns the ordered player queue as JSON for player.js, built from
+// the same ?source= params as the now-playing view via buildPlayerQueue.
+func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	q, notFound, err := h.buildPlayerQueue(r)
+	if notFound {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httpError(w, 500, "internal server error", "load player queue failed", "handler", "musicQueue", "err", err)
+		return
+	}
+	type queueTrackJSON struct {
+		ID      int64  `json:"id"`
+		AlbumID int64  `json:"albumId"`
+		Album   string `json:"album"`
+		Title   string `json:"title"`
+		Artist  string `json:"artist"`
+	}
+	out := struct {
+		Title   string           `json:"title"`
+		BackURL string           `json:"backUrl"`
+		Tracks  []queueTrackJSON `json:"tracks"`
+	}{Title: q.Title, BackURL: q.BackURL, Tracks: make([]queueTrackJSON, 0, len(q.Tracks))}
+	for _, t := range q.Tracks {
+		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // queryPlayerTracks runs a playerTrackSelect-shaped query and scans the rows

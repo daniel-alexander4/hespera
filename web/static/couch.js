@@ -96,7 +96,13 @@
     // Enter / OK is left to native behavior (activates links and buttons).
   });
 
-  // Land focus somewhere sensible on first paint so the remote has a starting point.
-  const first = candidates()[0];
-  if (first) first.focus();
+  // Land focus somewhere sensible after each render so the remote always has a
+  // starting point. turbo:load fires on the initial load and after every Turbo
+  // visit; the keydown listener above is added once and queries the live DOM, so
+  // it keeps working across visits without re-binding.
+  const focusFirst = () => {
+    const first = candidates()[0];
+    if (first) first.focus();
+  };
+  document.addEventListener('turbo:load', focusFirst);
 })();

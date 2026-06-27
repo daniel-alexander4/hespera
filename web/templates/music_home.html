@@ -69,10 +69,10 @@
 <div class="subtab-panel active" id="tab-recent">
   <h3 class="section-title">Playlists</h3>
   <div class="quick-playlists" style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem; margin-bottom:1.25rem;">
-    <a class="btn btn-primary" href="/music/player?source=all&amp;shuffle=1&amp;library={{.LibraryID}}">Shuffle All</a>
-    <a class="btn btn-primary" href="/music/player?source=popular&amp;shuffle=1&amp;library={{.LibraryID}}">Shuffle Most Popular</a>
+    <a class="btn btn-primary" href="/music/player?source=all&amp;shuffle=1&amp;library={{.LibraryID}}" data-play>Shuffle All</a>
+    <a class="btn btn-primary" href="/music/player?source=popular&amp;shuffle=1&amp;library={{.LibraryID}}" data-play>Shuffle Most Popular</a>
     {{if .Years}}
-    <form method="get" action="/music/player" style="display:inline-flex; align-items:center; gap:0.4rem; margin:0;">
+    <form method="get" action="/music/player" data-play-form data-shuffle="1" style="display:inline-flex; align-items:center; gap:0.4rem; margin:0;">
       <input type="hidden" name="source" value="era" />
       <input type="hidden" name="shuffle" value="1" />
       <input type="hidden" name="library" value="{{.LibraryID}}" />

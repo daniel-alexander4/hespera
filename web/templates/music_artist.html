@@ -22,8 +22,8 @@
     {{end}}
     <div class="artist-actions">
       {{if .Tracks}}
-      <a href="/music/player?album={{(index .Albums 0).ID}}" class="btn btn-primary">{{template "icon-play"}}Play All</a>
-      <a href="/music/player?album={{(index .Albums 0).ID}}&shuffle=1" class="btn">{{template "icon-shuffle"}}Shuffle</a>
+      <a href="/music/player?album={{(index .Albums 0).ID}}" class="btn btn-primary" data-play>{{template "icon-play"}}Play All</a>
+      <a href="/music/player?album={{(index .Albums 0).ID}}&shuffle=1" class="btn" data-play>{{template "icon-shuffle"}}Shuffle</a>
       {{end}}
       <a href="/music/artist/disambiguate?id={{.ArtistID}}" class="btn">{{template "icon-user-check"}}Fix artist match</a>
       <a href="/music/artist/art?id={{.ArtistID}}" class="btn">{{template "icon-image"}}Artist image</a>

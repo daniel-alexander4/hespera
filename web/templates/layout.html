@@ -30,8 +30,11 @@
   </script>
   <link rel="stylesheet" href="{{staticv "/static/app.css"}}" />
   <link rel="stylesheet" href="{{staticv "/static/tv.css"}}" />
+  <script src="{{staticv "/static/turbo.umd.js"}}" defer></script>
   <script src="{{staticv "/static/couch.js"}}" defer></script>
   <script src="{{staticv "/static/subtabs.js"}}" defer></script>
+  <script src="{{staticv "/static/hls.light.min.js"}}" defer></script>
+  <script src="{{staticv "/static/player.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -57,6 +60,17 @@
         </div>
       </div>
     </nav>
+    <!-- Now-playing cluster + the single persistent audio element. Both are
+         data-turbo-permanent, so Turbo carries them across page visits and music
+         keeps playing. player.js owns them. Hidden until something is playing. -->
+    <div id="np-cluster" class="np-cluster hidden" data-turbo-permanent>
+      <button id="np-toggle" type="button" class="np-toggle" aria-label="Play or pause" title="Play / pause">
+        <span class="np-glyph-play">{{template "icon-play"}}</span>
+        <span class="np-glyph-pause">{{template "icon-pause"}}</span>
+      </button>
+      <a id="np-title-link" class="np-title-link" href="/music/player" title="Open the player"><span id="np-title" class="np-title"></span></a>
+    </div>
+    <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
     <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle light and dark theme">
       <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="5"></circle>
