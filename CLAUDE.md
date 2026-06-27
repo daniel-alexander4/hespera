@@ -43,8 +43,8 @@ go vet ./...
 | `internal/music` | Audio tag reader (`dhowden/tag` wrapper), TrackMeta struct, compilation detection |
 | `internal/scan` | Music library scanner: walk dirs, read tags, ensure artist/album/track, art extraction, prune/cleanup |
 | `internal/match` | MusicBrainz matching pipeline, Cover Art Archive, artist enrichment (Wikipedia/Wikimedia), scoring |
-| `internal/tmdb` | TMDB client + movie/TV matcher |
-| `internal/tvscan` | TV file identification + scanner (writes `stream_info_json` = marshaled `video.ProbeResult`) |
+| `internal/tmdb` | TMDB client + movie/TV matcher; resolves date-based episodes against episode air dates post-match (`airdate.go`) |
+| `internal/tvscan` | TV file identification (SxE / N×M / folder-authoritative title / air-date) + scanner (writes `stream_info_json` = marshaled `video.ProbeResult`) |
 | `internal/video` | ffprobe wrapper + gated ffmpeg execution (`StreamFFmpeg`, `EnsureHLS`), concurrency caps, HLS cache |
 | `internal/playback` | Pure TV playback-decision layer: per-client container↔codec matrix → direct-play / remux / transcode |
 | `internal/web` | HTTP handlers, routing (`http.ServeMux`), template rendering, logging middleware, TV streaming endpoints |

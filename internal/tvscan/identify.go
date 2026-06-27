@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type EpisodeIdentity struct {
@@ -12,13 +13,21 @@ type EpisodeIdentity struct {
 	SeasonNumber   int
 	EpisodeNumbers []int
 	Confidence     float64
-	Method         string // "sxe", "x_format", "season_dir"
+	Method         string // "sxe", "x_format", "airdate", "season_dir"
+	// AirDate is set only for Method=="airdate": a "YYYY-MM-DD" date parsed from
+	// the filename. SeasonNumber/EpisodeNumbers are unknown at scan time and are
+	// resolved later by the TMDB matcher against episode air dates.
+	AirDate string
 }
 
 var (
 	reSXE     = regexp.MustCompile(`(?i)S(\d{1,2})((?:E\d{1,3}){1,8})\b`)
 	reXFormat = regexp.MustCompile(`(?i)(\d{1,2})x(\d{1,3})\b`)
 	reEpNums  = regexp.MustCompile(`(?i)E(\d{1,3})`)
+	// reAirDate matches an unambiguous year-first date (YYYY-MM-DD / YYYY.MM.DD)
+	// for date-based dailies. Year-last and slash forms are deliberately refused
+	// as ambiguous (DD.MM vs MM.DD) — a wrong episode is worse than a miss.
+	reAirDate = regexp.MustCompile(`\b(20\d{2})[.\-](\d{2})[.\-](\d{2})\b`)
 )
 
 var qualityTokens = map[string]bool{
@@ -57,6 +66,23 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 			EpisodeNumbers: []int{ep},
 			Confidence:     conf,
 			Method:         "x_format",
+		}
+	}
+
+	// Try a year-first air date: date-based dailies (The Daily Show 2024-01-15).
+	// Runs after SxE/x_format so an explicit episode marker always wins, and
+	// before the weak season-dir fallback. Season/episode stay unknown here —
+	// the matcher resolves the date against TMDB episode air dates.
+	if m := reAirDate.FindStringSubmatchIndex(base); m != nil {
+		if date, ok := parseAirDate(base[m[2]:m[3]], base[m[4]:m[5]], base[m[6]:m[7]]); ok {
+			title, _ := resolveTitle(dir, cleanTitle(base[:m[0]]))
+			return &EpisodeIdentity{
+				ShowTitle:    title,
+				SeasonNumber: -1,
+				Confidence:   0.50,
+				Method:       "airdate",
+				AirDate:      date,
+			}
 		}
 	}
 
@@ -109,6 +135,17 @@ func showTitleFromSeasonDir(dir string) string {
 		return ""
 	}
 	return cleanTitle(base)
+}
+
+// parseAirDate validates a year/month/day triple and returns it normalized to
+// "YYYY-MM-DD". It rejects impossible dates (e.g. month 13, day 45) so a stray
+// numeric run in a release string isn't mistaken for an air date.
+func parseAirDate(year, month, day string) (string, bool) {
+	norm := year + "-" + month + "-" + day
+	if _, err := time.Parse("2006-01-02", norm); err != nil {
+		return "", false
+	}
+	return norm, true
 }
 
 func parseEpisodeNumbers(block string) []int {

@@ -254,6 +254,9 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "tv_series_identities", "guessed_title", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := ensureColumn(db, "tv_series_identities", "air_date", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
 		return err
 	}
