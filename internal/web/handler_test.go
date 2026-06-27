@@ -98,10 +98,10 @@ func setupTemplateDir(t *testing.T, dir string) {
 		t.Fatalf("WriteFile settings_jobs.html override: %v", err)
 	}
 
-	// Overwrite player.html with a functional stub exposing the queue (title +
-	// per-track ids) so player-queue handler tests can assert what's queued.
-	playerTpl := `{{define "content"}}<h1>{{.PlayerTitle}}</h1>` +
-		`{{range .QueueTracks}}<span data-track="{{.ID}}">{{.Title}}</span>{{end}}{{end}}`
+	// Overwrite player.html with a functional stub mirroring the now-playing view:
+	// a .player-page shell carrying the autoload query (the queue itself is fetched
+	// client-side from /music/queue, so the page no longer injects tracks).
+	playerTpl := `{{define "content"}}<div class="player-page" data-autoload="{{.AutoloadQuery}}"></div>{{end}}`
 	if err := os.WriteFile(filepath.Join(tplDir, "player.html"), []byte(playerTpl), 0o644); err != nil {
 		t.Fatalf("WriteFile player.html override: %v", err)
 	}

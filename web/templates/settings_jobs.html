@@ -31,6 +31,10 @@
     schedule();
   };
 
+  // Stop the poll before Turbo caches/replaces this page, or it would keep
+  // fetching forever into a detached container. once:true avoids stacking.
+  document.addEventListener('turbo:before-cache', () => clearTimeout(timer), { once: true });
+
   schedule();
 })();
 </script>

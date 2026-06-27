@@ -115,12 +115,15 @@
     });
   });
 
-  // Close dropdowns when clicking outside.
-  document.addEventListener('click', e => {
+  // Close dropdowns when clicking outside. Named + removed on turbo:before-cache
+  // so this document-level listener doesn't survive (and stack on) page swaps.
+  const closeDropdowns = (e) => {
     if (!e.target.closest('.tv-match-search-wrap')) {
       document.querySelectorAll('.tv-match-search-results').forEach(d => d.style.display = 'none');
     }
-  });
+  };
+  document.addEventListener('click', closeDropdowns);
+  document.addEventListener('turbo:before-cache', () => document.removeEventListener('click', closeDropdowns), { once: true });
 
   function escapeHtml(str) {
     const d = document.createElement('div');

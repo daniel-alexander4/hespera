@@ -130,6 +130,8 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 0.25rem;
+  /* Push the now-playing cluster + theme toggle to the right edge. */
+  margin-right: auto;
 }
 
 .nav-link {
@@ -144,9 +146,59 @@ a:hover {
   color: var(--page-fg);
 }
 
-/* Light/dark toggle — pushed to the top-right of the topbar */
+/* Now-playing cluster in the topbar — a compact play/pause + track title that
+   links to the full player. Hidden until something is playing. Persistent
+   (data-turbo-permanent), driven by player.js. */
+.np-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 22rem;
+  min-width: 0;
+}
+.np-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  flex-shrink: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.np-toggle:hover {
+  color: var(--page-fg);
+  border-color: var(--accent);
+}
+.np-toggle .icon {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+/* Show the glyph for the action a press performs: pause while playing, play
+   while paused (player.js toggles .np-paused). */
+.np-cluster .np-glyph-play { display: none; }
+.np-cluster.np-paused .np-glyph-play { display: inline-flex; }
+.np-cluster.np-paused .np-glyph-pause { display: none; }
+.np-title-link {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.np-title-link:hover { color: var(--page-fg); }
+.np-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Light/dark toggle — sits at the top-right of the topbar */
 .theme-toggle {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -891,10 +943,27 @@ body::before {
 
 /* Player page */
 .player-page {
+  margin: 1rem 0;
+}
+.player-main-grid {
   display: grid;
   grid-template-columns: 300px 1fr;
   gap: 1.5rem;
-  margin: 1rem 0;
+}
+.player-seek-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.player-seek-row #player-seek {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.player-seek-row #player-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 .player-cover img {
   width: 300px;
@@ -1107,6 +1176,9 @@ body::before {
   font-size: 0.9rem;
   color: var(--text-muted);
 }
+/* The class display above otherwise overrides the [hidden] attribute, so the
+   picker would stay visible even with nothing to choose. */
+.tv-track-pick[hidden] { display: none; }
 .tv-track-pick select {
   font: inherit;
 }
@@ -1175,7 +1247,7 @@ body::before {
     max-width: 280px;
     margin: 0 auto;
   }
-  .player-page {
+  .player-main-grid {
     grid-template-columns: 1fr;
   }
   .player-cover img {
