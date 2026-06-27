@@ -36,6 +36,19 @@ func New(db *sql.DB, dataDir, fanartKey, audiodbKey string) *Matcher {
 	}
 }
 
+// ResolveArtistCandidates returns MusicBrainz artist candidates for the manual
+// disambiguation control, so a user can correct a wrong same-named-artist match.
+func (m *Matcher) ResolveArtistCandidates(ctx context.Context, name string) ([]ArtistCandidate, error) {
+	return m.mb.SearchArtistCandidates(ctx, name)
+}
+
+// ReEnrichArtist re-runs bio + image enrichment for an explicitly chosen artist
+// MBID (manual disambiguation), bypassing the name search. The caller is
+// responsible for storing the chosen MBID and clearing stale bio/art first.
+func (m *Matcher) ReEnrichArtist(ctx context.Context, artistMBID string) (*ArtistMeta, error) {
+	return EnrichArtist(ctx, m.mb, m.fanart, m.audiodb, artistMBID, m.dataDir)
+}
+
 // RunMusicMatch is the job executor for the music_match job type.
 // Phase 1: Enrich artists (MBID, bio, image).
 // Phase 2: Match albums (MusicBrainz, cover art).
