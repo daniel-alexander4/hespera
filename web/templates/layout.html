@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hespera</title>
+  <link rel="icon" type="image/svg+xml" href="{{staticv "/static/hespera-favicon.svg"}}" />
   <script>
     (() => {
       try {
@@ -34,7 +35,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><a href="/">Hespera</a></div>
+    <div class="brand"><a href="/"><img class="brand-logo" src="{{staticv "/static/hespera-icon.svg"}}" alt="" width="28" height="28" /><span>Hespera</span></a></div>
     <nav class="nav">
       <a href="/" class="nav-link">{{template "icon-home"}}Home</a>
       <a href="/music" class="nav-link">{{template "icon-music"}}Music</a>

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Hespera">
+  <defs>
+    <linearGradient id="hespera-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset=".30" stop-color="#6d28d9"/>
+      <stop offset=".48" stop-color="#c026d3"/>
+      <stop offset=".58" stop-color="#f472b6"/>
+      <stop offset=".64" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="hespera-sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d97706"/>
+      <stop offset=".22" stop-color="#9d174d"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <radialGradient id="hespera-sun" gradientUnits="userSpaceOnUse" cx="120" cy="140" r="68">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset=".55" stop-color="#fcd34d"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </radialGradient>
+    <clipPath id="hespera-frame"><rect width="240" height="240" rx="54"/></clipPath>
+  </defs>
+  <g clip-path="url(#hespera-frame)">
+    <rect width="240" height="240" fill="url(#hespera-sky)"/>
+    <g fill="url(#hespera-sun)">
+      <rect x="68" y="124" width="8" height="26" rx="4"/>
+      <rect x="80" y="109" width="8" height="41" rx="4"/>
+      <rect x="92" y="96" width="8" height="54" rx="4"/>
+      <rect x="104" y="99" width="8" height="51" rx="4"/>
+      <rect x="116" y="92" width="8" height="58" rx="4"/>
+      <rect x="128" y="97" width="8" height="53" rx="4"/>
+      <rect x="140" y="101" width="8" height="49" rx="4"/>
+      <rect x="152" y="110" width="8" height="40" rx="4"/>
+      <rect x="164" y="123" width="8" height="27" rx="4"/>
+    </g>
+    <rect x="0" y="150" width="240" height="90" fill="url(#hespera-sea)"/>
+    <rect x="0" y="148" width="240" height="2.5" fill="#fff7d6" opacity=".55"/>
+    <g fill="url(#hespera-sun)" opacity=".32">
+      <rect x="68" y="150" width="8" height="13" rx="4"/>
+      <rect x="80" y="150" width="8" height="21" rx="4"/>
+      <rect x="92" y="150" width="8" height="27" rx="4"/>
+      <rect x="104" y="150" width="8" height="26" rx="4"/>
+      <rect x="116" y="150" width="8" height="29" rx="4"/>
+      <rect x="128" y="150" width="8" height="27" rx="4"/>
+      <rect x="140" y="150" width="8" height="25" rx="4"/>
+      <rect x="152" y="150" width="8" height="20" rx="4"/>
+      <rect x="164" y="150" width="8" height="14" rx="4"/>
+    </g>
+  </g>
+</svg>
