@@ -55,6 +55,7 @@ go vet ./...
 - **Routing**: stdlib `http.ServeMux`, routes registered in `web.Router()`. Auth middleware wraps entire mux if enabled.
 - **Templates**: `html/template` from `web/templates/` at startup. Layout base cloned per page, merged with `partials_*.html` glob. FuncMap: `staticv` (cache-bust), `humanBytes`, `mult`.
 - **Theming**: Catppuccin via CSS custom properties in `app.css` — `:root` = Mocha (dark, default), `html[data-mode="light"]` = Latte. A pre-paint script in `layout.html` sets `data-mode` from `localStorage.iso_theme_mode` (first visit follows `prefers-color-scheme`, fallback dark); the `.theme-toggle` sun/moon button in the topbar flips and persists it. Hidden in couch mode (it lives in `.topbar`, which `tv.css` hides).
+- **Runtime settings**: `app_settings(key, value)` KV table holds user-set overrides of env config (Settings → API Keys page, `settingsAPIKeys`). Today: `tmdb_api_key`. `Handler.effectiveTMDBKey(ctx)` is the single source of truth — DB value if set, else `cfg.TMDBAPIKey`; read per-call so a UI change takes effect without a restart. Key stored plaintext (same risk as `.env`), masked in the UI, never logged.
 - **Database**: `modernc.org/sqlite`, WAL, 8 max open / 4 idle, 5s busy timeout, FK on. Migrations in `db.Migrate()` with `ensureColumn()` for schema evolution.
 - **Jobs**: `jobs.Service.Enqueue(jobType, libraryID, createdBy, executor)`. States: queued → running → done/failed/canceled. Progress in `scan_jobs` table.
 - **Scanner pattern**: `scan.New(cfg, db)` / `match.New(db, dataDir)` constructed inline per handler call, passed as executor closure to `jobs.Enqueue`.
@@ -98,7 +99,7 @@ go vet ./...
 | HESPERA_DATA_DIR | /var/lib/hespera | Data directory |
 | HESPERA_DB_PATH | {DATA_DIR}/hespera.sqlite | Database path |
 | HESPERA_MEDIA_ROOT | /media | Media root directory |
-| HESPERA_TMDB_API_KEY | | TMDB API key |
+| HESPERA_TMDB_API_KEY | | TMDB API key (bootstrap default; a runtime value set in Settings → API Keys overrides it) |
 | AUTH_ENABLED | true | Enable SSH key auth |
 | AUTH_SESSION_SECRET | | HMAC secret (16+ chars) |
 | HESPERA_FFMPEG_CONCURRENCY | 4 | Max concurrent ffmpeg/ffprobe processes (background HLS builds get half, min 1) |
