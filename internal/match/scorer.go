@@ -16,21 +16,39 @@ func ScoreCandidate(c Candidate, localTitle, localArtist string, localYear int) 
 	titleScore := titleSim * 38.0
 	artistScore := artistSim * 26.0
 	mbScore := float64(c.MBScore) / 100.0 * 18.0
-	typeScore := typeBonus(c.PrimaryType)
+	typeScore := typeBonus(c.PrimaryType, c.SecondaryTypes)
 	yearScore := yearBonus(c.Year, localYear)
 
 	return titleScore + artistScore + mbScore + typeScore + yearScore
 }
 
-func typeBonus(primaryType string) float64 {
+// typeBonus rewards the canonical studio album and penalizes the alternate
+// editions (singles, EPs, live/compilation/remix release-groups) that share an
+// album's title but usually lack canonical cover art. Penalizing them lets a
+// clean primary=Album / no-secondary release-group win among same-titled
+// candidates, so the matcher selects the release-group that actually has art.
+// Title and artist similarity dominate the overall score, so this only reorders
+// same-titled siblings — it does not unmatch a strong title/artist match.
+func typeBonus(primaryType string, secondaryTypes []string) float64 {
 	base := 10.0
 	switch primaryType {
 	case "Single":
 		base -= 8
+	case "EP":
+		base -= 4
 	case "Broadcast":
 		base -= 6
 	case "Live", "Remix", "Compilation":
 		base -= 6
+	}
+	// Secondary types mark non-primary editions even when the primary type is
+	// Album (e.g. a live or greatest-hits album). Soundtrack/Spokenword are
+	// legitimate primary uses and are intentionally not penalized.
+	for _, st := range secondaryTypes {
+		switch st {
+		case "Compilation", "Live", "Remix", "Demo", "Interview", "DJ-mix", "Mixtape/Street":
+			base -= 6
+		}
 	}
 	if base < 0 {
 		base = 0

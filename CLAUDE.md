@@ -62,8 +62,8 @@ go vet ./...
 
 ### Match Pipeline
 
-- **MBClient**: MusicBrainz API, 1 req/sec rate limiter, 3-strategy query cascade (strict release-group → loose release → artist fallback)
-- **Scorer**: weighted (title 0-38, artist 0-26, MB score 0-18, type 0-10, year 0-4; max ~96). Single threshold `matchThreshold` (=80): score ≥80 matched, else unmatched. The former "uncertain" tier was retired (migrated to unmatched in `db.Migrate`).
+- **MBClient**: MusicBrainz API, 1 req/sec rate limiter, 3-strategy query cascade (strict release-group → loose release → artist fallback). Strategy A fetches 25 candidates so the canonical studio release-group isn't crowded out by compilations/EPs of the same title.
+- **Scorer**: weighted (title 0-38, artist 0-26, MB score 0-18, type 0-10, year 0-4; max ~96). Single threshold `matchThreshold` (=80): score ≥80 matched, else unmatched. The former "uncertain" tier was retired (migrated to unmatched in `db.Migrate`). `typeBonus` penalizes EP/Single and any non-primary edition — including **secondary types** (Live/Compilation/Remix/Demo on a primary=Album RG) — so a clean studio album outranks art-less alt editions of the same title and the matcher picks the release-group that actually has Cover Art Archive art.
 - **CAAClient**: Cover Art Archive, release-group → release fallback, thumbnail size preference
 - **Artist enrichment**: MusicBrainz URL relations → Wikipedia REST API (bio) → Wikidata/Wikimedia Commons (image)
 - **Pipeline**: `Matcher.RunMusicMatch()` iterates albums, scores candidates, fetches art, enriches artists. Non-fatal per-album errors.
