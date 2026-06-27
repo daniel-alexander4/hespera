@@ -265,7 +265,9 @@ match columns on `movie_files`).
   file; the album/artist/identity rows for match data). Do not invent a parallel
   lookup that can drift from the canonical tables.
 - **Preserve the empty-only-guard on art writers** — manual art (`art_path` set
-  by upload) must survive rescan/rematch.
+  by album upload, or by the artist image picker `POST /music/artist/art` —
+  provider pick or upload) must survive rescan/rematch; those writers set
+  `art_path` unconditionally so the user's choice sticks.
 - **Respect the `upsertIdentity` status guard** — a rescan must not clobber a
   `matched` or `skipped` TV identity.
 - **Anything keyed by `file_id` / `track_id` is lost on prune** unless the
