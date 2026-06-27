@@ -39,7 +39,113 @@ func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64) err
 	}
 
 	// --- Phase 2: Album matching ---
-	return m.matchAlbums(ctx, jobID, libraryID)
+	if err := m.matchAlbums(ctx, jobID, libraryID); err != nil {
+		return err
+	}
+
+	// --- Phase 3: Re-fetch cover art for matched albums that still have none ---
+	return m.refetchMissingArt(ctx, jobID, libraryID)
+}
+
+// artRecheckTTL bounds how often a matched-but-art-less album is re-probed for
+// cover art. Most such albums genuinely have no Cover Art Archive image, but CAA
+// accrues art over time, so we retry on a slow cadence rather than never.
+const artRecheckTTL = 30 * 24 * time.Hour
+
+// refetchMissingArt is a second pass that fills cover art for albums that were
+// matched but still have no art_path — e.g. matched before an art improvement
+// shipped, or whose matched release-group had no image at the time. It re-runs
+// only the cover-art step (never identity), anchored to the album's STORED
+// MusicBrainz identity, and stamps art_checked_at so an art-less album isn't
+// re-probed on every run.
+func (m *Matcher) refetchMissingArt(ctx context.Context, jobID, libraryID int64) error {
+	cutoff := time.Now().Add(-artRecheckTTL).UTC().Format(time.RFC3339)
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT a.id, a.title, COALESCE(ar.name, ''), a.year, a.musicbrainz_id, a.artist_musicbrainz_id
+		FROM music_albums a
+		LEFT JOIN music_artists ar ON ar.id = a.album_artist_id
+		WHERE a.library_id = ?
+		  AND a.match_status = 'matched'
+		  AND (a.art_path = '' OR a.art_path IS NULL)
+		  AND a.musicbrainz_id != ''
+		  AND (a.art_checked_at = '' OR a.art_checked_at < ?)
+		ORDER BY a.id
+	`, libraryID, cutoff)
+	if err != nil {
+		return fmt.Errorf("query art-less albums: %w", err)
+	}
+	defer rows.Close()
+
+	type albumArt struct {
+		id         int64
+		title      string
+		artist     string
+		year       int
+		rgID       string
+		artistMBID string
+	}
+	var albums []albumArt
+	for rows.Next() {
+		var a albumArt
+		if err := rows.Scan(&a.id, &a.title, &a.artist, &a.year, &a.rgID, &a.artistMBID); err != nil {
+			return err
+		}
+		albums = append(albums, a)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(albums) == 0 {
+		return nil
+	}
+
+	// Extend the job's progress to cover this phase too (so it doesn't sit at
+	// 100% while this churns through rate-limited lookups).
+	var base, total int
+	_ = m.db.QueryRowContext(ctx, "SELECT progress_current, progress_total FROM scan_jobs WHERE id=?", jobID).
+		Scan(&base, &total)
+	_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", total+len(albums), jobID)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, a := range albums {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		candidates, err := m.mb.SearchReleaseGroups(ctx, a.artist, a.title)
+		if err != nil {
+			slog.Warn("refetch art search failed", "album_id", a.id, "title", a.title, "err", err)
+		} else {
+			// Anchor art to the album's STORED identity: re-search only supplies
+			// candidate breadth; the cover must come from the matched
+			// release-group or a same-artist clean-album sibling of it.
+			stored := Candidate{ReleaseGroupID: a.rgID, ArtistMBID: a.artistMBID}
+			if artPath := m.fetchAlbumArt(ctx, a.id, stored, CandidatesAboveThreshold(candidates, a.title, a.artist, a.year)); artPath != "" {
+				// Guard on the stored identity so we never clobber an album the
+				// user unmatched mid-run.
+				_, _ = m.db.ExecContext(ctx,
+					"UPDATE music_albums SET art_path=? WHERE id=? AND match_status='matched' AND musicbrainz_id=? AND (art_path='' OR art_path IS NULL)",
+					artPath, a.id, a.rgID)
+			}
+		}
+		// Stamp the check time whether or not art was found (hit or miss).
+		_, _ = m.db.ExecContext(ctx,
+			"UPDATE music_albums SET art_checked_at=? WHERE id=? AND match_status='matched' AND musicbrainz_id=?",
+			now, a.id, a.rgID)
+
+		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", base+i+1, jobID)
+
+		if i < len(albums)-1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	}
+	return nil
 }
 
 // enrichArtists finds all artists in the library that are missing MBID, bio, or
