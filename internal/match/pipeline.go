@@ -52,6 +52,35 @@ func (m *Matcher) ReEnrichArtist(ctx context.Context, artistMBID string) (*Artis
 	return EnrichArtist(ctx, m.mb, m.fanart, m.audiodb, artistMBID, m.dataDir)
 }
 
+// ArtistImageCandidate is one selectable artist image surfaced to the picker.
+type ArtistImageCandidate struct {
+	URL    string
+	Source string // provider name, e.g. "fanart.tv" / "TheAudioDB"
+	Kind   string // "thumb"/"background"/"" — provider-dependent
+}
+
+// ArtistImageCandidates gathers selectable artist images from the configured
+// providers, keyed by the artist MBID: fanart.tv supplies a gallery (multiple
+// thumbs + backgrounds), TheAudioDB a single thumb. Providers without a key are
+// nil and contribute nothing — so the list is empty when no keys are set.
+func (m *Matcher) ArtistImageCandidates(ctx context.Context, artistMBID string) []ArtistImageCandidate {
+	if artistMBID == "" {
+		return nil
+	}
+	var out []ArtistImageCandidate
+	if m.fanart != nil {
+		for _, img := range m.fanart.ArtistImages(ctx, artistMBID) {
+			out = append(out, ArtistImageCandidate{URL: img.URL, Source: "fanart.tv", Kind: img.Kind})
+		}
+	}
+	if m.audiodb != nil {
+		if u := m.audiodb.ArtistImageURL(ctx, artistMBID); u != "" {
+			out = append(out, ArtistImageCandidate{URL: u, Source: "TheAudioDB", Kind: "thumb"})
+		}
+	}
+	return out
+}
+
 // RunMusicMatch is the job executor for the music_match job type.
 // Phase 1: Enrich artists (MBID, bio, image).
 // Phase 2: Match albums (MusicBrainz, cover art).

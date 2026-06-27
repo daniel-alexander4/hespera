@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"hespera/internal/match"
 	"hespera/internal/music"
@@ -267,6 +268,22 @@ ORDER BY year, lower(title)
 		return
 	}
 
+	// Distinct album years (ascending) for the era playlist picker; maxYear is
+	// the latest, used as the "to" default.
+	var years []int
+	maxYear := 0
+	if yrows, yerr := h.db.QueryContext(r.Context(),
+		"SELECT DISTINCT year FROM music_albums WHERE library_id=? AND year>0 ORDER BY year", libraryID); yerr == nil {
+		for yrows.Next() {
+			var y int
+			if yrows.Scan(&y) == nil {
+				years = append(years, y)
+				maxYear = y
+			}
+		}
+		_ = yrows.Close()
+	}
+
 	h.render(w, "music_home.html", map[string]any{
 		"Title":               "Music",
 		"LibraryID":           libraryID,
@@ -274,6 +291,8 @@ ORDER BY year, lower(title)
 		"RecentlyAddedAlbums": recentlyAddedAlbums,
 		"Artists":             artists,
 		"Compilations":        compilations,
+		"Years":               years,
+		"MaxYear":             maxYear,
 	})
 }
 
@@ -970,6 +989,206 @@ func (h *Handler) musicAlbumArtClear(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d", albumID), http.StatusSeeOther)
 }
 
+// errInvalidImage marks a 400-class image-validation failure (vs a 500-class
+// filesystem error) from writeArtistArtImage.
+var errInvalidImage = errors.New("invalid image")
+
+// musicArtistArt is the artist-image picker. GET renders candidate images from
+// the configured providers (fanart.tv gallery + TheAudioDB) plus an upload form;
+// POST applies a chosen provider image (validated against the freshly-fetched
+// candidate set — never an arbitrary client URL), an uploaded file, or a clear.
+// The chosen image is written unconditionally to music_artists.art_path so it
+// survives the empty-only matcher writer. Mounted under /music/ for auth + CSRF.
+func (h *Handler) musicArtistArt(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.musicArtistArtGET(w, r)
+	case http.MethodPost:
+		h.musicArtistArtPOST(w, r)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) musicArtistArtGET(w http.ResponseWriter, r *http.Request) {
+	artistID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || artistID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	var name, mbid, artPath string
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT name, COALESCE(musicbrainz_id,''), COALESCE(art_path,'') FROM music_artists WHERE id=?", artistID,
+	).Scan(&name, &mbid, &artPath); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	var candidates []match.ArtistImageCandidate
+	if mbid != "" {
+		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+		candidates = matcher.ArtistImageCandidates(r.Context(), mbid)
+	}
+
+	h.render(w, "music_artist_art.html", map[string]any{
+		"Title":      "Artist image — " + name,
+		"ArtistID":   artistID,
+		"ArtistName": name,
+		"HasMBID":    mbid != "",
+		"HasArt":     artPath != "",
+		"Candidates": candidates,
+	})
+}
+
+func (h *Handler) musicArtistArtPOST(w http.ResponseWriter, r *http.Request) {
+	// Bound the body before parsing (covers the multipart upload case). A
+	// non-multipart (URL/clear) POST is parsed as a normal form below.
+	r.Body = http.MaxBytesReader(w, r.Body, maxAlbumArtBytes+(1<<20))
+	if err := r.ParseMultipartForm(maxAlbumArtBytes); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		http.Error(w, "upload too large or malformed", http.StatusBadRequest)
+		return
+	}
+
+	artistID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("artist_id")), 10, 64)
+	if err != nil || artistID <= 0 {
+		http.Error(w, "invalid artist_id", http.StatusBadRequest)
+		return
+	}
+	var mbid string
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT COALESCE(musicbrainz_id,'') FROM music_artists WHERE id=?", artistID).Scan(&mbid); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	redirect := fmt.Sprintf("/music/artist/%d", artistID)
+
+	// Clear the current image.
+	if r.FormValue("clear") == "1" {
+		if _, err := h.db.ExecContext(r.Context(),
+			"UPDATE music_artists SET art_path='' WHERE id=?", artistID); err != nil {
+			httpError(w, 500, "internal server error", "clear artist art failed", "handler", "musicArtistArt", "err", err)
+			return
+		}
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+
+	var data []byte
+	if artURL := strings.TrimSpace(r.FormValue("art_url")); artURL != "" {
+		// SSRF guard: only download a URL we actually surfaced for this artist.
+		// Re-fetch the candidate set and require exact membership — the server
+		// never fetches an arbitrary client-supplied URL.
+		if mbid == "" {
+			http.Error(w, "artist has no MusicBrainz id", http.StatusBadRequest)
+			return
+		}
+		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+		allowed := false
+		for _, c := range matcher.ArtistImageCandidates(r.Context(), mbid) {
+			if c.URL == artURL {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			http.Error(w, "image is not a current candidate for this artist", http.StatusBadRequest)
+			return
+		}
+		data, err = h.fetchRemoteImage(r.Context(), artURL)
+		if err != nil {
+			slog.Warn("artist art download failed", "handler", "musicArtistArt", "url", artURL, "err", err)
+			http.Error(w, "could not download the selected image", http.StatusBadGateway)
+			return
+		}
+	} else {
+		file, _, ferr := r.FormFile("art")
+		if ferr != nil {
+			http.Error(w, "no image selected", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		data, err = io.ReadAll(io.LimitReader(file, maxAlbumArtBytes))
+		if err != nil {
+			httpError(w, 500, "internal server error", "read upload failed", "handler", "musicArtistArt", "err", err)
+			return
+		}
+	}
+
+	outPath, err := h.writeArtistArtImage(artistID, data)
+	if err != nil {
+		if errors.Is(err, errInvalidImage) {
+			http.Error(w, "file is not a valid image (use JPEG, PNG, or WebP)", http.StatusBadRequest)
+			return
+		}
+		httpError(w, 500, "internal server error", "write artist art failed", "handler", "musicArtistArt", "err", err)
+		return
+	}
+	if _, err := h.db.ExecContext(r.Context(),
+		"UPDATE music_artists SET art_path=? WHERE id=?", outPath, artistID); err != nil {
+		httpError(w, 500, "internal server error", "update artist art_path failed", "handler", "musicArtistArt", "err", err)
+		return
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+// fetchRemoteImage downloads image bytes from a candidate-verified provider URL.
+func (h *Handler) fetchRemoteImage(ctx context.Context, rawURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Hespera/1.0 (+artist-art)")
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, maxAlbumArtBytes))
+}
+
+// writeArtistArtImage validates image bytes (MIME from content; jpeg/png/webp)
+// and writes them to a stable per-artist file under thumbs/music (temp+rename).
+// Returns errInvalidImage for validation failures (400-class).
+func (h *Handler) writeArtistArtImage(artistID int64, data []byte) (string, error) {
+	detected := http.DetectContentType(data)
+	if err := music.VerifyImage(detected, data); err != nil {
+		return "", errInvalidImage
+	}
+	ext, err := music.ArtFileExt(detected)
+	if err != nil {
+		return "", errInvalidImage
+	}
+	thumbDir := filepath.Join(h.cfg.DataDir, "thumbs", "music")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		return "", err
+	}
+	sum := sha1.Sum([]byte(fmt.Sprintf("manual-artist-%d", artistID)))
+	outPath := filepath.Join(thumbDir, hex.EncodeToString(sum[:])+ext)
+	tmp, err := os.CreateTemp(thumbDir, "art-*")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return "", err
+	}
+	if err := os.Rename(tmpName, outPath); err != nil {
+		_ = os.Remove(tmpName)
+		return "", err
+	}
+	return outPath, nil
+}
+
 // musicAlbumUnmatch fully resets an album's match — identity and cover art — so
 // the next match run re-matches it from scratch. Mirrors musicMatchRematch and
 // also clears art_path/art_checked_at.
@@ -1243,75 +1462,120 @@ ORDER BY year, lower(title)
 
 // --- Player ---
 
+// playerTrackSelect is the shared column list + joins for building a player
+// queue; callers append their own WHERE/ORDER/LIMIT. Column order matches
+// queryPlayerTracks' scan.
+const playerTrackSelect = `
+SELECT t.id, t.album_id, al.title, al.year, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream')
+FROM music_tracks t
+JOIN music_albums al ON al.id=t.album_id
+JOIN music_artists ar ON ar.id=t.artist_id`
+
+// musicPlayer renders the queue-based player. The queue is built from a
+// ?source=: a single album (default, ?album=N), the whole library (all),
+// the most-played tracks (popular), or a year range (era, ?from=&to=). All of
+// them reuse the player's existing client-side queue/shuffle/stream/lyrics; the
+// collection playlists pass &shuffle=1.
 func (h *Handler) musicPlayer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	albumIDStr := strings.TrimSpace(r.URL.Query().Get("album"))
-	albumID, err := strconv.ParseInt(albumIDStr, 10, 64)
-	if err != nil || albumID <= 0 {
-		http.NotFound(w, r)
-		return
-	}
-
-	var albumTitle string
-	var albumYear int
-	var compInt int
-	if err := h.db.QueryRowContext(r.Context(), `
-SELECT title, year, COALESCE(is_compilation,0) FROM music_albums WHERE id=?
-`, albumID).Scan(&albumTitle, &albumYear, &compInt); err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	rows, err := h.db.QueryContext(r.Context(), `
-SELECT t.id, t.album_id, al.title, al.year, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream')
-FROM music_tracks t
-JOIN music_albums al ON al.id=t.album_id
-JOIN music_artists ar ON ar.id=t.artist_id
-WHERE t.album_id=?
-ORDER BY t.disc_no, t.track_no, lower(t.title)
-`, albumID)
-	if err != nil {
-		httpError(w, 500, "internal server error", "db query failed", "handler", "musicPlayer", "err", err)
-		return
-	}
-	defer rows.Close()
-
-	tracks := make([]trackRow, 0, 32)
-	for rows.Next() {
-		var t trackRow
-		if err := rows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME); err != nil {
-			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicPlayer", "err", err)
-			return
-		}
-		t.ArtistDisplay = t.Artist
-		tracks = append(tracks, t)
-	}
-	if err := rows.Err(); err != nil {
-		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicPlayer", "err", err)
-		return
-	}
 
 	shuffle := strings.TrimSpace(r.URL.Query().Get("shuffle")) == "1"
-	startTrackID := int64(0)
-	if v := strings.TrimSpace(r.URL.Query().Get("track")); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			startTrackID = n
+	source := strings.TrimSpace(r.URL.Query().Get("source"))
+
+	var (
+		tracks       []trackRow
+		err          error
+		playerTitle  string
+		backURL      = "/music"
+		startTrackID int64
+	)
+
+	switch source {
+	case "all":
+		libraryID := h.resolveMusicLibraryID(r)
+		tracks, err = h.queryPlayerTracks(r.Context(),
+			playerTrackSelect+` WHERE t.library_id=? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID)
+		playerTitle = "All Songs"
+	case "popular":
+		libraryID := h.resolveMusicLibraryID(r)
+		tracks, err = h.queryPlayerTracks(r.Context(),
+			playerTrackSelect+` JOIN (SELECT track_id, COUNT(*) AS plays FROM play_history WHERE library_id=? GROUP BY track_id) ph ON ph.track_id=t.id
+WHERE t.library_id=? ORDER BY ph.plays DESC, t.id LIMIT 100`, libraryID, libraryID)
+		playerTitle = "Most Played"
+	case "era":
+		libraryID := h.resolveMusicLibraryID(r)
+		from, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("from")))
+		to, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("to")))
+		if from <= 0 || to <= 0 || to < from {
+			http.NotFound(w, r)
+			return
+		}
+		tracks, err = h.queryPlayerTracks(r.Context(),
+			playerTrackSelect+` WHERE t.library_id=? AND al.year BETWEEN ? AND ? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID, from, to)
+		playerTitle = fmt.Sprintf("%d–%d", from, to)
+	default: // single album
+		albumID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("album")), 10, 64)
+		if perr != nil || albumID <= 0 {
+			http.NotFound(w, r)
+			return
+		}
+		if qerr := h.db.QueryRowContext(r.Context(),
+			"SELECT title FROM music_albums WHERE id=?", albumID).Scan(&playerTitle); qerr != nil {
+			http.NotFound(w, r)
+			return
+		}
+		backURL = fmt.Sprintf("/music/album/%d", albumID)
+		tracks, err = h.queryPlayerTracks(r.Context(),
+			playerTrackSelect+` WHERE t.album_id=? ORDER BY t.disc_no, t.track_no, lower(t.title)`, albumID)
+		if v := strings.TrimSpace(r.URL.Query().Get("track")); v != "" {
+			if n, perr := strconv.ParseInt(v, 10, 64); perr == nil {
+				startTrackID = n
+			}
 		}
 	}
 
-	backURL := fmt.Sprintf("/music/album/%d", albumID)
+	if err != nil {
+		httpError(w, 500, "internal server error", "load player tracks failed", "handler", "musicPlayer", "err", err)
+		return
+	}
+	// Nothing to play (e.g. "Most Played" before any listening, or an empty era)
+	// — don't render a player with an empty queue; go back where we came from.
+	if len(tracks) == 0 {
+		http.Redirect(w, r, backURL, http.StatusSeeOther)
+		return
+	}
 
 	h.render(w, "player.html", map[string]any{
 		"Title":        "Player",
-		"PlayerTitle":  albumTitle,
+		"PlayerTitle":  playerTitle,
 		"BackURL":      backURL,
 		"QueueTracks":  tracks,
 		"Shuffle":      shuffle,
 		"StartTrackID": startTrackID,
 	})
+}
+
+// queryPlayerTracks runs a playerTrackSelect-shaped query and scans the rows
+// into the player's QueueTracks.
+func (h *Handler) queryPlayerTracks(ctx context.Context, query string, args ...any) ([]trackRow, error) {
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tracks := make([]trackRow, 0, 32)
+	for rows.Next() {
+		var t trackRow
+		if err := rows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME); err != nil {
+			return nil, err
+		}
+		t.ArtistDisplay = t.Artist
+		tracks = append(tracks, t)
+	}
+	return tracks, rows.Err()
 }
 
 // --- Stream Track ---
@@ -1585,6 +1849,7 @@ func (h *Handler) artistArt(w http.ResponseWriter, r *http.Request) {
 
 	ct := artMIMEFromExt(clean)
 	w.Header().Set("Content-Type", ct)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = io.Copy(w, f)
 }

@@ -1,0 +1,61 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Artist image — {{.ArtistName}}</h1>
+</div>
+
+<div class="artist-actions" style="margin-bottom: 1.25rem;">
+  <a href="/music/artist/{{.ArtistID}}" class="btn">Back to artist</a>
+  {{if .HasArt}}
+  <form method="post" action="/music/artist/art" style="display:inline;">
+    <input type="hidden" name="artist_id" value="{{.ArtistID}}" />
+    <input type="hidden" name="clear" value="1" />
+    <button type="submit" class="btn">Remove current image</button>
+  </form>
+  {{end}}
+</div>
+
+{{if .HasArt}}
+<h3 class="section-title">Current</h3>
+<img src="/art/artist/{{.ArtistID}}" alt="{{.ArtistName}}"
+  style="width: 10rem; height: 10rem; object-fit: cover; border-radius: 8px; margin-bottom: 1rem;" />
+{{end}}
+
+{{if .Candidates}}
+<h3 class="section-title">Choose from sources</h3>
+<div class="home-carousel-row">
+  {{range .Candidates}}
+  <form method="post" action="/music/artist/art" style="margin:0;">
+    <input type="hidden" name="artist_id" value="{{$.ArtistID}}" />
+    <input type="hidden" name="art_url" value="{{.URL}}" />
+    <button type="submit" title="Use this {{.Source}} image"
+      style="display:block; padding:0; border:1px solid var(--border-default); background:none; border-radius:8px; cursor:pointer; overflow:hidden; width:9rem;">
+      <img src="{{.URL}}" loading="lazy" alt="{{.Source}} {{.Kind}}"
+        style="display:block; width:9rem; height:9rem; object-fit:cover;" />
+      <span style="display:block; padding:0.25rem 0.4rem; font-size:0.7rem; color:var(--text-muted);">{{.Source}}{{if .Kind}} · {{.Kind}}{{end}}</span>
+    </button>
+  </form>
+  {{end}}
+</div>
+{{else}}
+<p class="disambig-empty">
+  {{if .HasMBID}}
+  No candidate images from the configured providers. Add a <strong>fanart.tv</strong> API key in
+  <a href="/settings/api-keys">Settings → API Keys</a> for a gallery of artist images.
+  {{else}}
+  This artist has no MusicBrainz ID yet — use <a href="/music/artist/disambiguate?id={{.ArtistID}}">Fix artist match</a> first so images can be looked up.
+  {{end}}
+</p>
+{{end}}
+
+<h3 class="section-title" style="margin-top: 1.5rem;">Or upload your own</h3>
+<form method="post" action="/music/artist/art" enctype="multipart/form-data" class="form-stack">
+  <input type="hidden" name="artist_id" value="{{.ArtistID}}" />
+  <div class="form-group">
+    <label for="artist-art-file">Upload an image (JPEG, PNG, or WebP)</label>
+    <input type="file" id="artist-art-file" name="art" accept="image/jpeg,image/png,image/webp" required class="input" />
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Set image</button>
+  </div>
+</form>
+{{end}}

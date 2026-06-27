@@ -49,34 +49,50 @@ type fanartArtist struct {
 	ArtistBackground []fanartImage `json:"artistbackground"`
 }
 
-// ArtistImageURL returns the best artist image URL for an MBID, preferring a
-// square thumbnail over a background, or "" if none. Never an error for a clean
-// 404 — a miss is expected for a best-effort fallback.
-func (c *FanartClient) ArtistImageURL(ctx context.Context, artistMBID string) string {
+// FanartArtistImage is one selectable artist image (a thumb or a background).
+type FanartArtistImage struct {
+	URL  string
+	Kind string // "thumb" or "background"
+}
+
+// fetchArtistJSON does the HTTP fetch + parse shared by ArtistImageURL and the
+// gallery method. ok=false on any miss/error — a clean 404 is expected for a
+// best-effort source, not an error.
+func (c *FanartClient) fetchArtistJSON(ctx context.Context, artistMBID string) (fanartArtist, bool) {
+	var a fanartArtist
 	if c == nil || artistMBID == "" {
-		return ""
+		return a, false
 	}
 	c.limiter.wait()
 	reqURL := fmt.Sprintf("%s/music/%s?api_key=%s", c.baseURL, url.PathEscape(artistMBID), url.QueryEscape(c.apiKey))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return ""
+		return a, false
 	}
 	req.Header.Set("User-Agent", mbUserAgent)
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return ""
+		return a, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return a, false
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return ""
+		return a, false
 	}
-	var a fanartArtist
 	if json.Unmarshal(body, &a) != nil {
+		return a, false
+	}
+	return a, true
+}
+
+// ArtistImageURL returns the best artist image URL for an MBID, preferring a
+// square thumbnail over a background, or "" if none.
+func (c *FanartClient) ArtistImageURL(ctx context.Context, artistMBID string) string {
+	a, ok := c.fetchArtistJSON(ctx, artistMBID)
+	if !ok {
 		return ""
 	}
 	if len(a.ArtistThumb) > 0 && a.ArtistThumb[0].URL != "" {
@@ -86,4 +102,25 @@ func (c *FanartClient) ArtistImageURL(ctx context.Context, artistMBID string) st
 		return a.ArtistBackground[0].URL
 	}
 	return ""
+}
+
+// ArtistImages returns every thumb and background fanart.tv holds for an MBID
+// (thumbs first), for the image-picker gallery. Nil on miss/no key.
+func (c *FanartClient) ArtistImages(ctx context.Context, artistMBID string) []FanartArtistImage {
+	a, ok := c.fetchArtistJSON(ctx, artistMBID)
+	if !ok {
+		return nil
+	}
+	var out []FanartArtistImage
+	for _, t := range a.ArtistThumb {
+		if t.URL != "" {
+			out = append(out, FanartArtistImage{URL: t.URL, Kind: "thumb"})
+		}
+	}
+	for _, b := range a.ArtistBackground {
+		if b.URL != "" {
+			out = append(out, FanartArtistImage{URL: b.URL, Kind: "background"})
+		}
+	}
+	return out
 }

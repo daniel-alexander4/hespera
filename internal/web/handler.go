@@ -55,6 +55,7 @@ func New(d Deps) (*Handler, error) {
 		"music_home.html",
 		"music_artist.html",
 		"music_artist_disambiguate.html",
+		"music_artist_art.html",
 		"music_album.html",
 		"music_albums.html",
 		"music_compilations.html",
