@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS music_tracks (
   file_size_bytes INTEGER NOT NULL DEFAULT 0,
   mtime_unix INTEGER NOT NULL DEFAULT 0,
   checksum_sha256 TEXT NOT NULL DEFAULT '',
+  popularity INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(library_id, abs_path)
 );
@@ -269,6 +270,12 @@ func Migrate(db *sql.DB) error {
 	// matched-but-art-less album, so genuinely art-less albums aren't re-probed
 	// on every match run (a TTL re-sweep retries them since CAA accrues art).
 	if err := ensureColumn(db, "music_albums", "art_checked_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// popularity is a per-track global listen count from ListenBrainz (0 =
+	// unknown/unmatched), filled by the music-match popularity phase and used to
+	// rank the "Most Popular" shuffle playlist.
+	if err := ensureColumn(db, "music_tracks", "popularity", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {

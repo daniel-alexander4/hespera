@@ -20,6 +20,7 @@ type Matcher struct {
 	caa     *CAAClient
 	fanart  *FanartClient  // optional artist-image backfill; nil when no key
 	audiodb *AudioDBClient // optional artist bio/image backfill; nil when no key
+	lb      *LBClient      // ListenBrainz popularity (no key; shared MB limiter)
 }
 
 // New builds a matcher. fanartKey/audiodbKey are optional, user-supplied API
@@ -36,6 +37,7 @@ func New(db *sql.DB, dataDir, fanartKey, audiodbKey string) *Matcher {
 		caa:     NewCAAClient(dataDir, limiter),
 		fanart:  NewFanartClient(fanartKey),
 		audiodb: NewAudioDBClient(audiodbKey),
+		lb:      NewLBClient(limiter),
 	}
 }
 
@@ -88,6 +90,13 @@ func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64) err
 	// --- Phase 1: Artist enrichment ---
 	if err := m.enrichArtists(ctx, jobID, libraryID); err != nil {
 		return err
+	}
+
+	// --- Phase 1b: Per-track popularity from ListenBrainz (non-fatal) ---
+	// Runs after artist enrichment so artist MBIDs are resolved. Best-effort —
+	// a network/coverage gap just leaves popularity unfilled, not a failed match.
+	if err := m.fetchPopularity(ctx, jobID, libraryID); err != nil {
+		slog.Warn("popularity phase", "err", err)
 	}
 
 	// --- Phase 2: Album matching ---
@@ -363,6 +372,103 @@ func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) err
 		}
 	}
 
+	return nil
+}
+
+// fetchPopularity fills music_tracks.popularity from ListenBrainz global listen
+// counts. For each artist with a resolved MBID it fetches the artist's
+// top-recordings (ranked by listen count), then credits each local track of
+// that artist whose normalized title exactly matches a recording name with that
+// recording's listen count. Tracks with no match keep popularity 0 (excluded
+// from the Most Popular playlist). Best-effort and idempotent — re-runs each
+// Match, overwriting with the latest counts. Mirrors enrichArtists' shape:
+// drain artists before the network loop, ctx-cancellable, 500ms inter-artist gap.
+func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) error {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT id, musicbrainz_id
+		FROM music_artists
+		WHERE library_id = ?
+		  AND musicbrainz_id != ''
+		  AND name NOT IN ('Unknown Artist', 'Various Artists')
+		ORDER BY id
+	`, libraryID)
+	if err != nil {
+		return fmt.Errorf("query artists: %w", err)
+	}
+	type artistRow struct {
+		id   int64
+		mbid string
+	}
+	var artists []artistRow
+	for rows.Next() {
+		var a artistRow
+		if err := rows.Scan(&a.id, &a.mbid); err != nil {
+			rows.Close()
+			return err
+		}
+		artists = append(artists, a)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(artists) == 0 {
+		return nil
+	}
+
+	for i, a := range artists {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		recs, ok := m.lb.TopRecordings(ctx, a.mbid)
+		if ok && len(recs) > 0 {
+			// Normalized recording name → highest listen count for that name.
+			byName := make(map[string]int, len(recs))
+			for _, r := range recs {
+				key := NormalizeForDedup(r.Name)
+				if key == "" {
+					continue
+				}
+				if r.ListenCount > byName[key] {
+					byName[key] = r.ListenCount
+				}
+			}
+			// Credit each of this artist's local tracks whose title matches.
+			trackRows, terr := m.db.QueryContext(ctx,
+				"SELECT id, title FROM music_tracks WHERE library_id=? AND artist_id=?", libraryID, a.id)
+			if terr == nil {
+				type lt struct {
+					id    int64
+					title string
+				}
+				var locals []lt
+				for trackRows.Next() {
+					var t lt
+					if err := trackRows.Scan(&t.id, &t.title); err == nil {
+						locals = append(locals, t)
+					}
+				}
+				trackRows.Close()
+				for _, t := range locals {
+					if c, hit := byName[NormalizeForDedup(t.title)]; hit {
+						_, _ = m.db.ExecContext(ctx,
+							"UPDATE music_tracks SET popularity=? WHERE id=?", c, t.id)
+					}
+				}
+			}
+		}
+
+		if i < len(artists)-1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	}
 	return nil
 }
 
