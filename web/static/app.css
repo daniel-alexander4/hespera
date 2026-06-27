@@ -226,6 +226,31 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   border-top: 1px solid var(--border-default);
 }
 
+/* Home page — Hespera logo filling the whole browser viewport as the page
+   background. Fixed (not absolute) so it escapes the max-width 1200px .main
+   column and covers the entire window; only present on the home page since
+   the .home-hero wrapper exists there alone. */
+.home-hero {
+  position: relative;
+  min-height: calc(100vh - 200px);
+}
+.home-hero::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: url("/static/hespera-icon.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  opacity: 0.4;
+  z-index: 0;
+  pointer-events: none;
+}
+.home-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
 /* Page header */
 .page-header {
   display: flex;
