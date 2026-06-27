@@ -203,7 +203,9 @@ ON CONFLICT(entity_key, lang) DO UPDATE SET
 			// Download season poster.
 			if season.PosterPath != "" {
 				spDest := filepath.Join(m.artDir, fmt.Sprintf("show_%d_season_%d_poster.jpg", showID, sn))
-				if err := m.client.DownloadImage(ctx, season.PosterPath, spDest); err == nil {
+				if err := m.client.DownloadImage(ctx, season.PosterPath, spDest); err != nil {
+					slog.Warn("tmdb season poster download", "show", showID, "season", sn, "err", err)
+				} else {
 					_, _ = m.db.ExecContext(ctx, `
 INSERT INTO tv_series_art (art_type, tmdb_series_id, season_number, episode_number, art_path)
 VALUES ('season_poster', ?, ?, -1, ?)
@@ -338,7 +340,9 @@ ON CONFLICT(entity_key, lang) DO UPDATE SET
 
 		if season.PosterPath != "" {
 			spDest := filepath.Join(m.artDir, fmt.Sprintf("show_%d_season_%d_poster.jpg", showID, sn))
-			if err := m.client.DownloadImage(ctx, season.PosterPath, spDest); err == nil {
+			if err := m.client.DownloadImage(ctx, season.PosterPath, spDest); err != nil {
+				slog.Warn("tmdb season poster download", "show", showID, "season", sn, "err", err)
+			} else {
 				_, _ = m.db.ExecContext(ctx, `
 INSERT INTO tv_series_art (art_type, tmdb_series_id, season_number, episode_number, art_path)
 VALUES ('season_poster', ?, ?, -1, ?)
