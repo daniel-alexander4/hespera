@@ -22,6 +22,18 @@ func TestNormalizeTitle(t *testing.T) {
 		{"Blonde on Blonde [Bonus Tracks]", "Blonde on Blonde"},
 		{"Kind of Blue (Expanded Edition)", "Kind of Blue"},
 		{"Album (Clean)", "Album"},
+		// Live-show / date-stamp parentheticals (stripped).
+		{"The End (4 February 2017, Birmingham)", "The End"},
+		{"Reunion (Live)", "Reunion"},
+		{"Made in Japan (Live at Osaka 1972)", "Made in Japan"},
+		{"Some Album (2009)", "Some Album"},
+		// Meaningful parentheticals (preserved — no year/live marker).
+		{"Album (Part 1)", "Album (Part 1)"},
+		{"Album (Acoustic)", "Album (Acoustic)"},
+		{"Album (Maybe Tomorrow)", "Album (Maybe Tomorrow)"},
+		{"Album (Decade)", "Album (Decade)"},
+		{"(What's the Story) Morning Glory?", "(What's the Story) Morning Glory?"},
+		{"1984 (For the Love of Big Brother)", "1984 (For the Love of Big Brother)"},
 		{"", ""},
 		{"  Spaced  ", "Spaced"},
 	}
