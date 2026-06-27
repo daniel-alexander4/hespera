@@ -83,6 +83,20 @@ var reAnnotation = regexp.MustCompile(`(?i)\s*[\[\(]\s*(?:` +
 // reYearRemaster matches trailing year-remaster patterns like " - 2015 Remaster" or "(2020 Remastered Version)".
 var reYearRemaster = regexp.MustCompile(`(?i)\s*(?:-\s*)?[\(\[]?\d{4}\s+remaster(?:ed)?(?:\s+version)?[\)\]]?\s*$`)
 
+// reLiveAnnotation matches a trailing parenthesized/bracketed live-show or
+// date-stamp annotation — e.g. "(4 February 2017, Birmingham)", "(Live at
+// Wembley)", "(Live 1985)". It fires only when the parenthetical begins with
+// "live" or contains a 4-digit year (19xx/20xx), so meaningful subtitles like
+// "(Part 1)", "(Acoustic)", or "(Maybe Tomorrow)" are preserved. A month-name
+// signal was deliberately omitted: month abbreviations collide with common
+// words ("may"→"maybe", "dec"→"decade"), and real date stamps carry a year
+// anyway. Anchored to end-of-string so leading parentheticals like "(What's the
+// Story) Morning Glory?" are untouched.
+var reLiveAnnotation = regexp.MustCompile(`(?i)\s*[\(\[]\s*(?:` +
+	`live\b[^\)\]]*|` +
+	`[^\)\]]*\b(?:19|20)\d{2}\b[^\)\]]*` +
+	`)[\)\]]\s*$`)
+
 // NormalizeTitle strips common annotations for display and dedup.
 // Removes remaster, deluxe edition, explicit, trailing year-remaster patterns, etc.
 // Preserves casing and letters.
@@ -104,6 +118,9 @@ func NormalizeTitle(s string) string {
 
 	// Strip trailing year-remaster patterns.
 	s = reYearRemaster.ReplaceAllString(s, "")
+
+	// Strip a trailing live-show / date-stamp annotation.
+	s = reLiveAnnotation.ReplaceAllString(s, "")
 
 	// Collapse whitespace and trim.
 	fields := strings.Fields(s)

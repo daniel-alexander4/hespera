@@ -181,6 +181,30 @@ func TestBestCandidateStudioOverAltEditions(t *testing.T) {
 	}
 }
 
+// TestBestCandidateAliasMatch mirrors the real Hell Bent for Leather case: the
+// album is filed in MusicBrainz under its UK title "Killing Machine" with the US
+// title "Hell Bent for Leather" only as an alias, while a same-named 1978 Single
+// matches the local title exactly. With aliases populated, the album must win
+// over the single; without them, the single would win.
+func TestBestCandidateAliasMatch(t *testing.T) {
+	single := Candidate{ReleaseGroupID: "single", Title: "Hell Bent for Leather", ArtistName: "Judas Priest", PrimaryType: "Single", MBScore: 94, Year: 1978}
+	album := Candidate{ReleaseGroupID: "album", Title: "Killing Machine", ArtistName: "Judas Priest", PrimaryType: "Album", MBScore: 100, Year: 1978, Aliases: []string{"Hell Bent for Leather"}}
+
+	best, _, ok := BestCandidate([]Candidate{single, album}, "Hell Bent for Leather", "Judas Priest", 1978)
+	if !ok || best.ReleaseGroupID != "album" {
+		t.Fatalf("with alias: BestCandidate = %q (ok=%v), want album", best.ReleaseGroupID, ok)
+	}
+
+	// Without the alias, the same-named single wins — confirming the alias is
+	// what flips the selection.
+	albumNoAlias := album
+	albumNoAlias.Aliases = nil
+	best, _, _ = BestCandidate([]Candidate{single, albumNoAlias}, "Hell Bent for Leather", "Judas Priest", 1978)
+	if best.ReleaseGroupID != "single" {
+		t.Fatalf("without alias: BestCandidate = %q, want single", best.ReleaseGroupID)
+	}
+}
+
 func TestCandidatesAboveThreshold(t *testing.T) {
 	candidates := []Candidate{
 		{ReleaseGroupID: "live", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", SecondaryTypes: []string{"Live"}, MBScore: 100, Year: 1991},

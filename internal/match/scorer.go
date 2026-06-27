@@ -13,7 +13,7 @@ const matchThreshold = 80
 // ScoreCandidate scores a MusicBrainz candidate against local album metadata.
 // Max score is ~96.
 func ScoreCandidate(c Candidate, localTitle, localArtist string, localYear int) float64 {
-	titleSim := NormalizedSimilarity(c.Title, localTitle)
+	titleSim := bestTitleSim(c, localTitle)
 	artistSim := NormalizedSimilarity(c.ArtistName, localArtist)
 
 	titleScore := titleSim * 38.0
@@ -23,6 +23,23 @@ func ScoreCandidate(c Candidate, localTitle, localArtist string, localYear int) 
 	yearScore := yearBonus(c.Year, localYear)
 
 	return titleScore + artistScore + mbScore + typeScore + yearScore
+}
+
+// bestTitleSim returns the highest title similarity between the local title and
+// the candidate's canonical title or any of its aliases, comparing after
+// NormalizeTitle (so annotations like remaster/deluxe/live-date are stripped on
+// both sides — the canonical normalizer is the single source of truth). Aliases
+// let an album filed under one regional title match local files tagged with the
+// other (e.g. MB "Killing Machine" vs local "Hell Bent for Leather").
+func bestTitleSim(c Candidate, localTitle string) float64 {
+	lt := NormalizeTitle(localTitle)
+	best := NormalizedSimilarity(NormalizeTitle(c.Title), lt)
+	for _, a := range c.Aliases {
+		if s := NormalizedSimilarity(NormalizeTitle(a), lt); s > best {
+			best = s
+		}
+	}
+	return best
 }
 
 // typeBonus rewards the canonical studio album and penalizes the alternate

@@ -332,17 +332,32 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 		return nil
 	}
 
-	candidates, err := m.mb.SearchReleaseGroups(ctx, artist, title)
+	// Normalize the local title (strip remaster/deluxe/live-date annotations) for
+	// both search and scoring — the raw title would otherwise defeat the
+	// release-group query and the similarity filter (e.g. a live album tagged
+	// "The End (4 February 2017, Birmingham)" finds nothing for plain "The End").
+	searchTitle := NormalizeTitle(title)
+
+	candidates, err := m.mb.SearchReleaseGroups(ctx, artist, searchTitle)
 	if err != nil {
 		return fmt.Errorf("search: %w", err)
 	}
 
-	best, score, ok := BestCandidate(candidates, title, artist, year)
+	// Resolve alt-title matches (e.g. US "Hell Bent for Leather" == MB "Killing
+	// Machine") before scoring, so an alias-named album can win over a same-named
+	// single. Bounded: only candidates MusicBrainz scored highly but whose
+	// canonical title disagrees with ours are looked up.
+	m.enrichAliases(ctx, candidates, searchTitle)
+
+	best, score, ok := BestCandidate(candidates, searchTitle, artist, year)
 	if !ok || score < matchThreshold {
 		_, _ = m.db.ExecContext(ctx,
 			"UPDATE music_albums SET match_status='unmatched' WHERE id=?", albumID)
 		return nil
 	}
+
+	slog.Info("album matched", "album_id", albumID, "release_group", best.ReleaseGroupID,
+		"mb_title", best.Title, "primary_type", best.PrimaryType, "score", int(score))
 
 	status := "matched"
 
@@ -380,7 +395,7 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 	// different-album cover. Cover Art Archive returns "" (not an error) when a
 	// release-group has no front image, so iterating is safe.
 	if best.ReleaseGroupID != "" {
-		artPath := m.fetchAlbumArt(ctx, albumID, best, CandidatesAboveThreshold(candidates, title, artist, year))
+		artPath := m.fetchAlbumArt(ctx, albumID, best, CandidatesAboveThreshold(candidates, searchTitle, artist, year))
 		if artPath != "" {
 			// Only update art_path if currently empty (don't overwrite embedded art).
 			_, _ = m.db.ExecContext(ctx,
@@ -395,6 +410,46 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 	}
 
 	return nil
+}
+
+// Alias enrichment thresholds. A candidate is looked up for aliases only when
+// MusicBrainz scored it highly (it matched the query strongly, likely via an
+// alias) yet its canonical title disagrees with ours — the signature of a
+// regional retitle. Most albums never trip this (their canonical title already
+// matches), so whole-library matches incur ~no extra calls; the cap bounds the
+// worst case for albums with same-named siblings.
+const (
+	aliasEnrichMinMBScore  = 90
+	aliasEnrichMaxTitleSim = 0.9
+	aliasEnrichMaxLookups  = 3
+)
+
+// enrichAliases fetches release-group aliases (in place) for the few candidates
+// whose high MusicBrainz score disagrees with our canonical-title comparison,
+// so scoring can credit an alt-title match. Each lookup is throttled via the
+// shared MusicBrainz limiter; failures are logged and skipped.
+func (m *Matcher) enrichAliases(ctx context.Context, candidates []Candidate, localTitle string) {
+	lt := NormalizeTitle(localTitle)
+	looked := 0
+	for i := range candidates {
+		c := candidates[i]
+		if c.ReleaseGroupID == "" || c.MBScore < aliasEnrichMinMBScore {
+			continue
+		}
+		if NormalizedSimilarity(NormalizeTitle(c.Title), lt) >= aliasEnrichMaxTitleSim {
+			continue // canonical title already matches; no alias needed
+		}
+		aliases, err := m.mb.LookupReleaseGroupAliases(ctx, c.ReleaseGroupID)
+		if err != nil {
+			slog.Warn("release-group alias lookup failed", "release_group", c.ReleaseGroupID, "err", err)
+			continue
+		}
+		candidates[i].Aliases = aliases
+		looked++
+		if looked >= aliasEnrichMaxLookups {
+			break
+		}
+	}
 }
 
 // maxArtFallbackCandidates caps how many sibling release-groups (beyond the
@@ -461,6 +516,9 @@ func (m *Matcher) tryCover(ctx context.Context, albumID int64, releaseGroupID st
 	if err != nil {
 		slog.Warn("cover art fetch failed", "album_id", albumID, "release_group", releaseGroupID, "err", err)
 		return ""
+	}
+	if art != "" {
+		slog.Info("cover art selected", "album_id", albumID, "release_group", releaseGroupID)
 	}
 	return art
 }

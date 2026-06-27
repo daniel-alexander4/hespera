@@ -179,6 +179,13 @@ type Candidate struct {
 	SecondaryTypes []string
 	Year           int
 	MBScore        int
+	// Aliases holds the release-group's alternate titles (e.g. a US/UK retitle).
+	// Empty unless populated by a LookupReleaseGroupAliases enrichment pass;
+	// search responses do not include aliases. Scoring credits the best title
+	// match across Title and Aliases so an album filed under one title (MB
+	// "Killing Machine") still matches local files tagged with its alias
+	// ("Hell Bent for Leather").
+	Aliases []string
 }
 
 // SearchReleaseGroups runs the three-strategy cascade and returns candidates.
@@ -206,7 +213,13 @@ func (c *MBClient) SearchReleaseGroups(ctx context.Context, artist, album string
 }
 
 func (c *MBClient) strategyA(ctx context.Context, artist, album string) ([]Candidate, error) {
-	q := fmt.Sprintf(`releasegroup:"%s" AND artist:"%s"`, mbEscape(album), mbEscape(artist))
+	// Match on the release-group title OR an alias: an album retitled between
+	// regions (e.g. UK "Killing Machine" / US "Hell Bent for Leather") is filed
+	// under one title with the other as an alias, so a title-only query would
+	// never surface it. The alias array isn't returned by search — enrichAliases
+	// fetches it later for scoring — but the alias: clause makes the RG a
+	// candidate in the first place.
+	q := fmt.Sprintf(`(releasegroup:"%s" OR alias:"%s") AND artist:"%s"`, mbEscape(album), mbEscape(album), mbEscape(artist))
 	// limit=25 (not 5): the canonical studio release-group is often crowded out
 	// of the top results by compilations/EPs/singles of the same title, leaving
 	// the scorer unable to reach it. A wider set lets the scorer pick the album.
@@ -319,6 +332,32 @@ func (c *MBClient) LookupArtist(ctx context.Context, mbid string) (*MBArtistFull
 		return nil, fmt.Errorf("parse artist: %w", err)
 	}
 	return &a, nil
+}
+
+// LookupReleaseGroupAliases fetches a release-group's alternate titles. Aliases
+// are only available from the lookup endpoint (inc=aliases), not from search, so
+// this is a separate throttled call used to disambiguate alt-title matches.
+func (c *MBClient) LookupReleaseGroupAliases(ctx context.Context, rgid string) ([]string, error) {
+	path := fmt.Sprintf("/release-group/%s?inc=aliases&fmt=json", url.PathEscape(rgid))
+	body, err := c.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Aliases []struct {
+			Name string `json:"name"`
+		} `json:"aliases"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return nil, fmt.Errorf("parse release-group aliases: %w", err)
+	}
+	out := make([]string, 0, len(r.Aliases))
+	for _, a := range r.Aliases {
+		if a.Name != "" {
+			out = append(out, a.Name)
+		}
+	}
+	return out, nil
 }
 
 // --- helpers ---
