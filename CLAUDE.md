@@ -26,6 +26,13 @@ go vet ./...
 
 ## Architecture
 
+> **Before any work that touches media data** (scanning, matching, pruning,
+> playback state, artwork, or any query/handler that reads or writes a media
+> row), consult [`docs/media-source-of-truth.md`](docs/media-source-of-truth.md)
+> — the canonical reference for what owns each piece of data per media type,
+> how files map to DB rows, and what survives vs. is lost across
+> rescan/rematch/move/delete. Keep it in sync when that behavior changes.
+
 ### Entry Points
 
 - `cmd/hespera/main.go` — Web server: config → SQLite (WAL) → migrations → Handler → HTTP server, graceful shutdown (10s timeout).
