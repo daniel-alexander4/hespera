@@ -114,6 +114,44 @@ func yearBonus(mbYear, localYear int) float64 {
 	}
 }
 
+// typeDemotion is how many points typeBonus subtracted from a clean studio
+// album's full bonus (10) for this candidate's edition type — i.e. the penalty
+// the non-demoting match threshold ignores. 0 for a clean Album/Soundtrack.
+func typeDemotion(primaryType string, secondaryTypes []string) float64 {
+	return 10.0 - typeBonus(primaryType, secondaryTypes)
+}
+
+// BestMatchCandidate chooses the release-group to match the local album to,
+// applying a NON-DEMOTING edition penalty. A candidate is eligible when its
+// score clears matchThreshold treating its type as a clean studio album
+// (`ScoreCandidate + typeDemotion >= matchThreshold`), so the edition-type
+// penalty can reorder same-titled siblings but never unmatch a strong
+// title/artist/year match (e.g. a real Live album like "Made in Japan"). Among
+// eligible candidates the highest *actual* ScoreCandidate wins, so the penalty
+// still steers the pick toward the canonical album that carries cover art.
+//
+// This is a strict superset of BestCandidate's matches at the threshold: every
+// candidate that cleared `ScoreCandidate >= matchThreshold` is still eligible
+// (its demotion is >= 0), and the winner among eligibles is the same ranking —
+// only near-threshold secondary editions are rescued from a spurious unmatch.
+func BestMatchCandidate(candidates []Candidate, localTitle, localArtist string, localYear int) (Candidate, float64, bool) {
+	bestIdx := -1
+	bestScore := 0.0
+	for i, c := range candidates {
+		s := ScoreCandidate(c, localTitle, localArtist, localYear)
+		if s+typeDemotion(c.PrimaryType, c.SecondaryTypes) < matchThreshold {
+			continue // not a match even crediting it the full clean-album type bonus
+		}
+		if bestIdx == -1 || s > bestScore {
+			bestIdx, bestScore = i, s
+		}
+	}
+	if bestIdx == -1 {
+		return Candidate{}, 0, false
+	}
+	return candidates[bestIdx], bestScore, true
+}
+
 // BestCandidate picks the highest-scoring candidate. Returns the candidate,
 // its score, and whether any candidate was found.
 func BestCandidate(candidates []Candidate, localTitle, localArtist string, localYear int) (Candidate, float64, bool) {
