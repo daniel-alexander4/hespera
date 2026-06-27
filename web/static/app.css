@@ -457,15 +457,15 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   cursor: pointer;
 }
 
-/* Music tabs */
-.music-tabs {
+/* Sub-tabs (Music / TV / Movies media pages) */
+.subtabs {
   display: flex;
   gap: 0.25rem;
   margin-bottom: 1.25rem;
   border-bottom: 1px solid var(--border-default);
   padding-bottom: 0.5rem;
 }
-.music-tab {
+.subtab {
   padding: 0.35rem 0.85rem;
   border-radius: 6px;
   border: none;
@@ -476,10 +476,10 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.music-tab:hover { background: var(--accent-bg); color: var(--page-fg); }
-.music-tab.active { background: var(--accent-bg); color: var(--page-fg); font-weight: 600; }
-.music-tab-panel { display: none; }
-.music-tab-panel.active { display: block; }
+.subtab:hover { background: var(--accent-bg); color: var(--page-fg); }
+.subtab.active { background: var(--accent-bg); color: var(--page-fg); font-weight: 600; }
+.subtab-panel { display: none; }
+.subtab-panel.active { display: block; }
 
 /* Section title */
 .section-title {

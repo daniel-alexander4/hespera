@@ -9,14 +9,14 @@
 </div>
 {{else}}
 
-<div class="music-tabs">
-  <button class="music-tab active" data-tab="artists">Artists</button>
-  <button class="music-tab" data-tab="compilations">Compilations</button>
-  <button class="music-tab" data-tab="recent">Recent</button>
+<div class="subtabs">
+  <button class="subtab active" data-tab="recent">Recent</button>
+  <button class="subtab" data-tab="artists">Artists</button>
+  <button class="subtab" data-tab="compilations">Compilations</button>
 </div>
 
 <!-- Artists Tab -->
-<div class="music-tab-panel active" id="tab-artists">
+<div class="subtab-panel" id="tab-artists">
   {{if .Artists}}
   <div class="band-albums-grid">
     {{range .Artists}}
@@ -41,7 +41,7 @@
 </div>
 
 <!-- Compilations Tab -->
-<div class="music-tab-panel" id="tab-compilations">
+<div class="subtab-panel" id="tab-compilations">
   {{if .Compilations}}
   <div class="band-albums-grid">
     {{range .Compilations}}
@@ -66,7 +66,7 @@
 </div>
 
 <!-- Recent Tab -->
-<div class="music-tab-panel" id="tab-recent">
+<div class="subtab-panel active" id="tab-recent">
   {{if .RecentlyPlayed}}
   <h3 class="section-title">Recently Played Artists</h3>
   <div class="home-carousel-row">
@@ -112,23 +112,6 @@
   <div class="empty-state"><p>No recent activity. Start playing some music!</p></div>
   {{end}}{{end}}
 </div>
-
-<script>
-(() => {
-  const tabs = Array.from(document.querySelectorAll('.music-tab'));
-  const panels = Array.from(document.querySelectorAll('.music-tab-panel'));
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      const target = tab.getAttribute('data-tab');
-      tabs.forEach(t => t.classList.remove('active'));
-      panels.forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      const panel = document.getElementById('tab-' + target);
-      if (panel) panel.classList.add('active');
-    });
-  });
-})();
-</script>
 
 {{end}}
 {{end}}

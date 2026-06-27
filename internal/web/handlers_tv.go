@@ -73,10 +73,85 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// "Recent" sub-tab content — non-fatal so the page still renders if these fail.
+	recentlyWatched, err := h.recentTVSeries(r.Context(), tvRecentlyWatchedQuery, 18)
+	if err != nil {
+		slog.Warn("load recently-watched tv failed", "handler", "tvSeriesList", "err", err)
+	}
+	recentlyAdded, err := h.recentTVSeries(r.Context(), tvRecentlyAddedQuery, 18)
+	if err != nil {
+		slog.Warn("load recently-added tv failed", "handler", "tvSeriesList", "err", err)
+	}
+
 	h.render(w, "tv_home.html", map[string]any{
-		"Title":  "TV Shows",
-		"Series": series,
+		"Title":           "TV Shows",
+		"Series":          series,
+		"RecentlyWatched": recentlyWatched,
+		"RecentlyAdded":   recentlyAdded,
 	})
+}
+
+// TV "Recent" sub-tab queries: matched series ordered by most-recent playback
+// (recently watched) and by newest file mtime on disk (recently added — there is
+// no created_at on tv_series_files, and mtime tracks when a download landed).
+const tvRecentlyWatchedQuery = `
+SELECT i.series_id
+FROM tv_playback_progress p
+JOIN tv_series_files f ON f.id = p.file_id
+JOIN tv_series_identities i ON i.file_id = f.id
+WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
+GROUP BY i.series_id
+ORDER BY MAX(p.updated_at) DESC
+LIMIT ?`
+
+const tvRecentlyAddedQuery = `
+SELECT i.series_id
+FROM tv_series_identities i
+JOIN tv_series_files f ON f.id = i.file_id
+WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
+GROUP BY i.series_id
+ORDER BY MAX(f.mtime_unix) DESC
+LIMIT ?`
+
+// recentTVSeries runs an ordered series-id query and resolves each id to a
+// display row (name/year/poster) via the shared metadata-cache helper, used by
+// the TV "Recent" sub-tab. Series ids are kept in query order.
+func (h *Handler) recentTVSeries(ctx context.Context, query string, limit int) ([]tvSeriesRow, error) {
+	rows, err := h.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err != nil {
+			return nil, err
+		}
+		ids = append(ids, sid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	metas := h.loadShowMetaSummaries(ctx, ids)
+	out := make([]tvSeriesRow, 0, len(ids))
+	for _, sid := range ids {
+		meta := metas[sid]
+		if meta.name == "" {
+			meta.name = "Unknown Series (TMDB " + sid + ")"
+		}
+		out = append(out, tvSeriesRow{
+			SeriesID:   sid,
+			Name:       meta.name,
+			Year:       meta.year,
+			PosterPath: meta.posterPath,
+			IsMatched:  true,
+		})
+	}
+	return out, nil
 }
 
 func (h *Handler) loadTVSeriesList(ctx context.Context) ([]tvSeriesRow, error) {
