@@ -181,6 +181,63 @@ func TestBestCandidateStudioOverAltEditions(t *testing.T) {
 	}
 }
 
+func TestCandidatesAboveThreshold(t *testing.T) {
+	candidates := []Candidate{
+		{ReleaseGroupID: "live", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", SecondaryTypes: []string{"Live"}, MBScore: 100, Year: 1991},
+		{ReleaseGroupID: "studio", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", MBScore: 100, Year: 1990},
+		{ReleaseGroupID: "single", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Single", MBScore: 100, Year: 1990},
+		{ReleaseGroupID: "wrong", Title: "Thriller", ArtistName: "Michael Jackson", PrimaryType: "Album", MBScore: 100, Year: 1982},
+	}
+	got := CandidatesAboveThreshold(candidates, "Painkiller", "Judas Priest", 1990)
+
+	// The wrong-album candidate scores well below threshold and is excluded.
+	for _, sc := range got {
+		if sc.Candidate.ReleaseGroupID == "wrong" {
+			t.Fatal("different-album candidate should be below threshold")
+		}
+	}
+	if len(got) == 0 {
+		t.Fatal("expected at least the studio candidate above threshold")
+	}
+	// First element matches BestCandidate's pick (the clean studio album).
+	best, _, _ := BestCandidate(candidates, "Painkiller", "Judas Priest", 1990)
+	if got[0].Candidate.ReleaseGroupID != best.ReleaseGroupID {
+		t.Fatalf("first = %q, want BestCandidate %q", got[0].Candidate.ReleaseGroupID, best.ReleaseGroupID)
+	}
+	if got[0].Candidate.ReleaseGroupID != "studio" {
+		t.Fatalf("first = %q, want studio", got[0].Candidate.ReleaseGroupID)
+	}
+	// Descending score order.
+	for i := 1; i < len(got); i++ {
+		if got[i].Score > got[i-1].Score {
+			t.Fatalf("not sorted descending at %d: %.1f > %.1f", i, got[i].Score, got[i-1].Score)
+		}
+	}
+}
+
+func TestIsCleanAlbum(t *testing.T) {
+	tests := []struct {
+		name string
+		c    Candidate
+		want bool
+	}{
+		{"studio album", Candidate{PrimaryType: "Album"}, true},
+		{"album + live secondary", Candidate{PrimaryType: "Album", SecondaryTypes: []string{"Live"}}, false},
+		{"album + compilation", Candidate{PrimaryType: "Album", SecondaryTypes: []string{"Compilation"}}, false},
+		{"album + soundtrack (allowed)", Candidate{PrimaryType: "Album", SecondaryTypes: []string{"Soundtrack"}}, true},
+		{"EP", Candidate{PrimaryType: "EP"}, false},
+		{"single", Candidate{PrimaryType: "Single"}, false},
+		{"live primary", Candidate{PrimaryType: "Live"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isCleanAlbum(tt.c); got != tt.want {
+				t.Fatalf("isCleanAlbum() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestYearBonus(t *testing.T) {
 	tests := []struct {
 		mbYear, localYear int
