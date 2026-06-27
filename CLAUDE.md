@@ -54,6 +54,7 @@ go vet ./...
 - **Handler DI**: `web.Handler` receives `web.Deps{Cfg, DB}`; `web.New(d)` compiles templates, starts job service, initializes auth.
 - **Routing**: stdlib `http.ServeMux`, routes registered in `web.Router()`. Auth middleware wraps entire mux if enabled.
 - **Templates**: `html/template` from `web/templates/` at startup. Layout base cloned per page, merged with `partials_*.html` glob. FuncMap: `staticv` (cache-bust), `humanBytes`, `mult`.
+- **Theming**: Catppuccin via CSS custom properties in `app.css` — `:root` = Mocha (dark, default), `html[data-mode="light"]` = Latte. A pre-paint script in `layout.html` sets `data-mode` from `localStorage.iso_theme_mode` (first visit follows `prefers-color-scheme`, fallback dark); the `.theme-toggle` sun/moon button in the topbar flips and persists it. Hidden in couch mode (it lives in `.topbar`, which `tv.css` hides).
 - **Database**: `modernc.org/sqlite`, WAL, 8 max open / 4 idle, 5s busy timeout, FK on. Migrations in `db.Migrate()` with `ensureColumn()` for schema evolution.
 - **Jobs**: `jobs.Service.Enqueue(jobType, libraryID, createdBy, executor)`. States: queued → running → done/failed/canceled. Progress in `scan_jobs` table.
 - **Scanner pattern**: `scan.New(cfg, db)` / `match.New(db, dataDir)` constructed inline per handler call, passed as executor closure to `jobs.Enqueue`.
