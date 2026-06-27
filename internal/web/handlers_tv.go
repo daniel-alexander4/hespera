@@ -260,7 +260,7 @@ func (h *Handler) tvSeriesDetail(w http.ResponseWriter, r *http.Request) {
 SELECT i.season_number, COUNT(*) AS ep_count
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.series_id = ? AND i.status = 'matched'
+WHERE i.series_id = ? AND i.status = 'matched' AND i.season_number >= 0
 GROUP BY i.season_number
 ORDER BY i.season_number
 `, seriesID)

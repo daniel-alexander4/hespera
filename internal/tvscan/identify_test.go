@@ -182,6 +182,50 @@ func TestIdentifyXFormat(t *testing.T) {
 	}
 }
 
+func TestIdentifyAirDate(t *testing.T) {
+	// Year-first dates resolve to method=airdate with the show title and an
+	// unknown (-1) season; the matcher fills season/episode later.
+	resolves := []struct {
+		path      string
+		wantTitle string
+		wantDate  string
+	}{
+		{"/tv/The Tonight Show/The.Tonight.Show.2024-01-15.mkv", "The Tonight Show", "2024-01-15"},
+		{"/tv/The Tonight Show/The.Tonight.Show.2024.01.15.mkv", "The Tonight Show", "2024-01-15"},
+		{"/tv/Colbert/Colbert.2024-01-15.Guest.Name.1080p.mkv", "Colbert", "2024-01-15"},
+	}
+	for _, tt := range resolves {
+		id := IdentifyFile(tt.path)
+		if id == nil || id.Method != "airdate" {
+			t.Fatalf("%s: want method airdate, got %+v", tt.path, id)
+		}
+		if id.AirDate != tt.wantDate {
+			t.Fatalf("%s: AirDate = %q, want %q", tt.path, id.AirDate, tt.wantDate)
+		}
+		if id.ShowTitle != tt.wantTitle {
+			t.Fatalf("%s: ShowTitle = %q, want %q", tt.path, id.ShowTitle, tt.wantTitle)
+		}
+		if id.SeasonNumber != -1 {
+			t.Fatalf("%s: SeasonNumber = %d, want -1", tt.path, id.SeasonNumber)
+		}
+	}
+
+	// These must NOT be read as air dates: a bare year, year-as-season, a year
+	// in the title (resolved by its SxE marker), and impossible dates.
+	for _, path := range []string{
+		"/tv/Show/Show.2024.mkv",
+		"/tv/The Daily Show/The.Daily.Show.S2024E12.mkv",
+		"/tv/Stranger Things/Season 4/Stranger.Things.2016.S04E01.mkv",
+		"/tv/Show/Show.2020.13.45.mkv",
+		"/tv/Show/Show.2020.40.50.mkv",
+	} {
+		id := IdentifyFile(path)
+		if id != nil && id.Method == "airdate" {
+			t.Fatalf("%s: should not parse as airdate, got %+v", path, id)
+		}
+	}
+}
+
 // Without a season directory and without a title in the filename, the
 // identifier must NOT manufacture a show title from an arbitrary container
 // folder — it leaves the title empty, consistent across sxe and x_format.

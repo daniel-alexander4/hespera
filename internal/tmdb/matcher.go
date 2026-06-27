@@ -37,7 +37,7 @@ func (m *Matcher) RunTVMatch(ctx context.Context, jobID, libraryID int64) error 
 
 	// Query all unresolved identities for this library.
 	rows, err := m.db.QueryContext(ctx, `
-SELECT i.file_id, i.guessed_title, i.season_number
+SELECT i.file_id, i.guessed_title, i.season_number, i.air_date
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 WHERE i.status = 'unmatched'
@@ -52,6 +52,7 @@ WHERE i.status = 'unmatched'
 	type fileEntry struct {
 		fileID       int64
 		seasonNumber int
+		airDate      string // "YYYY-MM-DD" for date-based files; "" otherwise
 	}
 	// Group by normalized title.
 	groups := make(map[string][]fileEntry)
@@ -59,7 +60,7 @@ WHERE i.status = 'unmatched'
 	for rows.Next() {
 		var fe fileEntry
 		var title string
-		if err := rows.Scan(&fe.fileID, &title, &fe.seasonNumber); err != nil {
+		if err := rows.Scan(&fe.fileID, &title, &fe.seasonNumber, &fe.airDate); err != nil {
 			return err
 		}
 		key := strings.ToLower(strings.TrimSpace(title))
@@ -160,15 +161,28 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 			}
 		}
 
-		// Collect unique seasons referenced by files.
+		// Collect unique seasons referenced by files. When any file is
+		// date-based, widen to every season the show has so we can resolve the
+		// air date against the full episode list.
 		seasonSet := make(map[int]bool)
+		hasAirDate := false
 		for _, fe := range files {
+			if fe.airDate != "" {
+				hasAirDate = true
+			}
 			if fe.seasonNumber >= 0 {
 				seasonSet[fe.seasonNumber] = true
 			}
 		}
+		if hasAirDate {
+			for _, s := range show.Seasons {
+				seasonSet[s.SeasonNumber] = true
+			}
+		}
 
-		// Fetch and cache each referenced season.
+		// Fetch and cache each referenced season, building an air-date index
+		// along the way for date-based resolution.
+		airIndex := airDateIndex{}
 		for sn := range seasonSet {
 			season, err := m.client.FetchTVSeason(ctx, showID, sn)
 			if err != nil {
@@ -201,11 +215,36 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 
 			// Cache episode metadata.
 			m.cacheEpisodes(ctx, showID, sn, season.Episodes)
+			if hasAirDate {
+				airIndex.add(sn, season.Episodes)
+			}
 		}
 
-		// Update identities for all files in this group.
+		// Update identities for all files in this group. Date-based files become
+		// matched only when their air date resolves to exactly one season's
+		// episode(s); otherwise they stay unmatched (retriable next run) rather
+		// than freezing as a matched-but-episode-less row.
 		now := time.Now().UTC().Format(time.RFC3339)
 		for _, fe := range files {
+			if fe.airDate != "" {
+				season, csv, ok := airIndex.resolve(fe.airDate)
+				if !ok {
+					slog.Info("tmdb airdate unresolved", "title", rawTitle, "date", fe.airDate, "show", showID)
+					continue
+				}
+				_, _ = m.db.ExecContext(ctx, `
+UPDATE tv_series_identities SET
+  provider='tmdb',
+  series_id=?,
+  status='matched',
+  season_number=?,
+  episode_numbers_csv=?,
+  match_confidence=?,
+  matched_at=?
+WHERE file_id=?
+`, strconv.Itoa(showID), season, csv, bestScore, now, fe.fileID)
+				continue
+			}
 			_, _ = m.db.ExecContext(ctx, `
 UPDATE tv_series_identities SET
   provider='tmdb',
