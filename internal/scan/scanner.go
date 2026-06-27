@@ -357,33 +357,88 @@ WHERE al.library_id = ?
 		default:
 		}
 
-		// Skip if this album's tracks were already merged into another candidate
-		// earlier in this loop (same title+year variant that was processed first).
-		var trackCount int
-		if err := tx.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM music_tracks WHERE album_id = ?", a.id,
-		).Scan(&trackCount); err != nil {
+		// Per-artist track distribution for this album. A zero total means the album's
+		// tracks were already merged into another variant earlier in this loop. A single
+		// artist holding a strict majority means the multi-artist signal is mis-tagged or
+		// outlier tracks (e.g. an album of untagged "Unknown Artist" tracks plus one stray
+		// from another folder), not a genuine various-artists compilation -- leave it under
+		// its own artist. A true compilation has no dominant artist.
+		artistRows, err := tx.QueryContext(ctx,
+			"SELECT COUNT(*) FROM music_tracks WHERE album_id = ? GROUP BY artist_id", a.id)
+		if err != nil {
 			return err
 		}
-		if trackCount == 0 {
+		total, maxByArtist := 0, 0
+		for artistRows.Next() {
+			var cnt int
+			if err := artistRows.Scan(&cnt); err != nil {
+				artistRows.Close()
+				return err
+			}
+			total += cnt
+			if cnt > maxByArtist {
+				maxByArtist = cnt
+			}
+		}
+		if err := artistRows.Err(); err != nil {
+			artistRows.Close()
+			return err
+		}
+		artistRows.Close()
+		if total == 0 || maxByArtist*2 > total {
 			continue
 		}
 
-		// Mark this album as compilation with "Various Artists" album artist.
 		vaID, err := ensureArtist(ctx, tx, libraryID, "Various Artists")
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `
+
+		// music_albums has UNIQUE(library_id, artist_id, title, year), so at most one
+		// Various Artists album can exist for this title+year. If one already does,
+		// reparenting this candidate to VA would collide on that key. Resolve a
+		// collision-free canonical target: reuse the existing VA album when it holds
+		// tracks, or drop it when it is an empty orphan (a stale shell left by a prior
+		// promotion whose tracks later moved) so the candidate -- which carries the
+		// match/art -- is promoted in its place.
+		target := a.id
+		var existingVAID int64
+		var existingVATracks int
+		err = tx.QueryRowContext(ctx, `
+SELECT al.id, (SELECT COUNT(*) FROM music_tracks t WHERE t.album_id = al.id)
+FROM music_albums al
+WHERE al.library_id = ? AND al.artist_id = ? AND lower(al.title) = lower(?) AND al.year = ? AND al.id <> ?
+LIMIT 1
+`, libraryID, vaID, strings.TrimSpace(a.title), a.year, a.id).Scan(&existingVAID, &existingVATracks)
+		switch {
+		case err == sql.ErrNoRows:
+			// No conflicting VA album -- promote the candidate below.
+		case err != nil:
+			return err
+		case existingVATracks > 0:
+			target = existingVAID
+		default:
+			// Empty orphan VA shell -- delete it so the candidate can be promoted.
+			if _, err := tx.ExecContext(ctx, "DELETE FROM music_albums WHERE id = ?", existingVAID); err != nil {
+				return err
+			}
+		}
+
+		if target == a.id {
+			if _, err := tx.ExecContext(ctx, `
 UPDATE music_albums SET is_compilation = 1, artist_id = ?, album_artist_id = ? WHERE id = ?
-`, vaID, vaID, a.id)
-		if err != nil {
+`, vaID, vaID, a.id); err != nil {
+				return fmt.Errorf("mark compilation: %w", err)
+			}
+		} else if _, err := tx.ExecContext(ctx, `
+UPDATE music_albums SET is_compilation = 1, album_artist_id = ? WHERE id = ?
+`, vaID, target); err != nil {
 			return fmt.Errorf("mark compilation: %w", err)
 		}
 
-		// Merge any other album records with the same title+year into this one (BUG-03 fix).
+		// Merge any other album records with the same title+year onto the target (BUG-03 fix).
 		// Now safe because all tracks are already inserted -- no more files will create new variants.
-		_, err = tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 UPDATE music_tracks SET album_id = ?
 WHERE library_id = ?
   AND album_id IN (
@@ -393,8 +448,7 @@ WHERE library_id = ?
       AND year = ?
       AND id <> ?
   )
-`, a.id, libraryID, libraryID, strings.TrimSpace(a.title), a.year, a.id)
-		if err != nil {
+`, target, libraryID, libraryID, strings.TrimSpace(a.title), a.year, target); err != nil {
 			return fmt.Errorf("merge album variants: %w", err)
 		}
 	}

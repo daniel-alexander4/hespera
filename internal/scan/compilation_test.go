@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 )
 
@@ -262,6 +263,144 @@ func TestFinalizeCompilations(t *testing.T) {
 		}
 		if tracks1 != tracks2 {
 			t.Fatalf("track count changed: %d -> %d", tracks1, tracks2)
+		}
+	})
+
+	t.Run("dominant-artist album is not promoted to compilation", func(t *testing.T) {
+		// 8 tracks by one artist + 1 stray by another: a mis-tagged single-artist
+		// album, not a compilation. The strict-majority guard must leave it alone.
+		db := openTestDB(t)
+		libID := seedLibrary(t, db, "Music", "music", "/tmp/music")
+		ctx := context.Background()
+
+		main := seedArtist(t, db, libID, "Main Artist")
+		stray := seedArtist(t, db, libID, "Stray Artist")
+		albumID := seedAlbum(t, db, libID, main, "Mostly Mine", 1968, false)
+		for i := 1; i <= 8; i++ {
+			seedTrack(t, db, libID, main, albumID, fmt.Sprintf("M%d", i), i, fmt.Sprintf("/tmp/music/m%d.mp3", i))
+		}
+		seedTrack(t, db, libID, stray, albumID, "Stray", 9, "/tmp/music/stray.mp3")
+
+		scanner := &Scanner{DB: db}
+		if err := scanner.finalizeCompilations(ctx, libID); err != nil {
+			t.Fatalf("finalizeCompilations: %v", err)
+		}
+
+		var isComp int
+		var artistID int64
+		if err := db.QueryRow("SELECT is_compilation, artist_id FROM music_albums WHERE id=?", albumID).Scan(&isComp, &artistID); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if isComp != 0 {
+			t.Fatalf("expected is_compilation=0 (dominant artist), got %d", isComp)
+		}
+		if artistID != main {
+			t.Fatalf("expected album to stay under main artist %d, got %d", main, artistID)
+		}
+	})
+
+	t.Run("collision with empty Various Artists orphan is resolved", func(t *testing.T) {
+		// Reproduces the production deadlock: an empty VA album already occupies
+		// (VA, title, year), so reparenting a genuine candidate to VA used to fail
+		// on the UNIQUE constraint and abort the whole scan. The orphan must be
+		// dropped and the candidate (which carries match/art) promoted in its place.
+		db := openTestDB(t)
+		libID := seedLibrary(t, db, "Music", "music", "/tmp/music")
+		ctx := context.Background()
+
+		va := seedArtist(t, db, libID, "Various Artists")
+		orphan := seedAlbum(t, db, libID, va, "Collide", 2000, true) // empty, is_compilation=1
+
+		x := seedArtist(t, db, libID, "X")
+		y := seedArtist(t, db, libID, "Y")
+		cand := seedAlbum(t, db, libID, x, "Collide", 2000, false)
+		seedTrack(t, db, libID, x, cand, "CX", 1, "/tmp/music/cx.mp3")
+		seedTrack(t, db, libID, y, cand, "CY", 2, "/tmp/music/cy.mp3")
+		if _, err := db.Exec("UPDATE music_albums SET art_path=?, match_status='matched' WHERE id=?", "/thumbs/cand.jpg", cand); err != nil {
+			t.Fatalf("set art: %v", err)
+		}
+
+		scanner := &Scanner{DB: db}
+		if err := scanner.finalizeCompilations(ctx, libID); err != nil {
+			t.Fatalf("finalizeCompilations: %v", err)
+		}
+
+		// Exactly one album row survives for (Collide, 2000): the candidate.
+		var id, artistID int64
+		var isComp int
+		var artPath string
+		if err := db.QueryRow(
+			"SELECT id, is_compilation, artist_id, art_path FROM music_albums WHERE library_id=? AND lower(title)=lower(?) AND year=?",
+			libID, "Collide", 2000,
+		).Scan(&id, &isComp, &artistID, &artPath); err != nil {
+			t.Fatalf("query survivor (expected exactly one row): %v", err)
+		}
+		if id != cand {
+			t.Fatalf("expected surviving album to be the candidate %d, got %d (orphan kept?)", cand, id)
+		}
+		if isComp != 1 || artistID != va {
+			t.Fatalf("expected promoted VA compilation, got is_comp=%d artist=%d", isComp, artistID)
+		}
+		if artPath != "/thumbs/cand.jpg" {
+			t.Fatalf("candidate art_path lost: %q", artPath)
+		}
+		var nTracks int
+		db.QueryRow("SELECT COUNT(*) FROM music_tracks WHERE album_id=?", cand).Scan(&nTracks)
+		if nTracks != 2 {
+			t.Fatalf("expected 2 tracks on survivor, got %d", nTracks)
+		}
+		// Orphan row is gone.
+		var orphanGone int
+		db.QueryRow("SELECT COUNT(*) FROM music_albums WHERE id=?", orphan).Scan(&orphanGone)
+		if orphanGone != 0 {
+			t.Fatalf("empty VA orphan should have been deleted")
+		}
+	})
+
+	t.Run("collision with non-empty Various Artists album merges into it", func(t *testing.T) {
+		db := openTestDB(t)
+		libID := seedLibrary(t, db, "Music", "music", "/tmp/music")
+		ctx := context.Background()
+
+		va := seedArtist(t, db, libID, "Various Artists")
+		p := seedArtist(t, db, libID, "P")
+		q := seedArtist(t, db, libID, "Q")
+		existing := seedAlbum(t, db, libID, va, "Merge", 2001, true) // real comp, has tracks
+		seedTrack(t, db, libID, p, existing, "EP", 1, "/tmp/music/ep.mp3")
+		seedTrack(t, db, libID, q, existing, "EQ", 2, "/tmp/music/eq.mp3")
+
+		x := seedArtist(t, db, libID, "RX")
+		y := seedArtist(t, db, libID, "RY")
+		cand := seedAlbum(t, db, libID, x, "Merge", 2001, false)
+		seedTrack(t, db, libID, x, cand, "MX", 1, "/tmp/music/mx.mp3")
+		seedTrack(t, db, libID, y, cand, "MY", 2, "/tmp/music/my.mp3")
+
+		scanner := &Scanner{DB: db}
+		if err := scanner.finalizeCompilations(ctx, libID); err != nil {
+			t.Fatalf("finalizeCompilations: %v", err)
+		}
+
+		// All four tracks consolidate onto the existing VA album.
+		var ids []int64
+		rows, err := db.Query("SELECT DISTINCT album_id FROM music_tracks WHERE library_id=?", libID)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			ids = append(ids, id)
+		}
+		if len(ids) != 1 || ids[0] != existing {
+			t.Fatalf("expected all tracks on existing VA album %d, got %v", existing, ids)
+		}
+		var n int
+		db.QueryRow("SELECT COUNT(*) FROM music_tracks WHERE album_id=?", existing).Scan(&n)
+		if n != 4 {
+			t.Fatalf("expected 4 tracks merged, got %d", n)
 		}
 	})
 }
