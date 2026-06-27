@@ -405,7 +405,6 @@ auth_user_keys (id, user_id FK, public_key, UNIQUE(user_id, public_key))
 | SSH_KEYGEN_PATH | ssh-keygen | Path to ssh-keygen binary |
 | HESPERA_FFMPEG_CONCURRENCY | 4 | Max concurrent FFmpeg processes |
 | HESPERA_FFMPEG_ACQUIRE_TIMEOUT | 2s | Timeout to acquire FFmpeg slot |
-| HESPERA_TV_TRANSCODED_CACHE_MAX_BYTES | 20GB | Transcoded cache size limit |
 | HESPERA_TV_HLS_CACHE_MAX_BYTES | 20GB | HLS cache size limit |
 | HESPERA_TV_CACHE_MAX_AGE | 72h | Cache entry max age |
 
