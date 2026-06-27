@@ -47,8 +47,6 @@ type tvEpisodeRow struct {
 	Name          string
 	AirDate       string
 	Overview      string
-	Resolution    string
-	VideoCodec    string
 	FileID        int64
 	ProgressPct   int
 	Completed     bool
@@ -235,7 +233,17 @@ ORDER BY lower(i.guessed_title)
 			EpisodeCount: count,
 		})
 	}
-	return out, unmatchedRows.Err()
+	if err := unmatchedRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Display the full shows list alphabetically by title (case-insensitive).
+	// SQL can't order it: matched-series names are resolved from the TMDB
+	// metadata cache in Go above, not present on the queried rows.
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out, nil
 }
 
 type showMetaSummary struct {
@@ -472,7 +480,7 @@ func (h *Handler) tvSeasonDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Query files for this series+season, with playback progress.
 	fileRows, err := h.db.QueryContext(r.Context(), `
-SELECT f.id, i.episode_numbers_csv, f.stream_info_json,
+SELECT f.id, i.episode_numbers_csv,
        COALESCE(p.position_seconds, 0), COALESCE(p.duration_seconds, 0), COALESCE(p.completed, 0)
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
@@ -490,14 +498,13 @@ ORDER BY i.episode_numbers_csv
 	var episodes []tvEpisodeRow
 	for fileRows.Next() {
 		var fileID int64
-		var epCSV, streamJSON string
+		var epCSV string
 		var pos, dur float64
 		var completed int
-		if err := fileRows.Scan(&fileID, &epCSV, &streamJSON, &pos, &dur, &completed); err != nil {
+		if err := fileRows.Scan(&fileID, &epCSV, &pos, &dur, &completed); err != nil {
 			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeasonDetail", "err", err)
 			return
 		}
-		resolution, videoCodec := extractVideoInfo(streamJSON)
 
 		progressPct := 0
 		if dur > 0 {
@@ -521,8 +528,6 @@ ORDER BY i.episode_numbers_csv
 
 			epRow := tvEpisodeRow{
 				EpisodeNumber: epNum,
-				Resolution:    resolution,
-				VideoCodec:    videoCodec,
 				FileID:        fileID,
 				ProgressPct:   progressPct,
 				Completed:     completed == 1,
@@ -1186,30 +1191,3 @@ ON CONFLICT(file_id) DO UPDATE SET
 }
 
 // --- Helpers ---
-
-func extractVideoInfo(streamJSON string) (resolution, videoCodec string) {
-	if streamJSON == "" || streamJSON == "{}" {
-		return "", ""
-	}
-	type stream struct {
-		CodecType string `json:"codec_type"`
-		CodecName string `json:"codec_name"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-	}
-	type probeData struct {
-		Streams []stream `json:"streams"`
-	}
-	var pd probeData
-	if err := json.Unmarshal([]byte(streamJSON), &pd); err != nil {
-		return "", ""
-	}
-	for _, s := range pd.Streams {
-		if s.CodecType == "video" && s.Width > 0 {
-			resolution = fmt.Sprintf("%dx%d", s.Width, s.Height)
-			videoCodec = s.CodecName
-			return
-		}
-	}
-	return "", ""
-}
