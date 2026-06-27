@@ -575,40 +575,6 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 		return
 	}
 
-	rows, err := h.db.QueryContext(r.Context(), `
-		SELECT t.id, t.title, t.track_no, t.disc_no, ar.name
-		FROM music_tracks t
-		JOIN music_artists ar ON ar.id = t.artist_id
-		WHERE t.album_id=?
-		ORDER BY t.disc_no, t.track_no, lower(t.title)
-	`, albumID)
-	if err != nil {
-		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbumEditGET", "err", err)
-		return
-	}
-	defer rows.Close()
-
-	type editTrack struct {
-		ID      int64
-		Title   string
-		TrackNo int
-		DiscNo  int
-		Artist  string
-	}
-	var tracks []editTrack
-	for rows.Next() {
-		var t editTrack
-		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNo, &t.DiscNo, &t.Artist); err != nil {
-			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumEditGET", "err", err)
-			return
-		}
-		tracks = append(tracks, t)
-	}
-	if err := rows.Err(); err != nil {
-		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbumEditGET", "err", err)
-		return
-	}
-
 	var successCount, errorCount, movedCount int
 	if s := r.URL.Query().Get("success"); s != "" {
 		successCount, _ = strconv.Atoi(s)
@@ -620,11 +586,6 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 		movedCount, _ = strconv.Atoi(s)
 	}
 
-	mode := r.URL.Query().Get("mode")
-	if mode != "single" {
-		mode = "all"
-	}
-
 	h.render(w, "music_album_edit.html", map[string]any{
 		"Title":         "Edit Album",
 		"AlbumID":       albumID,
@@ -633,8 +594,6 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 		"ArtistName":    artistName,
 		"IsMatched":     matchStatus == "matched",
 		"CurrentRGMBID": currentRGMBID,
-		"Tracks":        tracks,
-		"Mode":          mode,
 		"Success":       successCount,
 		"Errors":        errorCount,
 		"Moved":         movedCount,
@@ -647,7 +606,6 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 		return
 	}
 
-	mode := r.FormValue("mode") // "all" or "single"
 	newAlbum := strings.TrimSpace(r.FormValue("title"))
 	newAlbumArtist := strings.TrimSpace(r.FormValue("artist"))
 	newYear, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("year")))
@@ -665,58 +623,38 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 		return
 	}
 
-	// Query abs_path for affected tracks.
+	// Query abs_path for every track on the album — the edit writes album-level
+	// title/artist/year across all of them (per-track fields are edited via the
+	// per-track editor, not here).
 	type trackInfo struct {
 		ID      int64
 		AbsPath string
 	}
 	var affectedTracks []trackInfo
-
-	if mode == "single" {
-		trackID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("track_id")), 10, 64)
-		if err != nil || trackID <= 0 {
-			http.Error(w, "no track selected", 400)
+	rows, err := h.db.QueryContext(r.Context(),
+		"SELECT id, abs_path FROM music_tracks WHERE album_id=?", albumID)
+	if err != nil {
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbumEditPOST", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t trackInfo
+		if err := rows.Scan(&t.ID, &t.AbsPath); err != nil {
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumEditPOST", "err", err)
 			return
 		}
-		var absPath string
-		if err := h.db.QueryRowContext(r.Context(),
-			"SELECT abs_path FROM music_tracks WHERE id=? AND album_id=?", trackID, albumID).Scan(&absPath); err != nil {
-			http.Error(w, "track not found", 404)
-			return
-		}
-		affectedTracks = []trackInfo{{ID: trackID, AbsPath: absPath}}
-	} else {
-		rows, err := h.db.QueryContext(r.Context(),
-			"SELECT id, abs_path FROM music_tracks WHERE album_id=?", albumID)
-		if err != nil {
-			httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbumEditPOST", "err", err)
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var t trackInfo
-			if err := rows.Scan(&t.ID, &t.AbsPath); err != nil {
-				httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumEditPOST", "err", err)
-				return
-			}
-			affectedTracks = append(affectedTracks, t)
-		}
-		if err := rows.Err(); err != nil {
-			httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbumEditPOST", "err", err)
-			return
-		}
+		affectedTracks = append(affectedTracks, t)
+	}
+	if err := rows.Err(); err != nil {
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicAlbumEditPOST", "err", err)
+		return
 	}
 
 	if len(affectedTracks) == 0 {
 		http.Error(w, "no tracks found", 404)
 		return
 	}
-
-	// Single-track fields (only used in single mode).
-	stTitle := strings.TrimSpace(r.FormValue("single_track_title"))
-	stArtist := strings.TrimSpace(r.FormValue("single_track_artist"))
-	stTrackNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("single_track_no")))
-	stDiscNo, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("single_track_disc")))
 
 	// Write tags to files.
 	var successPaths []string
@@ -747,21 +685,6 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 			Artist:  meta.Artist,
 			TrackNo: meta.Track,
 			DiscNo:  meta.Disc,
-		}
-
-		if mode == "single" {
-			if stTitle != "" {
-				fields.Title = stTitle
-			}
-			if stArtist != "" {
-				fields.Artist = stArtist
-			}
-			if stTrackNo > 0 {
-				fields.TrackNo = stTrackNo
-			}
-			if stDiscNo > 0 {
-				fields.DiscNo = stDiscNo
-			}
 		}
 
 		if err := music.WriteTrackTags(t.AbsPath, fields); err != nil {
