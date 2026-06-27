@@ -2,7 +2,9 @@ package web
 
 import (
 	"context"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +21,10 @@ import (
 	"hespera/internal/pathguard"
 	"hespera/internal/scan"
 )
+
+// maxAlbumArtBytes caps a manually uploaded cover image, matching the Cover Art
+// Archive download cap (coverart.go).
+const maxAlbumArtBytes = 15 << 20
 
 // --- Row types ---
 
@@ -777,6 +783,110 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", newAlbumID), http.StatusSeeOther)
 }
 
+// musicAlbumArtUpload lets a user manually set an album's cover art when none
+// could be matched (Cover Art Archive has no image, or the album mis-matched).
+// The uploaded file is validated as a real image, stored under thumbs/music, and
+// art_path is set unconditionally. The scanner/matcher art writers are
+// empty-only-guarded, so manual art is never overwritten by a later rescan/match.
+// Mounted under /music/ (not /art/) so the auth + same-origin-CSRF middleware
+// applies. Single-file image upload only — no fetch-by-URL (SSRF surface).
+func (h *Handler) musicAlbumArtUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// Bound the whole request body before parsing — ParseMultipartForm's argument
+	// only caps the in-memory portion (the rest spills to disk).
+	r.Body = http.MaxBytesReader(w, r.Body, maxAlbumArtBytes+(1<<20))
+	if err := r.ParseMultipartForm(maxAlbumArtBytes); err != nil {
+		http.Error(w, "upload too large or malformed", http.StatusBadRequest)
+		return
+	}
+
+	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
+	if err != nil || albumID <= 0 {
+		http.Error(w, "invalid album_id", http.StatusBadRequest)
+		return
+	}
+	var exists int
+	if err := h.db.QueryRowContext(r.Context(), "SELECT 1 FROM music_albums WHERE id=?", albumID).Scan(&exists); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	file, _, err := r.FormFile("art")
+	if err != nil {
+		http.Error(w, "no image file provided", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxAlbumArtBytes))
+	if err != nil {
+		httpError(w, 500, "internal server error", "read upload failed", "handler", "musicAlbumArtUpload", "err", err)
+		return
+	}
+
+	// Derive the MIME from the bytes themselves — never trust the client-supplied
+	// content-type or filename. Gate on both the image check and the format
+	// allowlist (jpeg/png/webp); this rejects SVG/GIF/BMP and non-images.
+	detected := http.DetectContentType(data)
+	if err := music.VerifyImage(detected, data); err != nil {
+		http.Error(w, "file is not a valid image", http.StatusBadRequest)
+		return
+	}
+	ext, err := music.ArtFileExt(detected)
+	if err != nil {
+		http.Error(w, "unsupported image format (use JPEG, PNG, or WebP)", http.StatusBadRequest)
+		return
+	}
+
+	thumbDir := filepath.Join(h.cfg.DataDir, "thumbs", "music")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		httpError(w, 500, "internal server error", "mkdir thumbs failed", "handler", "musicAlbumArtUpload", "err", err)
+		return
+	}
+	// Stable per-album filename so a re-upload self-overwrites (no orphan, no
+	// concurrent-write race). Distinct key prefix avoids colliding with the
+	// embedded-art file for the same album.
+	sum := sha1.Sum([]byte(fmt.Sprintf("manual-album-%d", albumID)))
+	outPath := filepath.Join(thumbDir, hex.EncodeToString(sum[:])+ext)
+
+	// Write to a temp file then rename, so a concurrent GET never sees a
+	// half-written image.
+	tmp, err := os.CreateTemp(thumbDir, "art-*")
+	if err != nil {
+		httpError(w, 500, "internal server error", "create temp failed", "handler", "musicAlbumArtUpload", "err", err)
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		httpError(w, 500, "internal server error", "write art failed", "handler", "musicAlbumArtUpload", "err", err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		httpError(w, 500, "internal server error", "close art failed", "handler", "musicAlbumArtUpload", "err", err)
+		return
+	}
+	if err := os.Rename(tmpName, outPath); err != nil {
+		_ = os.Remove(tmpName)
+		httpError(w, 500, "internal server error", "publish art failed", "handler", "musicAlbumArtUpload", "err", err)
+		return
+	}
+
+	// Unconditional override (unlike the empty-only scanner/matcher writers).
+	if _, err := h.db.ExecContext(r.Context(),
+		"UPDATE music_albums SET art_path=? WHERE id=?", outPath, albumID); err != nil {
+		httpError(w, 500, "internal server error", "update art_path failed", "handler", "musicAlbumArtUpload", "err", err)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", albumID), http.StatusSeeOther)
+}
+
 func (h *Handler) musicAlbumRescan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1247,6 +1357,10 @@ func (h *Handler) albumArt(w http.ResponseWriter, r *http.Request) {
 
 	ct := artMIMEFromExt(clean)
 	w.Header().Set("Content-Type", ct)
+	// Manually-uploaded art is user-controlled bytes; prevent any content-type
+	// sniffing (e.g. a PNG/JS polyglot) from being interpreted as anything but
+	// the declared image type.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = io.Copy(w, f)
 }

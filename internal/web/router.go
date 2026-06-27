@@ -29,6 +29,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/music/albums", h.musicAlbums)
 	mux.HandleFunc("/music/album/", h.musicAlbumTracks)
 	mux.HandleFunc("/music/album/edit", h.musicAlbumEdit)
+	mux.HandleFunc("/music/album/art", h.musicAlbumArtUpload)
 	mux.HandleFunc("/music/compilations", h.musicCompilations)
 	mux.HandleFunc("/music/player", h.musicPlayer)
 	mux.HandleFunc("/music/play-event", h.musicPlayEvent)
