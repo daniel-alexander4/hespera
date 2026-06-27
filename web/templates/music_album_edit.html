@@ -200,4 +200,19 @@
   </div>
   {{end}}
 </form>
+
+<h3 style="margin-top: 2rem;">Cover Art</h3>
+<div style="display: flex; align-items: flex-start; gap: 1.5rem; margin-top: 0.75rem;">
+  <img src="/art/album/{{.AlbumID}}" alt="Current cover" class="album-art-img" style="width: 8rem; height: 8rem; object-fit: cover; border-radius: 6px;" />
+  <form method="post" action="/music/album/art" enctype="multipart/form-data" class="form-stack">
+    <input type="hidden" name="album_id" value="{{.AlbumID}}" />
+    <div class="form-group">
+      <label for="album-art-file">Upload a cover image (JPEG, PNG, or WebP)</label>
+      <input type="file" id="album-art-file" name="art" accept="image/jpeg,image/png,image/webp" required class="input" />
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Set Cover Art</button>
+    </div>
+  </form>
+</div>
 {{end}}
