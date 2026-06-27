@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"hespera/internal/thumbgc"
 )
 
 // Matcher orchestrates the music metadata matching pipeline.
@@ -64,7 +67,22 @@ func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64) err
 	}
 
 	// --- Phase 3: Re-fetch cover art for matched albums that still have none ---
-	return m.refetchMissingArt(ctx, jobID, libraryID)
+	if err := m.refetchMissingArt(ctx, jobID, libraryID); err != nil {
+		return err
+	}
+
+	// --- Phase 4: Sweep orphaned album/artist thumbnails (non-fatal) ---
+	// Runs last, after all art writes are committed; the single-worker job queue
+	// serializes this against every other art writer.
+	if n, err := thumbgc.Sweep(ctx, m.db, filepath.Join(m.dataDir, "thumbs", "music"), thumbgc.Grace,
+		"SELECT art_path FROM music_albums WHERE art_path != ''",
+		"SELECT art_path FROM music_artists WHERE art_path != ''",
+	); err != nil {
+		slog.Warn("thumb gc music", "err", err)
+	} else if n > 0 {
+		slog.Info("thumb gc music", "deleted", n)
+	}
+	return nil
 }
 
 // artRecheckTTL bounds how often a matched-but-art-less album is re-probed for
