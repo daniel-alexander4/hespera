@@ -16,11 +16,11 @@
     <audio id="player-audio" class="player-audio" controls preload="none" autoplay playsinline></audio>
 
     <div class="player-controls">
-      <button id="player-prev-btn" type="button" class="btn btn-sm" aria-label="Previous or restart" title="Previous or restart">&#9198;</button>
-      <button id="player-rewind-btn" type="button" class="btn btn-sm" aria-label="Rewind 10s" title="Rewind 10s">&#9194;</button>
-      <button id="player-toggle-btn" type="button" class="btn btn-primary btn-sm" aria-label="Pause" title="Pause">&#9208;</button>
-      <button id="player-forward-btn" type="button" class="btn btn-sm" aria-label="Forward 10s" title="Forward 10s">&#9193;</button>
-      <button id="player-next-btn" type="button" class="btn btn-sm" aria-label="Next track" title="Next track">&#9197;</button>
+      <button id="player-prev-btn" type="button" class="btn btn-sm" aria-label="Previous or restart" title="Previous or restart">{{template "icon-skip-back"}}</button>
+      <button id="player-rewind-btn" type="button" class="btn btn-sm" aria-label="Rewind 10s" title="Rewind 10s">{{template "icon-rewind"}}</button>
+      <button id="player-toggle-btn" type="button" class="btn btn-primary btn-sm" aria-label="Pause" title="Pause">{{template "icon-pause"}}</button>
+      <button id="player-forward-btn" type="button" class="btn btn-sm" aria-label="Forward 10s" title="Forward 10s">{{template "icon-fast-forward"}}</button>
+      <button id="player-next-btn" type="button" class="btn btn-sm" aria-label="Next track" title="Next track">{{template "icon-skip-forward"}}</button>
     </div>
 
     <div id="player-karaoke" class="player-shell-karaoke text-muted">
