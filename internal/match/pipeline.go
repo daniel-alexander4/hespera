@@ -186,6 +186,50 @@ func (m *Matcher) refetchMissingArt(ctx context.Context, jobID, libraryID int64)
 	return nil
 }
 
+// RefetchAlbumArt re-fetches cover art for a single album, anchored to its
+// STORED MusicBrainz release-group identity, and saves it. It is the art half of
+// the manual release-group reassignment control: the caller re-points the
+// album's musicbrainz_id and clears its art, then calls this to pull the cover
+// for the new release-group immediately. Non-fatal — returns the search error
+// (so the handler can log it) but always stamps art_checked_at; finding no art
+// is not an error. Mirrors one iteration of refetchMissingArt.
+func (m *Matcher) RefetchAlbumArt(ctx context.Context, albumID int64) error {
+	var title, artist, rgID, artistMBID string
+	var year int
+	if err := m.db.QueryRowContext(ctx, `
+		SELECT a.title, COALESCE(ar.name, ''), a.year, a.musicbrainz_id, a.artist_musicbrainz_id
+		FROM music_albums a
+		LEFT JOIN music_artists ar ON ar.id = a.album_artist_id
+		WHERE a.id = ?
+	`, albumID).Scan(&title, &artist, &year, &rgID, &artistMBID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(rgID) == "" {
+		return nil // nothing to anchor art to
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	candidates, err := m.mb.SearchReleaseGroups(ctx, artist, title)
+	if err != nil {
+		_, _ = m.db.ExecContext(ctx,
+			"UPDATE music_albums SET art_checked_at=? WHERE id=? AND musicbrainz_id=?", now, albumID, rgID)
+		return fmt.Errorf("release-group search: %w", err)
+	}
+
+	// Anchor art to the album's STORED identity: re-search supplies only candidate
+	// breadth; the cover must come from the matched release-group or a same-artist
+	// clean-album sibling of it.
+	stored := Candidate{ReleaseGroupID: rgID, ArtistMBID: artistMBID}
+	if artPath := m.fetchAlbumArt(ctx, albumID, stored, CandidatesAboveThreshold(candidates, title, artist, year)); artPath != "" {
+		_, _ = m.db.ExecContext(ctx,
+			"UPDATE music_albums SET art_path=? WHERE id=? AND musicbrainz_id=? AND (art_path='' OR art_path IS NULL)",
+			artPath, albumID, rgID)
+	}
+	_, _ = m.db.ExecContext(ctx,
+		"UPDATE music_albums SET art_checked_at=? WHERE id=? AND musicbrainz_id=?", now, albumID, rgID)
+	return nil
+}
+
 // enrichArtists finds all artists in the library that are missing MBID, bio, or
 // image, resolves their MusicBrainz ID, and fetches bio + image.
 func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) error {
