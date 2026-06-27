@@ -597,6 +597,21 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
 }
 
 /* Album art placeholder */
+/* Inline icons (Lucide-style SVG, currentColor) — see partials_icons.html */
+.icon {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+}
+.btn .icon { margin-right: 0.4em; }
+.player-controls .btn .icon { margin-right: 0; } /* icon-only transport buttons */
+.nav-link .icon,
+.nav-sub-link .icon { margin-right: 0.45em; vertical-align: -0.2em; }
+.album-art-ph .icon,
+.artist-thumb-ph .icon { width: 38%; height: 38%; vertical-align: middle; }
+
 .album-art-ph {
   width: 100%;
   aspect-ratio: 1;
