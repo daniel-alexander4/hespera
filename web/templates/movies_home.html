@@ -2,7 +2,21 @@
 <div class="page-header">
   <h1>Movies</h1>
 </div>
-<div class="empty-state">
-  <p>Movie browsing coming in Phase 4. Use <a href="/libraries">Libraries</a> to add your movie collection.</p>
+
+<div class="subtabs">
+  <button class="subtab active" data-tab="recent">Recent</button>
+  <button class="subtab" data-tab="movies">Movies</button>
+</div>
+
+<!-- Recent Tab -->
+<div class="subtab-panel active" id="tab-recent">
+  <div class="empty-state"><p>No recent activity yet.</p></div>
+</div>
+
+<!-- Movies Tab -->
+<div class="subtab-panel" id="tab-movies">
+  <div class="empty-state">
+    <p>Movie browsing coming in Phase 4. Use <a href="/libraries">Libraries</a> to add your movie collection.</p>
+  </div>
 </div>
 {{end}}

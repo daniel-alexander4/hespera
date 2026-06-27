@@ -8,34 +8,93 @@
   <p>No TV series found. Use <a href="/libraries">Libraries</a> to add a TV library, then scan and match.</p>
 </div>
 {{else}}
-<div class="band-albums-grid">
-  {{range .Series}}
-  {{if .IsMatched}}
-  <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
-    <div class="band-album-art">
-      {{if .PosterPath}}
-      <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
-      {{else}}
-      <div class="album-art-ph">TV</div>
-      {{end}}
-    </div>
-    <div class="band-album-meta">
-      <div class="artist-card-name">{{.Name}}</div>
-      <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}{{.EpisodeCount}} episodes</div>
-    </div>
-  </a>
-  {{else}}
-  <div class="band-album-card band-album-card--unmatched">
-    <div class="band-album-art">
-      <div class="album-art-ph">?</div>
-    </div>
-    <div class="band-album-meta">
-      <div class="artist-card-name">{{.Name}}</div>
-      <div class="artist-card-stats">{{.EpisodeCount}} files · needs matching</div>
-    </div>
+
+<div class="subtabs">
+  <button class="subtab active" data-tab="recent">Recent</button>
+  <button class="subtab" data-tab="shows">Shows</button>
+</div>
+
+<!-- Recent Tab -->
+<div class="subtab-panel active" id="tab-recent">
+  {{if .RecentlyWatched}}
+  <h3 class="section-title">Continue Watching</h3>
+  <div class="home-carousel-row">
+    {{range .RecentlyWatched}}
+    <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
+      <div class="band-album-art">
+        {{if .PosterPath}}
+        <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+        {{else}}
+        <div class="album-art-ph">TV</div>
+        {{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Name}}</div>
+        {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+      </div>
+    </a>
+    {{end}}
   </div>
   {{end}}
+
+  {{if .RecentlyAdded}}
+  <h3 class="section-title">Recently Added</h3>
+  <div class="home-carousel-row">
+    {{range .RecentlyAdded}}
+    <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
+      <div class="band-album-art">
+        {{if .PosterPath}}
+        <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+        {{else}}
+        <div class="album-art-ph">TV</div>
+        {{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Name}}</div>
+        {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+      </div>
+    </a>
+    {{end}}
+  </div>
   {{end}}
+
+  {{if not .RecentlyWatched}}{{if not .RecentlyAdded}}
+  <div class="empty-state"><p>No recent activity yet. Play an episode to see it here.</p></div>
+  {{end}}{{end}}
 </div>
+
+<!-- Shows Tab -->
+<div class="subtab-panel" id="tab-shows">
+  <div class="band-albums-grid">
+    {{range .Series}}
+    {{if .IsMatched}}
+    <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
+      <div class="band-album-art">
+        {{if .PosterPath}}
+        <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+        {{else}}
+        <div class="album-art-ph">TV</div>
+        {{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Name}}</div>
+        <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}{{.EpisodeCount}} episodes</div>
+      </div>
+    </a>
+    {{else}}
+    <div class="band-album-card band-album-card--unmatched">
+      <div class="band-album-art">
+        <div class="album-art-ph">?</div>
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Name}}</div>
+        <div class="artist-card-stats">{{.EpisodeCount}} files · needs matching</div>
+      </div>
+    </div>
+    {{end}}
+    {{end}}
+  </div>
+</div>
+
 {{end}}
 {{end}}
