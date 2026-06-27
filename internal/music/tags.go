@@ -135,6 +135,92 @@ func ReadTrackMeta(path string) (TrackMeta, error) {
 	return meta, nil
 }
 
+// SetArt attaches embedded cover art and normalizes it (derives the MIME from
+// the bytes when missing, enforces the size cap). For out-of-package fallbacks
+// that recover art separately from the tag read — e.g. the scanner's ffmpeg
+// cover extraction when dhowden/tag rejected a non-MP3 file. An empty mimeType
+// is fine; normalizeArt detects it from the bytes.
+func (m *TrackMeta) SetArt(mimeType string, data []byte) {
+	m.HasArt = len(data) > 0
+	m.ArtMIME = mimeType
+	m.ArtBytes = data
+	m.normalizeArt()
+}
+
+// TrackMetaFromTags builds a TrackMeta from a flat, lowercased tag map (as
+// produced by video.ProbeTags via ffprobe). It is the cross-container fallback
+// for files that dhowden/tag rejects outright: MP3 has its own pure-Go ID3v2
+// fallback (readTrackMetaMP3Fallback), and this maps the ffprobe-recovered tag
+// dictionary for the rest (FLAC/M4A/OGG/...) through the same
+// compilation/album-artist/normalization rules ReadTrackMeta uses. Cover art is
+// attached separately by the caller via SetArt.
+func TrackMetaFromTags(tags map[string]string, path string) TrackMeta {
+	get := func(keys ...string) string {
+		for _, k := range keys {
+			if v := strings.TrimSpace(tags[k]); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+
+	artist := firstNonEmpty(get("artist"), "Unknown Artist")
+	albumArtist := firstNonEmpty(get("album_artist", "albumartist", "album artist"), artist)
+	album := firstNonEmpty(get("album"), "Unknown Album")
+
+	base := filepath.Base(path)
+	baseNoExt := strings.TrimSuffix(base, filepath.Ext(base))
+	titleTag := get("title")
+	title := titleTag
+	if title == "" {
+		title = strings.TrimSpace(baseNoExt)
+		if title == "" {
+			title = "Unknown Title"
+		}
+	}
+
+	year := 0
+	yearRaw := get("date", "year", "originaldate", "originalyear")
+	if len(yearRaw) >= 4 {
+		yearRaw = yearRaw[:4]
+	}
+	if yearRaw != "" {
+		if n, err := strconv.Atoi(yearRaw); err == nil && n > 0 {
+			year = n
+		}
+	}
+
+	track := parseSlashNumber(get("track", "tracknumber"))
+	disc := parseSlashNumber(get("disc", "discnumber"))
+	compRaw := get("compilation", "itunescompilation", "cpil")
+	explicitNotComp := isExplicitlyNotCompilationString(compRaw)
+	isCompilation := !explicitNotComp && (parseTruthyString(compRaw) || strings.EqualFold(albumArtist, "Various Artists"))
+
+	meta := TrackMeta{
+		Artist:                 artist,
+		AlbumArtist:            albumArtist,
+		Album:                  album,
+		Title:                  title,
+		Year:                   year,
+		Track:                  track,
+		Disc:                   disc,
+		IsCompilation:          isCompilation,
+		ExplicitNotCompilation: explicitNotComp,
+		MIMEType:               sniffMIME(path),
+	}
+
+	if IsGenericCompilationArtist(artist) {
+		if parsedArtist, parsedTitle := ParseFilenameArtistTitle(baseNoExt); parsedArtist != "" {
+			meta.Artist = parsedArtist
+			if titleTag == "" && parsedTitle != "" {
+				meta.Title = parsedTitle
+			}
+		}
+	}
+
+	return meta
+}
+
 // normalizeArt validates and normalizes the embedded-art fields: it derives the
 // MIME from the bytes when the declared type is missing or bogus, and drops art
 // that exceeds the 15 MiB cap. Shared by the dhowden/tag path and the MP3

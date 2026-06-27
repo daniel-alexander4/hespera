@@ -47,12 +47,12 @@ go vet ./...
 | `internal/auth` | SSH pubkey challenge-response + HMAC-SHA256 session cookies, rate limiting (10/min/IP) |
 | `internal/pathguard` | Path traversal prevention (symlink resolution + containment check) |
 | `internal/jobs` | Background job queue: buffered channel (128), single worker goroutine, context cancellation |
-| `internal/music` | Audio tag reader (`dhowden/tag` wrapper), TrackMeta struct, compilation detection. MP3 fallback (`readTrackMetaMP3Fallback`): when `dhowden/tag` aborts on a malformed frame (e.g. odd-length UTF-16 text), a tolerant hand-rolled ID3v2 parser recovers text frames **and** embedded cover art (`APIC`/`PIC`, front-cover preferred) — MP3-only |
-| `internal/scan` | Music library scanner: walk dirs, read tags, ensure artist/album/track, art extraction, move-relink/prune/cleanup |
+| `internal/music` | Audio tag reader (`dhowden/tag` wrapper), TrackMeta struct, compilation detection. **Two reject-fallbacks** for when `dhowden/tag` aborts the whole parse on a malformed frame: (1) MP3 — a tolerant hand-rolled ID3v2 parser (`readTrackMetaMP3Fallback`) recovers text frames **and** embedded cover art (`APIC`/`PIC`, front-cover preferred), pure-Go, inside `ReadTrackMeta`; (2) non-MP3 (FLAC/M4A/OGG/…) — `TrackMetaFromTags` maps an ffprobe-recovered tag dictionary through the same compilation/album-artist/normalization rules (the scanner drives it via `video.ProbeTags`; cover attached separately via `SetArt`). Without (2) a single bad tag would drop the **whole track**, not just its art |
+| `internal/scan` | Music library scanner: walk dirs, read tags, ensure artist/album/track, art extraction, move-relink/prune/cleanup. When `music.ReadTrackMeta` fails outright on a non-MP3, `recoverTrackMeta` falls back to `video.ProbeTags`/`ExtractCoverArt` (ffprobe/ffmpeg, gated) so the track is still scanned — spawns a process only on that failure path, never the happy path |
 | `internal/match` | MusicBrainz matching pipeline, Cover Art Archive, artist enrichment (Wikipedia/Wikimedia), scoring |
 | `internal/tmdb` | TMDB client + movie/TV matcher; resolves date-based episodes against episode air dates post-match (`airdate.go`) |
 | `internal/tvscan` | TV file identification (SxE / N×M / folder-authoritative title / air-date) + scanner (writes `stream_info_json` = marshaled `video.ProbeResult`) |
-| `internal/video` | ffprobe wrapper + gated ffmpeg execution (`StreamFFmpeg`, `EnsureHLS`), concurrency caps, HLS cache |
+| `internal/video` | ffprobe wrapper + gated ffmpeg execution (`StreamFFmpeg`, `EnsureHLS`), concurrency caps, HLS cache. Also `ProbeTags`/`ExtractCoverArt` (gated) — the audio reject-fallback used by `internal/scan` to recover tags + embedded cover when the pure-Go reader rejects a non-MP3 file |
 | `internal/playback` | Pure TV playback-decision layer: per-client container↔codec matrix → direct-play / remux / transcode |
 | `internal/web` | HTTP handlers, routing (`http.ServeMux`), template rendering, logging middleware, TV streaming endpoints |
 
