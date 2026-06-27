@@ -40,7 +40,7 @@ go vet ./...
 | `internal/auth` | SSH pubkey challenge-response + HMAC-SHA256 session cookies, rate limiting (10/min/IP) |
 | `internal/pathguard` | Path traversal prevention (symlink resolution + containment check) |
 | `internal/jobs` | Background job queue: buffered channel (128), single worker goroutine, context cancellation |
-| `internal/music` | Audio tag reader (`dhowden/tag` wrapper), TrackMeta struct, compilation detection |
+| `internal/music` | Audio tag reader (`dhowden/tag` wrapper), TrackMeta struct, compilation detection. MP3 fallback (`readTrackMetaMP3Fallback`): when `dhowden/tag` aborts on a malformed frame (e.g. odd-length UTF-16 text), a tolerant hand-rolled ID3v2 parser recovers text frames **and** embedded cover art (`APIC`/`PIC`, front-cover preferred) — MP3-only |
 | `internal/scan` | Music library scanner: walk dirs, read tags, ensure artist/album/track, art extraction, prune/cleanup |
 | `internal/match` | MusicBrainz matching pipeline, Cover Art Archive, artist enrichment (Wikipedia/Wikimedia), scoring |
 | `internal/tmdb` | TMDB client + movie/TV matcher; resolves date-based episodes against episode air dates post-match (`airdate.go`) |
