@@ -37,6 +37,7 @@
         {{if $.IsCompilation}}
         <span class="track-artist">{{.ArtistDisplay}}</span>
         {{end}}
+        <a href="/music/track/edit?id={{.ID}}" class="track-edit-btn" title="Edit track tags">Edit</a>
       </li>
       {{end}}
     </ol>

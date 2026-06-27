@@ -61,6 +61,7 @@ func New(d Deps) (*Handler, error) {
 		"player.html",
 		"music_match_review.html",
 		"music_album_edit.html",
+		"music_track_edit.html",
 		"music_duplicates.html",
 		"settings_tags.html",
 		"settings_apikeys.html",

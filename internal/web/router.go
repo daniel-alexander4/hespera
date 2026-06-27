@@ -30,6 +30,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/music/albums", h.musicAlbums)
 	mux.HandleFunc("/music/album/", h.musicAlbumTracks)
 	mux.HandleFunc("/music/album/edit", h.musicAlbumEdit)
+	mux.HandleFunc("/music/track/edit", h.musicTrackEdit)
 	mux.HandleFunc("/music/album/art", h.musicAlbumArtUpload)
 	mux.HandleFunc("/music/album/art/clear", h.musicAlbumArtClear)
 	mux.HandleFunc("/music/album/unmatch", h.musicAlbumUnmatch)
