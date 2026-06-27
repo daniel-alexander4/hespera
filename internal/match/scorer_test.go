@@ -205,6 +205,80 @@ func TestBestCandidateAliasMatch(t *testing.T) {
 	}
 }
 
+func TestTypeDemotion(t *testing.T) {
+	cases := []struct {
+		name      string
+		primary   string
+		secondary []string
+		want      float64
+	}{
+		{"clean album", "Album", nil, 0},
+		{"soundtrack (not penalized)", "Soundtrack", nil, 0},
+		{"single", "Single", nil, 8},
+		{"ep", "EP", nil, 4},
+		{"album + live secondary", "Album", []string{"Live"}, 6},
+		{"album + compilation secondary", "Album", []string{"Compilation"}, 6},
+		{"primary live", "Live", nil, 6},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := typeDemotion(c.primary, c.secondary); got != c.want {
+				t.Fatalf("typeDemotion(%q,%v) = %v, want %v", c.primary, c.secondary, got, c.want)
+			}
+		})
+	}
+}
+
+// TestBestMatchCandidateNonDemoting covers the watched case: a real Live album
+// (Deep Purple's "Made in Japan") whose raw score falls just under the threshold
+// purely because of the secondary-type penalty must still match, while the
+// penalty is preserved for ranking among eligible siblings.
+func TestBestMatchCandidateNonDemoting(t *testing.T) {
+	// A live album with an exact title/artist match but a modest MB score: the
+	// -6 Live penalty drops its raw score below threshold, yet its content
+	// (title+artist+mb+year, crediting a clean type) clears the gate.
+	live := Candidate{ReleaseGroupID: "live", Title: "Made in Japan", ArtistName: "Deep Purple",
+		PrimaryType: "Album", SecondaryTypes: []string{"Live"}, MBScore: 40, Year: 1972}
+
+	if s := ScoreCandidate(live, "Made in Japan", "Deep Purple", 1972); s >= matchThreshold {
+		t.Fatalf("precondition: live raw score = %.2f, want < %v (penalty must push it under)", s, matchThreshold)
+	}
+
+	t.Run("rescues a near-threshold live album", func(t *testing.T) {
+		best, _, ok := BestMatchCandidate([]Candidate{live}, "Made in Japan", "Deep Purple", 1972)
+		if !ok || best.ReleaseGroupID != "live" {
+			t.Fatalf("BestMatchCandidate = %q (ok=%v), want live matched", best.ReleaseGroupID, ok)
+		}
+	})
+
+	t.Run("prefers the clean studio album among eligibles", func(t *testing.T) {
+		studio := Candidate{ReleaseGroupID: "studio", Title: "Machine Head", ArtistName: "Deep Purple",
+			PrimaryType: "Album", MBScore: 100, Year: 1972}
+		liveStrong := Candidate{ReleaseGroupID: "live", Title: "Machine Head", ArtistName: "Deep Purple",
+			PrimaryType: "Album", SecondaryTypes: []string{"Live"}, MBScore: 100, Year: 1972}
+		best, _, ok := BestMatchCandidate([]Candidate{liveStrong, studio}, "Machine Head", "Deep Purple", 1972)
+		if !ok || best.ReleaseGroupID != "studio" {
+			t.Fatalf("BestMatchCandidate = %q (ok=%v), want studio", best.ReleaseGroupID, ok)
+		}
+	})
+
+	t.Run("does not rescue weak-content candidates", func(t *testing.T) {
+		// Right title but wrong artist → content stays far under the gate even
+		// crediting a clean type, so no spurious match.
+		wrong := Candidate{ReleaseGroupID: "wrong", Title: "Made in Japan", ArtistName: "Some Other Band",
+			PrimaryType: "Album", SecondaryTypes: []string{"Live"}, MBScore: 40, Year: 1972}
+		if _, _, ok := BestMatchCandidate([]Candidate{wrong}, "Made in Japan", "Deep Purple", 1972); ok {
+			t.Fatal("BestMatchCandidate matched a wrong-artist candidate, want no match")
+		}
+	})
+
+	t.Run("empty is no match", func(t *testing.T) {
+		if _, _, ok := BestMatchCandidate(nil, "x", "y", 0); ok {
+			t.Fatal("BestMatchCandidate(nil) returned ok")
+		}
+	})
+}
+
 func TestCandidatesAboveThreshold(t *testing.T) {
 	candidates := []Candidate{
 		{ReleaseGroupID: "live", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", SecondaryTypes: []string{"Live"}, MBScore: 100, Year: 1991},

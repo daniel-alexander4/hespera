@@ -431,8 +431,11 @@ func (m *Matcher) matchAlbum(ctx context.Context, albumID int64, title, artist s
 	// canonical title disagrees with ours are looked up.
 	m.enrichAliases(ctx, candidates, searchTitle)
 
-	best, score, ok := BestCandidate(candidates, searchTitle, artist, year)
-	if !ok || score < matchThreshold {
+	// Non-demoting threshold: the edition-type penalty reorders same-titled
+	// siblings but never unmatches a strong title/artist/year match (a real Live
+	// album shouldn't fall under the gate just for being Live).
+	best, score, ok := BestMatchCandidate(candidates, searchTitle, artist, year)
+	if !ok {
 		_, _ = m.db.ExecContext(ctx,
 			"UPDATE music_albums SET match_status='unmatched' WHERE id=?", albumID)
 		return nil
