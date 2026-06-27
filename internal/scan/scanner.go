@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,6 +18,7 @@ import (
 	"hespera/internal/config"
 	"hespera/internal/music"
 	"hespera/internal/pathguard"
+	"hespera/internal/video"
 )
 
 type Scanner struct {
@@ -135,8 +137,13 @@ func (s *Scanner) ScanFile(ctx context.Context, libraryID int64, absPath string,
 
 	meta, err := music.ReadTrackMeta(resolvedPath)
 	if err != nil {
-		slog.Warn("scan read meta", "path", resolvedPath, "err", err)
-		return nil
+		fallback, ferr := recoverTrackMeta(ctx, resolvedPath)
+		if ferr != nil {
+			slog.Warn("scan read meta", "path", resolvedPath, "err", err, "fallback_err", ferr)
+			return nil
+		}
+		slog.Warn("scan read meta recovered via ffprobe", "path", resolvedPath, "err", err)
+		meta = fallback
 	}
 
 	checksumSHA, err := s.resolveTrackChecksum(ctx, libraryID, resolvedPath, fileSize, mtimeUnix)
@@ -430,6 +437,34 @@ func checksumSHA256(path string) (string, error) {
 }
 
 // --- Art ---
+
+// recoverTrackMeta is the last-resort fallback when music.ReadTrackMeta fails
+// outright — dhowden/tag aborts the whole parse on a single malformed tag,
+// which would otherwise drop the entire track (not just its art). MP3 already
+// has a pure-Go ID3v2 fallback inside ReadTrackMeta; this covers the other
+// containers (FLAC/M4A/OGG/...) by recovering the tag dictionary and embedded
+// cover via ffprobe/ffmpeg. It only spawns a process on that failure path, so
+// the happy path stays pure-Go.
+func recoverTrackMeta(ctx context.Context, path string) (music.TrackMeta, error) {
+	if strings.EqualFold(filepath.Ext(path), ".mp3") {
+		// MP3's pure-Go fallback already ran inside ReadTrackMeta; if that
+		// failed too there is nothing ffprobe would add.
+		return music.TrackMeta{}, errors.New("no ffprobe fallback for mp3")
+	}
+	tags, hasArt, err := video.ProbeTags(ctx, path)
+	if err != nil {
+		return music.TrackMeta{}, err
+	}
+	meta := music.TrackMetaFromTags(tags, path)
+	if hasArt {
+		if data, aerr := video.ExtractCoverArt(ctx, path); aerr == nil {
+			meta.SetArt("", data)
+		} else if aerr != nil {
+			slog.Warn("scan recover cover", "path", path, "err", aerr)
+		}
+	}
+	return meta, nil
+}
 
 func saveEmbeddedArt(ctx context.Context, tx *sql.Tx, thumbDir string, libraryID, artistID, albumID int64, meta music.TrackMeta) error {
 	if err := music.VerifyImage(meta.ArtMIME, meta.ArtBytes); err != nil {
