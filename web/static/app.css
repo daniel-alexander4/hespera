@@ -923,6 +923,15 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   gap: 0.5rem;
   align-items: center;
 }
+/* TV transport row: centered, and the play/pause button shows the glyph for the
+   action the press will perform (pause while playing, play while paused). */
+.tv-transport {
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.tv-transport .tv-glyph-pause { display: none; }
+.tv-transport.playing .tv-glyph-play { display: none; }
+.tv-transport.playing .tv-glyph-pause { display: inline-flex; }
 .player-shell-karaoke {
   min-height: 3rem;
   text-align: center;
