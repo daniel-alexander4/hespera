@@ -41,7 +41,7 @@ go vet ./...
 | `internal/pathguard` | Path traversal prevention (symlink resolution + containment check) |
 | `internal/jobs` | Background job queue: buffered channel (128), single worker goroutine, context cancellation |
 | `internal/music` | Audio tag reader (`dhowden/tag` wrapper), TrackMeta struct, compilation detection. MP3 fallback (`readTrackMetaMP3Fallback`): when `dhowden/tag` aborts on a malformed frame (e.g. odd-length UTF-16 text), a tolerant hand-rolled ID3v2 parser recovers text frames **and** embedded cover art (`APIC`/`PIC`, front-cover preferred) — MP3-only |
-| `internal/scan` | Music library scanner: walk dirs, read tags, ensure artist/album/track, art extraction, prune/cleanup |
+| `internal/scan` | Music library scanner: walk dirs, read tags, ensure artist/album/track, art extraction, move-relink/prune/cleanup |
 | `internal/match` | MusicBrainz matching pipeline, Cover Art Archive, artist enrichment (Wikipedia/Wikimedia), scoring |
 | `internal/tmdb` | TMDB client + movie/TV matcher; resolves date-based episodes against episode air dates post-match (`airdate.go`) |
 | `internal/tvscan` | TV file identification (SxE / N×M / folder-authoritative title / air-date) + scanner (writes `stream_info_json` = marshaled `video.ProbeResult`) |
@@ -59,6 +59,7 @@ go vet ./...
 - **Database**: `modernc.org/sqlite`, WAL, 8 max open / 4 idle, 5s busy timeout, FK on. Migrations in `db.Migrate()` with `ensureColumn()` for schema evolution.
 - **Jobs**: `jobs.Service.Enqueue(jobType, libraryID, createdBy, executor)`. States: queued → running → done/failed/canceled. Progress in `scan_jobs` table.
 - **Scanner pattern**: `scan.New(cfg, db)` / `match.New(db, dataDir)` constructed inline per handler call, passed as executor closure to `jobs.Enqueue`.
+- **Move-relink**: identity is path-keyed (`UNIQUE(library_id, abs_path)`), so a moved/renamed file would otherwise prune-and-recreate, dropping per-file state the *file* doesn't carry. Each scanner runs a relink pass *before* prune that pairs an orphan (path now missing) with a single surviving row sharing a content signature and transfers the irreplaceable state, then lets prune delete the orphan. Signature: music = `(file_size_bytes, checksum_sha256)` (already stored; empty checksum never matches) → re-points `play_history` + `lyrics_cache` (`relinkMovedTracks`); TV = `(file_size_bytes, mtime_unix)` which a plain `mv` preserves, so no multi-GB hashing → copies the `tv_series_identities` match (only `matched`/`skipped`; `unmatched` re-derives from the new filename) + `tv_playback_progress` (`relinkMovedFiles`/`transferFileState`). Strictly 1:1 (ambiguous signature → no transfer), so duplicate-content files are never mis-linked; an mtime-rewriting move (cp/sync tools) falls back to prune-and-recreate. Movies have no scanner yet — build the future one move-aware on the same pattern.
 - **Logging**: `slog` structured JSON to stdout.
 
 ### Match Pipeline

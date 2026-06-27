@@ -143,6 +143,9 @@ func (s *Scanner) ScanTV(ctx context.Context, jobID, libraryID int64) error {
 		slog.Warn("tvscan completed with errors", "library_id", libraryID, "files_scanned", processed, "errors", scanErrors)
 	}
 
+	if err := s.relinkMovedFiles(ctx, libraryID, cleanRoot); err != nil {
+		return err
+	}
 	return s.pruneMissingFiles(ctx, libraryID, cleanRoot)
 }
 
@@ -223,6 +226,113 @@ func episodeNumbersCSV(eps []int) string {
 		parts[i] = strconv.Itoa(e)
 	}
 	return strings.Join(parts, ",")
+}
+
+// relinkMovedFiles detects files moved or renamed to a new path (same content)
+// and carries their irreplaceable per-file state — the match identity and
+// playback progress — onto the new row before pruneMissingFiles deletes the
+// orphaned old row. "Same file" is recognized by (file_size_bytes, mtime_unix),
+// which a plain `mv` preserves, so we avoid hashing multi-GB video on every
+// scan; a move that rewrites mtime (cp, some sync tools) simply falls back to
+// prune-and-recreate, where an auto-derived match re-resolves from the filename
+// on the next match run anyway. A transfer happens only when exactly one orphan
+// and exactly one surviving row share a signature, so duplicate-content files
+// are never mis-linked.
+func (s *Scanner) relinkMovedFiles(ctx context.Context, libraryID int64, root string) error {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT id, abs_path, file_size_bytes, mtime_unix FROM tv_series_files WHERE library_id=?`, libraryID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type sig struct{ size, mtime int64 }
+	cleanRoot := filepath.Clean(root)
+	rootPrefix := cleanRoot + string(os.PathSeparator)
+	var orphans []struct {
+		id int64
+		k  sig
+	}
+	survivors := map[sig][]int64{}
+	orphanCount := map[sig]int{}
+	for rows.Next() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		var id, size, mtime int64
+		var absPath string
+		if err := rows.Scan(&id, &absPath, &size, &mtime); err != nil {
+			return err
+		}
+		clean := filepath.Clean(absPath)
+		if clean != cleanRoot && !strings.HasPrefix(clean, rootPrefix) {
+			continue
+		}
+		k := sig{size, mtime}
+		if _, err := os.Stat(clean); err == nil {
+			survivors[k] = append(survivors[k], id)
+		} else if os.IsNotExist(err) {
+			orphans = append(orphans, struct {
+				id int64
+				k  sig
+			}{id, k})
+			orphanCount[k]++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, o := range orphans {
+		cand := survivors[o.k]
+		if len(cand) != 1 || orphanCount[o.k] != 1 {
+			continue // ambiguous signature: leave the orphan for prune
+		}
+		if err := s.transferFileState(ctx, o.id, cand[0]); err != nil {
+			slog.Warn("tvscan relink", "from", o.id, "to", cand[0], "err", err)
+		}
+	}
+	return nil
+}
+
+// transferFileState copies a moved file's preserved state from the orphaned old
+// row (fromID) onto the new row (toID): the match identity (only when it was
+// matched or skipped — an unmatched identity re-derives from the new filename)
+// and playback progress. The orphan itself is deleted afterwards by
+// pruneMissingFiles.
+func (s *Scanner) transferFileState(ctx context.Context, fromID, toID int64) error {
+	if _, err := s.DB.ExecContext(ctx, `
+UPDATE tv_series_identities AS dst SET
+  status = src.status,
+  provider = src.provider,
+  series_id = src.series_id,
+  season_number = src.season_number,
+  episode_numbers_csv = src.episode_numbers_csv,
+  match_confidence = src.match_confidence,
+  match_method = src.match_method,
+  matched_at = src.matched_at,
+  guessed_title = src.guessed_title,
+  air_date = src.air_date
+FROM tv_series_identities AS src
+WHERE dst.file_id = ? AND src.file_id = ? AND src.status IN ('matched', 'skipped')
+`, toID, fromID); err != nil {
+		return fmt.Errorf("transfer identity: %w", err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `
+INSERT INTO tv_playback_progress (file_id, position_seconds, duration_seconds, completed, updated_at)
+SELECT ?, position_seconds, duration_seconds, completed, updated_at
+FROM tv_playback_progress WHERE file_id = ?
+ON CONFLICT(file_id) DO UPDATE SET
+  position_seconds = excluded.position_seconds,
+  duration_seconds = excluded.duration_seconds,
+  completed = excluded.completed,
+  updated_at = excluded.updated_at
+`, toID, fromID); err != nil {
+		return fmt.Errorf("transfer playback progress: %w", err)
+	}
+	return nil
 }
 
 func (s *Scanner) pruneMissingFiles(ctx context.Context, libraryID int64, root string) error {
