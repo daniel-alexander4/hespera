@@ -85,6 +85,18 @@ func setupTemplateDir(t *testing.T, dir string) {
 	if err := os.WriteFile(filepath.Join(tplDir, "tv_match_review.html"), []byte(tvReviewTpl), 0o644); err != nil {
 		t.Fatalf("WriteFile tv_match_review.html override: %v", err)
 	}
+
+	// Overwrite settings_jobs.html with a functional stub mirroring the real
+	// structure: a `content` block that embeds a reusable `jobs-container` block,
+	// so the live-poll fragment endpoint (ExecuteTemplate "jobs-container") and
+	// the page both render the job rows.
+	jobsTpl := `{{define "content"}}<div id="jobs-container">{{template "jobs-container" .}}</div>{{end}}` +
+		`{{define "jobs-container"}}{{if .Jobs}}<table>{{range .Jobs}}<tr><td>{{.JobType}}</td>` +
+		`<td><span class="badge badge-{{.Status}}">{{.Status}}</span></td></tr>{{end}}</table>` +
+		`{{else}}<p>No jobs found.</p>{{end}}{{end}}`
+	if err := os.WriteFile(filepath.Join(tplDir, "settings_jobs.html"), []byte(jobsTpl), 0o644); err != nil {
+		t.Fatalf("WriteFile settings_jobs.html override: %v", err)
+	}
 }
 
 // withChdir changes to dir for the duration of the test and restores on cleanup.

@@ -4,6 +4,39 @@
 </div>
 
 <div id="jobs-container">
+{{template "jobs-container" .}}
+</div>
+
+<script>
+(() => {
+  const container = document.getElementById('jobs-container');
+  if (!container) return;
+  let timer = null;
+
+  const schedule = () => {
+    // Poll fast while a job is active, slower when idle — but never stop, so a
+    // job triggered after page load still shows up.
+    const active = container.querySelector('.badge-running, .badge-queued') !== null;
+    clearTimeout(timer);
+    timer = setTimeout(refresh, active ? 2000 : 5000);
+  };
+
+  const refresh = async () => {
+    if (!document.hidden) {
+      try {
+        const res = await fetch('/settings/jobs/fragment');
+        if (res.ok) container.innerHTML = await res.text();
+      } catch (_) {}
+    }
+    schedule();
+  };
+
+  schedule();
+})();
+</script>
+{{end}}
+
+{{define "jobs-container"}}
 {{if .Jobs}}
 <table class="table" id="jobs-table">
   <thead>
@@ -47,23 +80,4 @@
   <p>No jobs found.</p>
 </div>
 {{end}}
-</div>
-
-<script>
-(() => {
-  const poll = async () => {
-    try {
-      const res = await fetch('/settings/jobs.json');
-      if (!res.ok) return;
-      const json = await res.json();
-      if (!json.ok || !json.data) return;
-      const hasActive = json.data.some(j => j.status === 'queued' || j.status === 'running');
-      if (hasActive) {
-        setTimeout(poll, 2000);
-      }
-    } catch (_) {}
-  };
-  setTimeout(poll, 2000);
-})();
-</script>
 {{end}}
