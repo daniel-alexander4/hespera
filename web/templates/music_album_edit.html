@@ -232,4 +232,19 @@
   </form>
   {{end}}
 </div>
+
+<form method="post" action="/music/album/reassign" class="form-stack" style="margin-top: 1.5rem;">
+  <input type="hidden" name="album_id" value="{{.AlbumID}}" />
+  <div class="form-group">
+    <label for="album-rg-mbid">Fix release-group match (paste the correct MusicBrainz release-group ID)</label>
+    <input type="text" id="album-rg-mbid" name="release_group_mbid" class="input"
+      placeholder="e.g. 61cb81de-99e4-3a76-9ec9-69e74c7e5e8f"
+      pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+      value="{{.CurrentRGMBID}}" required />
+    <p class="form-hint">Re-points the album to this release-group and re-fetches its cover art. Use when the album matched the wrong release (its cover is missing or wrong).</p>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn">Reassign release-group</button>
+  </div>
+</form>
 {{end}}

@@ -564,12 +564,13 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 	var albumYear int
 	var artistName string
 	var matchStatus string
+	var currentRGMBID string
 	if err := h.db.QueryRowContext(r.Context(), `
-		SELECT al.title, al.year, ar.name, al.match_status
+		SELECT al.title, al.year, ar.name, al.match_status, COALESCE(al.musicbrainz_id, '')
 		FROM music_albums al
 		JOIN music_artists ar ON ar.id = al.album_artist_id
 		WHERE al.id=?
-	`, albumID).Scan(&albumTitle, &albumYear, &artistName, &matchStatus); err != nil {
+	`, albumID).Scan(&albumTitle, &albumYear, &artistName, &matchStatus, &currentRGMBID); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -622,16 +623,17 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 	}
 
 	h.render(w, "music_album_edit.html", map[string]any{
-		"Title":      "Edit Album",
-		"AlbumID":    albumID,
-		"AlbumTitle": albumTitle,
-		"AlbumYear":  albumYear,
-		"ArtistName": artistName,
-		"IsMatched":  matchStatus == "matched",
-		"Tracks":     tracks,
-		"Mode":       mode,
-		"Success":    successCount,
-		"Errors":     errorCount,
+		"Title":         "Edit Album",
+		"AlbumID":       albumID,
+		"AlbumTitle":    albumTitle,
+		"AlbumYear":     albumYear,
+		"ArtistName":    artistName,
+		"IsMatched":     matchStatus == "matched",
+		"CurrentRGMBID": currentRGMBID,
+		"Tracks":        tracks,
+		"Mode":          mode,
+		"Success":       successCount,
+		"Errors":        errorCount,
 	})
 }
 
@@ -889,7 +891,7 @@ func (h *Handler) musicAlbumArtUpload(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", albumID), http.StatusSeeOther)
 }
 
-// musicAlbumArtClear removes an album's cover art (art_path='') and resets its
+// musicAlbumArtClear removes an album's cover art (art_path=”) and resets its
 // art-check timestamp so the next match run re-fetches it. Used from the album
 // edit page when the current cover is wrong or absent.
 func (h *Handler) musicAlbumArtClear(w http.ResponseWriter, r *http.Request) {
@@ -945,6 +947,68 @@ func (h *Handler) musicAlbumUnmatch(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "musicAlbumUnmatch", "err", err)
 		return
 	}
+	http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d", albumID), http.StatusSeeOther)
+}
+
+// musicAlbumReassign is the manual release-group reassignment control — the
+// album analogue of the artist disambiguation control. When the matcher binds an
+// album to the wrong MusicBrainz release-group (e.g. a terse local "Grease"
+// losing on title similarity to a sparse art-less stub RG instead of the real
+// soundtrack RG), this lets a user paste the correct release-group MBID. It
+// re-points the album's identity, clears the stale cover, and synchronously
+// re-fetches art for the new RG — so a mis-matched album recovers proper art
+// without sourcing and uploading an image by hand.
+func (h *Handler) musicAlbumReassign(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "musicAlbumReassign", "err", err)
+		return
+	}
+	albumID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("album_id")), 10, 64)
+	if err != nil || albumID <= 0 {
+		http.Error(w, "invalid album_id", http.StatusBadRequest)
+		return
+	}
+	rgMBID := strings.TrimSpace(r.FormValue("release_group_mbid"))
+	if !mbidPattern.MatchString(rgMBID) {
+		http.Error(w, "invalid release-group MBID", http.StatusBadRequest)
+		return
+	}
+
+	var exists int
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT 1 FROM music_albums WHERE id=?", albumID).Scan(&exists); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Re-point the album to the chosen release-group and clear the stale cover so
+	// it re-fetches for the new identity. Keeps the album matched — the user is
+	// asserting the correct RG. Touches only this album's identity/art; per-track
+	// data and the artist row are left alone.
+	if _, err := h.db.ExecContext(r.Context(), `
+		UPDATE music_albums SET
+			musicbrainz_id=?,
+			match_status='matched',
+			art_path='',
+			art_checked_at=''
+		WHERE id=?
+	`, rgMBID, albumID); err != nil {
+		httpError(w, 500, "internal server error", "db update failed", "handler", "musicAlbumReassign", "err", err)
+		return
+	}
+
+	// Synchronously pull the cover for the new RG so it shows immediately.
+	// Non-fatal: the identity is corrected regardless, and the next Match's
+	// refetch-missing-art phase fills the cover if this network call fails.
+	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+	if err := matcher.RefetchAlbumArt(r.Context(), albumID); err != nil {
+		slog.Warn("refetch album art after reassign failed", "album_id", albumID, "rg", rgMBID, "err", err)
+	}
+
 	http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d", albumID), http.StatusSeeOther)
 }
 
