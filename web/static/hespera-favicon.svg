@@ -19,6 +19,7 @@
   </defs>
   <g clip-path="url(#hespera-fav-frame)">
     <rect width="240" height="240" fill="url(#hespera-fav-sky)"/>
+    <path d="M186,44 C190,54 190,54 200,58 C190,62 190,62 186,72 C182,62 182,62 172,58 C182,54 182,54 186,44 Z" fill="#fff7d6"/>
     <g fill="url(#hespera-fav-sun)">
       <rect x="68" y="114" width="16" height="36" rx="6"/>
       <rect x="90" y="95" width="16" height="55" rx="6"/>

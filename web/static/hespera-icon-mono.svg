@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Hespera" style="color:#1e1b4b">
+  <path d="M180,60 C182.5,67.5 182.5,67.5 190,70 C182.5,72.5 182.5,72.5 180,80 C177.5,72.5 177.5,72.5 170,70 C177.5,67.5 177.5,67.5 180,60 Z" fill="currentColor"/>
   <g fill="currentColor">
     <rect x="68" y="124" width="8" height="26" rx="4"/>
     <rect x="80" y="109" width="8" height="41" rx="4"/>
