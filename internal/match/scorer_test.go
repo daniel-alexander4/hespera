@@ -136,22 +136,48 @@ func TestBestCandidate(t *testing.T) {
 func TestTypeBonus(t *testing.T) {
 	tests := []struct {
 		typ  string
+		sec  []string
 		want float64
 	}{
-		{"Album", 10},
-		{"Single", 2},
-		{"Broadcast", 4},
-		{"Live", 4},
-		{"Remix", 4},
-		{"Compilation", 4},
-		{"EP", 10},
-		{"", 10},
+		{"Album", nil, 10},
+		{"Single", nil, 2},
+		{"Broadcast", nil, 4},
+		{"Live", nil, 4},
+		{"Remix", nil, 4},
+		{"Compilation", nil, 4},
+		{"EP", nil, 6}, // EP is now penalized below a clean Album
+		{"", nil, 10},
+		// Secondary types penalize even when primary is Album.
+		{"Album", []string{"Live"}, 4},
+		{"Album", []string{"Compilation"}, 4},
+		{"Album", []string{"Compilation", "Live"}, 0}, // stacks, floored at 0
+		{"Album", []string{"Soundtrack"}, 10},         // legit primary use, not penalized
+		{"EP", []string{"Compilation"}, 0},
 	}
 	for _, tt := range tests {
-		got := typeBonus(tt.typ)
+		got := typeBonus(tt.typ, tt.sec)
 		if got != tt.want {
-			t.Fatalf("typeBonus(%q) = %f, want %f", tt.typ, got, tt.want)
+			t.Fatalf("typeBonus(%q, %v) = %f, want %f", tt.typ, tt.sec, got, tt.want)
 		}
+	}
+}
+
+// TestBestCandidateStudioOverAltEditions mirrors the real Painkiller case: the
+// studio album and several art-less alt editions (single, live, compilation)
+// all tie on MusicBrainz score, and the studio album must win so the matcher
+// selects the release-group that actually has cover art.
+func TestBestCandidateStudioOverAltEditions(t *testing.T) {
+	studio := Candidate{ReleaseGroupID: "studio", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", MBScore: 100, Year: 1990}
+	candidates := []Candidate{
+		{ReleaseGroupID: "single", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Single", MBScore: 100, Year: 1990},
+		{ReleaseGroupID: "live", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", SecondaryTypes: []string{"Live"}, MBScore: 100, Year: 1991},
+		studio,
+		{ReleaseGroupID: "ep", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "EP", MBScore: 100, Year: 1990},
+		{ReleaseGroupID: "comp", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", SecondaryTypes: []string{"Compilation"}, MBScore: 100, Year: 1990},
+	}
+	best, _, ok := BestCandidate(candidates, "Painkiller", "Judas Priest", 1990)
+	if !ok || best.ReleaseGroupID != "studio" {
+		t.Fatalf("BestCandidate = %q (ok=%v), want studio", best.ReleaseGroupID, ok)
 	}
 }
 

@@ -108,13 +108,14 @@ type mbReleaseGroupSearchResult struct {
 }
 
 type MBReleaseGroup struct {
-	ID           string          `json:"id"`
-	Title        string          `json:"title"`
-	PrimaryType  string          `json:"primary-type"`
-	Score        int             `json:"score"`
-	FirstRelease string          `json:"first-release-date"`
-	ArtistCredit []mbArtistEntry `json:"artist-credit"`
-	Releases     []mbRelease     `json:"releases"`
+	ID             string          `json:"id"`
+	Title          string          `json:"title"`
+	PrimaryType    string          `json:"primary-type"`
+	SecondaryTypes []string        `json:"secondary-types"`
+	Score          int             `json:"score"`
+	FirstRelease   string          `json:"first-release-date"`
+	ArtistCredit   []mbArtistEntry `json:"artist-credit"`
+	Releases       []mbRelease     `json:"releases"`
 }
 
 type mbReleaseSearchResult struct {
@@ -175,6 +176,7 @@ type Candidate struct {
 	ArtistName     string
 	ArtistMBID     string
 	PrimaryType    string
+	SecondaryTypes []string
 	Year           int
 	MBScore        int
 }
@@ -205,7 +207,10 @@ func (c *MBClient) SearchReleaseGroups(ctx context.Context, artist, album string
 
 func (c *MBClient) strategyA(ctx context.Context, artist, album string) ([]Candidate, error) {
 	q := fmt.Sprintf(`releasegroup:"%s" AND artist:"%s"`, mbEscape(album), mbEscape(artist))
-	path := fmt.Sprintf("/release-group?query=%s&limit=5&fmt=json", url.QueryEscape(q))
+	// limit=25 (not 5): the canonical studio release-group is often crowded out
+	// of the top results by compilations/EPs/singles of the same title, leaving
+	// the scorer unable to reach it. A wider set lets the scorer pick the album.
+	path := fmt.Sprintf("/release-group?query=%s&limit=25&fmt=json", url.QueryEscape(q))
 
 	body, err := c.get(ctx, path)
 	if err != nil {
@@ -323,6 +328,7 @@ func rgToCandidate(rg MBReleaseGroup) Candidate {
 		ReleaseGroupID: rg.ID,
 		Title:          rg.Title,
 		PrimaryType:    rg.PrimaryType,
+		SecondaryTypes: rg.SecondaryTypes,
 		MBScore:        rg.Score,
 		Year:           parseYear(rg.FirstRelease),
 	}
