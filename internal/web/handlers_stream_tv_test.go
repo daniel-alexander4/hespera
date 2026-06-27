@@ -203,3 +203,26 @@ func TestStreamTVHLSRejectsBadAssetName(t *testing.T) {
 		t.Fatalf("status = %d, want 404 for bad asset name", rr.Code)
 	}
 }
+
+// Only text subtitle tracks are deliverable as WebVTT; a bitmap or out-of-range
+// track must 404 cleanly (before any file access / ffmpeg), not stream an empty
+// 200. Track 1 is bitmap (PGS), track 2 is text (subrip).
+func TestStreamTVSubtitlesRejectsNonTextTrack(t *testing.T) {
+	h, db := newTestHandler(t)
+	probe := video.ProbeResult{
+		Streams: []video.ProbeStream{
+			{CodecType: "video", CodecName: "h264", Width: 1280, Height: 720},
+			{CodecType: "subtitle", CodecName: "hdmv_pgs_subtitle"},
+			{CodecType: "subtitle", CodecName: "subrip"},
+		},
+	}
+	id := insertTVFileWithProbe(t, db, "mkv", probe, 100<<20)
+	for _, track := range []string{"1", "0", "9"} { // bitmap, below-range, above-range
+		req := httptest.NewRequest(http.MethodGet, "/stream/tv-subtitles/"+strconv.FormatInt(id, 10)+"?track="+track, nil)
+		rr := httptest.NewRecorder()
+		h.streamTVSubtitles(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("track=%s: status = %d, want 404", track, rr.Code)
+		}
+	}
+}

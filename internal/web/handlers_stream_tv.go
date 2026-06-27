@@ -318,11 +318,20 @@ func (h *Handler) streamTVSubtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	track := atoiDefault(r.URL.Query().Get("track"), 1)
-	if track < 1 {
-		track = 1
-	}
 	src, err := h.loadTVFileSource(r.Context(), fileID)
 	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Only text subtitle tracks are deliverable as a WebVTT sidecar; validate the
+	// 1-based index against the probed streams (and that it's text) so a bad or
+	// bitmap track gets a clean 404 instead of an empty 200 — ffmpeg would
+	// otherwise fail after the text/vtt header was already written. Bitmap
+	// burn-in is not yet implemented (see pending.md), so those aren't offered.
+	var probe video.ProbeResult
+	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
+	subs := subtitleTracks(&probe)
+	if track < 1 || track > len(subs) || !subs[track-1].Text {
 		http.NotFound(w, r)
 		return
 	}
