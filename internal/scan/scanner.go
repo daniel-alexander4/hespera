@@ -108,6 +108,9 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 		return err
 	}
 
+	if err := s.relinkMovedTracks(ctx, libraryID, cleanRoot); err != nil {
+		return err
+	}
 	if err := s.pruneMissingTracks(ctx, libraryID, cleanRoot); err != nil {
 		return err
 	}
@@ -453,6 +456,94 @@ func saveEmbeddedArt(ctx context.Context, tx *sql.Tx, thumbDir string, libraryID
 }
 
 // --- Cleanup ---
+
+// relinkMovedTracks detects tracks moved or renamed to a new path (same content)
+// and carries their irreplaceable per-track state — play history (and the lyrics
+// cache) — onto the new row before pruneMissingTracks deletes the orphaned old
+// row. "Same file" is recognized by (file_size_bytes, checksum_sha256); a byte
+// checksum match guarantees identical tags, so the new row's album/artist
+// grouping equals the old one's and only the track id needs re-pointing. A
+// transfer happens only when exactly one orphan and exactly one surviving row
+// share a signature, so duplicate-content files are never mis-linked.
+func (s *Scanner) relinkMovedTracks(ctx context.Context, libraryID int64, root string) error {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT id, abs_path, file_size_bytes, checksum_sha256 FROM music_tracks WHERE library_id=?`, libraryID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type sig struct {
+		size     int64
+		checksum string
+	}
+	cleanRoot := filepath.Clean(root)
+	rootPrefix := cleanRoot + string(os.PathSeparator)
+	var orphans []struct {
+		id int64
+		k  sig
+	}
+	survivors := map[sig][]int64{}
+	orphanCount := map[sig]int{}
+	for rows.Next() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		var id, size int64
+		var absPath, checksum string
+		if err := rows.Scan(&id, &absPath, &size, &checksum); err != nil {
+			return err
+		}
+		if checksum == "" {
+			continue // no content signature to match on
+		}
+		clean := filepath.Clean(absPath)
+		if clean != cleanRoot && !strings.HasPrefix(clean, rootPrefix) {
+			continue
+		}
+		k := sig{size, checksum}
+		if _, err := os.Stat(clean); err == nil {
+			survivors[k] = append(survivors[k], id)
+		} else if os.IsNotExist(err) {
+			orphans = append(orphans, struct {
+				id int64
+				k  sig
+			}{id, k})
+			orphanCount[k]++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, o := range orphans {
+		cand := survivors[o.k]
+		if len(cand) != 1 || orphanCount[o.k] != 1 {
+			continue // ambiguous signature: leave the orphan for prune
+		}
+		if err := s.transferTrackState(ctx, o.id, cand[0]); err != nil {
+			slog.Warn("scan relink", "from", o.id, "to", cand[0], "err", err)
+		}
+	}
+	return nil
+}
+
+// transferTrackState re-points a moved track's play history and lyrics cache
+// from the orphaned old row (fromID) onto the new row (toID). The orphan itself
+// is deleted afterwards by pruneMissingTracks.
+func (s *Scanner) transferTrackState(ctx context.Context, fromID, toID int64) error {
+	if _, err := s.DB.ExecContext(ctx,
+		`UPDATE play_history SET track_id=? WHERE track_id=?`, toID, fromID); err != nil {
+		return fmt.Errorf("transfer play_history: %w", err)
+	}
+	if _, err := s.DB.ExecContext(ctx,
+		`UPDATE lyrics_cache SET track_id=? WHERE track_id=?`, toID, fromID); err != nil {
+		return fmt.Errorf("transfer lyrics_cache: %w", err)
+	}
+	return nil
+}
 
 func (s *Scanner) pruneMissingTracks(ctx context.Context, libraryID int64, root string) error {
 	rows, err := s.DB.QueryContext(ctx, `SELECT id, abs_path FROM music_tracks WHERE library_id=?`, libraryID)
