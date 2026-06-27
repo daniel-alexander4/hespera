@@ -609,12 +609,15 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 		return
 	}
 
-	var successCount, errorCount int
+	var successCount, errorCount, movedCount int
 	if s := r.URL.Query().Get("success"); s != "" {
 		successCount, _ = strconv.Atoi(s)
 	}
 	if s := r.URL.Query().Get("errors"); s != "" {
 		errorCount, _ = strconv.Atoi(s)
+	}
+	if s := r.URL.Query().Get("moved"); s != "" {
+		movedCount, _ = strconv.Atoi(s)
 	}
 
 	mode := r.URL.Query().Get("mode")
@@ -634,6 +637,7 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 		"Mode":          mode,
 		"Success":       successCount,
 		"Errors":        errorCount,
+		"Moved":         movedCount,
 	})
 }
 
@@ -717,12 +721,20 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 	// Write tags to files.
 	var successPaths []string
 	var errCount int
+	var missingCount int
 	for _, t := range affectedTracks {
 		// Read current tags to preserve fields we're not editing.
 		meta, err := music.ReadTrackMeta(t.AbsPath)
 		if err != nil {
-			slog.Error("edit: read tags failed", "path", t.AbsPath, "err", err)
-			errCount++
+			// A missing file (folder renamed/moved on disk without a rescan) is the
+			// common cause and is actionable — run a Scan to resync — so count it
+			// separately from genuine read/write errors.
+			if errors.Is(err, os.ErrNotExist) {
+				missingCount++
+			} else {
+				slog.Error("edit: read tags failed", "path", t.AbsPath, "err", err)
+				errCount++
+			}
 			continue
 		}
 
@@ -761,8 +773,9 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 	}
 
 	if len(successPaths) == 0 {
-		// All writes failed — redirect back with error.
-		http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d&errors=%d", albumID, errCount), http.StatusSeeOther)
+		// Nothing written — redirect back with the failure breakdown so the edit
+		// page can show an actionable message (moved files → run a Scan first).
+		http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d&moved=%d&errors=%d", albumID, missingCount, errCount), http.StatusSeeOther)
 		return
 	}
 
@@ -780,8 +793,8 @@ func (h *Handler) musicAlbumEditPOST(w http.ResponseWriter, r *http.Request, alb
 		newAlbumID = albumID
 	}
 
-	if errCount > 0 {
-		http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d&success=%d&errors=%d", newAlbumID, len(successPaths), errCount), http.StatusSeeOther)
+	if errCount > 0 || missingCount > 0 {
+		http.Redirect(w, r, fmt.Sprintf("/music/album/edit?id=%d&success=%d&moved=%d&errors=%d", newAlbumID, len(successPaths), missingCount, errCount), http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/music/album/%d", newAlbumID), http.StatusSeeOther)

@@ -9,9 +9,13 @@
 </div>
 {{end}}
 
-{{if or .WBSuccess .WBErrors}}
-<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-panel); border: 1px solid {{if .WBErrors}}#c44{{else}}#4a9{{end}}; border-radius: 6px;">
-  Tags written to {{.WBSuccess}} track{{if ne .WBSuccess 1}}s{{end}}{{if .WBErrors}}, {{.WBErrors}} error{{if ne .WBErrors 1}}s{{end}}{{end}}.
+{{if or .Success .Errors .Moved}}
+<div style="margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--surface-panel); border: 1px solid {{if or .Errors .Moved}}#c44{{else}}#4a9{{end}}; border-radius: 6px;">
+  {{if .Success}}Tags written to {{.Success}} track{{if ne .Success 1}}s{{end}}.{{end}}
+  {{if .Moved}}
+  <strong>{{.Moved}} file{{if ne .Moved 1}}s{{end}} for this album {{if eq .Moved 1}}is{{else}}are{{end}} missing on disk</strong> — the album's folder was likely moved or renamed. Run a full library <strong>Scan</strong> to resync, then edit again. (A folder rename does not rename the album — tags do.)
+  {{end}}
+  {{if .Errors}}{{.Errors}} track{{if ne .Errors 1}}s{{end}} could not be written (read/write error).{{end}}
 </div>
 {{end}}
 
