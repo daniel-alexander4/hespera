@@ -40,6 +40,7 @@ Config: `internal/config/config.go` — `DataDir` (DB + all derived artifacts) a
 | Match/identity lives in | `music_albums` / `music_artists` rows | `tv_series_identities` (1:1, PK `file_id`) | inline on `movie_files` |
 | Match metadata cache | — (live MB/CAA) | `tv_series_metadata_cache` (JSON by `entity_key`) | `movie_metadata_cache` |
 | Artwork rows | `art_path` on album/artist | `tv_series_art` | `movie_art` |
+| Cast / people | — | `people` + `credits` (global TMDB cache; `credits.media_type` discriminates tv/movie) | reuses `people` + `credits` |
 | Playback/resume | — | `tv_playback_progress` (PK `file_id`) | `movie_playback_progress` (PK `file_id`) |
 | Other user state | `play_history` (FK `track_id`) | — | — |
 | Scanner | `internal/scan` (`ScanMusic`) | `internal/tvscan` (`ScanTV`) | **none — unimplemented** |

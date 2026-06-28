@@ -162,6 +162,12 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 			}
 		}
 
+		// Fetch + cache the show's cast (best-effort; powers the cast strip and
+		// actor pages). Non-fatal.
+		if err := m.FetchTVCast(ctx, showID); err != nil {
+			slog.Warn("tmdb cast fetch", "show", showID, "err", err)
+		}
+
 		// Collect unique seasons referenced by files. When any file is
 		// date-based, widen to every season the show has so we can resolve the
 		// air date against the full episode list.
@@ -268,6 +274,7 @@ WHERE file_id=?
 	// other art writer.
 	if n, err := thumbgc.Sweep(ctx, m.db, m.artDir, thumbgc.Grace,
 		"SELECT art_path FROM tv_series_art WHERE art_path != ''",
+		"SELECT art_path FROM people WHERE art_path != ''",
 	); err != nil {
 		slog.Warn("thumb gc tv", "err", err)
 	} else if n > 0 {
@@ -365,6 +372,11 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 		}
 
 		m.cacheEpisodes(ctx, showID, sn, season.Episodes)
+	}
+
+	// Fetch + cache the cast for the manually-assigned show too (best-effort).
+	if err := m.FetchTVCast(ctx, showID); err != nil {
+		slog.Warn("tmdb cast fetch", "show", showID, "err", err)
 	}
 
 	return nil
