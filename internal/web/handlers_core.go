@@ -14,6 +14,7 @@ type homeStats struct {
 	Albums   int
 	Series   int
 	Episodes int
+	Movies   int
 }
 
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
@@ -47,11 +48,15 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("home: load recently-added tv failed", "err", err)
 	}
+	recentlyAddedMovies, err := h.loadMovieRecentlyAdded(ctx, 12)
+	if err != nil {
+		slog.Warn("home: load recently-added movies failed", "err", err)
+	}
 
 	stats := h.loadHomeStats(ctx, musicLib)
 
 	hasActivity := len(continueWatching) > 0 || len(recentlyPlayed) > 0 ||
-		len(recentlyAddedAlbums) > 0 || len(recentlyAddedTV) > 0
+		len(recentlyAddedAlbums) > 0 || len(recentlyAddedTV) > 0 || len(recentlyAddedMovies) > 0
 
 	h.render(w, "home.html", map[string]any{
 		"Title":               "Home",
@@ -61,6 +66,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		"RecentlyPlayed":      recentlyPlayed,
 		"RecentlyAddedAlbums": recentlyAddedAlbums,
 		"RecentlyAddedTV":     recentlyAddedTV,
+		"RecentlyAddedMovies": recentlyAddedMovies,
 		"Stats":               stats,
 		"HasActivity":         hasActivity,
 	})
@@ -85,6 +91,9 @@ func (h *Handler) loadHomeStats(ctx context.Context, musicLib int64) homeStats {
 	_ = h.db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM tv_series_identities i WHERE "+matched,
 	).Scan(&s.Episodes)
+	_ = h.db.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT tmdb_id) FROM movie_files WHERE match_status='matched' AND tmdb_id != 0",
+	).Scan(&s.Movies)
 	return s
 }
 
@@ -173,14 +182,6 @@ func (h *Handler) authLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-
-func (h *Handler) moviesHome(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	h.render(w, "movies_home.html", map[string]any{"Title": "Movies"})
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {

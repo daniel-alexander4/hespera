@@ -1,0 +1,134 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Movie Match Review</h1>
+</div>
+
+{{if not .Groups}}
+<div class="empty-state"><p>No unmatched movies. All films are matched or skipped.</p></div>
+{{else}}
+{{if .Capped}}
+<p class="form-help">Showing the first {{.Shown}} of {{.TotalCount}} unmatched movies — match these and reload to see more.</p>
+{{end}}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Guessed Title</th>
+      <th>Year</th>
+      <th>Files</th>
+      <th>TMDB Movie</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Groups}}
+    <tr>
+      <td>{{.GuessedTitle}}</td>
+      <td>{{if .Year}}{{.Year}}{{else}}&mdash;{{end}}</td>
+      <td>{{.FileCount}}</td>
+      <td>
+        <div class="tv-match-search-wrap">
+          <input type="text" class="input input-sm movie-match-tmdb-input"
+                 data-title="{{.GuessedTitle}}"
+                 placeholder="Search or enter TMDB ID" />
+          <div class="tv-match-search-results"></div>
+        </div>
+      </td>
+      <td class="actions-cell">
+        <form method="post" action="/movies/match/approve" class="inline-form movie-match-approve-form">
+          <input type="hidden" name="guessed_title" value="{{.GuessedTitle}}" />
+          <input type="hidden" name="year" value="{{.Year}}" />
+          <input type="hidden" name="tmdb_id" value="" class="movie-match-tmdb-hidden" />
+          <button type="submit" class="btn btn-sm btn-primary" disabled>{{template "icon-check"}}Approve</button>
+        </form>
+        <form method="post" action="/movies/match/skip" class="inline-form">
+          <input type="hidden" name="guessed_title" value="{{.GuessedTitle}}" />
+          <input type="hidden" name="year" value="{{.Year}}" />
+          <button type="submit" class="btn btn-sm">{{template "icon-x"}}Skip</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
+<script>
+(() => {
+  document.querySelectorAll('.movie-match-tmdb-input').forEach(input => {
+    let searchTimer = null; // per-input, so typing in one row doesn't cancel another's search
+    const wrap = input.closest('.tv-match-search-wrap');
+    const dropdown = wrap.querySelector('.tv-match-search-results');
+    const row = input.closest('tr');
+    const hiddenInput = row.querySelector('.movie-match-tmdb-hidden');
+    const approveBtn = row.querySelector('.movie-match-approve-form button');
+
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const val = input.value.trim();
+      if (!val) {
+        dropdown.innerHTML = '';
+        dropdown.style.display = 'none';
+        return;
+      }
+      if (/^\d+$/.test(val)) { // pure number → direct TMDB id
+        hiddenInput.value = val;
+        approveBtn.disabled = false;
+        dropdown.innerHTML = '';
+        dropdown.style.display = 'none';
+        return;
+      }
+      approveBtn.disabled = true;
+      hiddenInput.value = '';
+      searchTimer = setTimeout(() => {
+        fetch('/movies/match/search?q=' + encodeURIComponent(val))
+          .then(r => r.json())
+          .then(results => {
+            if (!results || !results.length) {
+              dropdown.innerHTML = '<div class="tv-match-search-item">No results</div>';
+              dropdown.style.display = 'block';
+              return;
+            }
+            dropdown.innerHTML = results.slice(0, 8).map(r => {
+              const year = r.release_date ? r.release_date.substring(0, 4) : '';
+              const id = escapeHtml(String(r.id));
+              return '<div class="tv-match-search-item" data-id="' + id + '">' +
+                '<strong>' + escapeHtml(r.title) + '</strong>' +
+                (year ? ' <span class="text-muted">(' + escapeHtml(year) + ')</span>' : '') +
+                ' <span class="text-muted">ID: ' + id + '</span>' +
+                '</div>';
+            }).join('');
+            dropdown.style.display = 'block';
+          })
+          .catch(() => {
+            dropdown.innerHTML = '<div class="tv-match-search-item">Search failed</div>';
+            dropdown.style.display = 'block';
+          });
+      }, 400);
+    });
+
+    dropdown.addEventListener('click', e => {
+      const item = e.target.closest('.tv-match-search-item');
+      if (!item || !item.dataset.id) return;
+      hiddenInput.value = item.dataset.id;
+      input.value = item.querySelector('strong').textContent + ' (ID: ' + item.dataset.id + ')';
+      approveBtn.disabled = false;
+      dropdown.style.display = 'none';
+    });
+  });
+
+  const closeDropdowns = (e) => {
+    if (!e.target.closest('.tv-match-search-wrap')) {
+      document.querySelectorAll('.tv-match-search-results').forEach(d => d.style.display = 'none');
+    }
+  };
+  document.addEventListener('click', closeDropdowns);
+  document.addEventListener('turbo:before-cache', () => document.removeEventListener('click', closeDropdowns), { once: true });
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+})();
+</script>
+{{end}}
