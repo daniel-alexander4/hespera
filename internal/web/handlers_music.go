@@ -1709,8 +1709,8 @@ func (h *Handler) musicPlayEvent(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(in.Source) == "" {
 		in.Source = "unknown"
 	}
-	if len(in.Source) > 32 {
-		in.Source = strings.TrimSpace(in.Source[:32])
+	if r := []rune(in.Source); len(r) > 32 {
+		in.Source = strings.TrimSpace(string(r[:32]))
 	}
 
 	// Ignore very short partial listens.

@@ -626,15 +626,22 @@ func (s *Scanner) relinkMovedTracks(ctx context.Context, libraryID int64, root s
 // from the orphaned old row (fromID) onto the new row (toID). The orphan itself
 // is deleted afterwards by pruneMissingTracks.
 func (s *Scanner) transferTrackState(ctx context.Context, fromID, toID int64) error {
-	if _, err := s.DB.ExecContext(ctx,
+	// One transaction so a failure on the second update doesn't leave play_history
+	// re-pointed while lyrics_cache still references the about-to-be-pruned orphan.
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transfer: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE play_history SET track_id=? WHERE track_id=?`, toID, fromID); err != nil {
 		return fmt.Errorf("transfer play_history: %w", err)
 	}
-	if _, err := s.DB.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE lyrics_cache SET track_id=? WHERE track_id=?`, toID, fromID); err != nil {
 		return fmt.Errorf("transfer lyrics_cache: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Scanner) pruneMissingTracks(ctx context.Context, libraryID int64, root string) error {
