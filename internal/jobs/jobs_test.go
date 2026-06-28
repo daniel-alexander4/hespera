@@ -10,6 +10,46 @@ import (
 	"hespera/internal/db"
 )
 
+func TestReconcileStaleJobsOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	conn, err := db.Open(filepath.Join(dir, "test.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+	if err := db.Migrate(conn); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	// Simulate rows a prior process left mid-flight, plus a terminal row that must
+	// not be touched.
+	for _, st := range []string{"running", "queued", "done"} {
+		if _, err := conn.Exec(
+			"INSERT INTO scan_jobs (library_id, job_type, status, progress_current, progress_total, created_at) VALUES (1, 'scan', ?, 0, 0, datetime('now'))",
+			st,
+		); err != nil {
+			t.Fatalf("seed %s: %v", st, err)
+		}
+	}
+
+	New(conn) // runs reconcileStaleJobs
+
+	var stale int
+	if err := conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE status IN ('running','queued')").Scan(&stale); err != nil {
+		t.Fatalf("count stale: %v", err)
+	}
+	if stale != 0 {
+		t.Fatalf("expected 0 running/queued after reconcile, got %d", stale)
+	}
+	var done int
+	if err := conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE status='done'").Scan(&done); err != nil {
+		t.Fatalf("count done: %v", err)
+	}
+	if done != 1 {
+		t.Fatalf("terminal 'done' row must be untouched, got %d done rows", done)
+	}
+}
+
 func TestEnqueueAndRun(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.sqlite")

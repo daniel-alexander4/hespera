@@ -129,13 +129,16 @@ func (m *Manager) CreateChallenge(w http.ResponseWriter, r *http.Request) (Chall
 		return Challenge{}, err
 	}
 	now := m.now().UTC()
+	// Hold the lock across check-and-insert: releasing it between the existing-check
+	// and the store let two concurrent first-time requests both generate and the
+	// last writer win, stranding the earlier caller with a challenge value no longer
+	// in the map. randomToken is a fast crypto/rand read and auth isn't a hot path.
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.pruneLocked(now)
 	if existing, ok := m.challenges[preAuth]; ok && !existing.Used && now.Before(existing.ExpiresAt) {
-		m.mu.Unlock()
 		return Challenge{Value: existing.Value, ExpiresAt: existing.ExpiresAt}, nil
 	}
-	m.mu.Unlock()
 
 	challenge, err := randomToken(24)
 	if err != nil {
@@ -146,9 +149,7 @@ func (m *Manager) CreateChallenge(w http.ResponseWriter, r *http.Request) (Chall
 		ExpiresAt: now.Add(m.cfg.ChallengeTTL),
 		IP:        clientIP(r),
 	}
-	m.mu.Lock()
 	m.challenges[preAuth] = entry
-	m.mu.Unlock()
 	slog.Info("auth challenge issued", "ip", entry.IP)
 	return Challenge{Value: challenge, ExpiresAt: entry.ExpiresAt}, nil
 }
@@ -218,9 +219,18 @@ func (m *Manager) VerifyAndStartSession(w http.ResponseWriter, r *http.Request, 
 		return errors.New("signature verification failed")
 	}
 
+	// Consume the challenge atomically: re-read under the lock and bail if a
+	// concurrent request (sharing this preauth cookie + a valid signature) already
+	// marked it Used, so two parallel verifies can't both mint a session. The
+	// 5-attempt retry is preserved because Used is only set on a successful verify.
 	m.mu.Lock()
-	entry.Used = true
-	m.challenges[preAuthCookie.Value] = entry
+	cur, ok := m.challenges[preAuthCookie.Value]
+	if !ok || cur.Used {
+		m.mu.Unlock()
+		return errChallengeExpired
+	}
+	cur.Used = true
+	m.challenges[preAuthCookie.Value] = cur
 	m.mu.Unlock()
 	slog.Info("auth verify success", "ip", ip, "user", username)
 	return m.setSessionCookie(w, r, username)

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"hespera/internal/opensubtitles"
 	"hespera/internal/video"
@@ -180,7 +181,23 @@ func (h *Handler) cacheConvertedSubtitle(r *http.Request, link, cachePath string
 	if err != nil {
 		return err
 	}
-	resp, err := (&http.Client{}).Do(req)
+	// The link host was validated before this call, but the default client would
+	// follow a redirect to anywhere; re-validate every hop (an attacker-shaped 3xx
+	// off opensubtitles.com could otherwise reach an internal address — SSRF), and
+	// bound the transfer so a stalled CDN can't pin the request (and its ffmpeg slot).
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			if !isOpenSubtitlesHost(req.URL.String()) {
+				return fmt.Errorf("refusing redirect to non-opensubtitles host %q", req.URL.Hostname())
+			}
+			return nil
+		},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

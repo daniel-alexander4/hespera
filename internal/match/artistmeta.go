@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -345,15 +346,69 @@ func extractP18(data []byte, qid string) string {
 	return filename
 }
 
+// imageURLGuard validates an image-download URL before fetch. It's a package var
+// (defaulting to the real SSRF guard) so integration tests that serve art from an
+// httptest server — http on loopback, which the guard rejects — can relax it.
+// Production never reassigns it.
+var imageURLGuard = requirePublicHTTPS
+
+// requirePublicHTTPS guards image downloads driven by third-party API responses
+// (fanart.tv/TheAudioDB/Wikidata), which could otherwise point the server at an
+// internal address — SSRF. It requires https and rejects any host that resolves to
+// a private/loopback/link-local address. (DNS rebinding between this check and the
+// dial is a residual TOCTOU; the realistic threat is a provider returning an
+// internal URL, which this closes — and the caller re-checks each redirect hop.)
+func requirePublicHTTPS(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid url: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("refusing non-https image url (scheme %q)", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("image url has no host")
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("resolve %q: %w", host, err)
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("refusing image url resolving to non-public address %s", ip)
+		}
+	}
+	return nil
+}
+
 func downloadArtistImage(ctx context.Context, imgURL, dataDir, artistMBID string, optClient *http.Client) (string, error) {
 	thumbDir := filepath.Join(dataDir, "thumbs", "music")
 	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
 		return "", err
 	}
 
-	client := optClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+	if err := imageURLGuard(imgURL); err != nil {
+		return "", err
+	}
+
+	// Wrap the (possibly shared) client with a redirect guard without mutating it,
+	// preserving its transport/timeout. FilePath legitimately redirects (to
+	// upload.wikimedia.org), so we re-validate each hop rather than refuse redirects.
+	src := optClient
+	if src == nil {
+		src = &http.Client{Timeout: 30 * time.Second}
+	}
+	client := &http.Client{
+		Timeout:   src.Timeout,
+		Transport: src.Transport,
+		Jar:       src.Jar,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			return imageURLGuard(req.URL.String())
+		},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imgURL, nil)
 	if err != nil {
