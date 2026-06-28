@@ -1,12 +1,14 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"hespera/internal/match"
 )
@@ -49,7 +51,11 @@ func (h *Handler) musicArtistDisambiguateGET(w http.ResponseWriter, r *http.Requ
 	}
 
 	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
-	candidates, err := matcher.ResolveArtistCandidates(r.Context(), name)
+	// Bound the MusicBrainz round-trip so this interactive GET can't hang the page
+	// on a slow/unreachable provider (it already degrades to a retry on error).
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	candidates, err := matcher.ResolveArtistCandidates(ctx, name)
 	if err != nil {
 		// MusicBrainz is unreachable (DNS/timeout/outage). Degrade to a readable
 		// page with a retry rather than a raw 502 Bad Gateway in the browser.
