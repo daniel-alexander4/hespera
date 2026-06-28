@@ -35,6 +35,7 @@
     </a>
     {{end}}
   </div>
+  {{template "pagination" .ArtistsPage}}
   {{else}}
   <div class="empty-state"><p>No artists found. Scan a music library to get started.</p></div>
   {{end}}
@@ -60,6 +61,7 @@
     </a>
     {{end}}
   </div>
+  {{if .MoreCompilations}}<p><a href="/music/compilations" class="btn btn-sm">See all compilations →</a></p>{{end}}
   {{else}}
   <div class="empty-state"><p>No compilations found.</p></div>
   {{end}}

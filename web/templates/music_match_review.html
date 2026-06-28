@@ -4,6 +4,9 @@
 </div>
 
 {{if .Albums}}
+{{if .Capped}}
+<p class="form-help">Showing the top {{.Shown}} of {{.TotalCount}} unmatched albums (highest match-confidence first) — match these and reload to see more.</p>
+{{end}}
 {{if .LibraryID}}
 <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
   <form method="post" action="/music/writeback" class="inline-form">

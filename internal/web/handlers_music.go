@@ -169,7 +169,18 @@ func (h *Handler) musicHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// All artists
+	// Artists (paginated — this tab is the primary artist browse).
+	var artistTotal int
+	if err := h.db.QueryRowContext(r.Context(), `
+SELECT COUNT(*) FROM music_artists a
+WHERE a.library_id=?
+  AND EXISTS (SELECT 1 FROM music_albums al WHERE al.album_artist_id=a.id AND COALESCE(al.is_compilation,0)=0)
+`, libraryID).Scan(&artistTotal); err != nil {
+		httpError(w, 500, "internal server error", "db count failed", "handler", "musicHome", "err", err)
+		return
+	}
+	artistNav, artistOffset := paginate(pageParam(r), artistTotal, "/music")
+
 	artistRows, err := h.db.QueryContext(r.Context(), `
 SELECT a.id, a.name, a.art_path,
        (SELECT COUNT(*) FROM music_tracks t
@@ -184,7 +195,8 @@ WHERE a.library_id=?
     WHERE al.album_artist_id=a.id AND COALESCE(al.is_compilation,0)=0
   )
 ORDER BY lower(a.name)
-`, libraryID)
+LIMIT ? OFFSET ?
+`, libraryID, listPageSize, artistOffset)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
 		return
@@ -208,13 +220,17 @@ ORDER BY lower(a.name)
 		return
 	}
 
-	// All compilations
+	// Compilations: a capped preview on the home tab — the full, paginated list
+	// lives at /music/compilations. Fetch one extra to know whether to show the
+	// "see all" link.
+	const compPreview = 24
 	compRows, err := h.db.QueryContext(r.Context(), `
 SELECT id, title, year, art_path
 FROM music_albums
 WHERE library_id=? AND COALESCE(is_compilation,0)=1
 ORDER BY year, lower(title)
-`, libraryID)
+LIMIT ?
+`, libraryID, compPreview+1)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
 		return
@@ -231,6 +247,10 @@ ORDER BY year, lower(title)
 		}
 		row.ArtPath = scanNullString(art)
 		compilations = append(compilations, row)
+	}
+	moreCompilations := len(compilations) > compPreview
+	if moreCompilations {
+		compilations = compilations[:compPreview]
 	}
 	if err := compRows.Err(); err != nil {
 		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicHome", "err", err)
@@ -259,7 +279,9 @@ ORDER BY year, lower(title)
 		"RecentlyPlayed":      recentlyPlayed,
 		"RecentlyAddedAlbums": recentlyAddedAlbums,
 		"Artists":             artists,
+		"ArtistsPage":         artistNav,
 		"Compilations":        compilations,
+		"MoreCompilations":    moreCompilations,
 		"Years":               years,
 		"MaxYear":             maxYear,
 	})
@@ -1384,6 +1406,14 @@ func (h *Handler) musicAlbums(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var total int
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM music_albums WHERE library_id=?", libraryID).Scan(&total); err != nil {
+		httpError(w, 500, "internal server error", "db count failed", "handler", "musicAlbums", "err", err)
+		return
+	}
+	nav, offset := paginate(pageParam(r), total, "/music/albums")
+
 	rows, err := h.db.QueryContext(r.Context(), `
 SELECT al.id, al.title, al.year, al.art_path, ar.name, ar.id, COALESCE(al.is_compilation,0)
 FROM music_albums al
@@ -1393,7 +1423,8 @@ JOIN music_artists ar ON ar.id = CASE
 END
 WHERE al.library_id=?
 ORDER BY lower(ar.name), al.year, lower(al.title)
-`, libraryID)
+LIMIT ? OFFSET ?
+`, libraryID, listPageSize, offset)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbums", "err", err)
 		return
@@ -1431,6 +1462,7 @@ ORDER BY lower(ar.name), al.year, lower(al.title)
 		"Title":     "Albums",
 		"Albums":    albums,
 		"LibraryID": libraryID,
+		"Page":      nav,
 	})
 }
 
@@ -1446,12 +1478,21 @@ func (h *Handler) musicCompilations(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "music_compilations.html", map[string]any{"Title": "Compilations"})
 		return
 	}
+	var total int
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM music_albums WHERE library_id=? AND COALESCE(is_compilation,0)=1", libraryID).Scan(&total); err != nil {
+		httpError(w, 500, "internal server error", "db count failed", "handler", "musicCompilations", "err", err)
+		return
+	}
+	nav, offset := paginate(pageParam(r), total, "/music/compilations")
+
 	rows, err := h.db.QueryContext(r.Context(), `
 SELECT id, title, year, art_path
 FROM music_albums
 WHERE library_id=? AND COALESCE(is_compilation,0)=1
 ORDER BY year, lower(title)
-`, libraryID)
+LIMIT ? OFFSET ?
+`, libraryID, listPageSize, offset)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicCompilations", "err", err)
 		return
@@ -1478,6 +1519,7 @@ ORDER BY year, lower(title)
 		"Title":        "Compilations",
 		"LibraryID":    libraryID,
 		"Compilations": compilations,
+		"Page":         nav,
 	})
 }
 
