@@ -30,7 +30,7 @@
     </div>
     {{if .FileID}}
     <div class="tv-episode-actions">
-      <a href="/tv/player?file={{.FileID}}" class="btn btn-sm btn-primary">Play</a>
+      <a href="/tv/player?file={{.FileID}}" class="btn btn-sm btn-primary">{{template "icon-play"}}Play</a>
     </div>
     {{end}}
   </div>
