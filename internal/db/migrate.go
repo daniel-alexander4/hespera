@@ -281,6 +281,22 @@ CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT ''
 );
+
+-- Out-of-catalog artists (a global cache, like people for TV): the bio/image/
+-- releases shown on the dedicated page for a "Similar Artist" the user doesn't
+-- own. Keyed by MusicBrainz artist MBID. image_url is an external hotlink (NOT
+-- downloaded to disk), releases_json is a cached []ReleaseGroupBrief. fetched_at
+-- gates the lazy one-time background fetch.
+CREATE TABLE IF NOT EXISTS external_artists (
+  mbid TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
+  comment TEXT NOT NULL DEFAULT '',
+  bio TEXT NOT NULL DEFAULT '',
+  bio_source_url TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  releases_json TEXT NOT NULL DEFAULT '',
+  fetched_at TEXT NOT NULL DEFAULT ''
+);
 `
 
 func Migrate(db *sql.DB) error {
@@ -303,6 +319,15 @@ func Migrate(db *sql.DB) error {
 	// unknown/unmatched), filled by the music-match popularity phase and used to
 	// rank the "Most Popular" shuffle playlist.
 	if err := ensureColumn(db, "music_tracks", "popularity", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// similar_json caches the ListenBrainz similar-artists list (a []SimilarArtist)
+	// for the artist page; similar_fetched_at gates the lazy one-time fetch so a
+	// cache-miss view doesn't re-enqueue on every render.
+	if err := ensureColumn(db, "music_artists", "similar_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "music_artists", "similar_fetched_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {

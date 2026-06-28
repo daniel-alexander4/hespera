@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -393,6 +395,52 @@ func (c *MBClient) LookupArtist(ctx context.Context, mbid string) (*MBArtistFull
 		return nil, fmt.Errorf("parse artist: %w", err)
 	}
 	return &a, nil
+}
+
+// ReleaseGroupBrief is a single release-group from an artist's discography (the
+// "notable releases" list on the external-artist page).
+type ReleaseGroupBrief struct {
+	MBID  string
+	Title string
+	Type  string // primary-type, e.g. "Album"
+	Year  int    // from first-release-date; 0 if unknown
+}
+
+// BrowseArtistReleaseGroups returns an artist's album release-groups (newest
+// first), for the out-of-catalog artist page. Browse (not search) by artist MBID,
+// filtered to primary-type Album.
+func (c *MBClient) BrowseArtistReleaseGroups(ctx context.Context, artistMBID string) ([]ReleaseGroupBrief, error) {
+	path := fmt.Sprintf("/release-group?artist=%s&type=album&limit=50&fmt=json", url.PathEscape(artistMBID))
+	body, err := c.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		ReleaseGroups []struct {
+			ID               string `json:"id"`
+			Title            string `json:"title"`
+			PrimaryType      string `json:"primary-type"`
+			FirstReleaseDate string `json:"first-release-date"`
+		} `json:"release-groups"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return nil, fmt.Errorf("parse release-group browse: %w", err)
+	}
+	out := make([]ReleaseGroupBrief, 0, len(r.ReleaseGroups))
+	for _, rg := range r.ReleaseGroups {
+		if rg.Title == "" {
+			continue
+		}
+		year := 0
+		if len(rg.FirstReleaseDate) >= 4 {
+			if y, err := strconv.Atoi(rg.FirstReleaseDate[:4]); err == nil {
+				year = y
+			}
+		}
+		out = append(out, ReleaseGroupBrief{MBID: rg.ID, Title: rg.Title, Type: rg.PrimaryType, Year: year})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Year > out[j].Year })
+	return out, nil
 }
 
 // LookupReleaseGroupAliases fetches a release-group's alternate titles. Aliases

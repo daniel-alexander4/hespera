@@ -1,0 +1,49 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>{{if .Name}}{{.Name}}{{else}}Artist{{end}}</h1>
+</div>
+
+<div class="artist-header">
+  <div class="artist-header-art">
+    {{if .ImageURL}}
+    <img src="{{.ImageURL}}" alt="{{.Name}}" class="artist-header-img" loading="lazy" referrerpolicy="no-referrer" />
+    {{else}}
+    <div class="artist-thumb-ph big">{{if .Name}}{{slice .Name 0 1}}{{end}}</div>
+    {{end}}
+  </div>
+  <div class="artist-side">
+    {{if .Comment}}<p class="form-help">{{.Comment}}</p>{{end}}
+    {{if .Bio}}
+    <div class="artist-bio">
+      <p>{{.Bio}}</p>
+      {{if .BioSourceURL}}
+      <a href="{{.BioSourceURL}}" class="artist-bio-link" target="_blank" rel="noopener">Read more on Wikipedia</a>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="form-help">Details are loading — check back in a moment.</p>
+    {{end}}
+    <div class="artist-actions">
+      <a href="https://musicbrainz.org/artist/{{.MBID}}" class="btn" target="_blank" rel="noopener noreferrer">{{template "icon-user-check"}}View on MusicBrainz</a>
+    </div>
+    <p class="form-help">This artist isn't in your library.</p>
+  </div>
+</div>
+
+{{if .Releases}}
+<h3 class="section-title">Notable releases</h3>
+<div class="band-albums-grid">
+  {{range .Releases}}
+  <div class="band-album-card">
+    <div class="band-album-art">
+      <div class="album-art-ph">{{template "icon-disc"}}</div>
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{if .Year}}{{.Year}}{{if .Type}} · {{end}}{{end}}{{.Type}}</div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}

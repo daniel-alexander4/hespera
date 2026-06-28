@@ -54,6 +54,61 @@ func (m *Matcher) ReEnrichArtist(ctx context.Context, artistMBID string) (*Artis
 	return EnrichArtist(ctx, m.mb, m.fanart, m.audiodb, artistMBID, m.dataDir)
 }
 
+// similarArtistLimit caps how many related artists the artist page shows.
+const similarArtistLimit = 18
+
+// SimilarArtists returns related artists (ListenBrainz, highest score first),
+// dropping the reference artist itself and capping the list. Empty on any miss —
+// the section simply doesn't render.
+func (m *Matcher) SimilarArtists(ctx context.Context, artistMBID string) []SimilarArtist {
+	list, ok := m.lb.SimilarArtists(ctx, artistMBID)
+	if !ok {
+		return nil
+	}
+	out := make([]SimilarArtist, 0, similarArtistLimit)
+	for _, a := range list {
+		if a.MBID == artistMBID {
+			continue
+		}
+		out = append(out, a)
+		if len(out) >= similarArtistLimit {
+			break
+		}
+	}
+	return out
+}
+
+// ExternalArtistMeta is the resolved profile of an out-of-catalog artist for its
+// dedicated page: bio + a hotlinkable image URL (not downloaded) + notable
+// release-groups.
+type ExternalArtistMeta struct {
+	Name         string
+	Bio          string
+	BioSourceURL string
+	ImageURL     string
+	Releases     []ReleaseGroupBrief
+}
+
+const externalArtistReleaseLimit = 18
+
+// ResolveExternalArtist fetches an out-of-catalog artist's bio + image URL +
+// notable releases by MBID. The image is left as an external URL (the page
+// hotlinks it) rather than downloaded — see enrichArtist's download flag.
+func (m *Matcher) ResolveExternalArtist(ctx context.Context, artistMBID string) (*ExternalArtistMeta, error) {
+	meta, err := enrichArtist(ctx, m.mb, m.fanart, m.audiodb, artistMBID, m.dataDir, false)
+	if err != nil {
+		return nil, err
+	}
+	out := &ExternalArtistMeta{Name: meta.Name, Bio: meta.Bio, BioSourceURL: meta.BioSourceURL, ImageURL: meta.ImageURL}
+	if rgs, err := m.mb.BrowseArtistReleaseGroups(ctx, artistMBID); err == nil {
+		if len(rgs) > externalArtistReleaseLimit {
+			rgs = rgs[:externalArtistReleaseLimit]
+		}
+		out.Releases = rgs
+	}
+	return out, nil
+}
+
 // ArtistImageCandidate is one selectable artist image surfaced to the picker.
 type ArtistImageCandidate struct {
 	URL    string
