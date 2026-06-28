@@ -141,6 +141,32 @@ CREATE TABLE IF NOT EXISTS tv_series_art (
   UNIQUE(art_type, tmdb_series_id, season_number, episode_number)
 );
 
+-- Cast/crew people (global TMDB entities, not library-scoped) and the credits
+-- join that links a person to a title. media_type discriminates tv vs movie so
+-- the movie scanner can reuse this set later. Profile image cached to disk like
+-- other art (thumbgc TV sweep references people.art_path).
+CREATE TABLE IF NOT EXISTS people (
+  tmdb_id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
+  profile_path TEXT NOT NULL DEFAULT '',
+  art_path TEXT NOT NULL DEFAULT '',
+  bio TEXT NOT NULL DEFAULT '',
+  bio_fetched_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS credits (
+  person_id INTEGER NOT NULL,
+  media_type TEXT NOT NULL DEFAULT 'tv' CHECK(media_type IN ('tv','movie')),
+  media_id INTEGER NOT NULL,
+  character_name TEXT NOT NULL DEFAULT '',
+  billing_order INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(person_id, media_type, media_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_credits_media ON credits(media_type, media_id, billing_order);
+CREATE INDEX IF NOT EXISTS idx_credits_person ON credits(person_id);
+
 CREATE TABLE IF NOT EXISTS tv_playback_progress (
   file_id INTEGER PRIMARY KEY REFERENCES tv_series_files(id) ON DELETE CASCADE,
   position_seconds REAL NOT NULL DEFAULT 0,

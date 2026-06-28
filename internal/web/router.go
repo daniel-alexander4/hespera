@@ -72,6 +72,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/tv/match/rematch", h.tvMatchRematch)
 	mux.HandleFunc("/tv/match/search", h.tvMatchSearch)
 	mux.HandleFunc("/tv/player", h.tvPlayer)
+	mux.HandleFunc("/person/", h.personDetail)
 	mux.HandleFunc("/tv/playback-progress", h.tvPlaybackProgress)
 	mux.HandleFunc("/tv/playback-session", h.tvPlaybackSession)
 	mux.HandleFunc("/tv/subtitles/search", h.tvSubtitlesSearch)
@@ -86,6 +87,9 @@ func (h *Handler) Router() http.Handler {
 
 	// TV art
 	mux.HandleFunc("/art/tv/", h.tvArt)
+
+	// Cast / actor images
+	mux.HandleFunc("/art/person/", h.personArt)
 
 	// Other media
 	mux.HandleFunc("/movies", h.moviesHome)

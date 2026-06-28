@@ -436,6 +436,18 @@ ORDER BY i.season_number
 		year = show.FirstAirDate[:4]
 	}
 
+	// Cast strip. Loaded from cache; if this series' cast was never fetched
+	// (e.g. it matched before this feature, or has none), enqueue a background
+	// fetch so it populates on the next view — the handler never blocks on it.
+	var cast []castMemberRow
+	if sid, err := strconv.Atoi(seriesID); err == nil && sid > 0 {
+		cast = h.loadSeriesCast(r.Context(), sid)
+		if !h.castFetched(r.Context(), sid) {
+			h.enqueueMetaFetch(r.Context(), fmt.Sprintf("cast:%d", sid), "tv_cast_fetch",
+				func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchTVCast(ctx, sid) })
+		}
+	}
+
 	h.render(w, "tv_series.html", map[string]any{
 		"Title":          show.Name,
 		"ShowID":         seriesID,
@@ -447,6 +459,7 @@ ORDER BY i.season_number
 		"BackdropPath":   show.BackdropPath,
 		"Seasons":        seasons,
 		"MissingSeasons": len(missing),
+		"Cast":           cast,
 	})
 }
 

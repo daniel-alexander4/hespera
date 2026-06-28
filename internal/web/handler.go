@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"hespera/internal/auth"
@@ -37,6 +38,10 @@ type Handler struct {
 	// tmdbValidate checks whether a TMDB key is accepted (best-effort, used by
 	// the API-keys settings page). A field so tests can stub the network call.
 	tmdbValidate func(ctx context.Context, key string) (bool, error)
+	// metaFetch dedupes in-flight background metadata fetches (cast, actor bios)
+	// keyed by e.g. "cast:123"/"person:456", so a cache-miss page view enqueues
+	// at most one job per entity while it's queued/running.
+	metaFetch sync.Map
 }
 
 func New(d Deps) (*Handler, error) {
@@ -71,6 +76,7 @@ func New(d Deps) (*Handler, error) {
 		"tv_season.html",
 		"tv_match_review.html",
 		"tv_player.html",
+		"person.html",
 		"movies_home.html",
 	}
 

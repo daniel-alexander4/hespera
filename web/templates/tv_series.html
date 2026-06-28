@@ -15,6 +15,27 @@
 </div>
 {{end}}
 
+{{if .Cast}}
+<h2>Cast</h2>
+<div class="home-carousel-row">
+  {{range .Cast}}
+  <a href="/person/{{.PersonID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .HasArt}}
+      <img src="/art/person/{{.PersonID}}" alt="{{.Name}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">{{if .Name}}{{slice .Name 0 1}}{{end}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      {{if .Character}}<div class="artist-card-stats">{{.Character}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
 <h2>Seasons</h2>
 
 {{if .MissingSeasons}}<p class="tv-missing-note">{{.MissingSeasons}} season(s) missing from your library</p>{{end}}

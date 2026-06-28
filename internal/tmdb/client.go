@@ -105,6 +105,27 @@ type Genre struct {
 	Name string `json:"name"`
 }
 
+// CastMember is one entry from /tv/{id}/aggregate_credits. roles[] holds the
+// character(s) the person played, aggregated across all seasons; order is the
+// billing rank.
+type CastMember struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	ProfilePath string `json:"profile_path"`
+	Order       int    `json:"order"`
+	Roles       []struct {
+		Character string `json:"character"`
+	} `json:"roles"`
+}
+
+// Person is the subset of /person/{id} we cache for an actor page.
+type Person struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Biography   string `json:"biography"`
+	ProfilePath string `json:"profile_path"`
+}
+
 // ValidateKey reports whether TMDB accepts the API key. A nil error with
 // valid=false means TMDB rejected the key (HTTP 401); a non-nil error means
 // TMDB could not be reached, so the key's validity is unknown.
@@ -213,6 +234,65 @@ func (c *Client) FetchTVSeason(ctx context.Context, showID, seasonNumber int) (*
 		return nil, fmt.Errorf("tmdb season decode: %w", err)
 	}
 	return &season, nil
+}
+
+// FetchTVAggregateCredits returns a show's cast from /tv/{id}/aggregate_credits
+// (aggregated across seasons), ordered by TMDB's billing `order`.
+func (c *Client) FetchTVAggregateCredits(ctx context.Context, showID int) ([]CastMember, error) {
+	<-c.limiter
+
+	u := fmt.Sprintf("%s/tv/%d/aggregate_credits?api_key=%s&language=en-US",
+		c.apiBase, showID, url.QueryEscape(c.apiKey))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb credits: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("tmdb credits %d: status %d", showID, resp.StatusCode)
+	}
+
+	var out struct {
+		Cast []CastMember `json:"cast"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("tmdb credits decode: %w", err)
+	}
+	return out.Cast, nil
+}
+
+// FetchPerson returns a person's details from /person/{id} (for the actor bio).
+func (c *Client) FetchPerson(ctx context.Context, personID int) (*Person, error) {
+	<-c.limiter
+
+	u := fmt.Sprintf("%s/person/%d?api_key=%s&language=en-US",
+		c.apiBase, personID, url.QueryEscape(c.apiKey))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb person: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("tmdb person %d: status %d", personID, resp.StatusCode)
+	}
+
+	var p Person
+	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+		return nil, fmt.Errorf("tmdb person decode: %w", err)
+	}
+	return &p, nil
 }
 
 func (c *Client) DownloadImage(ctx context.Context, tmdbPath, destPath string) error {
