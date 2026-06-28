@@ -212,6 +212,11 @@
       .then((data) => {
         const next = (data && data.tracks) || [];
         if (!next.length) return;
+        // Report the outgoing track against the CURRENT queue before swapping —
+        // otherwise playAt(0)'s own report would read the old currentPos against
+        // the new tracks/queue and mis-log (or drop) the play event. The
+        // currentTrackReported guard then makes playAt(0)'s report a no-op.
+        reportCurrentTrack(false);
         tracks = next;
         queue = tracks.map((_, i) => i);
         if (o.shuffle) queue = shuffleArray(queue);
