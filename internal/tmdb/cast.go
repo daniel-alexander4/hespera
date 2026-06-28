@@ -117,7 +117,7 @@ ON CONFLICT(entity_key, lang) DO UPDATE SET fetched_at=excluded.fetched_at, upda
 		if ap != "" {
 			continue
 		}
-		dest := filepath.Join(m.artDir, fmt.Sprintf("person_%d_profile.jpg", cm.ID))
+		dest := filepath.Join(m.personImageDir(), fmt.Sprintf("person_%d_profile.jpg", cm.ID))
 		if err := m.client.DownloadImage(ctx, cm.ProfilePath, dest); err != nil {
 			slog.Warn("tmdb profile download", "person", cm.ID, "err", err)
 			continue
@@ -153,7 +153,7 @@ ON CONFLICT(tmdb_id) DO UPDATE SET
 	var ap string
 	_ = m.db.QueryRowContext(ctx, "SELECT art_path FROM people WHERE tmdb_id=?", personID).Scan(&ap)
 	if ap == "" && p.ProfilePath != "" {
-		dest := filepath.Join(m.artDir, fmt.Sprintf("person_%d_profile.jpg", personID))
+		dest := filepath.Join(m.personImageDir(), fmt.Sprintf("person_%d_profile.jpg", personID))
 		if err := m.client.DownloadImage(ctx, p.ProfilePath, dest); err == nil {
 			_, _ = m.db.ExecContext(ctx, "UPDATE people SET art_path=? WHERE tmdb_id=?", dest, personID)
 		}

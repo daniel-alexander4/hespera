@@ -20,14 +20,44 @@ type Matcher struct {
 	db     *sql.DB
 	client *Client
 	artDir string
+	// personDir is where actor profile images are written. The people/credits set
+	// is global and shared across TV and movies, so person images always live in
+	// thumbs/tv regardless of which matcher fetched them — only title posters and
+	// backdrops differ per media type (artDir). For the TV matcher the two are the
+	// same directory.
+	personDir string
 }
 
 func NewMatcher(db *sql.DB, apiKey, dataDir string) *Matcher {
 	artDir := filepath.Join(dataDir, "thumbs", "tv")
 	return &Matcher{
-		db:     db,
-		client: NewClient(apiKey),
-		artDir: artDir,
+		db:        db,
+		client:    NewClient(apiKey),
+		artDir:    artDir,
+		personDir: artDir,
+	}
+}
+
+// personImageDir is where actor profile images are written. It falls back to
+// artDir when personDir is unset, so a Matcher built as a bare struct literal
+// (the test path) still writes into its configured art directory rather than the
+// process working directory.
+func (m *Matcher) personImageDir() string {
+	if m.personDir != "" {
+		return m.personDir
+	}
+	return m.artDir
+}
+
+// NewMovieMatcher builds a Matcher whose title art (posters/backdrops) lands in
+// thumbs/movies, while shared actor images stay in thumbs/tv. It drives the
+// movie match pipeline (movie.go).
+func NewMovieMatcher(db *sql.DB, apiKey, dataDir string) *Matcher {
+	return &Matcher{
+		db:        db,
+		client:    NewClient(apiKey),
+		artDir:    filepath.Join(dataDir, "thumbs", "movies"),
+		personDir: filepath.Join(dataDir, "thumbs", "tv"),
 	}
 }
 

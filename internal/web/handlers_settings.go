@@ -486,7 +486,17 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 	case "movies":
 		movieScanner := moviescan.New(h.cfg, h.db)
 		jobID, err = h.jobs.Enqueue("moviescan", id, "user", func(ctx context.Context, jID, libID int64) error {
-			return movieScanner.ScanMovies(ctx, jID, libID)
+			if err := movieScanner.ScanMovies(ctx, jID, libID); err != nil {
+				return err
+			}
+			// Chain a movie_match job after scan completes if a TMDB key is configured.
+			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" {
+				movieMatcher := tmdb.NewMovieMatcher(h.db, tmdbKey, h.cfg.DataDir)
+				_, _ = h.jobs.Enqueue("movie_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+					return movieMatcher.RunMovieMatch(ctx, mJID, mLibID)
+				})
+			}
+			return nil
 		})
 	default:
 		http.Error(w, "scanning not supported for this library type", 400)
