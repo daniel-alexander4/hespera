@@ -79,15 +79,19 @@ LIMIT 20
 	return out
 }
 
-// castFetched reports whether a series' cast fetch has run (the marker exists),
-// so the lazy backfill doesn't re-enqueue on every view — including for shows
-// that genuinely have no cast.
-func (h *Handler) castFetched(ctx context.Context, seriesID int) bool {
+// metaMarkerExists reports whether a tv_series_metadata_cache marker row exists,
+// used to gate lazy one-time background backfills so they don't re-enqueue on
+// every page view (including for shows that genuinely have nothing to fetch).
+func (h *Handler) metaMarkerExists(ctx context.Context, entityKey string) bool {
 	var x int
-	err := h.db.QueryRowContext(ctx,
+	return h.db.QueryRowContext(ctx,
 		"SELECT 1 FROM tv_series_metadata_cache WHERE entity_key=? AND lang='en'",
-		fmt.Sprintf("show:%d:cast", seriesID)).Scan(&x)
-	return err == nil
+		entityKey).Scan(&x) == nil
+}
+
+// castFetched reports whether a series' cast fetch has run (the marker exists).
+func (h *Handler) castFetched(ctx context.Context, seriesID int) bool {
+	return h.metaMarkerExists(ctx, fmt.Sprintf("show:%d:cast", seriesID))
 }
 
 type personTitleRow struct {

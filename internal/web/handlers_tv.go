@@ -446,6 +446,12 @@ ORDER BY i.season_number
 			h.enqueueMetaFetch(r.Context(), fmt.Sprintf("cast:%d", sid), "tv_cast_fetch",
 				func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchTVCast(ctx, sid) })
 		}
+		// Backfill a hi-res (w1280) backdrop for shows matched before the size
+		// bump — their on-disk banner is the old soft w500. Background, once.
+		if show.BackdropPath != "" && !h.metaMarkerExists(r.Context(), fmt.Sprintf("show:%d:backdrop_hires", sid)) {
+			h.enqueueMetaFetch(r.Context(), fmt.Sprintf("backdrop:%d", sid), "tv_backdrop_refresh",
+				func(ctx context.Context, m *tmdb.Matcher) error { return m.RefetchBackdrop(ctx, sid) })
+		}
 	}
 
 	h.render(w, "tv_series.html", map[string]any{

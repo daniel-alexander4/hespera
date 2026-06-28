@@ -23,20 +23,22 @@ const (
 )
 
 type Client struct {
-	apiKey     string
-	httpClient *http.Client
-	limiter    <-chan time.Time
-	apiBase    string
-	imgBase    string
+	apiKey       string
+	httpClient   *http.Client
+	limiter      <-chan time.Time
+	apiBase      string
+	imgBase      string // poster/profile/season size (w500)
+	backdropBase string // backdrop size (w1280) — wide hero banners
 }
 
 func NewClient(apiKey string) *Client {
 	return &Client{
-		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 15 * time.Second},
-		limiter:    time.NewTicker(250 * time.Millisecond).C, // 4 req/sec
-		apiBase:    apiBase,
-		imgBase:    imgPoster,
+		apiKey:       apiKey,
+		httpClient:   &http.Client{Timeout: 15 * time.Second},
+		limiter:      time.NewTicker(250 * time.Millisecond).C, // 4 req/sec
+		apiBase:      apiBase,
+		imgBase:      imgPoster,
+		backdropBase: imgBackdrop,
 	}
 }
 
@@ -337,13 +339,24 @@ func (c *Client) FetchPersonTVCredits(ctx context.Context, personID int) ([]Pers
 	return out.Cast, nil
 }
 
+// DownloadImage fetches an image at the standard size (w500) — posters, season
+// posters, profiles.
 func (c *Client) DownloadImage(ctx context.Context, tmdbPath, destPath string) error {
+	return c.downloadImage(ctx, c.imgBase, tmdbPath, destPath)
+}
+
+// DownloadBackdrop fetches a backdrop at the wider banner size (w1280).
+func (c *Client) DownloadBackdrop(ctx context.Context, tmdbPath, destPath string) error {
+	return c.downloadImage(ctx, c.backdropBase, tmdbPath, destPath)
+}
+
+func (c *Client) downloadImage(ctx context.Context, base, tmdbPath, destPath string) error {
 	if tmdbPath == "" {
 		return nil
 	}
 	<-c.limiter
 
-	imgURL := c.imgBase + tmdbPath
+	imgURL := base + tmdbPath
 	req, err := http.NewRequestWithContext(ctx, "GET", imgURL, nil)
 	if err != nil {
 		return err

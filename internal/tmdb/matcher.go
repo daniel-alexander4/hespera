@@ -147,20 +147,8 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 			}
 		}
 
-		// Download backdrop.
-		if show.BackdropPath != "" {
-			bdDest := filepath.Join(m.artDir, fmt.Sprintf("show_%d_backdrop.jpg", showID))
-			if err := m.client.DownloadImage(ctx, show.BackdropPath, bdDest); err != nil {
-				slog.Warn("tmdb backdrop download", "err", err)
-			} else {
-				_, _ = m.db.ExecContext(ctx, `
-INSERT INTO tv_series_art (art_type, tmdb_series_id, art_path, season_number, episode_number)
-VALUES ('series_backdrop', ?, ?, -1, -1)
-ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE SET
-  art_path=excluded.art_path, fetched_at=datetime('now')
-`, showID, bdDest)
-			}
-		}
+		// Download backdrop at the wide banner size + mark hi-res.
+		m.downloadAndCacheBackdrop(ctx, showID, show.BackdropPath)
 
 		// Fetch + cache the show's cast (best-effort; powers the cast strip and
 		// actor pages). Non-fatal.
@@ -323,20 +311,8 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 		}
 	}
 
-	// Download backdrop.
-	if show.BackdropPath != "" {
-		bdDest := filepath.Join(m.artDir, fmt.Sprintf("show_%d_backdrop.jpg", showID))
-		if err := m.client.DownloadImage(ctx, show.BackdropPath, bdDest); err != nil {
-			slog.Warn("tmdb backdrop download", "err", err)
-		} else {
-			_, _ = m.db.ExecContext(ctx, `
-INSERT INTO tv_series_art (art_type, tmdb_series_id, art_path, season_number, episode_number)
-VALUES ('series_backdrop', ?, ?, -1, -1)
-ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE SET
-  art_path=excluded.art_path, fetched_at=datetime('now')
-`, showID, bdDest)
-		}
-	}
+	// Download backdrop at the wide banner size + mark hi-res.
+	m.downloadAndCacheBackdrop(ctx, showID, show.BackdropPath)
 
 	// Fetch and cache each season from the show.
 	for _, s := range show.Seasons {
@@ -379,6 +355,54 @@ ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE S
 		slog.Warn("tmdb cast fetch", "show", showID, "err", err)
 	}
 
+	return nil
+}
+
+// downloadAndCacheBackdrop fetches a show's backdrop at the wide banner size
+// (w1280), records the art row, and marks the hi-res backdrop fetched so the
+// lazy on-view backfill doesn't re-run (the marker is written even when a show
+// has no backdrop, so an art-less show isn't retried every view).
+func (m *Matcher) downloadAndCacheBackdrop(ctx context.Context, showID int, backdropPath string) {
+	if backdropPath != "" {
+		bdDest := filepath.Join(m.artDir, fmt.Sprintf("show_%d_backdrop.jpg", showID))
+		if err := m.client.DownloadBackdrop(ctx, backdropPath, bdDest); err != nil {
+			slog.Warn("tmdb backdrop download", "show", showID, "err", err)
+		} else {
+			_, _ = m.db.ExecContext(ctx, `
+INSERT INTO tv_series_art (art_type, tmdb_series_id, art_path, season_number, episode_number)
+VALUES ('series_backdrop', ?, ?, -1, -1)
+ON CONFLICT(art_type, tmdb_series_id, season_number, episode_number) DO UPDATE SET
+  art_path=excluded.art_path, fetched_at=datetime('now')
+`, showID, bdDest)
+		}
+	}
+	_, _ = m.db.ExecContext(ctx, `
+INSERT INTO tv_series_metadata_cache (entity_key, lang, payload_json, fetched_at)
+VALUES (?, 'en', '{}', datetime('now'))
+ON CONFLICT(entity_key, lang) DO UPDATE SET fetched_at=excluded.fetched_at, updated_at=datetime('now')
+`, fmt.Sprintf("show:%d:backdrop_hires", showID))
+}
+
+// RefetchBackdrop re-downloads a matched show's backdrop at the wide banner size
+// for shows whose cached backdrop predates the w1280 change. The backdrop path
+// comes from the already-cached show metadata, so no extra TMDB call is made.
+// Lazy: enqueued on first series-page view when the hi-res marker is absent.
+func (m *Matcher) RefetchBackdrop(ctx context.Context, showID int) error {
+	if err := os.MkdirAll(m.artDir, 0o755); err != nil {
+		return err
+	}
+	var payload string
+	if err := m.db.QueryRowContext(ctx,
+		"SELECT payload_json FROM tv_series_metadata_cache WHERE entity_key=? AND lang='en'",
+		fmt.Sprintf("show:%d", showID),
+	).Scan(&payload); err != nil {
+		return err
+	}
+	var show TVShow
+	if err := json.Unmarshal([]byte(payload), &show); err != nil {
+		return err
+	}
+	m.downloadAndCacheBackdrop(ctx, showID, show.BackdropPath)
 	return nil
 }
 
