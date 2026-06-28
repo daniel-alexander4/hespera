@@ -14,6 +14,7 @@ import (
 
 	"hespera/internal/jobs"
 	"hespera/internal/match"
+	"hespera/internal/moviescan"
 	"hespera/internal/scan"
 	"hespera/internal/tmdb"
 	"hespera/internal/tvscan"
@@ -481,6 +482,11 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 			return nil
+		})
+	case "movies":
+		movieScanner := moviescan.New(h.cfg, h.db)
+		jobID, err = h.jobs.Enqueue("moviescan", id, "user", func(ctx context.Context, jID, libID int64) error {
+			return movieScanner.ScanMovies(ctx, jID, libID)
 		})
 	default:
 		http.Error(w, "scanning not supported for this library type", 400)
