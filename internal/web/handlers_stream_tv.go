@@ -199,7 +199,8 @@ func (h *Handler) streamTVRemux(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
-	if err := video.StreamFFmpeg(r.Context(), w, video.RemuxArgs(clean, aud)); err != nil {
+	start := parseStartParam(r.URL.Query().Get("start"), storedDuration(src))
+	if err := video.StreamFFmpeg(r.Context(), w, video.RemuxArgs(clean, aud, start)); err != nil {
 		// Headers/body may already be partially written; just log.
 		slog.Warn("tv remux stream", "file_id", fileID, "err", err)
 	}
@@ -247,7 +248,8 @@ func (h *Handler) streamTVBurnIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
-	if err := video.StreamFFmpeg(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080)); err != nil {
+	start := parseStartParam(r.URL.Query().Get("start"), durationSeconds(probe.Format.Duration))
+	if err := video.StreamFFmpeg(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start)); err != nil {
 		// Headers/body may already be partially written; just log.
 		slog.Warn("tv burn-in stream", "file_id", fileID, "err", err)
 	}
@@ -457,6 +459,29 @@ func durationSeconds(s string) float64 {
 		return f
 	}
 	return 0
+}
+
+// storedDuration parses the source's duration from its stored probe (no live
+// ffprobe). Used to clamp the resume offset; 0 if unknown.
+func storedDuration(src tvFileSource) float64 {
+	var probe video.ProbeResult
+	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
+	return durationSeconds(probe.Format.Duration)
+}
+
+// parseStartParam reads the ?start= resume offset for the progressive stream
+// endpoints (remux, burn-in), clamped to [0, duration). Absent/invalid → 0 so
+// the stream begins at the top. These paths can't byte-range/segment-seek, so a
+// server-side input -ss is the only way they can resume mid-file.
+func parseStartParam(raw string, durationSec float64) float64 {
+	s, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || s <= 0 {
+		return 0
+	}
+	if durationSec > 1 && s > durationSec-1 {
+		s = durationSec - 1
+	}
+	return s
 }
 
 func maxf(a, b float64) float64 {

@@ -515,6 +515,63 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/libraries", http.StatusSeeOther)
 }
 
+// librariesReprobe enqueues a tv_probe job that backfills missing stream info
+// (ffprobe duration) on a TV library's files, so the seekable HLS path always has
+// the duration it needs. Mirrors librariesScan; TV libraries only.
+func (h *Handler) librariesReprobe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "librariesReprobe", "err", err)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid id", 400)
+		return
+	}
+
+	var libType string
+	if err := h.db.QueryRowContext(r.Context(), "SELECT type FROM libraries WHERE id=?", id).Scan(&libType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		httpError(w, 500, "internal server error", "db query failed", "handler", "librariesReprobe", "err", err)
+		return
+	}
+	if libType != "tv" {
+		http.Error(w, "reprobe is only supported for tv libraries", 400)
+		return
+	}
+
+	tvScanner := tvscan.New(h.cfg, h.db)
+	jobID, err := h.jobs.Enqueue("tv_probe", id, "user", func(ctx context.Context, jID, libID int64) error {
+		return tvScanner.ReprobeMissing(ctx, jID, libID)
+	})
+	if err != nil {
+		if errors.Is(err, jobs.ErrQueueFull) {
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "librariesReprobe", "err", err)
+			return
+		}
+		httpError(w, 500, "internal server error", "enqueue reprobe failed", "handler", "librariesReprobe", "err", err)
+		return
+	}
+
+	if requestWantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"message": "reprobe queued",
+			"data":    map[string]any{"library_id": id, "job_id": jobID},
+		})
+		return
+	}
+	http.Redirect(w, r, "/libraries", http.StatusSeeOther)
+}
+
 func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
