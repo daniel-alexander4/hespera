@@ -69,7 +69,7 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	series, err := h.loadTVSeriesList(r.Context())
+	series, nav, unmatched, err := h.loadTVSeriesList(r.Context(), pageParam(r))
 	if err != nil {
 		httpError(w, 500, "internal server error", "load tv series list failed", "handler", "tvSeriesList", "err", err)
 		return
@@ -88,6 +88,8 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "tv_home.html", map[string]any{
 		"Title":           "TV Shows",
 		"Series":          series,
+		"SeriesPage":      nav,
+		"UnmatchedCount":  unmatched,
 		"RecentlyWatched": recentlyWatched,
 		"RecentlyAdded":   recentlyAdded,
 	})
@@ -189,10 +191,12 @@ func (h *Handler) recentTVSeries(ctx context.Context, query string, limit int) (
 	return out, nil
 }
 
-func (h *Handler) loadTVSeriesList(ctx context.Context) ([]tvSeriesRow, error) {
-	var out []tvSeriesRow
-
-	// Matched series (resolved via TMDB).
+// loadTVSeriesList returns one page of the matched (watchable) series, sorted by
+// name, plus a count of distinct unmatched titles (surfaced as a "needs matching"
+// banner, not rendered inline). Matched names resolve from the TMDB metadata
+// cache in Go, not on the SQL rows, so the alphabetical order — and thus the
+// pagination — is applied in Go after the metadata is loaded.
+func (h *Handler) loadTVSeriesList(ctx context.Context, page int) ([]tvSeriesRow, pageNav, int, error) {
 	matchedRows, err := h.db.QueryContext(ctx, `
 SELECT i.series_id, COUNT(*) AS ep_count
 FROM tv_series_identities i
@@ -202,7 +206,7 @@ GROUP BY i.series_id
 ORDER BY i.series_id
 `)
 	if err != nil {
-		return nil, err
+		return nil, pageNav{}, 0, err
 	}
 	defer matchedRows.Close()
 
@@ -215,20 +219,20 @@ ORDER BY i.series_id
 		var seriesID string
 		var count int
 		if err := matchedRows.Scan(&seriesID, &count); err != nil {
-			return nil, err
+			return nil, pageNav{}, 0, err
 		}
 		matched = append(matched, matchedSeries{seriesID, count})
 	}
 	if err := matchedRows.Err(); err != nil {
-		return nil, err
+		return nil, pageNav{}, 0, err
 	}
 
-	// Batch-fetch all series metadata in one query instead of one per series.
 	ids := make([]string, len(matched))
 	for i, m := range matched {
 		ids[i] = m.seriesID
 	}
 	metas := h.loadShowMetaSummaries(ctx, ids)
+	out := make([]tvSeriesRow, 0, len(matched))
 	for _, m := range matched {
 		meta := metas[m.seriesID]
 		if meta.name == "" {
@@ -243,44 +247,31 @@ ORDER BY i.series_id
 			IsMatched:    true,
 		})
 	}
-
-	// Unmatched series (unmatched, grouped by guessed_title).
-	unmatchedRows, err := h.db.QueryContext(ctx, `
-SELECT i.guessed_title, COUNT(*) AS ep_count
-FROM tv_series_identities i
-JOIN tv_series_files f ON f.id = i.file_id
-WHERE i.status = 'unmatched' AND i.guessed_title != ''
-GROUP BY lower(i.guessed_title)
-ORDER BY lower(i.guessed_title)
-`)
-	if err != nil {
-		return nil, err
-	}
-	defer unmatchedRows.Close()
-
-	for unmatchedRows.Next() {
-		var title string
-		var count int
-		if err := unmatchedRows.Scan(&title, &count); err != nil {
-			return nil, err
-		}
-		out = append(out, tvSeriesRow{
-			SeriesID:     "unmatched:" + title,
-			Name:         title + " (unmatched)",
-			EpisodeCount: count,
-		})
-	}
-	if err := unmatchedRows.Err(); err != nil {
-		return nil, err
-	}
-
-	// Display the full shows list alphabetically by title (case-insensitive).
-	// SQL can't order it: matched-series names are resolved from the TMDB
-	// metadata cache in Go above, not present on the queried rows.
 	sort.SliceStable(out, func(i, j int) bool {
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
-	return out, nil
+
+	// Paginate the sorted slice in Go (see the doc comment on the name sort).
+	nav, offset := paginate(page, len(out), "/tv")
+	if offset > len(out) {
+		offset = len(out)
+	}
+	end := offset + listPageSize
+	if end > len(out) {
+		end = len(out)
+	}
+	pageRows := out[offset:end]
+
+	var unmatched int
+	_ = h.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM (
+  SELECT 1 FROM tv_series_identities i
+  JOIN tv_series_files f ON f.id = i.file_id
+  WHERE i.status = 'unmatched' AND i.guessed_title != ''
+  GROUP BY lower(i.guessed_title)
+)`).Scan(&unmatched)
+
+	return pageRows, nav, unmatched, nil
 }
 
 type showMetaSummary struct {
@@ -829,6 +820,16 @@ func (h *Handler) tvMatchReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capped review backlog (worked top-down + reloaded), not paginated.
+	var total int
+	_ = h.db.QueryRowContext(r.Context(), `
+SELECT COUNT(*) FROM (
+  SELECT 1 FROM tv_series_identities i
+  JOIN tv_series_files f ON f.id = i.file_id
+  WHERE i.status = 'unmatched' AND i.guessed_title != ''
+  GROUP BY lower(i.guessed_title)
+)`).Scan(&total)
+
 	rows, err := h.db.QueryContext(r.Context(), `
 SELECT i.guessed_title, COUNT(*) AS file_count,
        GROUP_CONCAT(DISTINCT i.season_number) AS seasons
@@ -837,7 +838,8 @@ JOIN tv_series_files f ON f.id = i.file_id
 WHERE i.status = 'unmatched' AND i.guessed_title != ''
 GROUP BY lower(i.guessed_title)
 ORDER BY lower(i.guessed_title)
-`)
+LIMIT ?
+`, reviewListCap)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "tvMatchReview", "err", err)
 		return
@@ -859,8 +861,11 @@ ORDER BY lower(i.guessed_title)
 	}
 
 	h.render(w, "tv_match_review.html", map[string]any{
-		"Title":  "TV Match Review",
-		"Groups": groups,
+		"Title":      "TV Match Review",
+		"Groups":     groups,
+		"TotalCount": total,
+		"Shown":      len(groups),
+		"Capped":     total > len(groups),
 	})
 }
 

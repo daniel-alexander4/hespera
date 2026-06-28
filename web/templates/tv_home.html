@@ -3,7 +3,7 @@
   <h1>TV Shows</h1>
 </div>
 
-{{if not .Series}}
+{{if and (not .Series) (eq .UnmatchedCount 0)}}
 <div class="empty-state">
   <p>No TV series found. Use <a href="/libraries">Libraries</a> to add a TV library, then scan and match.</p>
 </div>
@@ -65,9 +65,11 @@
 
 <!-- Shows Tab -->
 <div class="subtab-panel" id="tab-shows">
+  {{if gt .UnmatchedCount 0}}
+  <p class="form-help"><a href="/tv/match/review" class="btn btn-sm">{{.UnmatchedCount}} show{{if ne .UnmatchedCount 1}}s{{end}} need matching →</a></p>
+  {{end}}
   <div class="band-albums-grid">
     {{range .Series}}
-    {{if .IsMatched}}
     <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
       <div class="band-album-art">
         {{if .PosterPath}}
@@ -81,19 +83,9 @@
         <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}{{.EpisodeCount}} episodes</div>
       </div>
     </a>
-    {{else}}
-    <div class="band-album-card band-album-card--unmatched band-album-card--poster">
-      <div class="band-album-art">
-        <div class="album-art-ph">?</div>
-      </div>
-      <div class="band-album-meta">
-        <div class="artist-card-name">{{.Name}}</div>
-        <div class="artist-card-stats">{{.EpisodeCount}} files · needs matching</div>
-      </div>
-    </div>
-    {{end}}
     {{end}}
   </div>
+  {{template "pagination" .SeriesPage}}
 </div>
 
 {{end}}

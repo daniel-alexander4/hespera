@@ -120,6 +120,10 @@ CREATE TABLE IF NOT EXISTS tv_series_identities (
 
 CREATE INDEX IF NOT EXISTS idx_tv_series_identities_provider_series ON tv_series_identities(provider, series_id);
 CREATE INDEX IF NOT EXISTS idx_tv_series_identities_status ON tv_series_identities(status);
+-- Per-series/season pages filter series_id WITHOUT provider, so the (provider,
+-- series_id) composite above can't serve them; this index covers the
+-- series_id+status+season lookups that scale with title count.
+CREATE INDEX IF NOT EXISTS idx_tv_series_identities_series_id ON tv_series_identities(series_id, status, season_number);
 
 CREATE TABLE IF NOT EXISTS tv_series_metadata_cache (
   entity_key TEXT NOT NULL,

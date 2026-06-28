@@ -93,6 +93,15 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The review backlog is worked top-down and re-loaded, so it's capped (not
+	// paginated): show the highest-confidence reviewListCap and the total.
+	var total int
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM music_albums WHERE match_status = 'unmatched'").Scan(&total); err != nil {
+		httpError(w, 500, "internal server error", "db count failed", "handler", "musicMatchReview", "err", err)
+		return
+	}
+
 	rows, err := h.db.QueryContext(r.Context(), `
 		SELECT a.id, a.title, COALESCE(ar.name, ''), a.year, COALESCE(a.art_path, ''),
 		       a.match_status, COALESCE(a.match_confidence, 0), COALESCE(a.musicbrainz_id, '')
@@ -100,7 +109,8 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN music_artists ar ON ar.id = a.album_artist_id
 		WHERE a.match_status = 'unmatched'
 		ORDER BY a.match_confidence DESC, a.title ASC
-	`)
+		LIMIT ?
+	`, reviewListCap)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicMatchReview", "err", err)
 		return
@@ -127,9 +137,12 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 	libraryID := h.resolveMusicLibraryID(r)
 
 	h.render(w, "music_match_review.html", map[string]any{
-		"Title":     "Match Review",
-		"Albums":    albums,
-		"LibraryID": libraryID,
+		"Title":      "Match Review",
+		"Albums":     albums,
+		"LibraryID":  libraryID,
+		"TotalCount": total,
+		"Shown":      len(albums),
+		"Capped":     total > len(albums),
 	})
 }
 

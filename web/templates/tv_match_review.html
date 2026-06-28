@@ -6,6 +6,9 @@
 {{if not .Groups}}
 <div class="empty-state"><p>No unmatched TV series. All groups are matched or skipped.</p></div>
 {{else}}
+{{if .Capped}}
+<p class="form-help">Showing the first {{.Shown}} of {{.TotalCount}} unmatched titles — match these and reload to see more.</p>
+{{end}}
 <table class="table">
   <thead>
     <tr>
