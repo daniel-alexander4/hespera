@@ -1,5 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Hespera" style="color:#1e1b4b">
   <path d="M180,60 C182.5,67.5 182.5,67.5 190,70 C182.5,72.5 182.5,72.5 180,80 C177.5,72.5 177.5,72.5 170,70 C177.5,67.5 177.5,67.5 180,60 Z" fill="currentColor"/>
+  <!-- distant ridge: faint far edges -->
+  <g fill="currentColor" opacity=".32">
+    <rect x="9"   y="145" width="3" height="5" rx="1"/>
+    <rect x="13.5" y="141" width="3" height="9" rx="1"/>
+    <rect x="223.5" y="145" width="3" height="5" rx="1"/>
+    <rect x="228" y="147" width="3" height="3" rx="1"/>
+  </g>
+  <!-- mountain ranges -->
+  <g fill="currentColor" opacity=".5">
+    <rect x="18"   y="136" width="3" height="14" rx="1"/>
+    <rect x="22.5" y="131" width="3" height="19" rx="1"/>
+    <rect x="27"   y="137" width="3" height="13" rx="1"/>
+    <rect x="31.5" y="142" width="3" height="8"  rx="1"/>
+    <rect x="36"   y="138" width="3" height="12" rx="1"/>
+    <rect x="40.5" y="132" width="3" height="18" rx="1"/>
+    <rect x="45"   y="127" width="3" height="23" rx="1"/>
+    <rect x="49.5" y="134" width="3" height="16" rx="1"/>
+    <rect x="54"   y="141" width="3" height="9"  rx="1"/>
+    <rect x="58.5" y="144" width="3" height="6"  rx="1"/>
+    <rect x="63"   y="146" width="3" height="4"  rx="1"/>
+    <rect x="174"   y="146" width="3" height="4"  rx="1"/>
+    <rect x="178.5" y="142" width="3" height="8"  rx="1"/>
+    <rect x="183"   y="136" width="3" height="14" rx="1"/>
+    <rect x="187.5" y="130" width="3" height="20" rx="1"/>
+    <rect x="192"   y="138" width="3" height="12" rx="1"/>
+    <rect x="196.5" y="143" width="3" height="7"  rx="1"/>
+    <rect x="201"   y="139" width="3" height="11" rx="1"/>
+    <rect x="205.5" y="134" width="3" height="16" rx="1"/>
+    <rect x="210"   y="140" width="3" height="10" rx="1"/>
+    <rect x="214.5" y="137" width="3" height="13" rx="1"/>
+    <rect x="219"   y="143" width="3" height="7"  rx="1"/>
+  </g>
+  <!-- the audio sun -->
   <g fill="currentColor">
     <rect x="68" y="124" width="8" height="26" rx="4"/>
     <rect x="80" y="109" width="8" height="41" rx="4"/>
@@ -11,7 +44,35 @@
     <rect x="152" y="110" width="8" height="40" rx="4"/>
     <rect x="164" y="123" width="8" height="27" rx="4"/>
   </g>
-  <rect x="56" y="148" width="128" height="3" rx="1.5" fill="currentColor"/>
+  <rect x="8" y="148" width="224" height="3" rx="1.5" fill="currentColor"/>
+  <g fill="currentColor" opacity=".24">
+    <rect x="9"    y="151" width="3" height="2"  rx="1"/>
+    <rect x="13.5" y="151" width="3" height="4"  rx="1"/>
+    <rect x="18"   y="151" width="3" height="6"  rx="1"/>
+    <rect x="22.5" y="151" width="3" height="9"  rx="1"/>
+    <rect x="27"   y="151" width="3" height="6"  rx="1"/>
+    <rect x="31.5" y="151" width="3" height="4"  rx="1"/>
+    <rect x="36"   y="151" width="3" height="5"  rx="1"/>
+    <rect x="40.5" y="151" width="3" height="8"  rx="1"/>
+    <rect x="45"   y="151" width="3" height="10" rx="1"/>
+    <rect x="49.5" y="151" width="3" height="7"  rx="1"/>
+    <rect x="54"   y="151" width="3" height="4"  rx="1"/>
+    <rect x="58.5" y="151" width="3" height="3"  rx="1"/>
+    <rect x="63"   y="151" width="3" height="2"  rx="1"/>
+    <rect x="174"   y="151" width="3" height="2"  rx="1"/>
+    <rect x="178.5" y="151" width="3" height="4"  rx="1"/>
+    <rect x="183"   y="151" width="3" height="6"  rx="1"/>
+    <rect x="187.5" y="151" width="3" height="9"  rx="1"/>
+    <rect x="192"   y="151" width="3" height="5"  rx="1"/>
+    <rect x="196.5" y="151" width="3" height="3"  rx="1"/>
+    <rect x="201"   y="151" width="3" height="5"  rx="1"/>
+    <rect x="205.5" y="151" width="3" height="7"  rx="1"/>
+    <rect x="210"   y="151" width="3" height="4"  rx="1"/>
+    <rect x="214.5" y="151" width="3" height="6"  rx="1"/>
+    <rect x="219"   y="151" width="3" height="3"  rx="1"/>
+    <rect x="223.5" y="151" width="3" height="2"  rx="1"/>
+    <rect x="228"   y="151" width="3" height="1"  rx="1"/>
+  </g>
   <g fill="currentColor" opacity=".4">
     <rect x="68" y="155" width="8" height="13" rx="4"/>
     <rect x="80" y="155" width="8" height="21" rx="4"/>

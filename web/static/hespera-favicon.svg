@@ -15,11 +15,23 @@
       <stop offset=".55" stop-color="#fcd34d"/>
       <stop offset="1" stop-color="#f59e0b"/>
     </radialGradient>
+    <linearGradient id="hespera-fav-mtn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a2aa8"/>
+      <stop offset="1" stop-color="#211a48"/>
+    </linearGradient>
     <clipPath id="hespera-fav-frame"><rect width="240" height="240" rx="48"/></clipPath>
   </defs>
   <g clip-path="url(#hespera-fav-frame)">
     <rect width="240" height="240" fill="url(#hespera-fav-sky)"/>
     <path d="M186,44 C190,54 190,54 200,58 C190,62 190,62 186,72 C182,62 182,62 172,58 C182,54 182,54 186,44 Z" fill="#fff7d6"/>
+    <g fill="url(#hespera-fav-mtn)" opacity=".9">
+      <rect x="28"  y="139" width="7" height="11" rx="2"/>
+      <rect x="40"  y="129" width="7" height="21" rx="2"/>
+      <rect x="52"  y="141" width="7" height="9"  rx="2"/>
+      <rect x="181" y="141" width="7" height="9"  rx="2"/>
+      <rect x="193" y="131" width="7" height="19" rx="2"/>
+      <rect x="205" y="140" width="7" height="10" rx="2"/>
+    </g>
     <g fill="url(#hespera-fav-sun)">
       <rect x="68" y="114" width="16" height="36" rx="6"/>
       <rect x="90" y="95" width="16" height="55" rx="6"/>
@@ -29,6 +41,14 @@
     </g>
     <rect x="0" y="150" width="240" height="90" fill="url(#hespera-fav-sea)"/>
     <rect x="0" y="148" width="240" height="3" fill="#fff7d6" opacity=".5"/>
+    <g fill="url(#hespera-fav-mtn)" opacity=".26">
+      <rect x="28"  y="151" width="7" height="5" rx="2"/>
+      <rect x="40"  y="151" width="7" height="9" rx="2"/>
+      <rect x="52"  y="151" width="7" height="4" rx="2"/>
+      <rect x="181" y="151" width="7" height="4" rx="2"/>
+      <rect x="193" y="151" width="7" height="9" rx="2"/>
+      <rect x="205" y="151" width="7" height="5" rx="2"/>
+    </g>
     <g fill="url(#hespera-fav-sun)" opacity=".34">
       <rect x="68" y="150" width="16" height="16" rx="6"/>
       <rect x="90" y="150" width="16" height="25" rx="6"/>
