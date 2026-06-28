@@ -96,20 +96,40 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 // TV "Recent" sub-tab queries: matched series ordered by most-recent playback
 // (recently watched) and by newest file mtime on disk (recently added — there is
 // no created_at on tv_series_files, and mtime tracks when a download landed).
-// season_number is a bare column paired with MAX(): SQLite returns it from the
-// same row that holds the maximum, so "recently watched" yields the season of
-// the most-recently-watched episode (the in-progress season we deep-link to),
-// and "recently added" yields the season of the newest file (unused).
+// tvRecentlyWatchedQuery returns each watched series with the season to deep-link
+// its "Continue Watching" card to. The `watched` CTE finds the in-progress season
+// `nr` — season_number is a bare column paired with MAX(p.updated_at), so SQLite
+// takes it from the most-recently-watched episode's row. The outer query then
+// rolls forward: the target is the smallest local season >= nr that still has an
+// unwatched (not-completed) episode — so finishing a season advances the card to
+// the next season with something to play — falling back to nr when everything
+// from there on is watched (a re-watch). "Not completed" matches the season
+// page's ✓ (COALESCE(completed,0)=0).
 const tvRecentlyWatchedQuery = `
-SELECT i.series_id, i.season_number
-FROM tv_playback_progress p
-JOIN tv_series_files f ON f.id = p.file_id
-JOIN tv_series_identities i ON i.file_id = f.id
-WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
-GROUP BY i.series_id
-ORDER BY MAX(p.updated_at) DESC
+WITH watched AS (
+  SELECT i.series_id AS sid, i.season_number AS nr, MAX(p.updated_at) AS last_watched
+  FROM tv_playback_progress p
+  JOIN tv_series_files f ON f.id = p.file_id
+  JOIN tv_series_identities i ON i.file_id = f.id
+  WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
+  GROUP BY i.series_id
+)
+SELECT w.sid,
+       COALESCE(
+         (SELECT MIN(i2.season_number)
+          FROM tv_series_identities i2
+          LEFT JOIN tv_playback_progress p2 ON p2.file_id = i2.file_id
+          WHERE i2.series_id = w.sid AND i2.status = 'matched'
+            AND i2.season_number >= w.nr
+            AND COALESCE(p2.completed, 0) = 0),
+         w.nr) AS target_season
+FROM watched w
+ORDER BY w.last_watched DESC
 LIMIT ?`
 
+// tvRecentlyAddedQuery returns the newest-on-disk matched series. season_number
+// is selected to match the two-column shape recentTVSeries scans, but the
+// Recently-Added card links to the series page, so the value is unused.
 const tvRecentlyAddedQuery = `
 SELECT i.series_id, i.season_number
 FROM tv_series_identities i
