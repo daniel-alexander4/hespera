@@ -1,0 +1,15 @@
+{{/* Shared custom seek bar for the TV/movie players. Native <video controls>
+     can't seek the progressive (remux/burn-in) streams — their scrubber is dead
+     (video.seekable == [0,0]) — so the players drop native controls and use this
+     click/drag-to-seek bar, wired in media_player.js. On seekable paths it does a
+     native currentTime seek; on progressive paths a single ?start= reload. */}}
+{{define "media-seekbar"}}
+<div class="media-seek">
+  <div class="media-scrubber" id="mediaScrubber" tabindex="0" role="slider"
+       aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div class="media-scrubber-fill" id="mediaScrubberFill"></div>
+    <div class="media-scrubber-thumb" id="mediaScrubberThumb"></div>
+  </div>
+  <div class="media-time"><span id="mediaCur">0:00</span> / <span id="mediaDur">0:00</span></div>
+</div>
+{{end}}
