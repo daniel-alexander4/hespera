@@ -28,19 +28,19 @@
     <label class="tv-track-pick" id="subPick" hidden>Subtitles
       <select id="subSelect"></select>
     </label>
-    <button type="button" id="subsSearchBtn" class="btn btn-sm" hidden>Search subtitles</button>
+    <button type="button" id="subsSearchBtn" class="btn btn-sm" hidden>{{template "icon-search"}}Search subtitles</button>
     <span id="playbackMode" class="tv-playback-mode"></span>
   </div>
 
   <div class="tv-player-nav">
     {{if .PrevFileID}}
-    <a href="/tv/player?file={{.PrevFileID}}" class="btn btn-sm">Previous</a>
+    <a href="/tv/player?file={{.PrevFileID}}" class="btn btn-sm">{{template "icon-skip-back"}}Previous</a>
     {{else}}
     <span></span>
     {{end}}
     <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNum}}" class="btn btn-sm">Back to Season</a>
     {{if .NextFileID}}
-    <a href="/tv/player?file={{.NextFileID}}" class="btn btn-sm">Next</a>
+    <a href="/tv/player?file={{.NextFileID}}" class="btn btn-sm">{{template "icon-skip-forward"}}Next</a>
     {{else}}
     <span></span>
     {{end}}

@@ -34,11 +34,11 @@
         <form method="post" action="/tv/match/approve" class="inline-form tv-match-approve-form">
           <input type="hidden" name="guessed_title" value="{{.GuessedTitle}}" />
           <input type="hidden" name="tmdb_id" value="" class="tv-match-tmdb-hidden" />
-          <button type="submit" class="btn btn-sm btn-primary" disabled>Approve</button>
+          <button type="submit" class="btn btn-sm btn-primary" disabled>{{template "icon-check"}}Approve</button>
         </form>
         <form method="post" action="/tv/match/skip" class="inline-form">
           <input type="hidden" name="guessed_title" value="{{.GuessedTitle}}" />
-          <button type="submit" class="btn btn-sm">Skip</button>
+          <button type="submit" class="btn btn-sm">{{template "icon-x"}}Skip</button>
         </form>
       </td>
     </tr>

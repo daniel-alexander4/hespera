@@ -47,7 +47,7 @@
           <form method="post" action="/music/duplicates/merge" class="inline-form">
             <input type="hidden" name="target" value="{{$best}}" />
             <input type="hidden" name="source" value="{{.ID}}" />
-            <button type="submit" class="btn btn-sm">Merge into best</button>
+            <button type="submit" class="btn btn-sm">{{template "icon-merge"}}Merge into best</button>
           </form>
           {{end}}
         </td>

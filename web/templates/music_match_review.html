@@ -8,11 +8,11 @@
 <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
   <form method="post" action="/music/writeback" class="inline-form">
     <input type="hidden" name="id" value="{{.LibraryID}}" />
-    <button type="submit" class="btn btn-sm">Write Tags</button>
+    <button type="submit" class="btn btn-sm">{{template "icon-pencil"}}Write Tags</button>
   </form>
   <form method="post" action="/music/match" class="inline-form">
     <input type="hidden" name="id" value="{{.LibraryID}}" />
-    <button type="submit" class="btn btn-sm btn-primary">Run Match</button>
+    <button type="submit" class="btn btn-sm btn-primary">{{template "icon-search"}}Run Match</button>
   </form>
 </div>
 {{end}}
@@ -51,11 +51,11 @@
       <td style="white-space:nowrap;">
         <form method="post" action="/music/match/reject" class="inline-form">
           <input type="hidden" name="album_id" value="{{.AlbumID}}" />
-          <button type="submit" class="btn btn-sm btn-danger">Reject</button>
+          <button type="submit" class="btn btn-sm btn-danger">{{template "icon-x"}}Reject</button>
         </form>
         <form method="post" action="/music/match/rematch" class="inline-form">
           <input type="hidden" name="album_id" value="{{.AlbumID}}" />
-          <button type="submit" class="btn btn-sm">Re-match</button>
+          <button type="submit" class="btn btn-sm">{{template "icon-rotate-cw"}}Re-match</button>
         </form>
       </td>
     </tr>
