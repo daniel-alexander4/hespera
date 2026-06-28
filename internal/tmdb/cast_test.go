@@ -2,6 +2,7 @@ package tmdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -111,6 +112,13 @@ func TestFetchPersonBio(t *testing.T) {
 	ctx := context.Background()
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/3/person/17419/tv_credits", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"cast":[
+			{"id":1396,"name":"Breaking Bad","character":"Walter White","poster_path":"/bb.jpg","first_air_date":"2008-01-20","episode_count":62},
+			{"id":1100,"name":"Malcolm in the Middle","character":"Hal","poster_path":"/mm.jpg","first_air_date":"2000-01-09","episode_count":151}
+		]}`)
+	})
 	mux.HandleFunc("/3/person/17419", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"id":17419,"name":"Bryan Cranston","biography":"An American actor.","profile_path":"/bc.jpg"}`)
@@ -137,11 +145,19 @@ func TestFetchPersonBio(t *testing.T) {
 	if err := m.FetchPersonBio(ctx, 17419); err != nil {
 		t.Fatalf("FetchPersonBio: %v", err)
 	}
-	var bio, art, fetched string
-	if err := db.QueryRow("SELECT bio, art_path, bio_fetched_at FROM people WHERE tmdb_id=17419").Scan(&bio, &art, &fetched); err != nil {
+	var bio, art, fetched, filmo string
+	if err := db.QueryRow("SELECT bio, art_path, bio_fetched_at, filmography_json FROM people WHERE tmdb_id=17419").Scan(&bio, &art, &fetched, &filmo); err != nil {
 		t.Fatalf("scan person: %v", err)
 	}
 	if bio != "An American actor." || art == "" || fetched == "" {
 		t.Fatalf("person row: bio=%q art=%q fetched=%q", bio, art, fetched)
+	}
+	// Filmography cached, ordered by episode count (Malcolm 151 before Breaking Bad 62).
+	var credits []PersonTVCredit
+	if err := json.Unmarshal([]byte(filmo), &credits); err != nil {
+		t.Fatalf("filmography unmarshal: %v (%q)", err, filmo)
+	}
+	if len(credits) != 2 || credits[0].ID != 1100 || credits[1].ID != 1396 {
+		t.Fatalf("filmography = %+v", credits)
 	}
 }

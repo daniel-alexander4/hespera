@@ -126,6 +126,17 @@ type Person struct {
 	ProfilePath string `json:"profile_path"`
 }
 
+// PersonTVCredit is one show from /person/{id}/tv_credits (cast) — the actor's
+// full TV filmography, used to surface shows not in the local library.
+type PersonTVCredit struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Character    string `json:"character"`
+	PosterPath   string `json:"poster_path"`
+	FirstAirDate string `json:"first_air_date"`
+	EpisodeCount int    `json:"episode_count"`
+}
+
 // ValidateKey reports whether TMDB accepts the API key. A nil error with
 // valid=false means TMDB rejected the key (HTTP 401); a non-nil error means
 // TMDB could not be reached, so the key's validity is unknown.
@@ -293,6 +304,37 @@ func (c *Client) FetchPerson(ctx context.Context, personID int) (*Person, error)
 		return nil, fmt.Errorf("tmdb person decode: %w", err)
 	}
 	return &p, nil
+}
+
+// FetchPersonTVCredits returns the person's TV cast credits (their filmography)
+// from /person/{id}/tv_credits.
+func (c *Client) FetchPersonTVCredits(ctx context.Context, personID int) ([]PersonTVCredit, error) {
+	<-c.limiter
+
+	u := fmt.Sprintf("%s/person/%d/tv_credits?api_key=%s&language=en-US",
+		c.apiBase, personID, url.QueryEscape(c.apiKey))
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tmdb tv_credits: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("tmdb tv_credits %d: status %d", personID, resp.StatusCode)
+	}
+
+	var out struct {
+		Cast []PersonTVCredit `json:"cast"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("tmdb tv_credits decode: %w", err)
+	}
+	return out.Cast, nil
 }
 
 func (c *Client) DownloadImage(ctx context.Context, tmdbPath, destPath string) error {

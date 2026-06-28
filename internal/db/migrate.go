@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS people (
   art_path TEXT NOT NULL DEFAULT '',
   bio TEXT NOT NULL DEFAULT '',
   bio_fetched_at TEXT NOT NULL DEFAULT '',
+  filmography_json TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
