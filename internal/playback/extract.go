@@ -61,6 +61,12 @@ func FromProbe(p *video.ProbeResult, container string, fileSizeBytes int64, audi
 
 // pickStream returns the 1-based ordinal stream, or the default/first when the
 // ordinal is 0 or out of range.
+//
+// Caveat: for ordinal 0 this evaluates the disposition-default audio, but the arg
+// builders' audioMap(0) maps "0:a:0" (the first stream by index), so on a file
+// whose default audio isn't stream 0 the decision and the served track disagree.
+// Fixing that means threading the default's index through every arg builder; see
+// pending.md.
 func pickStream(streams []video.ProbeStream, ordinal int) video.ProbeStream {
 	if ordinal >= 1 && ordinal <= len(streams) {
 		return streams[ordinal-1]

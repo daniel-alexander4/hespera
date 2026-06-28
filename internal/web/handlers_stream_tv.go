@@ -157,6 +157,9 @@ func streamURL(d playback.Decision, fileID int64, aud int) string {
 	case playback.DirectStream:
 		return fmt.Sprintf("/stream/tv-remux/%d?aud=%d", fileID, aud)
 	default:
+		if aud > 0 {
+			return fmt.Sprintf("/stream/tv-hls/%d/index.m3u8?aud=%d", fileID, aud)
+		}
 		return fmt.Sprintf("/stream/tv-hls/%d/index.m3u8", fileID)
 	}
 }
@@ -310,7 +313,7 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {
 			return
 		}
-		fmt.Fprint(w, video.VODPlaylist(dur))
+		fmt.Fprint(w, video.VODPlaylist(dur, atoiDefault(r.URL.Query().Get("aud"), 0)))
 		return
 	}
 
@@ -326,7 +329,8 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 	}
 	var probe video.ProbeResult
 	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
-	segPath, err := video.EnsureSegment(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080, index, dur, audioChannels(&probe, 0))
+	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
+	segPath, err := video.EnsureSegment(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080, index, dur, audioChannels(&probe, aud), aud)
 	if err != nil {
 		if r.Context().Err() != nil {
 			return // client gave up while the segment built
@@ -389,8 +393,8 @@ func (h *Handler) streamTVSubtitles(w http.ResponseWriter, r *http.Request) {
 	// Only text subtitle tracks are deliverable as a WebVTT sidecar; validate the
 	// 1-based index against the probed streams (and that it's text) so a bad or
 	// bitmap track gets a clean 404 instead of an empty 200 — ffmpeg would
-	// otherwise fail after the text/vtt header was already written. Bitmap
-	// burn-in is not yet implemented (see pending.md), so those aren't offered.
+	// otherwise fail after the text/vtt header was already written. Bitmap subs are
+	// delivered by burn-in instead (streamTVBurnIn), not as a sidecar here.
 	var probe video.ProbeResult
 	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
 	subs := subtitleTracks(&probe)

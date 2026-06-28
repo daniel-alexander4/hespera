@@ -158,9 +158,18 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 // can seek anywhere. The segments themselves are produced on demand as the
 // player requests them (see EnsureSegment) — the manifest is pure computation,
 // no transcode needed to serve it. Returns "" if duration is not positive.
-func VODPlaylist(durationSec float64) string {
+//
+// audioOrdinal (1-based; 0 = default) is carried as a ?aud query on each segment
+// URI so the selected audio track reaches the per-segment transcode — hls.js
+// keeps the query when resolving the relative segment names, and the cache key
+// includes it, so each track gets its own segments.
+func VODPlaylist(durationSec float64, audioOrdinal int) string {
 	if durationSec <= 0 {
 		return ""
+	}
+	q := ""
+	if audioOrdinal > 0 {
+		q = "?aud=" + strconv.Itoa(audioOrdinal)
 	}
 	const seg = float64(hlsSegmentSeconds)
 	n := int(math.Ceil(durationSec / seg))
@@ -172,7 +181,7 @@ func VODPlaylist(durationSec float64) string {
 		if rem := durationSec - float64(i)*seg; rem < seg {
 			d = rem
 		}
-		fmt.Fprintf(&b, "#EXTINF:%.6f,\nseg%05d.ts\n", d, i)
+		fmt.Fprintf(&b, "#EXTINF:%.6f,\nseg%05d.ts%s\n", d, i, q)
 	}
 	b.WriteString("#EXT-X-ENDLIST\n")
 	return b.String()
@@ -223,14 +232,14 @@ var (
 // callers for the same segment share one build. The transcode writes to a temp
 // file and atomically renames, so a partial segment is never served, and it runs
 // on its own context so a near-done segment still caches if the caller gives up.
-func EnsureSegment(ctx context.Context, cacheRoot, src string, modTime time.Time, size int64, maxHeight, index int, totalDur float64, srcChannels int) (string, error) {
-	dir := filepath.Join(cacheRoot, hlsKey(src, modTime, size, maxHeight))
+func EnsureSegment(ctx context.Context, cacheRoot, src string, modTime time.Time, size int64, maxHeight, index int, totalDur float64, srcChannels, audioOrdinal int) (string, error) {
+	dir := filepath.Join(cacheRoot, hlsKey(src, modTime, size, maxHeight, audioOrdinal))
 	path := filepath.Join(dir, fmt.Sprintf("seg%05d.ts", index))
 	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
 		touch(dir)
 		return path, nil
 	}
-	b := startOrJoinSegBuild(dir, src, maxHeight, index, totalDur, srcChannels)
+	b := startOrJoinSegBuild(dir, src, maxHeight, index, totalDur, srcChannels, audioOrdinal)
 	select {
 	case <-b.ready:
 	case <-ctx.Done():
@@ -243,7 +252,7 @@ func EnsureSegment(ctx context.Context, cacheRoot, src string, modTime time.Time
 	return path, nil
 }
 
-func startOrJoinSegBuild(dir, src string, maxHeight, index int, totalDur float64, srcChannels int) *segBuild {
+func startOrJoinSegBuild(dir, src string, maxHeight, index int, totalDur float64, srcChannels, audioOrdinal int) *segBuild {
 	key := dir + "|" + strconv.Itoa(index)
 	segBuildsMu.Lock()
 	defer segBuildsMu.Unlock()
@@ -252,11 +261,11 @@ func startOrJoinSegBuild(dir, src string, maxHeight, index int, totalDur float64
 	}
 	b := &segBuild{ready: make(chan struct{})}
 	segBuilds[key] = b
-	go runSegBuild(b, key, dir, src, maxHeight, index, totalDur, srcChannels)
+	go runSegBuild(b, key, dir, src, maxHeight, index, totalDur, srcChannels, audioOrdinal)
 	return b
 }
 
-func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalDur float64, srcChannels int) {
+func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalDur float64, srcChannels, audioOrdinal int) {
 	defer func() {
 		segBuildsMu.Lock()
 		delete(segBuilds, key)
@@ -289,7 +298,7 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 	}
 	final := filepath.Join(dir, fmt.Sprintf("seg%05d.ts", index))
 	tmp := filepath.Join(dir, fmt.Sprintf(".seg%05d.ts.tmp", index))
-	cmd := exec.CommandContext(buildCtx, "ffmpeg", SegmentArgs(src, tmp, start, dur, maxHeight, 0, srcChannels)...)
+	cmd := exec.CommandContext(buildCtx, "ffmpeg", SegmentArgs(src, tmp, start, dur, maxHeight, audioOrdinal, srcChannels)...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
@@ -305,8 +314,8 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 	finish(nil)
 }
 
-func hlsKey(src string, modTime time.Time, size int64, maxHeight int) string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d", src, modTime.UnixNano(), size, maxHeight)))
+func hlsKey(src string, modTime time.Time, size int64, maxHeight, audioOrdinal int) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal)))
 	return hex.EncodeToString(h[:8])
 }
 
