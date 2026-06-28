@@ -1,7 +1,15 @@
 {{define "content"}}
 <div class="page-header">
   <h1>Welcome to Hespera</h1>
+  {{if or .HasMusic (gt .Stats.Series 0)}}
+  <div class="home-stats text-muted">
+    {{if .HasMusic}}{{.Stats.Artists}} artists · {{.Stats.Albums}} albums{{end}}
+    {{if and .HasMusic (gt .Stats.Series 0)}} · {{end}}
+    {{if gt .Stats.Series 0}}{{.Stats.Series}} series · {{.Stats.Episodes}} episodes{{end}}
+  </div>
+  {{end}}
 </div>
+
 <div class="card-grid">
   <a href="/music" class="card">
     <h3>Music</h3>
@@ -15,9 +23,102 @@
     <h3>Movies</h3>
     <p>Browse your movie library</p>
   </a>
-  <a href="/libraries" class="card">
-    <h3>Libraries</h3>
-    <p>Manage media libraries</p>
-  </a>
 </div>
+
+{{if .HasMusic}}
+<h3 class="section-title">Quick Play</h3>
+<div class="quick-playlists" style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem;">
+  <a class="btn btn-primary" href="/music/player?source=all&amp;shuffle=1&amp;library={{.MusicLibraryID}}" data-play>Shuffle All</a>
+  <a class="btn btn-primary" href="/music/player?source=popular&amp;shuffle=1&amp;library={{.MusicLibraryID}}" data-play>Shuffle Most Popular</a>
+</div>
+{{end}}
+
+{{if .ContinueWatching}}
+<h3 class="section-title">Continue Watching</h3>
+<div class="home-carousel-row">
+  {{range .ContinueWatching}}
+  <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNumber}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .PosterPath}}
+      <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">TV</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if .RecentlyPlayed}}
+<h3 class="section-title">Recently Played</h3>
+<div class="home-carousel-row">
+  {{range .RecentlyPlayed}}
+  <a href="/music/artist/{{.ID}}" class="band-album-card">
+    <div class="artist-thumb">
+      {{if .ArtPath}}
+      <img src="/art/artist/{{.ID}}" alt="{{.Name}}" loading="lazy" />
+      {{else}}
+      <div class="artist-thumb-ph">{{slice .Name 0 1}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if .RecentlyAddedAlbums}}
+<h3 class="section-title">Recently Added Albums</h3>
+<div class="home-carousel-row">
+  {{range .RecentlyAddedAlbums}}
+  <a href="/music/album/{{.ID}}" class="band-album-card">
+    <div class="band-album-art">
+      {{if .ArtPath}}
+      <img src="/art/album/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">♪</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{.ArtistName}} {{if .Year}}· {{.Year}}{{end}}</div>
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if .RecentlyAddedTV}}
+<h3 class="section-title">Recently Added Shows</h3>
+<div class="home-carousel-row">
+  {{range .RecentlyAddedTV}}
+  <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .PosterPath}}
+      <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">TV</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if not .HasActivity}}
+<div class="empty-state">
+  <p>No media yet. Use <a href="/libraries">Libraries</a> to add a library, then scan and match.</p>
+</div>
+{{end}}
 {{end}}

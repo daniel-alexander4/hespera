@@ -157,38 +157,7 @@ func (h *Handler) musicHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	loadArtists := func(query string, args ...any) ([]musicHomeArtistRow, error) {
-		rows, err := h.db.QueryContext(r.Context(), query, args...)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		out := make([]musicHomeArtistRow, 0, 20)
-		for rows.Next() {
-			var row musicHomeArtistRow
-			var art sql.NullString
-			if err := rows.Scan(&row.ID, &row.Name, &art); err != nil {
-				return nil, err
-			}
-			row.ArtPath = scanNullString(art)
-			out = append(out, row)
-		}
-		return out, rows.Err()
-	}
-
-	recentlyPlayed, err := loadArtists(`
-SELECT a.id, a.name, a.art_path
-FROM music_artists a
-JOIN (
-  SELECT artist_id, MAX(created_at) AS last_played
-  FROM play_history
-  WHERE library_id=?
-  GROUP BY artist_id
-) x ON x.artist_id = a.id
-WHERE a.library_id=?
-ORDER BY x.last_played DESC, lower(a.name)
-LIMIT 18
-`, libraryID, libraryID)
+	recentlyPlayed, err := h.loadRecentlyPlayedArtists(r.Context(), libraryID, 18)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
 		return
@@ -322,6 +291,42 @@ LIMIT ?
 		var row musicHomeAlbumRow
 		var art sql.NullString
 		if err := rows.Scan(&row.ID, &row.Title, &row.Year, &art, &row.ArtistName); err != nil {
+			return nil, err
+		}
+		row.ArtPath = scanNullString(art)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// loadRecentlyPlayedArtists returns artists ordered by their most recent play,
+// for the music home "Recently Played" row and the landing-page dashboard.
+func (h *Handler) loadRecentlyPlayedArtists(ctx context.Context, libraryID int64, limit int) ([]musicHomeArtistRow, error) {
+	if libraryID <= 0 {
+		return []musicHomeArtistRow{}, nil
+	}
+	rows, err := h.db.QueryContext(ctx, `
+SELECT a.id, a.name, a.art_path
+FROM music_artists a
+JOIN (
+  SELECT artist_id, MAX(created_at) AS last_played
+  FROM play_history
+  WHERE library_id=?
+  GROUP BY artist_id
+) x ON x.artist_id = a.id
+WHERE a.library_id=?
+ORDER BY x.last_played DESC, lower(a.name)
+LIMIT ?
+`, libraryID, libraryID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]musicHomeArtistRow, 0, limit)
+	for rows.Next() {
+		var row musicHomeArtistRow
+		var art sql.NullString
+		if err := rows.Scan(&row.ID, &row.Name, &art); err != nil {
 			return nil, err
 		}
 		row.ArtPath = scanNullString(art)
