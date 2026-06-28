@@ -20,7 +20,7 @@
   <h3 class="section-title">Continue Watching</h3>
   <div class="home-carousel-row">
     {{range .RecentlyWatched}}
-    <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
+    <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
       <div class="band-album-art">
         {{if .PosterPath}}
         <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
@@ -41,7 +41,7 @@
   <h3 class="section-title">Recently Added</h3>
   <div class="home-carousel-row">
     {{range .RecentlyAdded}}
-    <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
+    <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
       <div class="band-album-art">
         {{if .PosterPath}}
         <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
@@ -68,7 +68,7 @@
   <div class="band-albums-grid">
     {{range .Series}}
     {{if .IsMatched}}
-    <a href="/tv/series/{{.SeriesID}}" class="band-album-card">
+    <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
       <div class="band-album-art">
         {{if .PosterPath}}
         <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
@@ -82,7 +82,7 @@
       </div>
     </a>
     {{else}}
-    <div class="band-album-card band-album-card--unmatched">
+    <div class="band-album-card band-album-card--unmatched band-album-card--poster">
       <div class="band-album-art">
         <div class="album-art-ph">?</div>
       </div>
