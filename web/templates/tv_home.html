@@ -20,7 +20,7 @@
   <h3 class="section-title">Continue Watching</h3>
   <div class="home-carousel-row">
     {{range .RecentlyWatched}}
-    <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
+    <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNumber}}" class="band-album-card band-album-card--poster">
       <div class="band-album-art">
         {{if .PosterPath}}
         <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
