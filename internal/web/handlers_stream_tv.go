@@ -249,7 +249,7 @@ func (h *Handler) streamTVBurnIn(w http.ResponseWriter, r *http.Request) {
 	}
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
 	start := parseStartParam(r.URL.Query().Get("start"), durationSeconds(probe.Format.Duration))
-	if err := video.StreamFFmpeg(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start)); err != nil {
+	if err := video.StreamFFmpeg(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud))); err != nil {
 		// Headers/body may already be partially written; just log.
 		slog.Warn("tv burn-in stream", "file_id", fileID, "err", err)
 	}
@@ -324,7 +324,9 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	segPath, err := video.EnsureSegment(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080, index, dur)
+	var probe video.ProbeResult
+	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
+	segPath, err := video.EnsureSegment(r.Context(), h.tvHLSCacheRoot(), clean, st.ModTime(), st.Size(), 1080, index, dur, audioChannels(&probe, 0))
 	if err != nil {
 		if r.Context().Err() != nil {
 			return // client gave up while the segment built
@@ -419,6 +421,27 @@ func audioTracks(p *video.ProbeResult) []sessionTrack {
 
 func subtitleTracks(p *video.ProbeResult) []sessionTrack {
 	return tracksOfType(p, "subtitle", true)
+}
+
+// audioChannels returns the channel count of the selected audio stream (ordinal
+// 1-based among audio streams, 0 = first/default), so a transcode can choose a
+// dialogue-forward downmix for multichannel sources. 0 if unknown — the arg
+// builder then keeps the standard stereo fold.
+func audioChannels(p *video.ProbeResult, ordinal int) int {
+	if p == nil {
+		return 0
+	}
+	idx := 0
+	for _, s := range p.Streams {
+		if !strings.EqualFold(s.CodecType, "audio") {
+			continue
+		}
+		idx++
+		if (ordinal <= 0 && idx == 1) || idx == ordinal {
+			return s.Channels
+		}
+	}
+	return 0
 }
 
 func tracksOfType(p *video.ProbeResult, codecType string, classifyText bool) []sessionTrack {

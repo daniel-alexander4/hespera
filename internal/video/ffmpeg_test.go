@@ -23,15 +23,46 @@ func TestAudioMap(t *testing.T) {
 }
 
 func TestSegmentArgs(t *testing.T) {
-	args := SegmentArgs("/m/ep.mkv", "/cache/x/seg00010.ts", 60, 6, 720, 0)
+	// Stereo source (2ch): standard -ac 2 fold.
+	args := SegmentArgs("/m/ep.mkv", "/cache/x/seg00010.ts", 60, 6, 720, 0, 2)
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
-		"-ss 60", "-i /m/ep.mkv", "-t 6", "-c:v libx264", "-c:a aac", "-f mpegts",
+		"-ss 60", "-i /m/ep.mkv", "-t 6", "-c:v libx264", "-c:a aac", "-ac 2", "-f mpegts",
 		"scale=-2:'min(ih,720)'", "-force_key_frames expr:eq(n,0)",
 		"-output_ts_offset 60", "/cache/x/seg00010.ts",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("SegmentArgs missing %q in: %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "pan=stereo") {
+		t.Fatalf("stereo source must not use a dialogue-forward pan: %s", joined)
+	}
+}
+
+func TestSegmentArgsDialogueDownmix(t *testing.T) {
+	// 5.1 source (6ch): dialogue-forward pan replaces -ac 2 so centre-channel
+	// dialogue isn't buried 3 dB under the music when folded to stereo.
+	joined := strings.Join(SegmentArgs("/m/ep.mkv", "/cache/x/seg00010.ts", 60, 6, 720, 0, 6), " ")
+	if !strings.Contains(joined, "pan=stereo|FL=0.7*FC+0.5*FL|FR=0.7*FC+0.5*FR") {
+		t.Fatalf("6ch source must use the dialogue-forward pan: %s", joined)
+	}
+	if strings.Contains(joined, "-ac 2") {
+		t.Fatalf("dialogue downmix must not also pass -ac 2: %s", joined)
+	}
+}
+
+func TestDownmixArgsGate(t *testing.T) {
+	// The pan names FC, which is absent from 3-5ch layouts and would error; gate
+	// on >=6 so only layouts that have a centre channel get the pan.
+	for ch := 0; ch <= 5; ch++ {
+		if got := strings.Join(downmixArgs(ch), " "); got != "-ac 2" {
+			t.Fatalf("downmixArgs(%d) = %q, want \"-ac 2\"", ch, got)
+		}
+	}
+	for _, ch := range []int{6, 8} {
+		if !strings.Contains(strings.Join(downmixArgs(ch), " "), "pan=stereo") {
+			t.Fatalf("downmixArgs(%d) should use a pan downmix", ch)
 		}
 	}
 }
@@ -60,7 +91,7 @@ func TestVODPlaylist(t *testing.T) {
 
 func TestBurnInArgs(t *testing.T) {
 	// sub ordinal 2 -> 0:s:1 (0-based), audio ordinal 1 -> 0:a:0, max height 1080.
-	joined := strings.Join(BurnInArgs("/m/ep.mkv", 2, 1, 1080, 0), " ")
+	joined := strings.Join(BurnInArgs("/m/ep.mkv", 2, 1, 1080, 0, 2), " ")
 	for _, want := range []string{
 		"-i /m/ep.mkv",
 		"[0:v:0][0:s:1]overlay,scale=-2:'min(ih,1080)'[v]",
@@ -82,7 +113,7 @@ func TestBurnInArgs(t *testing.T) {
 func TestBurnInArgsResume(t *testing.T) {
 	// A mid-episode resume input-seeks (and rebases timestamps to zero); the player
 	// offsets reported progress by the requested start.
-	joined := strings.Join(BurnInArgs("/m/ep.mkv", 1, 0, 1080, 930.5), " ")
+	joined := strings.Join(BurnInArgs("/m/ep.mkv", 1, 0, 1080, 930.5, 2), " ")
 	for _, want := range []string{"-ss 930.5", "-i /m/ep.mkv", "-avoid_negative_ts make_zero"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("BurnInArgs(start) missing %q in: %s", want, joined)
@@ -244,7 +275,7 @@ func TestEnsureSegmentBuildsAndReuses(t *testing.T) {
 	src, mt, size := sampleClipDur(t, 12) // 2 full segments
 	cacheRoot := t.TempDir()
 
-	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12)
+	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12, 2)
 	if err != nil {
 		t.Fatalf("EnsureSegment: %v", err)
 	}
@@ -253,7 +284,7 @@ func TestEnsureSegmentBuildsAndReuses(t *testing.T) {
 	}
 
 	// Second call reuses the cached segment (same path, no rebuild).
-	p2, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12)
+	p2, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12, 2)
 	if err != nil || p2 != p {
 		t.Fatalf("reuse: p=%q p2=%q err=%v", p, p2, err)
 	}
@@ -266,7 +297,7 @@ func TestEnsureSegmentRandomAccess(t *testing.T) {
 	src, mt, size := sampleClipDur(t, 18) // 3 segments
 	cacheRoot := t.TempDir()
 
-	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 2, 18)
+	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 2, 18, 2)
 	if err != nil {
 		t.Fatalf("EnsureSegment: %v", err)
 	}
@@ -289,7 +320,7 @@ func TestEnsureSegmentConcurrentSharesOneBuild(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			paths[i], errs[i] = EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 0, 12)
+			paths[i], errs[i] = EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 0, 12, 2)
 		}(i)
 	}
 	wg.Wait()
@@ -317,7 +348,7 @@ func TestEnsureSegmentFailedBuildLeavesNoSegment(t *testing.T) {
 	cacheRoot := t.TempDir()
 	// A nonexistent source makes ffmpeg fail before producing anything.
 	bogus := filepath.Join(t.TempDir(), "does-not-exist.mkv")
-	_, err := EnsureSegment(context.Background(), cacheRoot, bogus, time.Unix(1, 0), 1, 240, 0, 12)
+	_, err := EnsureSegment(context.Background(), cacheRoot, bogus, time.Unix(1, 0), 1, 240, 0, 12, 2)
 	if err == nil {
 		t.Fatal("expected an error for a missing source")
 	}
