@@ -647,16 +647,12 @@ body::before {
   aspect-ratio: 1;
   overflow: hidden;
   background: var(--surface-panel);
-  border-radius: 50%;
-  margin: 0.5rem auto 0;
-  width: 80%;
 }
 .artist-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
-  border-radius: 50%;
 }
 .artist-thumb-ph {
   width: 100%;
@@ -668,12 +664,12 @@ body::before {
   justify-content: center;
   font-size: 2rem;
   font-weight: 700;
-  border-radius: 50%;
 }
 .artist-thumb-ph.big {
   width: 120px;
   height: 120px;
   font-size: 3rem;
+  border-radius: 8px;
 }
 
 /* Album art placeholder */
@@ -738,7 +734,7 @@ body::before {
   width: 160px;
   height: 160px;
   object-fit: cover;
-  border-radius: 50%;
+  border-radius: 8px;
 }
 .artist-side {
   flex: 1;
