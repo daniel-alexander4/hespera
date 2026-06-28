@@ -188,6 +188,9 @@ CREATE TABLE IF NOT EXISTS movie_files (
   file_size_bytes INTEGER NOT NULL DEFAULT 0,
   mtime_unix INTEGER NOT NULL DEFAULT 0,
   stream_info_json TEXT NOT NULL DEFAULT '{}',
+  guessed_title TEXT NOT NULL DEFAULT '',
+  year INTEGER NOT NULL DEFAULT 0,
+  tmdb_id INTEGER NOT NULL DEFAULT 0,
   match_status TEXT NOT NULL DEFAULT '',
   match_confidence REAL NOT NULL DEFAULT 0.0,
   match_source TEXT NOT NULL DEFAULT '',
@@ -216,6 +219,7 @@ CREATE TABLE IF NOT EXISTS movie_art (
 );
 
 CREATE INDEX IF NOT EXISTS idx_movie_art_tmdb_id ON movie_art(tmdb_movie_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_movie_art_unique ON movie_art(tmdb_movie_id, art_type);
 
 CREATE TABLE IF NOT EXISTS movie_playback_progress (
   file_id INTEGER PRIMARY KEY REFERENCES movie_files(id) ON DELETE CASCADE,
@@ -332,6 +336,19 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 	if err := ensureColumn(db, "music_artists", "similar_fetched_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// movie_files: the scanner parses guessed_title/year from the path (the matcher
+	// reads them); tmdb_id is the matched identity linking to movie_art and the
+	// metadata cache. Added here for DBs that created movie_files before these
+	// columns existed (the canonical CREATE TABLE in schemaSQL carries them too).
+	if err := ensureColumn(db, "movie_files", "guessed_title", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "movie_files", "year", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "movie_files", "tmdb_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
