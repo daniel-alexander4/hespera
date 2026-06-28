@@ -15,9 +15,10 @@ type Config struct {
 	DBPath    string
 	MediaRoot string
 
-	TMDBAPIKey       string
-	FanartTVAPIKey   string
-	TheAudioDBAPIKey string
+	TMDBAPIKey          string
+	FanartTVAPIKey      string
+	TheAudioDBAPIKey    string
+	OpenSubtitlesAPIKey string
 
 	AuthEnabled       bool
 	AuthSessionSecret string
@@ -37,13 +38,14 @@ func FromEnv() Config {
 	mediaRoot := getenv("HESPERA_MEDIA_ROOT", "/media")
 
 	return Config{
-		Listen:     listen,
-		DataDir:    dataDir,
-		DBPath:     dbPath,
-		MediaRoot:  mediaRoot,
-		TMDBAPIKey:       getenv("HESPERA_TMDB_API_KEY", ""),
-		FanartTVAPIKey:   getenv("HESPERA_FANARTTV_API_KEY", ""),
-		TheAudioDBAPIKey: getenv("HESPERA_THEAUDIODB_API_KEY", ""),
+		Listen:              listen,
+		DataDir:             dataDir,
+		DBPath:              dbPath,
+		MediaRoot:           mediaRoot,
+		TMDBAPIKey:          getenv("HESPERA_TMDB_API_KEY", ""),
+		FanartTVAPIKey:      getenv("HESPERA_FANARTTV_API_KEY", ""),
+		TheAudioDBAPIKey:    getenv("HESPERA_THEAUDIODB_API_KEY", ""),
+		OpenSubtitlesAPIKey: getenv("HESPERA_OPENSUBTITLES_API_KEY", ""),
 		AuthEnabled: parseBoolDefaultTrue(
 			os.Getenv("AUTH_ENABLED"),
 		),

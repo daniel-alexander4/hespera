@@ -74,6 +74,9 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/tv/player", h.tvPlayer)
 	mux.HandleFunc("/tv/playback-progress", h.tvPlaybackProgress)
 	mux.HandleFunc("/tv/playback-session", h.tvPlaybackSession)
+	mux.HandleFunc("/tv/subtitles/search", h.tvSubtitlesSearch)
+	mux.HandleFunc("/tv/subtitles/fetch", h.tvSubtitlesFetch)
+	mux.HandleFunc("/tv/subtitles/get", h.tvSubtitlesGet)
 
 	// TV streaming
 	mux.HandleFunc("/stream/tv/", h.streamTVEpisode)

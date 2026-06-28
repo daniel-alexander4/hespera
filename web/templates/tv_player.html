@@ -8,7 +8,8 @@
   <div class="tv-player-video-wrap">
     <video id="tvVideo" class="tv-video" controls autoplay
            data-file-id="{{.FileID}}"
-           data-next-file="{{.NextFileID}}">
+           data-next-file="{{.NextFileID}}"
+           data-os-enabled="{{if .OpenSubtitlesEnabled}}1{{end}}">
       Your browser does not support video playback.
     </video>
   </div>
@@ -26,6 +27,7 @@
     <label class="tv-track-pick" id="subPick" hidden>Subtitles
       <select id="subSelect"></select>
     </label>
+    <button type="button" id="subsSearchBtn" class="btn btn-sm" hidden>Search subtitles</button>
     <span id="playbackMode" class="tv-playback-mode"></span>
   </div>
 
@@ -41,6 +43,17 @@
     {{else}}
     <span></span>
     {{end}}
+  </div>
+</div>
+
+<div id="subs-modal" class="playlist-modal hidden" data-couch-overlay>
+  <div class="playlist-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+      <strong>Search subtitles</strong>
+      <button id="subs-close-btn" type="button" class="btn btn-sm" data-couch-dismiss>Close</button>
+    </div>
+    <p id="subs-status" class="form-help"></p>
+    <ol id="subs-results" class="tracks"></ol>
   </div>
 </div>
 
@@ -131,7 +144,27 @@
       });
       document.getElementById('subPick').hidden = false;
     }
+    // No deliverable text track? Offer the OpenSubtitles search (when a key is
+    // configured) so the user can fetch an external subtitle.
+    const searchBtn = document.getElementById('subsSearchBtn');
+    if (searchBtn && video.dataset.osEnabled === '1' && subs.length === 0) {
+      searchBtn.hidden = false;
+    }
     selectsBuilt = true;
+  }
+
+  // attachExternalSubtitle swaps in a fetched WebVTT sidecar (from the
+  // OpenSubtitles search) as the active subtitle track.
+  function attachExternalSubtitle(url) {
+    for (const t of [...video.querySelectorAll('track')]) t.remove();
+    const track = document.createElement('track');
+    track.kind = 'subtitles';
+    track.src = url;
+    track.default = true;
+    track.label = 'Subtitles';
+    video.appendChild(track);
+    const tt = video.textTracks[video.textTracks.length - 1];
+    if (tt) tt.mode = 'showing';
   }
 
   async function loadFromSession(aud, sub, seekTo) {
@@ -213,6 +246,79 @@
     reportProgress(false);
     teardownHLS();
   }, { once: true });
+
+  // --- OpenSubtitles search dialog (shown only when no text track is offered
+  //     and a key is configured) ---
+  const subsModal = document.getElementById('subs-modal');
+  const subsStatus = document.getElementById('subs-status');
+  const subsResults = document.getElementById('subs-results');
+  const subsSearchBtn = document.getElementById('subsSearchBtn');
+  const subsCloseBtn = document.getElementById('subs-close-btn');
+
+  function openSubsModal() {
+    if (!subsModal) return;
+    subsModal.classList.remove('hidden');
+    runSubsSearch();
+  }
+  function closeSubsModal() {
+    if (subsModal) subsModal.classList.add('hidden');
+  }
+
+  async function runSubsSearch() {
+    subsResults.innerHTML = '';
+    subsStatus.textContent = 'Searching…';
+    let data;
+    try {
+      const resp = await fetch(`/tv/subtitles/search?file=${fileID}&lang=en`, { headers: { Accept: 'application/json' } });
+      data = await resp.json();
+    } catch (e) { subsStatus.textContent = 'Search failed.'; return; }
+    if (!data || !data.ok) { subsStatus.textContent = (data && data.message) || 'Search failed.'; return; }
+    const results = data.results || [];
+    if (results.length === 0) { subsStatus.textContent = 'No subtitles found.'; return; }
+    subsStatus.textContent = results.length + ' result' + (results.length === 1 ? '' : 's') + ':';
+    results.forEach((rsub) => {
+      const li = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = [
+        rsub.language,
+        rsub.release || rsub.file_name,
+        rsub.download_count ? rsub.download_count + ' dl' : '',
+        rsub.hearing_impaired ? 'SDH' : '',
+      ].filter(Boolean).join(' · ');
+      const use = document.createElement('button');
+      use.type = 'button';
+      use.className = 'btn btn-sm';
+      use.textContent = 'Use';
+      use.addEventListener('click', () => useSubtitle(rsub, use));
+      li.appendChild(label);
+      li.appendChild(use);
+      subsResults.appendChild(li);
+    });
+  }
+
+  async function useSubtitle(rsub, btn) {
+    btn.disabled = true; btn.textContent = 'Loading…';
+    const body = new URLSearchParams({ file: String(fileID), file_id: String(rsub.file_id), lang: rsub.language || 'en' });
+    let data;
+    try {
+      const resp = await fetch('/tv/subtitles/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body,
+      });
+      data = await resp.json();
+    } catch (e) { btn.disabled = false; btn.textContent = 'Use'; subsStatus.textContent = 'Download failed.'; return; }
+    if (!data || !data.ok || !data.url) {
+      btn.disabled = false; btn.textContent = 'Use';
+      subsStatus.textContent = (data && data.message) || 'Download failed.';
+      return;
+    }
+    attachExternalSubtitle(data.url);
+    closeSubsModal();
+  }
+
+  if (subsSearchBtn) subsSearchBtn.addEventListener('click', openSubsModal);
+  if (subsCloseBtn) subsCloseBtn.addEventListener('click', closeSubsModal);
 
   loadFromSession(0, 0, null);
 })();

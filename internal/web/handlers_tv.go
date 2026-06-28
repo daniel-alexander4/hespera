@@ -1072,19 +1072,20 @@ WHERE f.id = ?
 	prevFileID, nextFileID := h.findAdjacentEpisode(r.Context(), seriesID, seasonNum, epCSV, fileID)
 
 	h.render(w, "tv_player.html", map[string]any{
-		"Title":      fmt.Sprintf("%s — %s", showName, epName),
-		"FileID":     fileID,
-		"SeriesID":   seriesID,
-		"SeasonNum":  seasonNum,
-		"ShowName":   showName,
-		"EpName":     epName,
-		"EpCSV":      epCSV,
-		"Position":   position,
-		"Duration":   duration,
-		"Completed":  completed,
-		"PrevFileID": prevFileID,
-		"NextFileID": nextFileID,
-		"Container":  container,
+		"Title":                fmt.Sprintf("%s — %s", showName, epName),
+		"FileID":               fileID,
+		"SeriesID":             seriesID,
+		"SeasonNum":            seasonNum,
+		"ShowName":             showName,
+		"EpName":               epName,
+		"EpCSV":                epCSV,
+		"Position":             position,
+		"Duration":             duration,
+		"Completed":            completed,
+		"PrevFileID":           prevFileID,
+		"NextFileID":           nextFileID,
+		"Container":            container,
+		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "",
 	})
 }
 
