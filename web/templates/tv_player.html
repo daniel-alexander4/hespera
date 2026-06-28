@@ -18,6 +18,7 @@
     <button id="tvRewindBtn" type="button" class="btn btn-sm" aria-label="Rewind 10 seconds" title="Rewind 10s">{{template "icon-rewind"}}</button>
     <button id="tvToggleBtn" type="button" class="btn btn-primary btn-sm" aria-label="Play or pause" title="Play / Pause"><span class="tv-glyph-play">{{template "icon-play"}}</span><span class="tv-glyph-pause">{{template "icon-pause"}}</span></button>
     <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Forward 10 seconds" title="Forward 10s">{{template "icon-fast-forward"}}</button>
+    <button id="tvBoostBtn" type="button" class="btn btn-sm" aria-pressed="false" aria-label="Even out loudness (boost quiet dialogue)" title="Even loudness">{{template "icon-audio-lines"}}</button>
   </div>
 
   <div class="tv-player-controls">
@@ -212,6 +213,76 @@
   video.addEventListener('play', () => { if (transport) transport.classList.add('playing'); });
   video.addEventListener('pause', () => { if (transport) transport.classList.remove('playing'); });
 
+  // --- "Even loudness": client-side dynamic-range compression via Web Audio.
+  //     Compresses the decoded audio in the browser, so it evens the loud
+  //     music/quiet dialogue gap on every playback path (direct/remux/HLS) with
+  //     no server transcode and full seeking preserved. Routing engages only
+  //     once the AudioContext is actually running, so a context that starts
+  //     suspended (autoplay policy) never silences playback. Preference persists
+  //     in localStorage, mirroring the theme toggle. ---
+  const boostBtn = document.getElementById('tvBoostBtn');
+  let boostOn = false;
+  try { boostOn = localStorage.getItem('tv_boost') === '1'; } catch (e) {}
+  let audioCtx = null, srcNode = null, compressor = null, makeup = null, graphBuilt = false;
+
+  function buildAudioGraph() {
+    if (graphBuilt) return true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    try {
+      audioCtx = new AC();
+      srcNode = audioCtx.createMediaElementSource(video); // once per element
+      compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.value = -24;
+      compressor.knee.value = 30;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.25;
+      makeup = audioCtx.createGain();
+      makeup.gain.value = 2.0; // ~ +6 dB, restoring loudness shaved by compression
+      audioCtx.addEventListener('statechange', routeBoost);
+    } catch (e) { return false; }
+    graphBuilt = true;
+    return true;
+  }
+
+  function routeBoost() {
+    if (!graphBuilt) return;
+    try { srcNode.disconnect(); compressor.disconnect(); makeup.disconnect(); } catch (e) {}
+    if (boostOn && audioCtx.state === 'running') {
+      srcNode.connect(compressor); compressor.connect(makeup); makeup.connect(audioCtx.destination);
+    } else {
+      srcNode.connect(audioCtx.destination); // off, or context not yet running: pass through
+    }
+  }
+
+  function applyBoost() {
+    if (!boostOn) { if (graphBuilt) routeBoost(); return; }
+    if (!buildAudioGraph()) return;
+    audioCtx.resume().catch(() => {});
+    routeBoost();
+  }
+
+  function reflectBoost() {
+    if (!boostBtn) return;
+    boostBtn.classList.toggle('btn-primary', boostOn);
+    boostBtn.setAttribute('aria-pressed', boostOn ? 'true' : 'false');
+  }
+
+  if (boostBtn) {
+    reflectBoost();
+    boostBtn.addEventListener('click', () => {
+      boostOn = !boostOn;
+      try { localStorage.setItem('tv_boost', boostOn ? '1' : '0'); } catch (e) {}
+      reflectBoost();
+      applyBoost();
+    });
+    // A persisted-on boost (or a context that started suspended) engages on the
+    // first real gesture / when playback starts, without needing a click.
+    video.addEventListener('play', () => { if (boostOn && graphBuilt) audioCtx.resume().then(routeBoost).catch(() => {}); });
+    if (boostOn) applyBoost();
+  }
+
   // --- progress reporting (unchanged behaviour) ---
   function reportProgress(completed) {
     const now = Date.now();
@@ -251,6 +322,7 @@
     reportProgress(false);
     video.pause();
     teardownHLS();
+    if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
     video.removeAttribute('src');
     try { video.load(); } catch (e) {}
   }, { once: true });
