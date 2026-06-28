@@ -24,7 +24,9 @@ type ArtistMeta struct {
 	Bio           string
 	BioSourceName string
 	BioSourceURL  string
-	ImagePath     string
+	ImagePath     string // local downloaded path (in-catalog enrichment)
+	ImageURL      string // resolved external image URL (set regardless of download)
+	Name          string // canonical artist name from MusicBrainz
 }
 
 // EnrichArtist fetches artist bio from Wikipedia and image from Wikimedia using
@@ -34,6 +36,14 @@ type ArtistMeta struct {
 // keyed by the artist MBID, so they stay correct even though album release-group
 // MBIDs can mis-match.
 func EnrichArtist(ctx context.Context, mb *MBClient, fanart *FanartClient, audiodb *AudioDBClient, artistMBID, dataDir string) (*ArtistMeta, error) {
+	return enrichArtist(ctx, mb, fanart, audiodb, artistMBID, dataDir, true)
+}
+
+// enrichArtist is the shared body of EnrichArtist. download controls whether the
+// resolved image is fetched to disk (ImagePath, the in-catalog case) — when
+// false, only the external ImageURL is resolved (the out-of-catalog page
+// hotlinks it, so it must not land under thumbs/music where the GC would reap it).
+func enrichArtist(ctx context.Context, mb *MBClient, fanart *FanartClient, audiodb *AudioDBClient, artistMBID, dataDir string, download bool) (*ArtistMeta, error) {
 	artist, err := mb.LookupArtist(ctx, artistMBID)
 	if err != nil {
 		return nil, fmt.Errorf("lookup artist: %w", err)
@@ -56,7 +66,7 @@ func EnrichArtist(ctx context.Context, mb *MBClient, fanart *FanartClient, audio
 		}
 	}
 
-	meta := &ArtistMeta{}
+	meta := &ArtistMeta{Name: artist.Name}
 
 	// If we have a Wikidata URL, fetch the entity once and extract both
 	// the Wikipedia sitelink (for bio) and P18 image claim.
@@ -98,7 +108,11 @@ func EnrichArtist(ctx context.Context, mb *MBClient, fanart *FanartClient, audio
 		}
 	}
 
-	// Image from Wikidata P18 -> Wikimedia Commons.
+	// Resolve an image URL in priority order — Wikidata P18 → Wikimedia Commons,
+	// then fanart.tv, then TheAudioDB — capturing the download client each source
+	// needs (Commons redirects to upload.wikimedia.org, so it uses the wiki client
+	// with the redirect SSRF re-check; the direct provider URLs use the default).
+	var imgClient *http.Client
 	if len(wikidataEntity) > 0 {
 		filename := extractP18(wikidataEntity, wikidataQID)
 		if filename != "" {
@@ -107,30 +121,21 @@ func EnrichArtist(ctx context.Context, mb *MBClient, fanart *FanartClient, audio
 			if mb.commonsBaseURL != "" {
 				commonsBase = mb.commonsBaseURL
 			}
-			commonsURL := fmt.Sprintf("%s/wiki/Special:FilePath/%s?width=500",
+			meta.ImageURL = fmt.Sprintf("%s/wiki/Special:FilePath/%s?width=500",
 				commonsBase, url.PathEscape(filename))
-			imgPath, err := downloadArtistImage(ctx, commonsURL, dataDir, artistMBID, mb.wikiClient)
-			if err != nil {
-				slog.Warn("artist image download failed", "qid", wikidataQID, "err", err)
-			} else if imgPath != "" {
-				meta.ImagePath = imgPath
-			}
+			imgClient = mb.wikiClient
 		} else {
 			slog.Info("no P18 image claim", "qid", wikidataQID)
 		}
 	}
-
-	// Backfill from optional providers only where Wikipedia/Wikidata left a gap.
-	// Image: fanart.tv (purpose-built artist art) then TheAudioDB. Bio: TheAudioDB.
-	if meta.ImagePath == "" && fanart != nil {
-		if imgURL := fanart.ArtistImageURL(ctx, artistMBID); imgURL != "" {
-			if p, err := downloadArtistImage(ctx, imgURL, dataDir, artistMBID, nil); err != nil {
-				slog.Warn("fanart artist image download failed", "mbid", artistMBID, "err", err)
-			} else if p != "" {
-				meta.ImagePath = p
-			}
+	if meta.ImageURL == "" && fanart != nil {
+		if u := fanart.ArtistImageURL(ctx, artistMBID); u != "" {
+			meta.ImageURL = u
+			imgClient = nil
 		}
 	}
+
+	// Bio backfill: TheAudioDB, only where Wikipedia/Wikidata left a gap.
 	if audiodb != nil {
 		if meta.Bio == "" {
 			if bio := audiodb.ArtistBio(ctx, artistMBID); bio != "" {
@@ -139,14 +144,21 @@ func EnrichArtist(ctx context.Context, mb *MBClient, fanart *FanartClient, audio
 				meta.BioSourceURL = "https://www.theaudiodb.com/artist/" + artistMBID
 			}
 		}
-		if meta.ImagePath == "" {
-			if imgURL := audiodb.ArtistImageURL(ctx, artistMBID); imgURL != "" {
-				if p, err := downloadArtistImage(ctx, imgURL, dataDir, artistMBID, nil); err != nil {
-					slog.Warn("audiodb artist image download failed", "mbid", artistMBID, "err", err)
-				} else if p != "" {
-					meta.ImagePath = p
-				}
+		if meta.ImageURL == "" {
+			if u := audiodb.ArtistImageURL(ctx, artistMBID); u != "" {
+				meta.ImageURL = u
+				imgClient = nil
 			}
+		}
+	}
+
+	// Download to disk only for in-catalog enrichment; the out-of-catalog page
+	// hotlinks meta.ImageURL instead.
+	if download && meta.ImageURL != "" {
+		if p, err := downloadArtistImage(ctx, meta.ImageURL, dataDir, artistMBID, imgClient); err != nil {
+			slog.Warn("artist image download failed", "mbid", artistMBID, "err", err)
+		} else if p != "" {
+			meta.ImagePath = p
 		}
 	}
 

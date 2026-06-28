@@ -59,6 +59,7 @@ func New(d Deps) (*Handler, error) {
 		"settings_jobs.html",
 		"music_home.html",
 		"music_artist.html",
+		"music_artist_external.html",
 		"music_artist_disambiguate.html",
 		"music_artist_art.html",
 		"music_album.html",

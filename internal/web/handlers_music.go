@@ -353,12 +353,23 @@ func (h *Handler) musicArtistAlbums(w http.ResponseWriter, r *http.Request) {
 	var artistArt sql.NullString
 	var artistBio sql.NullString
 	var bioSourceURL sql.NullString
+	var artistMBID, similarJSON, similarFetchedAt sql.NullString
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT library_id, name, art_path, bio, bio_source_url FROM music_artists WHERE id=?",
+		"SELECT library_id, name, art_path, bio, bio_source_url, musicbrainz_id, similar_json, similar_fetched_at FROM music_artists WHERE id=?",
 		artistID,
-	).Scan(&libraryID, &artistName, &artistArt, &artistBio, &bioSourceURL); err != nil {
+	).Scan(&libraryID, &artistName, &artistArt, &artistBio, &bioSourceURL, &artistMBID, &similarJSON, &similarFetchedAt); err != nil {
 		http.NotFound(w, r)
 		return
+	}
+
+	// Lazily fetch the similar-artists list the first time, in the background
+	// (keyless, like the actor-bio backfill). Gated by similar_fetched_at so a
+	// cache-miss view doesn't re-enqueue. Only artists with an MBID can be queried.
+	mbid := scanNullString(artistMBID)
+	if mbid != "" && scanNullString(similarFetchedAt) == "" {
+		aid := artistID
+		h.enqueueMusicFetch(r.Context(), fmt.Sprintf("artist-similar:%d", aid), "artist_similar_fetch",
+			func(ctx context.Context, m *match.Matcher) error { return h.fetchArtistSimilar(ctx, m, aid, mbid) })
 	}
 
 	// Albums by this artist (non-compilation)
@@ -464,6 +475,7 @@ ORDER BY al.year, lower(al.title), t.disc_no, t.track_no, lower(t.title)
 		"Compilations": comps,
 		"Tracks":       tracks,
 		"LibraryID":    libraryID,
+		"Similar":      h.loadArtistSimilarCards(r.Context(), scanNullString(similarJSON)),
 	})
 }
 
