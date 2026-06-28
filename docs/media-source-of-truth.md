@@ -33,7 +33,7 @@ Config: `internal/config/config.go` — `DataDir` (DB + all derived artifacts) a
 
 | | **Music** | **TV** | **Movies** |
 |---|---|---|---|
-| File row (the SoT join to disk) | `music_tracks` | `tv_series_files` | `movie_files` *(schema only)* |
+| File row (the SoT join to disk) | `music_tracks` | `tv_series_files` | `movie_files` |
 | Path column / identity | `abs_path` / `UNIQUE(library_id, abs_path)` | same | same |
 | Change signal | `file_size_bytes` + `mtime_unix` | same | same |
 | Content signature | `checksum_sha256` (stored) | *(none)* | *(none)* |
@@ -43,9 +43,9 @@ Config: `internal/config/config.go` — `DataDir` (DB + all derived artifacts) a
 | Cast / people | — | `people` + `credits` (global TMDB cache; `credits.media_type` discriminates tv/movie) | reuses `people` + `credits` |
 | Playback/resume | — | `tv_playback_progress` (PK `file_id`) | `movie_playback_progress` (PK `file_id`) |
 | Other user state | `play_history` (FK `track_id`) | — | — |
-| Scanner | `internal/scan` (`ScanMusic`) | `internal/tvscan` (`ScanTV`) | **none — unimplemented** |
-| Matcher | `internal/match` (`RunMusicMatch`) | `internal/tmdb` (`RunTVMatch`) | none |
-| Move-relink | `relinkMovedTracks` | `relinkMovedFiles` | n/a |
+| Scanner | `internal/scan` (`ScanMusic`) | `internal/tvscan` (`ScanTV`) | `internal/moviescan` (`ScanMovies`) |
+| Matcher | `internal/match` (`RunMusicMatch`) | `internal/tmdb` (`RunTVMatch`) | `internal/tmdb` (`RunMovieMatch`) |
+| Move-relink | `relinkMovedTracks` | `relinkMovedFiles` | `relinkMovedFiles` (moviescan) |
 
 Schema for every table above is in `internal/db/migrate.go` (`schemaSQL` const;
 column additions via `ensureColumn` in `Migrate()`).
@@ -238,23 +238,41 @@ add a partial-hash (head+tail) signature column. See `pending.md`.
 
 ---
 
-## 6. Movies — unimplemented
+## 6. Movies
 
-Movies are **schema-only**. `movie_files`, `movie_art`,
-`movie_metadata_cache`, `movie_playback_progress` exist in `migrate.go` and a
-TMDB *movie* matcher exists in `internal/tmdb`, but:
+Movies are implemented end to end, mirroring TV with a flatter (no season/
+episode) shape. Owners per concern:
 
-- **No movie scanner** — nothing walks the filesystem or writes `movie_files`.
-- The `librariesScan` dispatcher has only `case "music"` / `case "tv"`; a movies
-  library can be created but returns "scanning not supported for this library
-  type".
-- `/movies` renders a static "coming in Phase 4" stub.
+- **File row** → `movie_files` (`UNIQUE(library_id, abs_path)`). Change signal =
+  `(file_size_bytes, mtime_unix)` — **no content checksum** (no hashing of
+  multi-GB video, like TV).
+- **Match/identity** → stored **inline on `movie_files`** (`tmdb_id`,
+  `match_status` ∈ `''`/`unmatched`/`matched`/`skipped`, `match_confidence`,
+  `match_source`, `matched_at`), not a separate identities table. The scanner
+  parses `guessed_title`/`year` from the path; the matcher owns the rest.
+- **Match cache** → `movie_metadata_cache` (key `movie:%d`, single-column PK).
+  **Artwork** → `movie_art` (`UNIQUE(tmdb_movie_id, art_type)`, types
+  `poster`/`backdrop`; files in `thumbs/movies`). **Cast** → shared
+  `people`+`credits` (`credits.media_type='movie'`); actor profile images live in
+  the shared `thumbs/tv` dir, not `thumbs/movies`. **Playback/resume** →
+  `movie_playback_progress` (PK `file_id`).
+- **Scanner** = `internal/moviescan` (`ScanMovies`): a strict simplification of
+  `tvscan` — same walk/probe/junk-skip (reuses `tvscan.IsJunkFile`/
+  `IsJunkDirName`)/pathguard/relink/prune, minus the SxE cascade. Identity is a
+  Title+Year parser (`ParseMovie`). Single-table upsert; the match columns are
+  never written by the scanner.
+- **Matcher** = `tmdb.RunMovieMatch` (`NewMovieMatcher`): groups unmatched files
+  by `(title, year)`, `SearchMovie` → `pickBestMovie` (title similarity adjusted
+  by release-**year** agreement — the disambiguator films need) → caches metadata,
+  downloads poster+backdrop, `FetchMovieCast`, writes the inline match identity.
+- **Move-relink** = built in from the start on the §5 pattern: signature
+  `(file_size_bytes, mtime_unix)`, transfers the inline match columns +
+  `movie_playback_progress` (only `matched`/`skipped`; `unmatched` re-derives from
+  the new filename), strictly 1:1.
 
-**When the movie scanner is built**: mirror `internal/tvscan` (walk → identify
-title/year → `movie_files`) + a movie-match pipeline over the existing TMDB
-matcher, and **build it move-aware from the start** on the §5 pattern (signature
-`(file_size_bytes, mtime_unix)`; transfer `movie_playback_progress` + the inline
-match columns on `movie_files`).
+What survives rescan/rematch/move/delete follows the §7 rules: the match columns
+and `movie_playback_progress` are `file_id`-keyed and lost on prune **unless** the
+relink transfers them; `movie_art` is the thumbgc reference set for `thumbs/movies`.
 
 ---
 
