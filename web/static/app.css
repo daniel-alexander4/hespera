@@ -623,6 +623,13 @@ body::before {
   object-fit: cover;
   display: block;
 }
+/* TV posters are 2:3 portrait, not square like album covers. The poster
+   modifier reshapes the art box (and its text placeholder, so card heights
+   stay uniform) to match, instead of cropping a portrait into a square. */
+.band-album-card--poster .band-album-art,
+.band-album-card--poster .album-art-ph {
+  aspect-ratio: 2 / 3;
+}
 .band-album-meta {
   padding: 0.5rem;
 }
