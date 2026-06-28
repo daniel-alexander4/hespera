@@ -125,3 +125,51 @@ func TestMusicHandlers(t *testing.T) {
 		})
 	}
 }
+
+// TestMusicAlbumsPagination verifies the COUNT + LIMIT/OFFSET + pageNav wiring:
+// 65 albums over a page size of 60 → page 1 has 60 (next, no prev), page 2 has 5
+// (prev, no next), and an out-of-range page clamps to the last page.
+func TestMusicAlbumsPagination(t *testing.T) {
+	h, db := newTestHandler(t)
+	libID, artistID, _, _ := seedMusicData(t, db) // seeds 1 album
+	for i := 0; i < 64; i++ {
+		if _, err := db.Exec(
+			`INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, is_compilation) VALUES (?,?,?,?,2000,0)`,
+			libID, artistID, artistID, fmt.Sprintf("Album %02d", i)); err != nil {
+			t.Fatalf("insert album %d: %v", i, err)
+		}
+	}
+	router := h.Router()
+	get := func(path string) string {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d", path, rec.Code)
+		}
+		return rec.Body.String()
+	}
+
+	b1 := get("/music/albums")
+	if n := strings.Count(b1, `class="album"`); n != listPageSize {
+		t.Fatalf("page 1 album count = %d, want %d", n, listPageSize)
+	}
+	if !strings.Contains(b1, ">1/2<") {
+		t.Fatalf("page 1 nav not 1/2: %s", b1)
+	}
+	if !strings.Contains(b1, `class="next"`) || strings.Contains(b1, `class="prev"`) {
+		t.Fatalf("page 1 should have next and no prev")
+	}
+
+	b2 := get("/music/albums?page=2")
+	if n := strings.Count(b2, `class="album"`); n != 5 {
+		t.Fatalf("page 2 album count = %d, want 5", n)
+	}
+	if !strings.Contains(b2, `class="prev"`) || strings.Contains(b2, `class="next"`) {
+		t.Fatalf("page 2 should have prev and no next")
+	}
+
+	if n := strings.Count(get("/music/albums?page=9"), `class="album"`); n != 5 {
+		t.Fatalf("out-of-range page should clamp to the last page (5 albums), got %d", n)
+	}
+}
