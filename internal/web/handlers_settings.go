@@ -64,6 +64,18 @@ func (h *Handler) effectiveAudioDBKey(ctx context.Context) string {
 	return h.cfg.TheAudioDBAPIKey
 }
 
+// effectiveOpenSubtitlesKey resolves the optional OpenSubtitles API key the same
+// way: the app_settings (UI) value wins, else the env default. Empty disables
+// the on-demand TV subtitle search.
+func (h *Handler) effectiveOpenSubtitlesKey(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='opensubtitles_api_key'").Scan(&v)
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	return h.cfg.OpenSubtitlesAPIKey
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -116,19 +128,23 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		tmdbCfg, tmdbSrc, tmdbMask := h.keyStatus(ctx, "tmdb_api_key", h.cfg.TMDBAPIKey, h.effectiveTMDBKey(ctx))
 		fanCfg, fanSrc, fanMask := h.keyStatus(ctx, "fanarttv_api_key", h.cfg.FanartTVAPIKey, h.effectiveFanartKey(ctx))
 		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
+		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
 		h.render(w, "settings_apikeys.html", map[string]any{
-			"Title":             "API Keys",
-			"TMDBConfigured":    tmdbCfg,
-			"TMDBSource":        tmdbSrc,
-			"TMDBMasked":        tmdbMask,
-			"FanartConfigured":  fanCfg,
-			"FanartSource":      fanSrc,
-			"FanartMasked":      fanMask,
-			"AudioDBConfigured": adbCfg,
-			"AudioDBSource":     adbSrc,
-			"AudioDBMasked":     adbMask,
-			"Saved":             r.URL.Query().Get("saved"),
-			"Valid":             r.URL.Query().Get("valid"),
+			"Title":                   "API Keys",
+			"TMDBConfigured":          tmdbCfg,
+			"TMDBSource":              tmdbSrc,
+			"TMDBMasked":              tmdbMask,
+			"FanartConfigured":        fanCfg,
+			"FanartSource":            fanSrc,
+			"FanartMasked":            fanMask,
+			"AudioDBConfigured":       adbCfg,
+			"AudioDBSource":           adbSrc,
+			"AudioDBMasked":           adbMask,
+			"OpenSubtitlesConfigured": osCfg,
+			"OpenSubtitlesSource":     osSrc,
+			"OpenSubtitlesMasked":     osMask,
+			"Saved":                   r.URL.Query().Get("saved"),
+			"Valid":                   r.URL.Query().Get("valid"),
 		})
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
@@ -161,7 +177,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
 			return
 		}
-		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key"} {
+		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "opensubtitles_api_key"} {
 			if _, ok := r.Form[field]; ok {
 				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
 					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
