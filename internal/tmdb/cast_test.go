@@ -106,6 +106,58 @@ func TestFetchTVCast(t *testing.T) {
 	}
 }
 
+// TestRefetchBackdrop verifies the lazy backfill fetches the backdrop from the
+// wide (w1280) base using the path from cached metadata (no extra TMDB call),
+// writes the art row, and sets the hi-res marker.
+func TestRefetchBackdrop(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	var hitW1280 bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/t/p/w1280/", func(w http.ResponseWriter, r *http.Request) {
+		hitW1280 = true
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(smallJPEG)
+	})
+	// No /3/... routes: if RefetchBackdrop made a metadata call it would 404.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	if _, err := db.Exec(`INSERT INTO tv_series_metadata_cache (entity_key, lang, payload_json, fetched_at)
+		VALUES ('show:1396','en','{"id":1396,"backdrop_path":"/bd.jpg"}', datetime('now'))`); err != nil {
+		t.Fatal(err)
+	}
+
+	ch := make(chan time.Time)
+	close(ch)
+	m := &Matcher{
+		db: db,
+		client: &Client{
+			apiKey: "k", httpClient: srv.Client(),
+			apiBase: srv.URL + "/3", imgBase: srv.URL + "/t/p/w500",
+			backdropBase: srv.URL + "/t/p/w1280", limiter: ch,
+		},
+		artDir: filepath.Join(t.TempDir(), "thumbs", "tv"),
+	}
+
+	if err := m.RefetchBackdrop(ctx, 1396); err != nil {
+		t.Fatalf("RefetchBackdrop: %v", err)
+	}
+	if !hitW1280 {
+		t.Fatal("backdrop should be fetched from the w1280 base")
+	}
+	var art string
+	if err := db.QueryRow("SELECT art_path FROM tv_series_art WHERE tmdb_series_id=1396 AND art_type='series_backdrop'").Scan(&art); err != nil || art == "" {
+		t.Fatalf("backdrop art row: art=%q err=%v", art, err)
+	}
+	var mk int
+	if err := db.QueryRow("SELECT 1 FROM tv_series_metadata_cache WHERE entity_key='show:1396:backdrop_hires'").Scan(&mk); err != nil {
+		t.Fatalf("missing backdrop_hires marker: %v", err)
+	}
+}
+
 // TestFetchPersonBio verifies a person's bio + image are cached.
 func TestFetchPersonBio(t *testing.T) {
 	db := openTestDB(t)

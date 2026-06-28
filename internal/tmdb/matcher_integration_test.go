@@ -88,11 +88,12 @@ func newTestMatcher(t *testing.T, db *sql.DB, srv *httptest.Server) *Matcher {
 	return &Matcher{
 		db: db,
 		client: &Client{
-			apiKey:     "test-key",
-			httpClient: srv.Client(),
-			apiBase:    srv.URL + "/3",
-			imgBase:    srv.URL + "/t/p/w500",
-			limiter:    ch,
+			apiKey:       "test-key",
+			httpClient:   srv.Client(),
+			apiBase:      srv.URL + "/3",
+			imgBase:      srv.URL + "/t/p/w500",
+			backdropBase: srv.URL + "/t/p/w500",
+			limiter:      ch,
 		},
 		artDir: artDir,
 	}
@@ -392,11 +393,12 @@ func TestRunTVMatchIntegrationPartialFailure(t *testing.T) {
 	m := &Matcher{
 		db: db,
 		client: &Client{
-			apiKey:     "test-key",
-			httpClient: srv.Client(),
-			apiBase:    srv.URL + "/3",
-			imgBase:    srv.URL + "/t/p/w500",
-			limiter:    ch,
+			apiKey:       "test-key",
+			httpClient:   srv.Client(),
+			apiBase:      srv.URL + "/3",
+			imgBase:      srv.URL + "/t/p/w500",
+			backdropBase: srv.URL + "/t/p/w500",
+			limiter:      ch,
 		},
 		artDir: filepath.Join(t.TempDir(), "thumbs", "tv"),
 	}
@@ -481,11 +483,12 @@ func TestRunTVMatchBelowThreshold(t *testing.T) {
 	m := &Matcher{
 		db: db,
 		client: &Client{
-			apiKey:     "test-key",
-			httpClient: srv.Client(),
-			apiBase:    srv.URL + "/3",
-			imgBase:    srv.URL + "/t/p/w500",
-			limiter:    ch,
+			apiKey:       "test-key",
+			httpClient:   srv.Client(),
+			apiBase:      srv.URL + "/3",
+			imgBase:      srv.URL + "/t/p/w500",
+			backdropBase: srv.URL + "/t/p/w500",
+			limiter:      ch,
 		},
 		artDir: filepath.Join(t.TempDir(), "thumbs", "tv"),
 	}
