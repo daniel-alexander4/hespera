@@ -29,6 +29,10 @@ type tvSeriesRow struct {
 	PosterPath   string
 	EpisodeCount int
 	IsMatched    bool
+	// SeasonNumber is the in-progress season for a "Continue Watching" row (the
+	// season of the most-recently-watched episode), so the card can deep-link
+	// straight to that season's episode list. Zero/unused for other rows.
+	SeasonNumber int
 }
 
 type tvSeasonRow struct {
@@ -92,8 +96,12 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 // TV "Recent" sub-tab queries: matched series ordered by most-recent playback
 // (recently watched) and by newest file mtime on disk (recently added — there is
 // no created_at on tv_series_files, and mtime tracks when a download landed).
+// season_number is a bare column paired with MAX(): SQLite returns it from the
+// same row that holds the maximum, so "recently watched" yields the season of
+// the most-recently-watched episode (the in-progress season we deep-link to),
+// and "recently added" yields the season of the newest file (unused).
 const tvRecentlyWatchedQuery = `
-SELECT i.series_id
+SELECT i.series_id, i.season_number
 FROM tv_playback_progress p
 JOIN tv_series_files f ON f.id = p.file_id
 JOIN tv_series_identities i ON i.file_id = f.id
@@ -103,7 +111,7 @@ ORDER BY MAX(p.updated_at) DESC
 LIMIT ?`
 
 const tvRecentlyAddedQuery = `
-SELECT i.series_id
+SELECT i.series_id, i.season_number
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
@@ -120,33 +128,42 @@ func (h *Handler) recentTVSeries(ctx context.Context, query string, limit int) (
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []string
+	type idSeason struct {
+		id     string
+		season int
+	}
+	var items []idSeason
 	for rows.Next() {
-		var sid string
-		if err := rows.Scan(&sid); err != nil {
+		var it idSeason
+		if err := rows.Scan(&it.id, &it.season); err != nil {
 			return nil, err
 		}
-		ids = append(ids, sid)
+		items = append(items, it)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(ids) == 0 {
+	if len(items) == 0 {
 		return nil, nil
 	}
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.id
+	}
 	metas := h.loadShowMetaSummaries(ctx, ids)
-	out := make([]tvSeriesRow, 0, len(ids))
-	for _, sid := range ids {
-		meta := metas[sid]
+	out := make([]tvSeriesRow, 0, len(items))
+	for _, it := range items {
+		meta := metas[it.id]
 		if meta.name == "" {
-			meta.name = "Unknown Series (TMDB " + sid + ")"
+			meta.name = "Unknown Series (TMDB " + it.id + ")"
 		}
 		out = append(out, tvSeriesRow{
-			SeriesID:   sid,
-			Name:       meta.name,
-			Year:       meta.year,
-			PosterPath: meta.posterPath,
-			IsMatched:  true,
+			SeriesID:     it.id,
+			Name:         meta.name,
+			Year:         meta.year,
+			PosterPath:   meta.posterPath,
+			SeasonNumber: it.season,
+			IsMatched:    true,
 		})
 	}
 	return out, nil
