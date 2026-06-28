@@ -1,0 +1,45 @@
+{{define "content"}}
+<div class="tv-player-page">
+  <div class="tv-player-header">
+    <h1><a href="/movie/{{.TMDBID}}">{{.MovieTitle}}</a></h1>
+    {{if .Year}}<h2>{{.Year}}</h2>{{end}}
+  </div>
+
+  <div class="tv-player-video-wrap">
+    <video id="tvVideo" class="tv-video" controls autoplay
+           data-media-kind="movie"
+           data-file-id="{{.FileID}}"
+           data-next-file="0">
+      Your browser does not support video playback.
+    </video>
+  </div>
+
+  <div class="player-controls tv-transport" id="tvTransport">
+    <button id="tvRewindBtn" type="button" class="btn btn-sm" aria-label="Rewind 10 seconds" title="Rewind 10s">{{template "icon-rewind"}}</button>
+    <button id="tvToggleBtn" type="button" class="btn btn-primary btn-sm" aria-label="Play or pause" title="Play / Pause"><span class="tv-glyph-play">{{template "icon-play"}}</span><span class="tv-glyph-pause">{{template "icon-pause"}}</span></button>
+    <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Forward 10 seconds" title="Forward 10s">{{template "icon-fast-forward"}}</button>
+    <button id="tvBoostBtn" type="button" class="btn btn-sm" aria-pressed="false" aria-label="Dynamic Range — even out loud music vs quiet dialogue" title="Dynamic Range">{{template "icon-audio-lines"}}</button>
+  </div>
+
+  <div class="tv-player-controls">
+    <label class="tv-track-pick" id="audioPick" hidden>Audio
+      <select id="audioSelect"></select>
+    </label>
+    <label class="tv-track-pick" id="subPick" hidden>Subtitles
+      <select id="subSelect"></select>
+    </label>
+    <span id="playbackMode" class="tv-playback-mode"></span>
+  </div>
+
+  <div class="tv-player-nav">
+    <span></span>
+    <a href="/movie/{{.TMDBID}}" class="btn btn-sm">Back to Movie</a>
+    <span></span>
+  </div>
+</div>
+
+{{/* Same Turbo cached-preview opt-out as the TV player: the shared
+     media_player.js auto-boots the <video> on turbo:load, and a preview render
+     would leave an orphaned, still-playing element. */}}
+{{define "headmeta"}}<meta name="turbo-cache-control" content="no-preview">{{end}}
+{{end}}

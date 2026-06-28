@@ -564,6 +564,50 @@ WHERE lower(guessed_title)=lower(?) AND year=? AND match_status IN ('', 'unmatch
 	http.Redirect(w, r, "/movies/match/review", http.StatusSeeOther)
 }
 
+// moviePlayer renders the movie player page (the shared media_player.js drives
+// playback). Framing comes from the file's matched movie metadata.
+func (h *Handler) moviePlayer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	fileID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("file")), 10, 64)
+	if err != nil || fileID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	var tmdbID int
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT tmdb_id FROM movie_files WHERE id=?", fileID,
+	).Scan(&tmdbID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	title, year := "", ""
+	var payload string
+	if tmdbID > 0 && h.db.QueryRowContext(r.Context(),
+		"SELECT payload_json FROM movie_metadata_cache WHERE entity_key=?",
+		fmt.Sprintf("movie:%d", tmdbID),
+	).Scan(&payload) == nil {
+		var movie tmdb.Movie
+		if json.Unmarshal([]byte(payload), &movie) == nil {
+			title, year = movie.Title, movieYear(movie.ReleaseDate)
+		}
+	}
+	if title == "" {
+		title = "Movie"
+	}
+
+	h.render(w, "movie_player.html", map[string]any{
+		"Title":      title,
+		"MovieTitle": title,
+		"Year":       year,
+		"TMDBID":     tmdbID,
+		"FileID":     fileID,
+	})
+}
+
 // moviesMatchSkip marks an unmatched (title, year) group as skipped so it drops
 // off the review list and isn't re-attempted by the matcher.
 func (h *Handler) moviesMatchSkip(w http.ResponseWriter, r *http.Request) {

@@ -56,7 +56,7 @@ func setupTemplateDir(t *testing.T, dir string) {
 		"music_match_review.html", "music_album_edit.html", "music_track_edit.html", "music_duplicates.html",
 		"settings_tags.html", "settings_apikeys.html", "tv_home.html", "tv_series.html",
 		"tv_season.html", "tv_match_review.html", "tv_player.html", "person.html",
-		"movies_home.html", "movie_detail.html", "movie_match_review.html",
+		"movies_home.html", "movie_detail.html", "movie_match_review.html", "movie_player.html",
 	}
 	pageContent := `{{define "content"}}hello{{end}}`
 	for _, p := range pages {
@@ -166,7 +166,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 30
+	expectedPages := 31
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}

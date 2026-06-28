@@ -1,0 +1,441 @@
+// media_player.js — the shared TV/movie video player controller.
+//
+// Extracted verbatim from tv_player.html's inline script so both the TV and movie
+// player pages drive the same verified logic (session decision, hls.js, the
+// transport row, dynamic-range compression, subtitles, resume + progress
+// reporting, Turbo teardown). The only per-media-type differences are the
+// endpoint URLs and page framing: the URLs are derived from the video element's
+// data-media-kind ("tv" | "movie"), the framing lives in the page template.
+//
+// Loaded once from the layout shell (defer) and run on turbo:load, mirroring
+// couch.js/subtabs.js — so it survives Turbo body swaps without a body-script
+// race. initMediaPlayer is a no-op on pages with no #tvVideo.
+function mediaPlayerConfig(kind) {
+  if (kind === 'movie') {
+    return {
+      sessionURL: '/movie/playback-session',
+      progressURL: '/movie/playback-progress',
+      playerURL: '/movie/player',
+      progressiveRe: /\/stream\/movie-(remux|burnin)\//,
+      // Movies don't wire OpenSubtitles search (the button stays hidden); these
+      // are unused but defined so the dialog code never sees undefined URLs.
+      subtitleSearchURL: '/movie/subtitles/search',
+      subtitleFetchURL: '/movie/subtitles/fetch',
+    };
+  }
+  return {
+    sessionURL: '/tv/playback-session',
+    progressURL: '/tv/playback-progress',
+    playerURL: '/tv/player',
+    progressiveRe: /\/stream\/tv-(remux|burnin)\//,
+    subtitleSearchURL: '/tv/subtitles/search',
+    subtitleFetchURL: '/tv/subtitles/fetch',
+  };
+}
+
+function initMediaPlayer() {
+  const video = document.getElementById('tvVideo');
+  if (!video) return;
+  const cfg = mediaPlayerConfig(video.dataset.mediaKind);
+
+  const fileID = parseInt(video.dataset.fileId, 10);
+  const nextFile = parseInt(video.dataset.nextFile, 10) || 0;
+  const audioSelect = document.getElementById('audioSelect');
+  const subSelect = document.getElementById('subSelect');
+  const modeLabel = document.getElementById('playbackMode');
+
+  let hls = null;          // active hls.js instance, if any
+  let currentAud = 0, currentSub = 0;
+  let selectsBuilt = false;
+  let lastReport = 0;
+  let completedReported = false; // gate the 90%-watched completion report to fire once
+  let streamStartOffset = 0; // server pre-seek of a progressive stream (remux/burn-in); see attachSource
+  let sessionDuration = 0;   // full source duration (progressive streams don't expose it via video.duration)
+  let isProgressive = false; // current stream is remux/burn-in (linear, seeks via ?start= reload)
+  let reloading = false;     // a ?start= reload is in flight (re-entrancy guard for seeks)
+
+  const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
+
+  // currentAbsTime is the playback position on the real episode timeline. The
+  // remux/burn-in streams are rebased to zero at their server-side start, so their
+  // video.currentTime is relative — add the offset back to get the true position.
+  const currentAbsTime = () => streamStartOffset + (video.currentTime || 0);
+
+  function teardownHLS() {
+    if (hls) { hls.destroy(); hls = null; }
+  }
+
+  // attachSource points the element (or hls.js) at the stream. seekTo is the
+  // desired position on the real episode timeline. Direct-play and HLS are
+  // byte-range/segment seekable, so we set video.currentTime. Remux and burn-in
+  // are progressive (no random access), so instead we ask the server to begin the
+  // stream at seekTo (?start=, an input -ss) and track the offset; the element's
+  // own currentTime then runs from zero. This is what lets those paths resume.
+  function attachSource(session, seekTo) {
+    teardownHLS();
+    isProgressive = cfg.progressiveRe.test(session.url || '');
+    const progressive = isProgressive;
+    let url = session.url;
+    if (progressive && seekTo > 0) {
+      streamStartOffset = seekTo;
+      url += (url.indexOf('?') >= 0 ? '&' : '?') + 'start=' + encodeURIComponent(seekTo);
+    } else {
+      streamStartOffset = 0;
+    }
+    const clientSeek = progressive ? 0 : seekTo; // only the seekable paths seek the element
+    const onReady = () => { if (clientSeek > 0) { try { video.currentTime = clientSeek; } catch (e) {} } };
+
+    if (session.protocol === 'hls' && !nativeHLS && window.Hls && Hls.isSupported()) {
+      hls = new Hls({ enableWorker: true });
+      hls.loadSource(url);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, onReady);
+    } else {
+      // Direct play, remux, burn-in, native-HLS (Safari): the element loads the URL directly.
+      video.src = url;
+      video.addEventListener('loadedmetadata', onReady, { once: true });
+      video.load();
+    }
+    video.play().catch(() => {}); // autoplay may be blocked; user can press play
+  }
+
+  function attachSubtitle(session) {
+    for (const t of [...video.querySelectorAll('track')]) t.remove();
+    if (session.subtitle_url) {
+      const track = document.createElement('track');
+      track.kind = 'subtitles';
+      track.src = session.subtitle_url;
+      track.default = true;
+      track.label = 'Subtitles';
+      video.appendChild(track);
+      // A dynamically-added <track default> doesn't reliably auto-show across
+      // browsers; force the cue track on explicitly.
+      const tt = video.textTracks[video.textTracks.length - 1];
+      if (tt) tt.mode = 'showing';
+    }
+  }
+
+  function buildSelects(session) {
+    const audio = session.audio_tracks || [];
+    if (audio.length > 1) {
+      audioSelect.innerHTML = '';
+      audio.forEach((a) => {
+        const o = document.createElement('option');
+        o.value = a.ordinal;
+        o.textContent = [a.language, a.title, a.codec].filter(Boolean).join(' · ') || ('Track ' + a.ordinal);
+        if (a.default) o.selected = true;
+        audioSelect.appendChild(o);
+      });
+      document.getElementById('audioPick').hidden = false;
+    }
+    // Text subtitles deliver as a WebVTT sidecar; bitmap subs (PGS/DVD/DVB) are
+    // burned into the video by a continuous server-side transcode. Offer both,
+    // marking bitmap tracks so the transcode cost is visible. Each track keeps its
+    // original 1-based ordinal (what the server expects).
+    const subs = session.subtitle_tracks || [];
+    const textSubs = subs.filter((s) => s.text);
+    if (subs.length > 0) {
+      subSelect.innerHTML = '';
+      const off = document.createElement('option');
+      off.value = 0; off.textContent = 'Off'; off.selected = true;
+      subSelect.appendChild(off);
+      subs.forEach((s) => {
+        const o = document.createElement('option');
+        o.value = s.ordinal;
+        const label = [s.language, s.title].filter(Boolean).join(' · ') || ('Subtitle ' + s.ordinal);
+        o.textContent = s.text ? label : (label + ' · burn-in');
+        subSelect.appendChild(o);
+      });
+      document.getElementById('subPick').hidden = false;
+    }
+    // No deliverable text track? Offer the OpenSubtitles search (when a key is
+    // configured) — an external text sidecar is preferable to a burn-in transcode.
+    const searchBtn = document.getElementById('subsSearchBtn');
+    if (searchBtn && video.dataset.osEnabled === '1' && textSubs.length === 0) {
+      searchBtn.hidden = false;
+    }
+    selectsBuilt = true;
+  }
+
+  // attachExternalSubtitle swaps in a fetched WebVTT sidecar (from the
+  // OpenSubtitles search) as the active subtitle track.
+  function attachExternalSubtitle(url) {
+    for (const t of [...video.querySelectorAll('track')]) t.remove();
+    const track = document.createElement('track');
+    track.kind = 'subtitles';
+    track.src = url;
+    track.default = true;
+    track.label = 'Subtitles';
+    video.appendChild(track);
+    const tt = video.textTracks[video.textTracks.length - 1];
+    if (tt) tt.mode = 'showing';
+  }
+
+  async function loadFromSession(aud, sub, seekTo) {
+    currentAud = aud; currentSub = sub;
+    let session;
+    try {
+      const resp = await fetch(`${cfg.sessionURL}?file=${fileID}&aud=${aud}&sub=${sub}`, { headers: { Accept: 'application/json' } });
+      session = await resp.json();
+    } catch (e) {
+      modeLabel.textContent = 'Unable to start playback';
+      return;
+    }
+    if (!session || !session.ok) { modeLabel.textContent = 'Unable to start playback'; return; }
+
+    if (!selectsBuilt) buildSelects(session);
+    sessionDuration = session.duration_seconds || sessionDuration;
+    modeLabel.textContent = session.decision.replace('_', ' ');
+    if (session.protocol === 'hls' && !nativeHLS && !(window.Hls && Hls.isSupported())) {
+      modeLabel.textContent = 'This browser cannot play the transcoded stream';
+    }
+    const resume = (seekTo != null) ? seekTo : (session.completed ? 0 : (session.resume_position_seconds || 0));
+    attachSource(session, resume);
+    attachSubtitle(session);
+  }
+
+  if (audioSelect) audioSelect.addEventListener('change', () => loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()));
+  if (subSelect) subSelect.addEventListener('change', () => loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, currentAbsTime()));
+
+  // --- transport controls (focusable, so a TV remote in couch mode can seek;
+  //     the native <video controls> scrubber isn't remote-reachable) ---
+  const transport = document.getElementById('tvTransport');
+  const rewindBtn = document.getElementById('tvRewindBtn');
+  const toggleBtn = document.getElementById('tvToggleBtn');
+  const forwardBtn = document.getElementById('tvForwardBtn');
+  // seekProgressiveTo moves a remux/burn-in stream to an absolute episode position.
+  // These streams are empty_moov fragmented MP4 with NO seek index — verified live
+  // that video.seekable is [0,0], so the element can't seek natively at all (a
+  // currentTime assignment, even within the buffer, clamps to 0). Every seek
+  // therefore re-anchors the stream server-side at the new ?start= (reusing the
+  // resume -ss). The ±10s transport buttons drive it; the native <video> scrubber
+  // can't (it can't address an unindexed stream).
+  function seekProgressiveTo(targetAbs) {
+    if (reloading) return;
+    targetAbs = Math.max(0, targetAbs);
+    if (sessionDuration > 1 && targetAbs > sessionDuration - 1) targetAbs = sessionDuration - 1;
+    reloading = true;
+    loadFromSession(currentAud, currentSub, targetAbs).finally(() => { reloading = false; });
+  }
+
+  const seekBy = (delta) => {
+    if (isProgressive) { seekProgressiveTo(currentAbsTime() + delta); return; }
+    let t = video.currentTime + delta;
+    if (t < 0) t = 0;
+    if (Number.isFinite(video.duration) && video.duration > 0 && t > video.duration) t = video.duration;
+    video.currentTime = t;
+  };
+
+  if (rewindBtn) rewindBtn.addEventListener('click', () => seekBy(-10));
+  if (forwardBtn) forwardBtn.addEventListener('click', () => seekBy(10));
+  if (toggleBtn) toggleBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause(); });
+  video.addEventListener('play', () => { if (transport) transport.classList.add('playing'); });
+  video.addEventListener('pause', () => { if (transport) transport.classList.remove('playing'); });
+
+  // --- "Even loudness": client-side dynamic-range compression via Web Audio.
+  //     Compresses the decoded audio in the browser, so it evens the loud
+  //     music/quiet dialogue gap on every playback path (direct/remux/HLS) with
+  //     no server transcode and full seeking preserved. Routing engages only
+  //     once the AudioContext is actually running, so a context that starts
+  //     suspended (autoplay policy) never silences playback. Preference persists
+  //     in localStorage, mirroring the theme toggle. ---
+  const boostBtn = document.getElementById('tvBoostBtn');
+  let boostOn = false;
+  try { boostOn = localStorage.getItem('tv_boost') === '1'; } catch (e) {}
+  let audioCtx = null, srcNode = null, compressor = null, makeup = null, graphBuilt = false;
+
+  function buildAudioGraph() {
+    if (graphBuilt) return true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    try {
+      audioCtx = new AC();
+      srcNode = audioCtx.createMediaElementSource(video); // once per element
+      compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.value = -24;
+      compressor.knee.value = 30;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.25;
+      makeup = audioCtx.createGain();
+      makeup.gain.value = 2.0; // ~ +6 dB, restoring loudness shaved by compression
+      audioCtx.addEventListener('statechange', routeBoost);
+    } catch (e) { return false; }
+    graphBuilt = true;
+    return true;
+  }
+
+  function routeBoost() {
+    if (!graphBuilt) return;
+    try { srcNode.disconnect(); compressor.disconnect(); makeup.disconnect(); } catch (e) {}
+    if (boostOn && audioCtx.state === 'running') {
+      srcNode.connect(compressor); compressor.connect(makeup); makeup.connect(audioCtx.destination);
+    } else {
+      srcNode.connect(audioCtx.destination); // off, or context not yet running: pass through
+    }
+  }
+
+  function applyBoost() {
+    if (!boostOn) { if (graphBuilt) routeBoost(); return; }
+    if (!buildAudioGraph()) return;
+    audioCtx.resume().catch(() => {});
+    routeBoost();
+  }
+
+  function reflectBoost() {
+    if (!boostBtn) return;
+    boostBtn.classList.toggle('btn-primary', boostOn);
+    boostBtn.setAttribute('aria-pressed', boostOn ? 'true' : 'false');
+  }
+
+  if (boostBtn) {
+    reflectBoost();
+    boostBtn.addEventListener('click', () => {
+      boostOn = !boostOn;
+      try { localStorage.setItem('tv_boost', boostOn ? '1' : '0'); } catch (e) {}
+      reflectBoost();
+      applyBoost();
+    });
+    // A persisted-on boost (or a context that started suspended) engages on the
+    // first real gesture / when playback starts, without needing a click.
+    video.addEventListener('play', () => { if (boostOn && graphBuilt) audioCtx.resume().then(routeBoost).catch(() => {}); });
+    if (boostOn) applyBoost();
+  }
+
+  // --- progress reporting --- positions are on the real episode timeline
+  // (currentAbsTime), so a resumed remux/burn-in stream (rebased to zero) still
+  // saves the true position. Completion falls back to the session duration because
+  // a progressive stream doesn't expose the full length via video.duration.
+  function reportProgress(completed) {
+    const now = Date.now();
+    if (!completed && now - lastReport < 15000) return;
+    lastReport = now;
+    const body = JSON.stringify({
+      file_id: fileID,
+      position_seconds: currentAbsTime(),
+      duration_seconds: sessionDuration || video.duration || 0,
+      completed: !!completed,
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(cfg.progressURL, new Blob([body], { type: 'application/json' }));
+    } else {
+      fetch(cfg.progressURL, { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+  video.addEventListener('timeupdate', () => {
+    reportProgress(false);
+    // Report completion exactly once past 90% — timeupdate fires ~4×/s and
+    // completion bypasses the 15s throttle, so without this it floods the endpoint
+    // for the whole last 10% of the episode.
+    const dur = sessionDuration || video.duration || 0;
+    if (!completedReported && dur > 0 && currentAbsTime() / dur >= 0.9) {
+      completedReported = true;
+      reportProgress(true);
+    }
+  });
+  video.addEventListener('pause', () => { lastReport = 0; reportProgress(false); });
+  video.addEventListener('ended', () => {
+    reportProgress(true);
+    if (nextFile > 0) window.location.href = cfg.playerURL + '?file=' + nextFile;
+  });
+  // Named so the turbo:before-cache teardown can remove it — otherwise a fresh
+  // listener (closing over a detached video) accumulates on every player visit.
+  const onBeforeUnload = () => { lastReport = 0; reportProgress(false); };
+  window.addEventListener('beforeunload', onBeforeUnload);
+
+  // Turbo swaps the page without a full unload: send a final progress report,
+  // stop playback, and tear down the hls.js worker before this page is
+  // cached/replaced. Pause + clear the source so a direct/remux stream (no hls
+  // instance to destroy) can't keep playing audio from a detached element. The
+  // topbar "resume" chip (tv_resume.js) then links back here. once:true so it
+  // doesn't accumulate across repeat visits.
+  document.addEventListener('turbo:before-cache', () => {
+    lastReport = 0;
+    reportProgress(false);
+    video.pause();
+    teardownHLS();
+    if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
+    window.removeEventListener('beforeunload', onBeforeUnload);
+    video.removeAttribute('src');
+    try { video.load(); } catch (e) {}
+  }, { once: true });
+
+  // --- OpenSubtitles search dialog (shown only when no text track is offered
+  //     and a key is configured; TV only — movie pages don't set the endpoints) ---
+  const subsModal = document.getElementById('subs-modal');
+  const subsStatus = document.getElementById('subs-status');
+  const subsResults = document.getElementById('subs-results');
+  const subsSearchBtn = document.getElementById('subsSearchBtn');
+  const subsCloseBtn = document.getElementById('subs-close-btn');
+
+  function openSubsModal() {
+    if (!subsModal) return;
+    subsModal.classList.remove('hidden');
+    runSubsSearch();
+  }
+  function closeSubsModal() {
+    if (subsModal) subsModal.classList.add('hidden');
+  }
+
+  async function runSubsSearch() {
+    subsResults.innerHTML = '';
+    subsStatus.textContent = 'Searching…';
+    let data;
+    try {
+      const resp = await fetch(`${cfg.subtitleSearchURL}?file=${fileID}&lang=en`, { headers: { Accept: 'application/json' } });
+      data = await resp.json();
+    } catch (e) { subsStatus.textContent = 'Search failed.'; return; }
+    if (!data || !data.ok) { subsStatus.textContent = (data && data.message) || 'Search failed.'; return; }
+    const results = data.results || [];
+    if (results.length === 0) { subsStatus.textContent = 'No subtitles found.'; return; }
+    subsStatus.textContent = results.length + ' result' + (results.length === 1 ? '' : 's') + ':';
+    results.forEach((rsub) => {
+      const li = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = [
+        rsub.language,
+        rsub.release || rsub.file_name,
+        rsub.download_count ? rsub.download_count + ' dl' : '',
+        rsub.hearing_impaired ? 'SDH' : '',
+      ].filter(Boolean).join(' · ');
+      const use = document.createElement('button');
+      use.type = 'button';
+      use.className = 'btn btn-sm';
+      use.textContent = 'Use';
+      use.addEventListener('click', () => useSubtitle(rsub, use));
+      li.appendChild(label);
+      li.appendChild(use);
+      subsResults.appendChild(li);
+    });
+  }
+
+  async function useSubtitle(rsub, btn) {
+    btn.disabled = true; btn.textContent = 'Loading…';
+    const body = new URLSearchParams({ file: String(fileID), file_id: String(rsub.file_id), lang: rsub.language || 'en' });
+    let data;
+    try {
+      const resp = await fetch(cfg.subtitleFetchURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body,
+      });
+      data = await resp.json();
+    } catch (e) { btn.disabled = false; btn.textContent = 'Use'; subsStatus.textContent = 'Download failed.'; return; }
+    if (!data || !data.ok || !data.url) {
+      btn.disabled = false; btn.textContent = 'Use';
+      subsStatus.textContent = (data && data.message) || 'Download failed.';
+      return;
+    }
+    attachExternalSubtitle(data.url);
+    closeSubsModal();
+  }
+
+  if (subsSearchBtn) subsSearchBtn.addEventListener('click', openSubsModal);
+  if (subsCloseBtn) subsCloseBtn.addEventListener('click', closeSubsModal);
+
+  loadFromSession(0, 0, null);
+}
+
+// Run on every Turbo navigation (and the initial load — Turbo fires turbo:load
+// then too). initMediaPlayer returns immediately on pages without a player.
+document.addEventListener('turbo:load', initMediaPlayer);
