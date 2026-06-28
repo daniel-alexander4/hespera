@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"hespera/internal/fsutil"
 )
 
 const (
@@ -374,13 +376,9 @@ func (c *Client) downloadImage(ctx context.Context, base, tmdbPath, destPath str
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
-	f, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(f, io.LimitReader(resp.Body, maxImageBytes))
-	return err
+	// Atomic write: a failed re-download (RefetchBackdrop, a re-run metadata fetch)
+	// must not truncate the existing good art the DB still references.
+	return fsutil.WriteReaderAtomic(destPath, io.LimitReader(resp.Body, maxImageBytes), 0o644)
 }
 
 // ImageURL returns the full URL for a TMDB image path with the given base.

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"hespera/internal/fsutil"
 )
 
 const caaBaseURL = "https://coverartarchive.org"
@@ -197,7 +199,7 @@ func (c *CAAClient) downloadAndSave(ctx context.Context, imgURL, hashKey string)
 	name := hex.EncodeToString(h[:]) + ext
 	outPath := filepath.Join(c.thumbDir, name)
 
-	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomic(outPath, data, 0o644); err != nil {
 		return "", err
 	}
 	return outPath, nil
