@@ -113,11 +113,22 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	profile, _ := playback.Profile(client, r.UserAgent())
 	out := playback.Decide(profile, mi, mode)
 
+	// A selected bitmap subtitle must be burned in, which the segment-on-demand
+	// HLS path can't do (per-segment input seeks drop stateful display sets). Route
+	// it to the continuous progressive burn-in transcode instead, played as a
+	// direct <video src> (protocol "file"), like the remux path.
+	streamU := streamURL(out.Decision, fileID, aud)
+	protocol := string(out.Protocol)
+	if out.SubtitleBurnIn && sub > 0 {
+		streamU = fmt.Sprintf("/stream/tv-burnin/%d?sub=%d&aud=%d", fileID, sub, aud)
+		protocol = string(playback.ProtocolFile)
+	}
+
 	resp := playbackSessionResponse{
 		OK:             true,
 		Decision:       string(out.Decision),
-		Protocol:       string(out.Protocol),
-		URL:            streamURL(out.Decision, fileID, aud),
+		Protocol:       protocol,
+		URL:            streamU,
 		Reasons:        out.Reasons,
 		Container:      mi.Container,
 		VideoCodec:     mi.VideoCodec,
@@ -191,6 +202,54 @@ func (h *Handler) streamTVRemux(w http.ResponseWriter, r *http.Request) {
 	if err := video.StreamFFmpeg(r.Context(), w, video.RemuxArgs(clean, aud)); err != nil {
 		// Headers/body may already be partially written; just log.
 		slog.Warn("tv remux stream", "file_id", fileID, "err", err)
+	}
+}
+
+// streamTVBurnIn transcodes the file with a bitmap subtitle (PGS/DVD/DVB) burned
+// into the video, streamed as a progressive fragmented MP4. Used when a selected
+// subtitle can't be a text sidecar; the decision layer forces this via
+// Output.SubtitleBurnIn. The whole file is decoded continuously (the bitmap sub
+// decoder is stateful), so unlike the HLS path this stream is not seekable. HEAD
+// does not spawn ffmpeg.
+func (h *Handler) streamTVBurnIn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	fileID, err := pathID(r, "/stream/tv-burnin/")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	src, err := h.loadTVFileSource(r.Context(), fileID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Burn-in is only for bitmap subs; a text track is delivered as a sidecar, so
+	// 404 a text or out-of-range ordinal (mirrors the subtitle endpoint, inverted).
+	sub := atoiDefault(r.URL.Query().Get("sub"), 0)
+	var probe video.ProbeResult
+	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
+	subs := subtitleTracks(&probe)
+	if sub < 1 || sub > len(subs) || subs[sub-1].Text {
+		http.NotFound(w, r)
+		return
+	}
+	clean, err := h.resolveTVPath(src.absPath)
+	if err != nil {
+		http.Error(w, "file path is outside media root", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "video/mp4")
+	if r.Method == http.MethodHead {
+		return
+	}
+	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
+	if err := video.StreamFFmpeg(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080)); err != nil {
+		// Headers/body may already be partially written; just log.
+		slog.Warn("tv burn-in stream", "file_id", fileID, "err", err)
 	}
 }
 

@@ -64,6 +64,34 @@ func RemuxArgs(src string, audioOrdinal int) []string {
 	}
 }
 
+// BurnInArgs builds ffmpeg args to burn a bitmap subtitle (PGS/DVD/DVB) into the
+// video and stream the result as a fragmented MP4 to stdout — the burn-in
+// counterpart of RemuxArgs, used when a selected subtitle can't be delivered as
+// a text sidecar. The whole file is decoded continuously from the start (no input
+// -ss) so the subtitle decoder tracks display-set state across the timeline;
+// bitmap subs are stateful, which is why this is one progressive transcode rather
+// than the segment-on-demand HLS path (each segment's independent input seek
+// drops still-active subs). subOrdinal is 1-based among subtitle streams;
+// audioOrdinal is 1-based (0 = default). Video is scaled down to maxHeight after
+// the overlay so the burned subs scale with it.
+func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int) []string {
+	subIdx := subOrdinal - 1
+	if subIdx < 0 {
+		subIdx = 0
+	}
+	filter := "[0:v:0][0:s:" + strconv.Itoa(subIdx) + "]overlay,scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'[v]"
+	return []string{
+		"-hide_banner", "-loglevel", "error",
+		"-i", src,
+		"-filter_complex", filter,
+		"-map", "[v]", "-map", audioMap(audioOrdinal),
+		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+		"-c:a", "aac", "-ac", "2", "-b:a", "160k",
+		"-movflags", "frag_keyframe+empty_moov+faststart",
+		"-f", "mp4", "pipe:1",
+	}
+}
+
 // SegmentArgs builds ffmpeg args to transcode a single HLS segment: the
 // durSec-second window of src starting at startSec, re-encoded to H.264/AAC and
 // written to outPath as MPEG-TS. The window is seeked accurately (input -ss), a
