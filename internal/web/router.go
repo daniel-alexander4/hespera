@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"path/filepath"
 )
 
 func (h *Handler) Router() http.Handler {
@@ -10,7 +11,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/", h.home)
 	mux.HandleFunc("/healthz", h.healthz)
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+		http.ServeFile(w, r, filepath.Join(h.staticDir, "hespera-favicon.ico"))
 	})
 	mux.HandleFunc("/login", h.login)
 	mux.HandleFunc("/auth/challenge", h.authChallenge)

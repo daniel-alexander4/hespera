@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Hespera">
+  <defs>
+    <linearGradient id="hf-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/><stop offset=".5" stop-color="#c026d3"/>
+      <stop offset=".66" stop-color="#fbbf24"/><stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="hf-sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b45309"/><stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <radialGradient id="hf-sun" gradientUnits="userSpaceOnUse" cx="120" cy="138" r="70">
+      <stop offset="0" stop-color="#fff7d6"/><stop offset=".55" stop-color="#fcd34d"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </radialGradient>
+    <radialGradient id="hf-glow" gradientUnits="userSpaceOnUse" cx="120" cy="130" r="64">
+      <stop offset="0" stop-color="#fff3c4" stop-opacity=".7"/><stop offset="1" stop-color="#fcd34d" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="hf-frame"><rect width="240" height="240" rx="48"/></clipPath>
+  </defs>
+  <g clip-path="url(#hf-frame)">
+    <rect width="240" height="240" fill="url(#hf-sky)"/>
+    <circle cx="120" cy="132" r="62" fill="url(#hf-glow)"/>
+    <g fill="url(#hf-sun)">
+      <rect x="68" y="114" width="16" height="36" rx="6"/>
+      <rect x="90" y="95" width="16" height="55" rx="6"/>
+      <rect x="112" y="92" width="16" height="58" rx="6"/>
+      <rect x="134" y="98" width="16" height="52" rx="6"/>
+      <rect x="156" y="110" width="16" height="40" rx="6"/>
+    </g>
+    <polygon points="8,150 30,134 50,146 70,140 120,149 170,140 190,146 210,134 232,150" fill="#5a2a96" opacity=".9"/>
+    <polygon points="8,150 26,128 44,144 60,135 82,147 120,148 158,147 180,135 196,144 214,128 232,150" fill="#1c1140"/>
+    <rect x="0" y="150" width="240" height="90" fill="url(#hf-sea)"/>
+    <rect x="0" y="148" width="240" height="3" fill="#fff7d6" opacity=".5"/>
+    <g fill="url(#hf-sun)" opacity=".34">
+      <rect x="68" y="150" width="16" height="16" rx="6"/>
+      <rect x="90" y="150" width="16" height="25" rx="6"/>
+      <rect x="112" y="150" width="16" height="26" rx="6"/>
+      <rect x="134" y="150" width="16" height="23" rx="6"/>
+      <rect x="156" y="150" width="16" height="18" rx="6"/>
+    </g>
+  </g>
+</svg>
