@@ -1,8 +1,8 @@
 {{define "content"}}
-<div class="page-header">
-  {{if .BackdropPath}}
-  <div class="tv-backdrop" style="background-image:url('/art/tv/backdrop/{{.ShowID}}')"></div>
-  {{end}}
+{{if .BackdropPath}}
+<div class="tv-backdrop" style="background-image:url('/art/tv/backdrop/{{.ShowID}}')"></div>
+{{end}}
+<div class="tv-series-head">
   <h1>{{.ShowName}}</h1>
   {{if .Year}}<span class="meta-tag">{{.Year}}</span>{{end}}
   {{if .Status}}<span class="meta-tag">{{.Status}}</span>{{end}}
