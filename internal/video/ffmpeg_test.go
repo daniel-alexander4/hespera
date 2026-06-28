@@ -214,18 +214,31 @@ func TestPruneCache(t *testing.T) {
 	old := mk("old", 48*time.Hour, 10)
 	fresh := mk("fresh", time.Minute, 10) // within grace
 	mid := mk("mid", 10*time.Minute, 10)
-	stale := mk("stale-build", 3*time.Hour, 10)
-	if err := os.Rename(stale, filepath.Join(root, tmpDirPrefix+"abandoned")); err != nil {
-		t.Fatal(err)
-	}
-	staleBuild := filepath.Join(root, tmpDirPrefix+"abandoned")
 
-	// maxAge expires "old"; orphaned temp dir is swept; budget=0 leaves the rest.
+	// An asset dir holding an orphaned segment temp left by a killed build: a
+	// stale one (older than buildTimeout) must be swept, an in-flight one kept.
+	withTemp := mk("withtemp", 5*time.Minute, 10)
+	staleTemp := filepath.Join(withTemp, ".seg00000.ts.tmp")
+	freshTemp := filepath.Join(withTemp, ".seg00001.ts.tmp")
+	writeTemp := func(p string, age time.Duration) {
+		if err := os.WriteFile(p, []byte("xx"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		when := time.Now().Add(-age)
+		_ = os.Chtimes(p, when, when)
+	}
+	writeTemp(staleTemp, 3*time.Hour) // > buildTimeout (2h) → swept
+	writeTemp(freshTemp, time.Minute) // in-flight build → kept
+
+	// maxAge expires "old"; the stale .ts.tmp orphan is swept (its dir survives);
+	// budget=0 leaves the rest.
 	if err := PruneCache(root, 0, 24*time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	assertGone(t, old)
-	assertGone(t, staleBuild)
+	assertGone(t, staleTemp)
+	assertExists(t, freshTemp)
+	assertExists(t, withTemp)
 	assertExists(t, fresh)
 	assertExists(t, mid)
 

@@ -29,8 +29,20 @@ func (h *Handler) pruneTVCacheLoop() {
 	t := time.NewTicker(15 * time.Minute)
 	defer t.Stop()
 	for range t.C {
-		_ = video.PruneCache(h.tvHLSCacheRoot(), h.cfg.TVHLSCacheMaxBytes, h.cfg.TVCacheMaxAge)
+		h.pruneTVCacheOnce()
 	}
+}
+
+// pruneTVCacheOnce runs one cache-prune sweep, recovering from any panic so a
+// fault in PruneCache can't crash the whole process — this runs on a
+// handler-spawned goroutine, which net/http's recovery does not cover.
+func (h *Handler) pruneTVCacheOnce() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("tv cache prune panicked", "recover", r)
+		}
+	}()
+	_ = video.PruneCache(h.tvHLSCacheRoot(), h.cfg.TVHLSCacheMaxBytes, h.cfg.TVCacheMaxAge)
 }
 
 type tvFileSource struct {
@@ -108,6 +120,18 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 
 	var probe video.ProbeResult
 	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
+
+	// When the default audio isn't stream index 0, pin aud to its concrete 1-based
+	// ordinal so the decision (FromProbe→pickStream evaluates the disposition
+	// default) and the served track (audioMap→0:a:(N-1), via the emitted ?aud=N
+	// URL) agree. Otherwise Decide could green-light remux on the default's codec
+	// while ffmpeg copies a different, incompatible index-0 track. A default that
+	// IS index 0 (ordinal 1) already agrees, so leave aud==0 (URL unchanged).
+	if aud == 0 {
+		if n := defaultAudioOrdinal(&probe); n > 1 {
+			aud = n
+		}
+	}
 
 	mi := playback.FromProbe(&probe, src.container, src.size, aud, sub)
 	profile, _ := playback.Profile(client, r.UserAgent())
@@ -358,9 +382,7 @@ func (h *Handler) streamTVHLS(w http.ResponseWriter, r *http.Request) {
 // probe (written at scan time) and falling back to a live ffprobe only when it's
 // absent — the synthetic VOD manifest needs the full length up front.
 func (h *Handler) tvDuration(ctx context.Context, src tvFileSource, clean string) float64 {
-	var probe video.ProbeResult
-	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
-	if d := durationSeconds(probe.Format.Duration); d > 0 {
+	if d := storedDuration(src); d > 0 {
 		return d
 	}
 	if p, err := video.Probe(ctx, clean); err == nil {
@@ -423,6 +445,27 @@ func (h *Handler) streamTVSubtitles(w http.ResponseWriter, r *http.Request) {
 
 func audioTracks(p *video.ProbeResult) []sessionTrack {
 	return tracksOfType(p, "audio", false)
+}
+
+// defaultAudioOrdinal returns the 1-based ordinal (among audio streams) of the
+// disposition-default audio track, or 1 if none is flagged / there are no audio
+// streams. Used to pin "which track is track 0" so the playback decision and the
+// served ffmpeg map agree (audioMap(N)→0:a:(N-1), pickStream(N)→audio[N-1]).
+func defaultAudioOrdinal(p *video.ProbeResult) int {
+	if p == nil {
+		return 1
+	}
+	idx := 0
+	for _, s := range p.Streams {
+		if !strings.EqualFold(s.CodecType, "audio") {
+			continue
+		}
+		idx++
+		if s.IsDefault {
+			return idx
+		}
+	}
+	return 1
 }
 
 func subtitleTracks(p *video.ProbeResult) []sessionTrack {

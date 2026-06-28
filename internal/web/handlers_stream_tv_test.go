@@ -116,6 +116,28 @@ func TestTVPlaybackSessionDecisions(t *testing.T) {
 		}
 	})
 
+	t.Run("default audio not index 0 pins aud to its ordinal", func(t *testing.T) {
+		// audio[0]=ac3 (chrome can't play in mp4), audio[1]=aac is the default.
+		// The decision evaluates the default (aac→remux), so the served track must
+		// be the default too — the URL pins aud=2 (audioMap→0:a:1) instead of
+		// defaulting to the incompatible index-0 ac3.
+		probe := video.ProbeResult{
+			Streams: []video.ProbeStream{
+				{CodecType: "video", CodecName: "h264", Width: 1920, Height: 1080},
+				{CodecType: "audio", CodecName: "ac3"},
+				{CodecType: "audio", CodecName: "aac", IsDefault: true},
+			},
+		}
+		id := insertTVFileWithProbe(t, db, "mkv", probe, 100<<20)
+		resp := getSession(t, h, id, chromeUA, "")
+		if resp.Decision != "direct_stream" {
+			t.Fatalf("decision = %q, want direct_stream (reasons %v)", resp.Decision, resp.Reasons)
+		}
+		if resp.URL != "/stream/tv-remux/"+strconv.FormatInt(id, 10)+"?aud=2" {
+			t.Fatalf("url = %q, want the remux URL pinned to aud=2 (the default audio)", resp.URL)
+		}
+	})
+
 	t.Run("text subtitle yields a sidecar url", func(t *testing.T) {
 		probe := video.ProbeResult{
 			Streams: []video.ProbeStream{
@@ -212,6 +234,39 @@ func TestTVPlaybackSessionBadFile(t *testing.T) {
 	h.tvPlaybackSession(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+func TestDefaultAudioOrdinal(t *testing.T) {
+	mk := func(streams ...video.ProbeStream) *video.ProbeResult {
+		return &video.ProbeResult{Streams: streams}
+	}
+	cases := []struct {
+		name string
+		p    *video.ProbeResult
+		want int
+	}{
+		{"nil probe", nil, 1},
+		{"no audio", mk(video.ProbeStream{CodecType: "video"}), 1},
+		{"single audio, no default flag", mk(
+			video.ProbeStream{CodecType: "video"},
+			video.ProbeStream{CodecType: "audio", CodecName: "aac"},
+		), 1},
+		{"default is the first audio", mk(
+			video.ProbeStream{CodecType: "video"},
+			video.ProbeStream{CodecType: "audio", CodecName: "aac", IsDefault: true},
+			video.ProbeStream{CodecType: "audio", CodecName: "ac3"},
+		), 1},
+		{"default is the second audio", mk(
+			video.ProbeStream{CodecType: "video"},
+			video.ProbeStream{CodecType: "audio", CodecName: "ac3"},
+			video.ProbeStream{CodecType: "audio", CodecName: "aac", IsDefault: true},
+		), 2},
+	}
+	for _, c := range cases {
+		if got := defaultAudioOrdinal(c.p); got != c.want {
+			t.Errorf("%s: defaultAudioOrdinal = %d, want %d", c.name, got, c.want)
+		}
 	}
 }
 

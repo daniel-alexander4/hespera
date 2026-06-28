@@ -21,8 +21,7 @@ import (
 const (
 	hlsSegmentSeconds = 6
 	segBuildTimeout   = 5 * time.Minute // ceiling for one on-demand segment transcode
-	buildTimeout      = 2 * time.Hour   // staleness threshold for sweeping abandoned build temp dirs
-	tmpDirPrefix      = ".build-"
+	buildTimeout      = 2 * time.Hour   // staleness threshold for sweeping orphaned .ts.tmp segment builds
 )
 
 // StreamFFmpeg runs ffmpeg with the given args, copying its stdout to w. It
@@ -353,13 +352,8 @@ func PruneCache(root string, maxBytes int64, maxAge time.Duration) error {
 			continue
 		}
 		p := filepath.Join(root, e.Name())
+		removeStaleSegTemps(p, now) // sweep killed-build orphans before sizing
 		size, mod := dirSizeAndMod(p)
-		if strings.HasPrefix(e.Name(), tmpDirPrefix) {
-			if now.Sub(mod) > buildTimeout {
-				_ = os.RemoveAll(p) // crashed-build leftover
-			}
-			continue
-		}
 		if maxAge > 0 && now.Sub(mod) > maxAge {
 			_ = os.RemoveAll(p)
 			continue
@@ -384,6 +378,28 @@ func PruneCache(root string, maxBytes int64, maxAge time.Duration) error {
 		}
 	}
 	return nil
+}
+
+// removeStaleSegTemps deletes orphaned segment temp files (.segNNNNN.ts.tmp) left
+// inside an asset dir by a hard-killed build (SIGKILL/OOM between the temp write
+// and the atomic rename, so the in-goroutine os.Remove never ran). Only files
+// older than buildTimeout are swept — comfortably past segBuildTimeout, so an
+// in-flight build's temp is never deleted out from under it.
+func removeStaleSegTemps(dir string, now time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".ts.tmp") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || now.Sub(info.ModTime()) <= buildTimeout {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
+	}
 }
 
 func dirSizeAndMod(dir string) (int64, time.Time) {
