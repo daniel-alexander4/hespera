@@ -41,6 +41,12 @@
           <button type="submit" class="btn btn-sm">{{template "icon-play"}}Verify playback</button>
         </form>
         {{end}}
+        {{if eq .Type "movies"}}
+        <form method="post" action="/movies/match" class="inline-form">
+          <input type="hidden" name="id" value="{{.ID}}" />
+          <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
+        </form>
+        {{end}}
         <form method="post" action="/libraries/delete" class="inline-form" onsubmit="return confirm('Delete this library and all its data?')">
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm btn-danger">{{template "icon-trash"}}Delete</button>

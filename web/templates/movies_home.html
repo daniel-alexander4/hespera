@@ -3,6 +3,12 @@
   <h1>Movies</h1>
 </div>
 
+{{if and (not .Movies) (eq .UnmatchedCount 0)}}
+<div class="empty-state">
+  <p>No movies found. Use <a href="/libraries">Libraries</a> to add a movie library, then scan and match.</p>
+</div>
+{{else}}
+
 <div class="subtabs">
   <button class="subtab active" data-tab="recent">Recent</button>
   <button class="subtab" data-tab="movies">Movies</button>
@@ -10,13 +16,65 @@
 
 <!-- Recent Tab -->
 <div class="subtab-panel active" id="tab-recent">
-  <div class="empty-state"><p>No recent activity yet.</p></div>
+  {{if .ContinueWatching}}
+  <h3 class="section-title">Continue Watching</h3>
+  <div class="home-carousel-row">
+    {{range .ContinueWatching}}
+    <a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
+      <div class="band-album-art">
+        <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Title}}</div>
+        {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .RecentlyAdded}}
+  <h3 class="section-title">Recently Added</h3>
+  <div class="home-carousel-row">
+    {{range .RecentlyAdded}}
+    <a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
+      <div class="band-album-art">
+        <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Title}}</div>
+        {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if not .ContinueWatching}}{{if not .RecentlyAdded}}
+  <div class="empty-state"><p>No recent activity yet. Play a movie to see it here.</p></div>
+  {{end}}{{end}}
 </div>
 
 <!-- Movies Tab -->
 <div class="subtab-panel" id="tab-movies">
-  <div class="empty-state">
-    <p>Movie browsing coming in Phase 4. Use <a href="/libraries">Libraries</a> to add your movie collection.</p>
+  {{if gt .UnmatchedCount 0}}
+  <p class="form-help"><a href="/movies/match/review" class="btn btn-sm">{{.UnmatchedCount}} movie{{if ne .UnmatchedCount 1}}s{{end}} need matching →</a></p>
+  {{end}}
+  <div class="band-albums-grid">
+    {{range .Movies}}
+    <a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
+      <div class="band-album-art">
+        <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Title}}</div>
+        {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+      </div>
+    </a>
+    {{end}}
   </div>
+  {{template "pagination" .MoviesPage}}
 </div>
+
+{{end}}
 {{end}}

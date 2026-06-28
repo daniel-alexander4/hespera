@@ -1,0 +1,49 @@
+{{define "content"}}
+{{if .HasBackdrop}}
+<div class="tv-backdrop" style="background-image:url('/art/movie/backdrop/{{.TMDBID}}{{if .BackdropVer}}?v={{.BackdropVer}}{{end}}')"></div>
+{{end}}
+<div class="tv-series-head">
+  <h1>{{.MovieTitle}}</h1>
+  {{if .Year}}<span class="meta-tag">{{.Year}}</span>{{end}}
+  {{if .Runtime}}<span class="meta-tag">{{.Runtime}} min</span>{{end}}
+  {{range .Genres}}<span class="meta-tag">{{.Name}}</span> {{end}}
+</div>
+
+{{if .FileID}}
+<div class="movie-actions">
+  <a href="/movie/player?file={{.FileID}}" class="btn btn-primary">{{template "icon-play"}}{{if and .ResumePct (not .Completed)}}Resume{{else}}Play{{end}}</a>
+  {{if and .ResumePct (not .Completed)}}<span class="form-help">{{.ResumePct}}% watched</span>{{end}}
+</div>
+{{else}}
+<p class="form-help">No playable file for this movie.</p>
+{{end}}
+
+{{if .Tagline}}<p class="tv-tagline"><em>{{.Tagline}}</em></p>{{end}}
+
+{{if .Overview}}
+<div class="tv-overview">
+  <p>{{.Overview}}</p>
+</div>
+{{end}}
+
+{{if .Cast}}
+<h2>Cast</h2>
+<div class="home-carousel-row">
+  {{range .Cast}}
+  <a href="/person/{{.PersonID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .HasArt}}
+      <img src="/art/person/{{.PersonID}}" alt="{{.Name}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">{{if .Name}}{{slice .Name 0 1}}{{end}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      {{if .Character}}<div class="artist-card-stats">{{.Character}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+{{end}}

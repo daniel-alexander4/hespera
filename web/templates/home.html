@@ -1,11 +1,13 @@
 {{define "content"}}
 <div class="page-header">
   <h1>Welcome to Hespera</h1>
-  {{if or .HasMusic (gt .Stats.Series 0)}}
+  {{if or .HasMusic (or (gt .Stats.Series 0) (gt .Stats.Movies 0))}}
   <div class="home-stats text-muted">
     {{if .HasMusic}}{{.Stats.Artists}} artists · {{.Stats.Albums}} albums{{end}}
     {{if and .HasMusic (gt .Stats.Series 0)}} · {{end}}
     {{if gt .Stats.Series 0}}{{.Stats.Series}} series · {{.Stats.Episodes}} episodes{{end}}
+    {{if and (or .HasMusic (gt .Stats.Series 0)) (gt .Stats.Movies 0)}} · {{end}}
+    {{if gt .Stats.Movies 0}}{{.Stats.Movies}} movies{{end}}
   </div>
   {{end}}
 </div>
@@ -109,6 +111,23 @@
     </div>
     <div class="band-album-meta">
       <div class="artist-card-name">{{.Name}}</div>
+      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if .RecentlyAddedMovies}}
+<h3 class="section-title">Recently Added Movies</h3>
+<div class="home-carousel-row">
+  {{range .RecentlyAddedMovies}}
+  <a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
       {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
     </div>
   </a>
