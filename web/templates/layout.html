@@ -35,6 +35,7 @@
   <script src="{{staticv "/static/subtabs.js"}}" defer></script>
   <script src="{{staticv "/static/hls.light.min.js"}}" defer></script>
   <script src="{{staticv "/static/player.js"}}" defer></script>
+  <script src="{{staticv "/static/tv_resume.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -60,6 +61,16 @@
         </div>
       </div>
     </nav>
+    <!-- Resume-watching chip for TV/video. data-turbo-permanent so it persists
+         across visits; tv_resume.js shows it when you've navigated away from a
+         player and hides it while you're on one. -->
+    <div id="nw-cluster" class="np-cluster nw-cluster hidden" data-turbo-permanent>
+      <a id="nw-link" class="np-title-link nw-link" href="/tv" title="Resume watching">
+        <span class="nw-icon">{{template "icon-tv"}}</span><span id="nw-title" class="np-title"></span>
+      </a>
+      <button id="nw-dismiss" type="button" class="np-toggle nw-dismiss" aria-label="Dismiss resume" title="Dismiss">×</button>
+    </div>
+
     <!-- Now-playing cluster + the single persistent audio element. Both are
          data-turbo-permanent, so Turbo carries them across page visits and music
          keeps playing. player.js owns them. Hidden until something is playing. -->
