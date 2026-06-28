@@ -99,8 +99,12 @@
 
   <script>
     (() => {
-      const menus = Array.from(document.querySelectorAll('[data-menu]'));
-      if (!menus.length) return;
+      // This inline script re-runs on every Turbo render, so bind the
+      // document-level listeners exactly ONCE (guarded) — otherwise each
+      // navigation would add a fresh pair that never gets torn down. They query
+      // [data-menu] live on each event, so they keep working across swaps.
+      if (window.__menuGlobalsBound) return;
+      window.__menuGlobalsBound = true;
 
       const closeMenu = (menu) => {
         menu.removeAttribute('data-open');
@@ -109,37 +113,39 @@
       };
 
       const openMenu = (menu) => {
-        menus.forEach((m) => { if (m !== menu) closeMenu(m); });
+        document.querySelectorAll('[data-menu]').forEach((m) => { if (m !== menu) closeMenu(m); });
         menu.setAttribute('data-open', '1');
         const trigger = menu.querySelector('[data-menu-trigger]');
         if (trigger) trigger.setAttribute('aria-expanded', 'true');
       };
 
-      menus.forEach((menu) => {
-        const trigger = menu.querySelector('[data-menu-trigger]');
-        if (!trigger) return;
-        trigger.addEventListener('click', (e) => {
-          const alreadyOpen = menu.getAttribute('data-open') === '1';
-          if (!alreadyOpen) {
-            e.preventDefault();
-            openMenu(menu);
-          } else {
-            closeMenu(menu);
-          }
-        });
-      });
-
+      // One delegated click handler: toggle a trigger's own menu, else close any
+      // menu the click landed outside of. Delegating means triggers (which are
+      // fresh DOM after every Turbo swap) need no per-element binding.
       document.addEventListener('click', (e) => {
         const target = e.target;
         if (!(target instanceof Node)) return;
-        menus.forEach((menu) => {
+        const trigger = target.closest ? target.closest('[data-menu-trigger]') : null;
+        if (trigger) {
+          const menu = trigger.closest('[data-menu]');
+          if (menu) {
+            if (menu.getAttribute('data-open') === '1') {
+              closeMenu(menu);
+            } else {
+              e.preventDefault();
+              openMenu(menu);
+            }
+            return;
+          }
+        }
+        document.querySelectorAll('[data-menu]').forEach((menu) => {
           if (!menu.contains(target)) closeMenu(menu);
         });
       });
 
       document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
-        menus.forEach(closeMenu);
+        document.querySelectorAll('[data-menu]').forEach(closeMenu);
       });
     })();
 
