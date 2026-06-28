@@ -300,10 +300,12 @@ function initMediaPlayer() {
     };
     scrubber.addEventListener('pointerup', endDrag);
     scrubber.addEventListener('pointercancel', endDrag);
-    // Couch/remote: arrow keys on the focused bar nudge ±10s (reuses seekBy).
+    // Couch/remote: Left/Right on the focused bar nudge ±10s (reuses seekBy).
+    // stopPropagation so couch.js's directional-focus nav doesn't ALSO move focus
+    // off the bar on the same press — Up/Down still bubble, so the user can leave.
     scrubber.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(10); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-10); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); seekBy(10); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); seekBy(-10); }
     });
   }
 
@@ -320,6 +322,54 @@ function initMediaPlayer() {
       }
     });
   }
+
+  // --- volume + mute --- native <video controls> is dropped, so this restores
+  //     the volume slider it used to provide. Persisted in localStorage. Works
+  //     even with the dynamic-range graph active: the MediaElementAudioSource taps
+  //     the element AFTER its volume/muted are applied.
+  const volSlider = document.getElementById('tvVolume');
+  const muteBtn = document.getElementById('tvMuteBtn');
+  let savedVol = 1;
+  try { const v = parseFloat(localStorage.getItem('tv_volume')); if (!isNaN(v)) savedVol = Math.min(1, Math.max(0, v)); } catch (e) {}
+  let savedMuted = false;
+  try { savedMuted = localStorage.getItem('tv_muted') === '1'; } catch (e) {}
+  video.volume = savedVol;
+  video.muted = savedMuted;
+
+  function reflectVolume() {
+    const muted = video.muted || video.volume === 0;
+    if (volSlider) volSlider.value = muted ? 0 : video.volume;
+    if (muteBtn) {
+      const vg = muteBtn.querySelector('.tv-glyph-vol');
+      const mg = muteBtn.querySelector('.tv-glyph-mute');
+      if (vg) vg.hidden = muted;
+      if (mg) mg.hidden = !muted;
+      muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    }
+  }
+  if (volSlider) {
+    volSlider.value = savedMuted ? 0 : savedVol;
+    volSlider.addEventListener('input', () => {
+      const v = parseFloat(volSlider.value);
+      video.volume = v;
+      video.muted = v === 0;
+      savedVol = v > 0 ? v : savedVol;
+      try { localStorage.setItem('tv_volume', String(v)); localStorage.setItem('tv_muted', video.muted ? '1' : '0'); } catch (e) {}
+    });
+    // Keep couch.js directional nav from also consuming Left/Right on the slider.
+    volSlider.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
+    });
+  }
+  if (muteBtn) {
+    muteBtn.addEventListener('click', () => {
+      video.muted = !video.muted;
+      if (!video.muted && video.volume === 0) { video.volume = savedVol > 0 ? savedVol : 0.5; }
+      try { localStorage.setItem('tv_muted', video.muted ? '1' : '0'); } catch (e) {}
+    });
+  }
+  video.addEventListener('volumechange', reflectVolume);
+  reflectVolume();
 
   // --- "Even loudness": client-side dynamic-range compression via Web Audio.
   //     Compresses the decoded audio in the browser, so it evens the loud

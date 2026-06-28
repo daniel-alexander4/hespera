@@ -1108,6 +1108,13 @@ body::before {
   color: var(--text-muted);
   white-space: nowrap;
 }
+/* Volume slider in the transport row (native <video controls> is dropped). */
+.tv-volume {
+  width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  vertical-align: middle;
+}
 .player-shell-karaoke {
   min-height: 3rem;
   text-align: center;
