@@ -126,11 +126,12 @@
       });
       document.getElementById('audioPick').hidden = false;
     }
-    // Only text subtitles are offered: they deliver as a WebVTT sidecar.
-    // Bitmap subs (PGS/DVD/DVB) would need burn-in, which isn't implemented, so
-    // listing them would be a control that silently does nothing. Each kept
-    // track keeps its original 1-based ordinal (what the server expects).
-    const subs = (session.subtitle_tracks || []).filter((s) => s.text);
+    // Text subtitles deliver as a WebVTT sidecar; bitmap subs (PGS/DVD/DVB) are
+    // burned into the video by a continuous server-side transcode. Offer both,
+    // marking bitmap tracks so the transcode cost is visible. Each track keeps its
+    // original 1-based ordinal (what the server expects).
+    const subs = session.subtitle_tracks || [];
+    const textSubs = subs.filter((s) => s.text);
     if (subs.length > 0) {
       subSelect.innerHTML = '';
       const off = document.createElement('option');
@@ -139,15 +140,16 @@
       subs.forEach((s) => {
         const o = document.createElement('option');
         o.value = s.ordinal;
-        o.textContent = [s.language, s.title].filter(Boolean).join(' · ') || ('Subtitle ' + s.ordinal);
+        const label = [s.language, s.title].filter(Boolean).join(' · ') || ('Subtitle ' + s.ordinal);
+        o.textContent = s.text ? label : (label + ' · burn-in');
         subSelect.appendChild(o);
       });
       document.getElementById('subPick').hidden = false;
     }
     // No deliverable text track? Offer the OpenSubtitles search (when a key is
-    // configured) so the user can fetch an external subtitle.
+    // configured) — an external text sidecar is preferable to a burn-in transcode.
     const searchBtn = document.getElementById('subsSearchBtn');
-    if (searchBtn && video.dataset.osEnabled === '1' && subs.length === 0) {
+    if (searchBtn && video.dataset.osEnabled === '1' && textSubs.length === 0) {
       searchBtn.hidden = false;
     }
     selectsBuilt = true;

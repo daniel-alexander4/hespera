@@ -58,6 +58,27 @@ func TestVODPlaylist(t *testing.T) {
 	}
 }
 
+func TestBurnInArgs(t *testing.T) {
+	// sub ordinal 2 -> 0:s:1 (0-based), audio ordinal 1 -> 0:a:0, max height 1080.
+	joined := strings.Join(BurnInArgs("/m/ep.mkv", 2, 1, 1080), " ")
+	for _, want := range []string{
+		"-i /m/ep.mkv",
+		"[0:v:0][0:s:1]overlay,scale=-2:'min(ih,1080)'[v]",
+		"-map [v]", "-map 0:a:0?",
+		"-c:v libx264", "-c:a aac",
+		"-movflags frag_keyframe+empty_moov+faststart", "-f mp4", "pipe:1",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("BurnInArgs missing %q in: %s", want, joined)
+		}
+	}
+	// Continuous decode from the start (no input -ss) is required for stateful
+	// bitmap subs; an input seek would drop still-active display sets.
+	if strings.Contains(joined, "-ss ") {
+		t.Fatalf("BurnInArgs must not input-seek: %s", joined)
+	}
+}
+
 func TestRemuxArgsCopiesCodecs(t *testing.T) {
 	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0), " ")
 	if !strings.Contains(joined, "-c copy") {

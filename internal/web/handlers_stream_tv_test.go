@@ -133,6 +133,54 @@ func TestTVPlaybackSessionDecisions(t *testing.T) {
 			t.Fatalf("subtitle url = %q", resp.SubtitleURL)
 		}
 	})
+
+	t.Run("bitmap subtitle yields a burn-in url", func(t *testing.T) {
+		probe := video.ProbeResult{
+			Streams: []video.ProbeStream{
+				{CodecType: "video", CodecName: "h264", Width: 1280, Height: 720},
+				{CodecType: "audio", CodecName: "aac"},
+				{CodecType: "subtitle", CodecName: "dvd_subtitle"},
+			},
+		}
+		id := insertTVFileWithProbe(t, db, "mp4", probe, 100<<20)
+		resp := getSession(t, h, id, chromeUA, "&sub=1")
+		// An otherwise direct-play file must transcode once a bitmap sub is selected.
+		if resp.Decision != "transcode" {
+			t.Fatalf("decision = %q, want transcode (bitmap sub forces burn-in)", resp.Decision)
+		}
+		if resp.Protocol != "file" {
+			t.Fatalf("protocol = %q, want file (progressive burn-in plays as a direct src)", resp.Protocol)
+		}
+		want := "/stream/tv-burnin/" + strconv.FormatInt(id, 10) + "?sub=1&aud=0"
+		if resp.URL != want {
+			t.Fatalf("url = %q, want %q", resp.URL, want)
+		}
+		if resp.SubtitleURL != "" {
+			t.Fatalf("burn-in must not also set a sidecar url, got %q", resp.SubtitleURL)
+		}
+	})
+}
+
+// Burn-in is only for bitmap subs; a text or out-of-range track must 404 (text
+// goes via the sidecar path). Track 1 is bitmap (DVD), track 2 is text (subrip).
+func TestStreamTVBurnInRejectsTextOrOutOfRange(t *testing.T) {
+	h, db := newTestHandler(t)
+	probe := video.ProbeResult{
+		Streams: []video.ProbeStream{
+			{CodecType: "video", CodecName: "h264", Width: 1280, Height: 720},
+			{CodecType: "subtitle", CodecName: "dvd_subtitle"},
+			{CodecType: "subtitle", CodecName: "subrip"},
+		},
+	}
+	id := insertTVFileWithProbe(t, db, "mkv", probe, 100<<20)
+	for _, sub := range []string{"2", "0", "9"} { // text, below-range, above-range
+		req := httptest.NewRequest(http.MethodGet, "/stream/tv-burnin/"+strconv.FormatInt(id, 10)+"?sub="+sub, nil)
+		rr := httptest.NewRecorder()
+		h.streamTVBurnIn(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("sub=%s: status = %d, want 404", sub, rr.Code)
+		}
+	}
 }
 
 func TestTVPlaybackSessionResumePosition(t *testing.T) {
