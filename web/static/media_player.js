@@ -232,6 +232,95 @@ function initMediaPlayer() {
   video.addEventListener('play', () => { if (transport) transport.classList.add('playing'); });
   video.addEventListener('pause', () => { if (transport) transport.classList.remove('playing'); });
 
+  // --- custom seek bar (B2) --- native <video controls> is dropped (its scrubber
+  //     can't seek the progressive remux/burn-in streams — video.seekable==[0,0]),
+  //     so this is the only scrubber. A click or drag-release seeks: a native
+  //     currentTime seek on the byte/segment-seekable paths, a single ?start=
+  //     reload on the progressive ones. The reload fires only on release (not per
+  //     drag-move), so dragging never thrashes reloads.
+  const scrubber = document.getElementById('mediaScrubber');
+  const scrubFill = document.getElementById('mediaScrubberFill');
+  const scrubThumb = document.getElementById('mediaScrubberThumb');
+  const curLabel = document.getElementById('mediaCur');
+  const durLabel = document.getElementById('mediaDur');
+  let dragging = false, dragFrac = 0;
+
+  function fmtTime(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+    return (h > 0 ? h + ':' : '') + mm + ':' + String(sec).padStart(2, '0');
+  }
+  function renderScrub(frac, curSec) {
+    frac = Math.min(1, Math.max(0, frac || 0));
+    if (scrubFill) scrubFill.style.width = (frac * 100) + '%';
+    if (scrubThumb) scrubThumb.style.left = (frac * 100) + '%';
+    if (scrubber) scrubber.setAttribute('aria-valuenow', Math.round(frac * 100));
+    if (curLabel) curLabel.textContent = fmtTime(curSec);
+    if (durLabel) durLabel.textContent = fmtTime(sessionDuration);
+  }
+  function updateScrubFromPlayback() {
+    if (dragging) return;
+    const dur = sessionDuration || video.duration || 0;
+    renderScrub(dur > 0 ? currentAbsTime() / dur : 0, currentAbsTime());
+  }
+  video.addEventListener('timeupdate', updateScrubFromPlayback);
+  video.addEventListener('loadedmetadata', updateScrubFromPlayback);
+
+  function fracFromEvent(e) {
+    if (!scrubber) return 0;
+    const rect = scrubber.getBoundingClientRect();
+    const x = (e.clientX || 0) - rect.left;
+    return rect.width > 0 ? Math.min(1, Math.max(0, x / rect.width)) : 0;
+  }
+  function commitSeek(frac) {
+    const dur = sessionDuration || video.duration || 0;
+    if (dur <= 0) return;
+    const target = frac * dur;
+    if (isProgressive) { seekProgressiveTo(target); return; }
+    try { video.currentTime = target; } catch (e) {}
+  }
+  if (scrubber) {
+    scrubber.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      try { scrubber.setPointerCapture(e.pointerId); } catch (e2) {}
+      dragFrac = fracFromEvent(e);
+      renderScrub(dragFrac, dragFrac * (sessionDuration || 0));
+    });
+    scrubber.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      dragFrac = fracFromEvent(e);
+      renderScrub(dragFrac, dragFrac * (sessionDuration || 0));
+    });
+    const endDrag = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      try { scrubber.releasePointerCapture(e.pointerId); } catch (e2) {}
+      commitSeek(dragFrac);
+    };
+    scrubber.addEventListener('pointerup', endDrag);
+    scrubber.addEventListener('pointercancel', endDrag);
+    // Couch/remote: arrow keys on the focused bar nudge ±10s (reuses seekBy).
+    scrubber.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(10); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(-10); }
+    });
+  }
+
+  // Fullscreen the whole player block so the custom transport + scrubber stay
+  // usable in fullscreen (there are no native controls to fall back on).
+  const fsBtn = document.getElementById('tvFullscreenBtn');
+  if (fsBtn) {
+    const fsTarget = video.closest('.tv-player-page') || video;
+    fsBtn.addEventListener('click', () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      } else if (fsTarget.requestFullscreen) {
+        fsTarget.requestFullscreen().catch(() => {});
+      }
+    });
+  }
+
   // --- "Even loudness": client-side dynamic-range compression via Web Audio.
   //     Compresses the decoded audio in the browser, so it evens the loud
   //     music/quiet dialogue gap on every playback path (direct/remux/HLS) with
