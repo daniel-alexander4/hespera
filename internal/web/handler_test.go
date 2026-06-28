@@ -105,6 +105,15 @@ func setupTemplateDir(t *testing.T, dir string) {
 	if err := os.WriteFile(filepath.Join(tplDir, "player.html"), []byte(playerTpl), 0o644); err != nil {
 		t.Fatalf("WriteFile player.html override: %v", err)
 	}
+
+	// Functional stub for the paginated albums list: one <a class="album"> per row
+	// plus the page nav, so a test can assert the LIMIT/OFFSET + pageNav wiring.
+	albumsTpl := `{{define "content"}}{{range .Albums}}<a class="album" href="/music/album/{{.ID}}"></a>{{end}}` +
+		`<span id="pg">{{.Page.Page}}/{{.Page.TotalPages}}</span>` +
+		`{{if .Page.HasPrev}}<a class="prev"></a>{{end}}{{if .Page.HasNext}}<a class="next"></a>{{end}}{{end}}`
+	if err := os.WriteFile(filepath.Join(tplDir, "music_albums.html"), []byte(albumsTpl), 0o644); err != nil {
+		t.Fatalf("WriteFile music_albums.html override: %v", err)
+	}
 }
 
 // withChdir changes to dir for the duration of the test and restores on cleanup.
