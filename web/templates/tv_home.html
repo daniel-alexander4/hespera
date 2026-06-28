@@ -65,9 +65,11 @@
 
 <!-- Shows Tab -->
 <div class="subtab-panel" id="tab-shows">
+  {{if .SeriesSearch}}{{template "searchForm" .SeriesSearch}}{{end}}
   {{if gt .UnmatchedCount 0}}
   <p class="form-help"><a href="/tv/match/review" class="btn btn-sm">{{.UnmatchedCount}} show{{if ne .UnmatchedCount 1}}s{{end}} need matching →</a></p>
   {{end}}
+  {{if .Series}}
   <div class="band-albums-grid">
     {{range .Series}}
     <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
@@ -86,6 +88,9 @@
     {{end}}
   </div>
   {{template "pagination" .SeriesPage}}
+  {{else if and .SeriesSearch .SeriesSearch.Q}}
+  <p class="empty-state">No shows match “{{.SeriesSearch.Q}}”. <a href="/tv">Clear search</a></p>
+  {{end}}
 </div>
 
 {{end}}
