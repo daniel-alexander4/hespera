@@ -105,8 +105,9 @@ func (h *Handler) Router() http.Handler {
 	// Cast / actor images
 	mux.HandleFunc("/art/person/", h.personArt)
 
-	// Movie browse / detail / match
+	// Movie browse / detail / player / match
 	mux.HandleFunc("/movies", h.moviesHome)
+	mux.HandleFunc("/movie/player", h.moviePlayer)
 	mux.HandleFunc("/movie/", h.movieDetail)
 	mux.HandleFunc("/movies/match", h.moviesMatch)
 	mux.HandleFunc("/movies/match/review", h.movieMatchReview)

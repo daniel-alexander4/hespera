@@ -1,16 +1,15 @@
 {{define "content"}}
 <div class="tv-player-page">
   <div class="tv-player-header">
-    <h1><a href="/tv/series/{{.SeriesID}}">{{.ShowName}}</a></h1>
-    <h2>S{{.SeasonNum}} — {{.EpName}}</h2>
+    <h1><a href="/movie/{{.TMDBID}}">{{.MovieTitle}}</a></h1>
+    {{if .Year}}<h2>{{.Year}}</h2>{{end}}
   </div>
 
   <div class="tv-player-video-wrap">
     <video id="tvVideo" class="tv-video" controls autoplay
-           data-media-kind="tv"
+           data-media-kind="movie"
            data-file-id="{{.FileID}}"
-           data-next-file="{{.NextFileID}}"
-           data-os-enabled="{{if .OpenSubtitlesEnabled}}1{{end}}">
+           data-next-file="0">
       Your browser does not support video playback.
     </video>
   </div>
@@ -29,41 +28,18 @@
     <label class="tv-track-pick" id="subPick" hidden>Subtitles
       <select id="subSelect"></select>
     </label>
-    <button type="button" id="subsSearchBtn" class="btn btn-sm" hidden>{{template "icon-search"}}Search subtitles</button>
     <span id="playbackMode" class="tv-playback-mode"></span>
   </div>
 
   <div class="tv-player-nav">
-    {{if .PrevFileID}}
-    <a href="/tv/player?file={{.PrevFileID}}" class="btn btn-sm">{{template "icon-skip-back"}}Previous</a>
-    {{else}}
     <span></span>
-    {{end}}
-    <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNum}}" class="btn btn-sm">Back to Season</a>
-    {{if .NextFileID}}
-    <a href="/tv/player?file={{.NextFileID}}" class="btn btn-sm">{{template "icon-skip-forward"}}Next</a>
-    {{else}}
+    <a href="/movie/{{.TMDBID}}" class="btn btn-sm">Back to Movie</a>
     <span></span>
-    {{end}}
   </div>
 </div>
 
-<div id="subs-modal" class="playlist-modal hidden" data-couch-overlay>
-  <div class="playlist-panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-      <strong>Search subtitles</strong>
-      <button id="subs-close-btn" type="button" class="btn btn-sm" data-couch-dismiss>Close</button>
-    </div>
-    <p id="subs-status" class="form-help"></p>
-    <ol id="subs-results" class="tracks"></ol>
-  </div>
-</div>
-
-{{end}}
-
-{{/* Opt this page out of Turbo's cached-preview render: the shared media_player.js
-     auto-boots the <video> on turbo:load, and a preview render would attach+play
-     then detach — an orphaned, still-playing element (audio keeps going after you
-     seek the visible one). no-preview keeps the page cacheable, so Back stays fast
-     and single-render. */}}
+{{/* Same Turbo cached-preview opt-out as the TV player: the shared
+     media_player.js auto-boots the <video> on turbo:load, and a preview render
+     would leave an orphaned, still-playing element. */}}
 {{define "headmeta"}}<meta name="turbo-cache-control" content="no-preview">{{end}}
+{{end}}

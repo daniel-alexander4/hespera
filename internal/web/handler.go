@@ -81,6 +81,7 @@ func New(d Deps) (*Handler, error) {
 		"movies_home.html",
 		"movie_detail.html",
 		"movie_match_review.html",
+		"movie_player.html",
 	}
 
 	tpls := make(map[string]*template.Template, len(pages))
