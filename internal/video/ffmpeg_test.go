@@ -68,10 +68,10 @@ func TestDownmixArgsGate(t *testing.T) {
 }
 
 func TestVODPlaylist(t *testing.T) {
-	if VODPlaylist(0) != "" || VODPlaylist(-5) != "" {
+	if VODPlaylist(0, 0) != "" || VODPlaylist(-5, 0) != "" {
 		t.Fatal("non-positive duration should yield an empty playlist")
 	}
-	pl := VODPlaylist(20) // 6+6+6+2 → 4 segments
+	pl := VODPlaylist(20, 0) // 6+6+6+2 → 4 segments
 	for _, want := range []string{
 		"#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-ENDLIST", "#EXT-X-TARGETDURATION:6",
 		"seg00000.ts", "seg00003.ts",
@@ -86,6 +86,17 @@ func TestVODPlaylist(t *testing.T) {
 	}
 	if n := strings.Count(pl, "#EXTINF:"); n != 4 {
 		t.Fatalf("EXTINF count = %d, want 4", n)
+	}
+}
+
+func TestVODPlaylistCarriesAudio(t *testing.T) {
+	// A selected audio track is carried as ?aud on each segment URI so the
+	// per-segment transcode and the cache key see it; the default track adds none.
+	if pl := VODPlaylist(12, 2); !strings.Contains(pl, "seg00000.ts?aud=2") {
+		t.Fatalf("expected segment URIs to carry ?aud=2:\n%s", pl)
+	}
+	if pl := VODPlaylist(12, 0); strings.Contains(pl, "?aud=") {
+		t.Fatalf("default audio track should add no query:\n%s", pl)
 	}
 }
 
@@ -153,15 +164,16 @@ func TestRemuxArgsResume(t *testing.T) {
 
 func TestHLSKeyStableAndDistinct(t *testing.T) {
 	mt := time.Unix(1700000000, 0)
-	a := hlsKey("/m/ep.mkv", mt, 100, 1080)
-	if a != hlsKey("/m/ep.mkv", mt, 100, 1080) {
+	a := hlsKey("/m/ep.mkv", mt, 100, 1080, 0)
+	if a != hlsKey("/m/ep.mkv", mt, 100, 1080, 0) {
 		t.Fatal("hlsKey not stable for identical inputs")
 	}
 	for _, other := range []string{
-		hlsKey("/m/other.mkv", mt, 100, 1080),
-		hlsKey("/m/ep.mkv", mt.Add(time.Second), 100, 1080),
-		hlsKey("/m/ep.mkv", mt, 101, 1080),
-		hlsKey("/m/ep.mkv", mt, 100, 720),
+		hlsKey("/m/other.mkv", mt, 100, 1080, 0),
+		hlsKey("/m/ep.mkv", mt.Add(time.Second), 100, 1080, 0),
+		hlsKey("/m/ep.mkv", mt, 101, 1080, 0),
+		hlsKey("/m/ep.mkv", mt, 100, 720, 0),
+		hlsKey("/m/ep.mkv", mt, 100, 1080, 2), // distinct audio track → distinct cache
 	} {
 		if a == other {
 			t.Fatal("hlsKey collided across distinct inputs")
@@ -275,7 +287,7 @@ func TestEnsureSegmentBuildsAndReuses(t *testing.T) {
 	src, mt, size := sampleClipDur(t, 12) // 2 full segments
 	cacheRoot := t.TempDir()
 
-	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12, 2)
+	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12, 2, 0)
 	if err != nil {
 		t.Fatalf("EnsureSegment: %v", err)
 	}
@@ -284,7 +296,7 @@ func TestEnsureSegmentBuildsAndReuses(t *testing.T) {
 	}
 
 	// Second call reuses the cached segment (same path, no rebuild).
-	p2, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12, 2)
+	p2, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 1, 12, 2, 0)
 	if err != nil || p2 != p {
 		t.Fatalf("reuse: p=%q p2=%q err=%v", p, p2, err)
 	}
@@ -297,7 +309,7 @@ func TestEnsureSegmentRandomAccess(t *testing.T) {
 	src, mt, size := sampleClipDur(t, 18) // 3 segments
 	cacheRoot := t.TempDir()
 
-	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 2, 18, 2)
+	p, err := EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 2, 18, 2, 0)
 	if err != nil {
 		t.Fatalf("EnsureSegment: %v", err)
 	}
@@ -320,7 +332,7 @@ func TestEnsureSegmentConcurrentSharesOneBuild(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			paths[i], errs[i] = EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 0, 12, 2)
+			paths[i], errs[i] = EnsureSegment(context.Background(), cacheRoot, src, mt, size, 240, 0, 12, 2, 0)
 		}(i)
 	}
 	wg.Wait()
@@ -348,11 +360,11 @@ func TestEnsureSegmentFailedBuildLeavesNoSegment(t *testing.T) {
 	cacheRoot := t.TempDir()
 	// A nonexistent source makes ffmpeg fail before producing anything.
 	bogus := filepath.Join(t.TempDir(), "does-not-exist.mkv")
-	_, err := EnsureSegment(context.Background(), cacheRoot, bogus, time.Unix(1, 0), 1, 240, 0, 12, 2)
+	_, err := EnsureSegment(context.Background(), cacheRoot, bogus, time.Unix(1, 0), 1, 240, 0, 12, 2, 0)
 	if err == nil {
 		t.Fatal("expected an error for a missing source")
 	}
-	dir := filepath.Join(cacheRoot, hlsKey(bogus, time.Unix(1, 0), 1, 240))
+	dir := filepath.Join(cacheRoot, hlsKey(bogus, time.Unix(1, 0), 1, 240, 0))
 	if segs, _ := filepath.Glob(filepath.Join(dir, "seg*.ts")); len(segs) != 0 {
 		t.Fatalf("failed build should leave no segment, found: %v", segs)
 	}
