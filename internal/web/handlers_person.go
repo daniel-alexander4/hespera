@@ -3,16 +3,24 @@ package web
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"hespera/internal/pathguard"
 	"hespera/internal/tmdb"
 )
+
+// tmdbPosterBase is the TMDB image base for hotlinked posters of shows not in
+// the local library (the actor's wider filmography). These are external
+// discovery thumbnails, not the user's media, so they load directly from TMDB
+// rather than the download-to-disk /art pipeline.
+const tmdbPosterBase = "https://image.tmdb.org/t/p/w342"
 
 // enqueueMetaFetch enqueues a one-off background TMDB metadata fetch (cast list,
 // actor bio), deduped by key so a cache-miss page view fires at most one job per
@@ -136,8 +144,44 @@ GROUP BY i.series_id
 	return out
 }
 
+type otherShowRow struct {
+	Name      string
+	Year      string
+	Character string
+	PosterURL string // hotlinked TMDB thumbnail, or "" for none
+}
+
+// buildOtherShows turns a cached filmography JSON blob into the actor's shows
+// that are NOT in the local library, with hotlinked TMDB poster thumbnails.
+func buildOtherShows(filmographyJSON string, inLibrary map[string]bool) []otherShowRow {
+	if filmographyJSON == "" {
+		return nil
+	}
+	var credits []tmdb.PersonTVCredit
+	if json.Unmarshal([]byte(filmographyJSON), &credits) != nil {
+		return nil
+	}
+	var out []otherShowRow
+	for _, c := range credits {
+		if inLibrary[strconv.Itoa(c.ID)] {
+			continue
+		}
+		year := ""
+		if len(c.FirstAirDate) >= 4 {
+			year = c.FirstAirDate[:4]
+		}
+		poster := ""
+		if c.PosterPath != "" {
+			poster = tmdbPosterBase + c.PosterPath
+		}
+		out = append(out, otherShowRow{Name: c.Name, Year: year, Character: c.Character, PosterURL: poster})
+	}
+	return out
+}
+
 // personDetail renders an actor page: bio + image + the in-library titles they
-// appear in. The bio/image are fetched lazily in the background on first view.
+// appear in + their other (out-of-library) shows. The bio/image/filmography are
+// fetched lazily in the background on first view.
 func (h *Handler) personDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -150,25 +194,32 @@ func (h *Handler) personDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name, bio, bioFetchedAt string
-	var artPath sql.NullString
+	var artPath, filmographyJSON sql.NullString
 	hasRow := h.db.QueryRowContext(r.Context(),
-		"SELECT name, art_path, bio, bio_fetched_at FROM people WHERE tmdb_id=?", personID,
-	).Scan(&name, &artPath, &bio, &bioFetchedAt) == nil
+		"SELECT name, art_path, bio, bio_fetched_at, filmography_json FROM people WHERE tmdb_id=?", personID,
+	).Scan(&name, &artPath, &bio, &bioFetchedAt, &filmographyJSON) == nil
 
-	// Lazily fetch the bio (and image) the first time, in the background.
+	// Lazily fetch the bio (image + filmography) the first time, in the background.
 	if !hasRow || bioFetchedAt == "" {
 		pid := int(personID)
 		h.enqueueMetaFetch(r.Context(), fmt.Sprintf("person:%d", pid), "person_fetch",
 			func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchPersonBio(ctx, pid) })
 	}
 
+	titles := h.loadPersonTitles(r.Context(), personID)
+	inLib := make(map[string]bool, len(titles))
+	for _, t := range titles {
+		inLib[t.SeriesID] = true
+	}
+
 	h.render(w, "person.html", map[string]any{
-		"Title":    nonEmpty(name, "Actor"),
-		"PersonID": personID,
-		"Name":     name,
-		"HasArt":   scanNullString(artPath) != "",
-		"Bio":      bio,
-		"Titles":   h.loadPersonTitles(r.Context(), personID),
+		"Title":      nonEmpty(name, "Actor"),
+		"PersonID":   personID,
+		"Name":       name,
+		"HasArt":     scanNullString(artPath) != "",
+		"Bio":        bio,
+		"Titles":     titles,
+		"OtherShows": buildOtherShows(scanNullString(filmographyJSON), inLib),
 	})
 }
 

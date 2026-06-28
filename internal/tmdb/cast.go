@@ -2,6 +2,7 @@ package tmdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,6 +13,38 @@ import (
 // castLimit caps how many cast members we store per title, by billing order, so
 // a large ensemble doesn't make an unwieldy strip or a burst of image downloads.
 const castLimit = 15
+
+// filmographyLimit caps how many of an actor's shows we cache/show on their page.
+const filmographyLimit = 24
+
+// topTVCredits dedupes an actor's tv_credits by show (keeping the entry with the
+// most episodes), orders by significance (episode count, then recency), and caps
+// the list.
+func topTVCredits(credits []PersonTVCredit) []PersonTVCredit {
+	byID := make(map[int]PersonTVCredit, len(credits))
+	for _, c := range credits {
+		if c.ID == 0 || c.Name == "" {
+			continue
+		}
+		if ex, ok := byID[c.ID]; !ok || c.EpisodeCount > ex.EpisodeCount {
+			byID[c.ID] = c
+		}
+	}
+	out := make([]PersonTVCredit, 0, len(byID))
+	for _, c := range byID {
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].EpisodeCount != out[j].EpisodeCount {
+			return out[i].EpisodeCount > out[j].EpisodeCount
+		}
+		return out[i].FirstAirDate > out[j].FirstAirDate
+	})
+	if len(out) > filmographyLimit {
+		out = out[:filmographyLimit]
+	}
+	return out
+}
 
 // FetchTVCast fetches a matched show's top-billed cast from TMDB and caches it:
 // the `people` rows (name + downloaded profile image), the `credits` join
@@ -124,6 +157,16 @@ ON CONFLICT(tmdb_id) DO UPDATE SET
 		if err := m.client.DownloadImage(ctx, p.ProfilePath, dest); err == nil {
 			_, _ = m.db.ExecContext(ctx, "UPDATE people SET art_path=? WHERE tmdb_id=?", dest, personID)
 		}
+	}
+
+	// Cache the actor's TV filmography (best-effort) — powers the "Other shows"
+	// (not-in-library) section. Posters for those are hotlinked client-side, so
+	// nothing is downloaded here.
+	if credits, err := m.client.FetchPersonTVCredits(ctx, personID); err == nil {
+		data, _ := json.Marshal(topTVCredits(credits))
+		_, _ = m.db.ExecContext(ctx, "UPDATE people SET filmography_json=? WHERE tmdb_id=?", string(data), personID)
+	} else {
+		slog.Warn("tmdb person tv credits", "person", personID, "err", err)
 	}
 	return nil
 }

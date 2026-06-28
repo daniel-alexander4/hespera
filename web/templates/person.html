@@ -40,4 +40,25 @@
   {{end}}
 </div>
 {{end}}
+
+{{if .OtherShows}}
+<h3 class="section-title">Other shows</h3>
+<div class="band-albums-grid">
+  {{range .OtherShows}}
+  <div class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .PosterURL}}
+      <img src="{{.PosterURL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer" />
+      {{else}}
+      <div class="album-art-ph">TV</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      <div class="artist-card-stats">{{.Year}}{{if and .Year .Character}} · {{end}}{{.Character}}</div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
 {{end}}

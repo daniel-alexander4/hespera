@@ -69,3 +69,28 @@ func TestCastAndPersonQueries(t *testing.T) {
 		t.Fatalf("personArt(missing) = %d, want 404", w.Code)
 	}
 }
+
+// TestBuildOtherShows covers the out-of-library filmography: in-library shows are
+// excluded, years are derived, and posters hotlink to TMDB.
+func TestBuildOtherShows(t *testing.T) {
+	blob := `[
+		{"id":1396,"name":"Breaking Bad","character":"Walt","poster_path":"/bb.jpg","first_air_date":"2008-01-20"},
+		{"id":1100,"name":"Malcolm","character":"Hal","poster_path":"","first_air_date":"2000-01-09"}
+	]`
+	out := buildOtherShows(blob, map[string]bool{"1396": true})
+	if len(out) != 1 {
+		t.Fatalf("len = %d, want 1 (1396 in library, excluded)", len(out))
+	}
+	if out[0].Name != "Malcolm" || out[0].Year != "2000" || out[0].Character != "Hal" || out[0].PosterURL != "" {
+		t.Fatalf("out[0] = %+v", out[0])
+	}
+
+	out2 := buildOtherShows(`[{"id":5,"name":"X","poster_path":"/x.jpg","first_air_date":"2020-05-01"}]`, nil)
+	if len(out2) != 1 || out2[0].PosterURL != "https://image.tmdb.org/t/p/w342/x.jpg" {
+		t.Fatalf("out2 = %+v", out2)
+	}
+
+	if buildOtherShows("", nil) != nil {
+		t.Fatal("empty filmography should yield nil")
+	}
+}
