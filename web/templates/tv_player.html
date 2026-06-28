@@ -73,25 +73,47 @@
   let currentAud = 0, currentSub = 0;
   let selectsBuilt = false;
   let lastReport = 0;
+  let streamStartOffset = 0; // server pre-seek of a progressive stream (remux/burn-in); see attachSource
+  let sessionDuration = 0;   // full source duration (progressive streams don't expose it via video.duration)
 
   const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
+
+  // currentAbsTime is the playback position on the real episode timeline. The
+  // remux/burn-in streams are rebased to zero at their server-side start, so their
+  // video.currentTime is relative — add the offset back to get the true position.
+  const currentAbsTime = () => streamStartOffset + (video.currentTime || 0);
 
   function teardownHLS() {
     if (hls) { hls.destroy(); hls = null; }
   }
 
+  // attachSource points the element (or hls.js) at the stream. seekTo is the
+  // desired position on the real episode timeline. Direct-play and HLS are
+  // byte-range/segment seekable, so we set video.currentTime. Remux and burn-in
+  // are progressive (no random access), so instead we ask the server to begin the
+  // stream at seekTo (?start=, an input -ss) and track the offset; the element's
+  // own currentTime then runs from zero. This is what lets those paths resume.
   function attachSource(session, seekTo) {
     teardownHLS();
-    const onReady = () => { if (seekTo > 0) { try { video.currentTime = seekTo; } catch (e) {} } };
+    const progressive = /\/stream\/tv-(remux|burnin)\//.test(session.url || '');
+    let url = session.url;
+    if (progressive && seekTo > 0) {
+      streamStartOffset = seekTo;
+      url += (url.indexOf('?') >= 0 ? '&' : '?') + 'start=' + encodeURIComponent(seekTo);
+    } else {
+      streamStartOffset = 0;
+    }
+    const clientSeek = progressive ? 0 : seekTo; // only the seekable paths seek the element
+    const onReady = () => { if (clientSeek > 0) { try { video.currentTime = clientSeek; } catch (e) {} } };
 
     if (session.protocol === 'hls' && !nativeHLS && window.Hls && Hls.isSupported()) {
       hls = new Hls({ enableWorker: true });
-      hls.loadSource(session.url);
+      hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, onReady);
     } else {
-      // Direct play, remux, native-HLS (Safari): the element loads the URL directly.
-      video.src = session.url;
+      // Direct play, remux, burn-in, native-HLS (Safari): the element loads the URL directly.
+      video.src = url;
       video.addEventListener('loadedmetadata', onReady, { once: true });
       video.load();
     }
@@ -183,6 +205,7 @@
     if (!session || !session.ok) { modeLabel.textContent = 'Unable to start playback'; return; }
 
     if (!selectsBuilt) buildSelects(session);
+    sessionDuration = session.duration_seconds || sessionDuration;
     modeLabel.textContent = session.decision.replace('_', ' ');
     if (session.protocol === 'hls' && !nativeHLS && !(window.Hls && Hls.isSupported())) {
       modeLabel.textContent = 'This browser cannot play the transcoded stream';
@@ -192,8 +215,8 @@
     attachSubtitle(session);
   }
 
-  if (audioSelect) audioSelect.addEventListener('change', () => loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, video.currentTime));
-  if (subSelect) subSelect.addEventListener('change', () => loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, video.currentTime));
+  if (audioSelect) audioSelect.addEventListener('change', () => loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()));
+  if (subSelect) subSelect.addEventListener('change', () => loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, currentAbsTime()));
 
   // --- transport controls (focusable, so a TV remote in couch mode can seek;
   //     the native <video controls> scrubber isn't remote-reachable) ---
@@ -283,15 +306,18 @@
     if (boostOn) applyBoost();
   }
 
-  // --- progress reporting (unchanged behaviour) ---
+  // --- progress reporting --- positions are on the real episode timeline
+  // (currentAbsTime), so a resumed remux/burn-in stream (rebased to zero) still
+  // saves the true position. Completion falls back to the session duration because
+  // a progressive stream doesn't expose the full length via video.duration.
   function reportProgress(completed) {
     const now = Date.now();
     if (!completed && now - lastReport < 15000) return;
     lastReport = now;
     const body = JSON.stringify({
       file_id: fileID,
-      position_seconds: video.currentTime,
-      duration_seconds: video.duration || 0,
+      position_seconds: currentAbsTime(),
+      duration_seconds: sessionDuration || video.duration || 0,
       completed: !!completed,
     });
     if (navigator.sendBeacon) {
@@ -302,7 +328,8 @@
   }
   video.addEventListener('timeupdate', () => {
     reportProgress(false);
-    if (video.duration > 0 && video.currentTime / video.duration >= 0.9) reportProgress(true);
+    const dur = sessionDuration || video.duration || 0;
+    if (dur > 0 && currentAbsTime() / dur >= 0.9) reportProgress(true);
   });
   video.addEventListener('pause', () => { lastReport = 0; reportProgress(false); });
   video.addEventListener('ended', () => {

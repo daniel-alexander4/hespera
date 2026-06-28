@@ -36,6 +36,10 @@
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">Match</button>
         </form>
+        <form method="post" action="/libraries/reprobe" class="inline-form" title="Re-probe files missing stream info so every episode is seekable/resumable">
+          <input type="hidden" name="id" value="{{.ID}}" />
+          <button type="submit" class="btn btn-sm">Verify playback</button>
+        </form>
         {{end}}
         <form method="post" action="/libraries/delete" class="inline-form" onsubmit="return confirm('Delete this library and all its data?')">
           <input type="hidden" name="id" value="{{.ID}}" />

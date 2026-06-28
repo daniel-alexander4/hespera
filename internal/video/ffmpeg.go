@@ -53,15 +53,30 @@ func StreamFFmpeg(ctx context.Context, w io.Writer, args []string) error {
 // RemuxArgs builds ffmpeg args to repackage src into a fragmented MP4 streamed
 // to stdout, keeping all codecs (direct-stream). The selected audio ordinal is
 // 1-based; 0 lets ffmpeg pick the default audio track.
-func RemuxArgs(src string, audioOrdinal int) []string {
-	return []string{
-		"-hide_banner", "-loglevel", "error",
+//
+// startSec > 0 resumes a non-seekable progressive remux: input -ss fast-seeks to
+// the keyframe at/before startSec and -avoid_negative_ts make_zero rebases the
+// output timestamps to zero, so the stream begins near the saved position. Copy
+// can only cut on keyframes, so the real start lands within one GOP of startSec;
+// the player offsets reported progress by the requested start, so the saved
+// position stays accurate to within a GOP (it does not drift across resumes).
+func RemuxArgs(src string, audioOrdinal int, startSec float64) []string {
+	args := []string{"-hide_banner", "-loglevel", "error"}
+	if startSec > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(startSec, 'f', -1, 64))
+	}
+	args = append(args,
 		"-i", src,
 		"-map", "0:v:0", "-map", audioMap(audioOrdinal),
 		"-c", "copy",
+	)
+	if startSec > 0 {
+		args = append(args, "-avoid_negative_ts", "make_zero")
+	}
+	return append(args,
 		"-movflags", "frag_keyframe+empty_moov+faststart",
 		"-f", "mp4", "pipe:1",
-	}
+	)
 }
 
 // BurnInArgs builds ffmpeg args to burn a bitmap subtitle (PGS/DVD/DVB) into the
@@ -74,22 +89,36 @@ func RemuxArgs(src string, audioOrdinal int) []string {
 // drops still-active subs). subOrdinal is 1-based among subtitle streams;
 // audioOrdinal is 1-based (0 = default). Video is scaled down to maxHeight after
 // the overlay so the burned subs scale with it.
-func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int) []string {
+//
+// startSec > 0 resumes the stream: input -ss seeks there and -avoid_negative_ts
+// make_zero rebases output timestamps to zero. The re-encode is frame-accurate
+// (unlike the copy remux), so the start is exact; the only cost is that a bitmap
+// cue already on-screen before startSec won't reappear until its next display set
+// — acceptable for a mid-episode resume.
+func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int, startSec float64) []string {
 	subIdx := subOrdinal - 1
 	if subIdx < 0 {
 		subIdx = 0
 	}
 	filter := "[0:v:0][0:s:" + strconv.Itoa(subIdx) + "]overlay,scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'[v]"
-	return []string{
-		"-hide_banner", "-loglevel", "error",
+	args := []string{"-hide_banner", "-loglevel", "error"}
+	if startSec > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(startSec, 'f', -1, 64))
+	}
+	args = append(args,
 		"-i", src,
 		"-filter_complex", filter,
 		"-map", "[v]", "-map", audioMap(audioOrdinal),
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-ac", "2", "-b:a", "160k",
+	)
+	if startSec > 0 {
+		args = append(args, "-avoid_negative_ts", "make_zero")
+	}
+	return append(args,
 		"-movflags", "frag_keyframe+empty_moov+faststart",
 		"-f", "mp4", "pipe:1",
-	}
+	)
 }
 
 // SegmentArgs builds ffmpeg args to transcode a single HLS segment: the

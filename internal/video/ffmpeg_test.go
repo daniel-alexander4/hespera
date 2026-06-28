@@ -60,7 +60,7 @@ func TestVODPlaylist(t *testing.T) {
 
 func TestBurnInArgs(t *testing.T) {
 	// sub ordinal 2 -> 0:s:1 (0-based), audio ordinal 1 -> 0:a:0, max height 1080.
-	joined := strings.Join(BurnInArgs("/m/ep.mkv", 2, 1, 1080), " ")
+	joined := strings.Join(BurnInArgs("/m/ep.mkv", 2, 1, 1080, 0), " ")
 	for _, want := range []string{
 		"-i /m/ep.mkv",
 		"[0:v:0][0:s:1]overlay,scale=-2:'min(ih,1080)'[v]",
@@ -72,20 +72,51 @@ func TestBurnInArgs(t *testing.T) {
 			t.Fatalf("BurnInArgs missing %q in: %s", want, joined)
 		}
 	}
-	// Continuous decode from the start (no input -ss) is required for stateful
-	// bitmap subs; an input seek would drop still-active display sets.
+	// From-the-top playback (startSec 0) decodes continuously with no input -ss —
+	// required for stateful bitmap subs at the start of the file.
 	if strings.Contains(joined, "-ss ") {
-		t.Fatalf("BurnInArgs must not input-seek: %s", joined)
+		t.Fatalf("BurnInArgs(start=0) must not input-seek: %s", joined)
+	}
+}
+
+func TestBurnInArgsResume(t *testing.T) {
+	// A mid-episode resume input-seeks (and rebases timestamps to zero); the player
+	// offsets reported progress by the requested start.
+	joined := strings.Join(BurnInArgs("/m/ep.mkv", 1, 0, 1080, 930.5), " ")
+	for _, want := range []string{"-ss 930.5", "-i /m/ep.mkv", "-avoid_negative_ts make_zero"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("BurnInArgs(start) missing %q in: %s", want, joined)
+		}
+	}
+	// -ss must precede -i (input seek, not output seek).
+	if strings.Index(joined, "-ss ") > strings.Index(joined, "-i ") {
+		t.Fatalf("BurnInArgs(start) -ss must be an input seek (before -i): %s", joined)
 	}
 }
 
 func TestRemuxArgsCopiesCodecs(t *testing.T) {
-	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0), " ")
+	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0, 0), " ")
 	if !strings.Contains(joined, "-c copy") {
 		t.Fatalf("RemuxArgs should copy codecs: %s", joined)
 	}
 	if !strings.Contains(joined, "pipe:1") {
 		t.Fatalf("RemuxArgs should write to pipe: %s", joined)
+	}
+	// From the top: no input seek.
+	if strings.Contains(joined, "-ss ") {
+		t.Fatalf("RemuxArgs(start=0) must not input-seek: %s", joined)
+	}
+}
+
+func TestRemuxArgsResume(t *testing.T) {
+	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0, 1200), " ")
+	for _, want := range []string{"-ss 1200", "-i /m/ep.mkv", "-avoid_negative_ts make_zero", "-c copy"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("RemuxArgs(start) missing %q in: %s", want, joined)
+		}
+	}
+	if strings.Index(joined, "-ss ") > strings.Index(joined, "-i ") {
+		t.Fatalf("RemuxArgs(start) -ss must be an input seek (before -i): %s", joined)
 	}
 }
 
@@ -300,7 +331,7 @@ func TestStreamFFmpegRemux(t *testing.T) {
 	ffmpegAvailable(t)
 	src, _, _ := sampleClip(t)
 	var buf bytes.Buffer
-	if err := StreamFFmpeg(context.Background(), &buf, RemuxArgs(src, 0)); err != nil {
+	if err := StreamFFmpeg(context.Background(), &buf, RemuxArgs(src, 0, 0)); err != nil {
 		t.Fatalf("StreamFFmpeg remux: %v", err)
 	}
 	if buf.Len() == 0 {
@@ -313,7 +344,7 @@ func TestStreamFFmpegCanceledIsNotError(t *testing.T) {
 	src, _, _ := sampleClip(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already canceled before start
-	err := StreamFFmpeg(ctx, &bytes.Buffer{}, RemuxArgs(src, 0))
+	err := StreamFFmpeg(ctx, &bytes.Buffer{}, RemuxArgs(src, 0, 0))
 	if err != context.Canceled {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
