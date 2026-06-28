@@ -76,6 +76,9 @@
   let completedReported = false; // gate the 90%-watched completion report to fire once
   let streamStartOffset = 0; // server pre-seek of a progressive stream (remux/burn-in); see attachSource
   let sessionDuration = 0;   // full source duration (progressive streams don't expose it via video.duration)
+  let isProgressive = false; // current stream is remux/burn-in (linear, seeks via ?start= reload)
+  let reloading = false;     // a ?start= reload is in flight (re-entrancy guard for seeks)
+  let seekReloadTimer = null;
 
   const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
 
@@ -96,7 +99,8 @@
   // own currentTime then runs from zero. This is what lets those paths resume.
   function attachSource(session, seekTo) {
     teardownHLS();
-    const progressive = /\/stream\/tv-(remux|burnin)\//.test(session.url || '');
+    isProgressive = /\/stream\/tv-(remux|burnin)\//.test(session.url || '');
+    const progressive = isProgressive;
     let url = session.url;
     if (progressive && seekTo > 0) {
       streamStartOffset = seekTo;
@@ -225,12 +229,55 @@
   const rewindBtn = document.getElementById('tvRewindBtn');
   const toggleBtn = document.getElementById('tvToggleBtn');
   const forwardBtn = document.getElementById('tvForwardBtn');
+  // bufferedAheadEnd: the end (element time) of the contiguous buffered range
+  // covering playback — how far a native seek can reach without fetching new data.
+  const bufferedAheadEnd = () => {
+    const b = video.buffered;
+    for (let i = 0; i < b.length; i++) {
+      if (video.currentTime >= b.start(i) - 0.5 && video.currentTime <= b.end(i) + 0.5) return b.end(i);
+    }
+    return video.currentTime;
+  };
+
+  // seekProgressiveTo moves a remux/burn-in stream to an absolute episode position.
+  // Those streams are a linear window from the server start (?start=), so a target
+  // inside the buffered window is a native seek, but anything earlier or past the
+  // buffer needs the stream re-anchored there — reload at the new ?start= (reusing
+  // the resume -ss). This is what gives the progressive paths full fast-forward/rewind.
+  function seekProgressiveTo(targetAbs) {
+    targetAbs = Math.max(0, targetAbs);
+    if (sessionDuration > 1 && targetAbs > sessionDuration - 1) targetAbs = sessionDuration - 1;
+    const rel = targetAbs - streamStartOffset;
+    if (!reloading && rel >= 0 && rel <= bufferedAheadEnd() + 0.5) {
+      try { video.currentTime = rel; } catch (e) {}
+      return;
+    }
+    if (reloading) return;
+    reloading = true;
+    loadFromSession(currentAud, currentSub, targetAbs).finally(() => { reloading = false; });
+  }
+
   const seekBy = (delta) => {
+    if (isProgressive) { seekProgressiveTo(currentAbsTime() + delta); return; }
     let t = video.currentTime + delta;
     if (t < 0) t = 0;
     if (Number.isFinite(video.duration) && video.duration > 0 && t > video.duration) t = video.duration;
     video.currentTime = t;
   };
+
+  // Native scrubber on a progressive stream: a drag past the buffered tail can't be
+  // satisfied from the linear stream, so reload it anchored at the target. Debounced
+  // so only the settled drag position reloads; in-window seeks fall through to native
+  // seeking. Direct-play + HLS are range/segment seekable and are left untouched.
+  video.addEventListener('seeking', () => {
+    if (!isProgressive || reloading) return;
+    const rel = video.currentTime;
+    if (rel >= 0 && rel <= bufferedAheadEnd() + 0.5) return;
+    const targetAbs = streamStartOffset + Math.max(0, rel);
+    clearTimeout(seekReloadTimer);
+    seekReloadTimer = setTimeout(() => seekProgressiveTo(targetAbs), 200);
+  });
+
   if (rewindBtn) rewindBtn.addEventListener('click', () => seekBy(-10));
   if (forwardBtn) forwardBtn.addEventListener('click', () => seekBy(10));
   if (toggleBtn) toggleBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause(); });
@@ -359,6 +406,7 @@
     reportProgress(false);
     video.pause();
     teardownHLS();
+    clearTimeout(seekReloadTimer);
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
     window.removeEventListener('beforeunload', onBeforeUnload);
     video.removeAttribute('src');
