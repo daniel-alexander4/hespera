@@ -4,6 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hespera</title>
+  {{/* Per-page <head> hook. A media-boot page (one whose inline body script
+       auto-starts <video>/<audio> on render) overrides "headmeta" with
+       <meta name="turbo-cache-control" content="no-preview"> so Turbo never
+       renders it as a cached preview — a preview re-runs the body script on a
+       throwaway DOM, orphaning a still-playing media element. */}}
+  {{block "headmeta" .}}{{end}}
   <link rel="icon" type="image/svg+xml" href="{{staticv "/static/hespera-favicon.svg"}}" />
   <script>
     (() => {

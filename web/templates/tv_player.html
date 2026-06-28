@@ -404,3 +404,10 @@
 })();
 </script>
 {{end}}
+
+{{/* Opt this page out of Turbo's cached-preview render: its inline script
+     above auto-boots the <video> on every body render, and a preview render
+     would attach+play on a DOM Turbo then detaches — an orphaned, still-playing
+     element (audio keeps going after you seek the visible one). no-preview keeps
+     the page cacheable, so Back stays fast and single-render. */}}
+{{define "headmeta"}}<meta name="turbo-cache-control" content="no-preview">{{end}}
