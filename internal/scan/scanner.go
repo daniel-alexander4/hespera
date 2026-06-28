@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"hespera/internal/config"
+	"hespera/internal/fsutil"
 	"hespera/internal/music"
 	"hespera/internal/pathguard"
 	"hespera/internal/video"
@@ -532,12 +533,14 @@ func saveEmbeddedArt(ctx context.Context, tx *sql.Tx, thumbDir string, libraryID
 	name := hex.EncodeToString(h[:]) + ext
 	outPath := filepath.Join(thumbDir, name)
 
+	// Atomic writes below mean any file already at outPath is complete (never a
+	// truncated partial), so reusing it without a rewrite is safe.
 	if _, err := os.Stat(outPath); err == nil {
 		_, _ = tx.ExecContext(ctx, "UPDATE music_albums SET art_path=? WHERE id=?", outPath, albumID)
 		return nil
 	}
 
-	if err := os.WriteFile(outPath, meta.ArtBytes, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomic(outPath, meta.ArtBytes, 0o644); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, "UPDATE music_albums SET art_path=? WHERE id=?", outPath, albumID)

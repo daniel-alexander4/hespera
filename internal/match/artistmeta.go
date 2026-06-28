@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"hespera/internal/fsutil"
 )
 
 // ArtistMeta holds enriched artist metadata from Wikipedia/Wikimedia.
@@ -440,7 +442,7 @@ func downloadArtistImage(ctx context.Context, imgURL, dataDir, artistMBID string
 	name := hex.EncodeToString(h[:]) + ext
 	outPath := filepath.Join(thumbDir, name)
 
-	if err := os.WriteFile(outPath, data, 0o644); err != nil {
+	if err := fsutil.WriteFileAtomic(outPath, data, 0o644); err != nil {
 		return "", err
 	}
 	return outPath, nil
