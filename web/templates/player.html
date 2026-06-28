@@ -50,3 +50,14 @@
   </div>
 </div>
 {{end}}
+
+{{/* Opt this page out of Turbo's cached-preview render. Unlike tv_player.html
+     (which guards against an orphaned, still-playing <video>), music's <audio>
+     is a data-turbo-permanent singleton driven by head-loaded player.js and is
+     never orphaned — so the only thing preview-rendering costs here is a double
+     autoload: the deep-link shell's data-autoload fires bindView on both the
+     cached preview and the fresh turbo:load, issuing /music/queue twice (the
+     !queue.length guard is still true on the 2nd fire while the 1st is in
+     flight). no-preview keeps the page cacheable for fast Back while rendering
+     it once, so the deep-link path makes exactly one /music/queue request. */}}
+{{define "headmeta"}}<meta name="turbo-cache-control" content="no-preview">{{end}}
