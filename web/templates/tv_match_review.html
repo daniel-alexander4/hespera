@@ -49,9 +49,8 @@
 
 <script>
 (() => {
-  let searchTimer = null;
-
   document.querySelectorAll('.tv-match-tmdb-input').forEach(input => {
+    let searchTimer = null; // per-input, so typing in one row doesn't cancel another row's pending search
     const wrap = input.closest('.tv-match-search-wrap');
     const dropdown = wrap.querySelector('.tv-match-search-results');
     const row = input.closest('tr');
@@ -90,10 +89,11 @@
             }
             dropdown.innerHTML = results.slice(0, 8).map(r => {
               const year = r.first_air_date ? r.first_air_date.substring(0, 4) : '';
-              return '<div class="tv-match-search-item" data-id="' + r.id + '">' +
+              const id = escapeHtml(String(r.id));
+              return '<div class="tv-match-search-item" data-id="' + id + '">' +
                 '<strong>' + escapeHtml(r.name) + '</strong>' +
-                (year ? ' <span class="text-muted">(' + year + ')</span>' : '') +
-                ' <span class="text-muted">ID: ' + r.id + '</span>' +
+                (year ? ' <span class="text-muted">(' + escapeHtml(year) + ')</span>' : '') +
+                ' <span class="text-muted">ID: ' + id + '</span>' +
                 '</div>';
             }).join('');
             dropdown.style.display = 'block';

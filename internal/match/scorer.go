@@ -52,6 +52,14 @@ func bestTitleSim(c Candidate, localTitle string) float64 {
 func typeBonus(primaryType string, secondaryTypes []string) float64 {
 	base := 10.0
 	switch primaryType {
+	case "":
+		// Unknown type — e.g. a Strategy-B (loose release-search) candidate whose
+		// release-group primary type MusicBrainz didn't return inline. Don't grant the
+		// full clean-Album bonus an unknown shouldn't earn (it let Singles/EPs found
+		// this way masquerade as Albums). Small penalty only: the eligibility gate
+		// (typeDemotion) always credits a clean type, so this never unmatches an album —
+		// it only lets a confirmed studio Album outrank an unknown-type sibling.
+		base -= 2
 	case "Single":
 		base -= 8
 	case "EP":

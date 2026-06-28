@@ -1032,7 +1032,11 @@ func (h *Handler) musicArtistArtGET(w http.ResponseWriter, r *http.Request) {
 	var candidates []match.ArtistImageCandidate
 	if mbid != "" {
 		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
-		candidates = matcher.ArtistImageCandidates(r.Context(), mbid)
+		// Bound the fanart.tv/TheAudioDB lookups so this interactive GET can't hang
+		// on a slow provider; an empty result just renders the upload-only picker.
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		candidates = matcher.ArtistImageCandidates(ctx, mbid)
 	}
 
 	h.render(w, "music_artist_art.html", map[string]any{

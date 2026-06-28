@@ -146,7 +146,7 @@ func TestTypeBonus(t *testing.T) {
 		{"Remix", nil, 4},
 		{"Compilation", nil, 4},
 		{"EP", nil, 6}, // EP is now penalized below a clean Album
-		{"", nil, 10},
+		{"", nil, 8},   // unknown type (e.g. Strategy-B with no inline primary-type): small penalty so a confirmed Album outranks it
 		// Secondary types penalize even when primary is Album.
 		{"Album", []string{"Live"}, 4},
 		{"Album", []string{"Compilation"}, 4},

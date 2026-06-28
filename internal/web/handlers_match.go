@@ -122,11 +122,9 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the first music library ID for the writeback button.
-	var libraryID int64
-	_ = h.db.QueryRowContext(r.Context(),
-		"SELECT id FROM libraries WHERE type='music' ORDER BY id DESC LIMIT 1",
-	).Scan(&libraryID)
+	// Library ID for the writeback button — via the canonical resolver (honors a
+	// ?library= override, else the newest music library) instead of re-inlining it.
+	libraryID := h.resolveMusicLibraryID(r)
 
 	h.render(w, "music_match_review.html", map[string]any{
 		"Title":     "Match Review",
