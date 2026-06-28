@@ -15,14 +15,7 @@
   </div>
 
   {{template "media-seekbar" .}}
-
-  <div class="player-controls tv-transport" id="tvTransport">
-    <button id="tvRewindBtn" type="button" class="btn btn-sm" aria-label="Rewind 10 seconds" title="Rewind 10s">{{template "icon-rewind"}}</button>
-    <button id="tvToggleBtn" type="button" class="btn btn-primary btn-sm" aria-label="Play or pause" title="Play / Pause"><span class="tv-glyph-play">{{template "icon-play"}}</span><span class="tv-glyph-pause">{{template "icon-pause"}}</span></button>
-    <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Forward 10 seconds" title="Forward 10s">{{template "icon-fast-forward"}}</button>
-    <button id="tvBoostBtn" type="button" class="btn btn-sm" aria-pressed="false" aria-label="Dynamic Range — even out loud music vs quiet dialogue" title="Dynamic Range">{{template "icon-audio-lines"}}</button>
-    <button id="tvFullscreenBtn" type="button" class="btn btn-sm" aria-label="Fullscreen" title="Fullscreen">{{template "icon-maximize"}}</button>
-  </div>
+  {{template "media-transport" .}}
 
   <div class="tv-player-controls">
     <label class="tv-track-pick" id="audioPick" hidden>Audio
