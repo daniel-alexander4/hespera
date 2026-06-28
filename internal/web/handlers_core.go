@@ -1,11 +1,20 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
 )
+
+// homeStats is the compact library summary shown under the landing-page cards.
+type homeStats struct {
+	Artists  int
+	Albums   int
+	Series   int
+	Episodes int
+}
 
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
@@ -16,9 +25,67 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+
+	ctx := r.Context()
+	musicLib := h.resolveMusicLibraryID(r)
+
+	// Every dashboard section is best-effort: a failed query warns and renders an
+	// empty row rather than failing the whole landing page.
+	continueWatching, err := h.recentTVSeries(ctx, tvRecentlyWatchedQuery, 12)
+	if err != nil {
+		slog.Warn("home: load continue-watching failed", "err", err)
+	}
+	recentlyPlayed, err := h.loadRecentlyPlayedArtists(ctx, musicLib, 12)
+	if err != nil {
+		slog.Warn("home: load recently-played failed", "err", err)
+	}
+	recentlyAddedAlbums, err := h.loadRecentlyAddedAlbums(ctx, musicLib, 12)
+	if err != nil {
+		slog.Warn("home: load recently-added albums failed", "err", err)
+	}
+	recentlyAddedTV, err := h.recentTVSeries(ctx, tvRecentlyAddedQuery, 12)
+	if err != nil {
+		slog.Warn("home: load recently-added tv failed", "err", err)
+	}
+
+	stats := h.loadHomeStats(ctx, musicLib)
+
+	hasActivity := len(continueWatching) > 0 || len(recentlyPlayed) > 0 ||
+		len(recentlyAddedAlbums) > 0 || len(recentlyAddedTV) > 0
+
 	h.render(w, "home.html", map[string]any{
-		"Title": "Home",
+		"Title":               "Home",
+		"MusicLibraryID":      musicLib,
+		"HasMusic":            musicLib > 0,
+		"ContinueWatching":    continueWatching,
+		"RecentlyPlayed":      recentlyPlayed,
+		"RecentlyAddedAlbums": recentlyAddedAlbums,
+		"RecentlyAddedTV":     recentlyAddedTV,
+		"Stats":               stats,
+		"HasActivity":         hasActivity,
 	})
+}
+
+// loadHomeStats returns a best-effort library summary for the landing page; any
+// individual count that fails is left at zero.
+func (h *Handler) loadHomeStats(ctx context.Context, musicLib int64) homeStats {
+	var s homeStats
+	if musicLib > 0 {
+		_ = h.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM music_artists WHERE library_id=?", musicLib,
+		).Scan(&s.Artists)
+		_ = h.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM music_albums WHERE library_id=? AND COALESCE(is_compilation,0)=0", musicLib,
+		).Scan(&s.Albums)
+	}
+	const matched = "i.status='matched' AND i.provider='tmdb' AND i.series_id != ''"
+	_ = h.db.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT i.series_id) FROM tv_series_identities i WHERE "+matched,
+	).Scan(&s.Series)
+	_ = h.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM tv_series_identities i WHERE "+matched,
+	).Scan(&s.Episodes)
+	return s
 }
 
 func (h *Handler) healthz(w http.ResponseWriter, r *http.Request) {
