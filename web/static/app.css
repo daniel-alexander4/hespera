@@ -626,6 +626,16 @@ body::before {
   border-radius: 8px;
   margin-bottom: 1rem;
 }
+/* TV series header: a normal block (NOT the flex .page-header, which would put
+   the title and tags in a squished row). Title on its own line, tags below. */
+.tv-series-head {
+  margin-bottom: 1.5rem;
+}
+.tv-series-head h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
 .meta-tag {
   display: inline-block;
   padding: 0.15rem 0.5rem;
