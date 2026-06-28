@@ -73,6 +73,7 @@
   let currentAud = 0, currentSub = 0;
   let selectsBuilt = false;
   let lastReport = 0;
+  let completedReported = false; // gate the 90%-watched completion report to fire once
   let streamStartOffset = 0; // server pre-seek of a progressive stream (remux/burn-in); see attachSource
   let sessionDuration = 0;   // full source duration (progressive streams don't expose it via video.duration)
 
@@ -328,15 +329,24 @@
   }
   video.addEventListener('timeupdate', () => {
     reportProgress(false);
+    // Report completion exactly once past 90% — timeupdate fires ~4×/s and
+    // completion bypasses the 15s throttle, so without this it floods the endpoint
+    // for the whole last 10% of the episode.
     const dur = sessionDuration || video.duration || 0;
-    if (dur > 0 && currentAbsTime() / dur >= 0.9) reportProgress(true);
+    if (!completedReported && dur > 0 && currentAbsTime() / dur >= 0.9) {
+      completedReported = true;
+      reportProgress(true);
+    }
   });
   video.addEventListener('pause', () => { lastReport = 0; reportProgress(false); });
   video.addEventListener('ended', () => {
     reportProgress(true);
     if (nextFile > 0) window.location.href = '/tv/player?file=' + nextFile;
   });
-  window.addEventListener('beforeunload', () => { lastReport = 0; reportProgress(false); });
+  // Named so the turbo:before-cache teardown can remove it — otherwise a fresh
+  // listener (closing over a detached video) accumulates on every player visit.
+  const onBeforeUnload = () => { lastReport = 0; reportProgress(false); };
+  window.addEventListener('beforeunload', onBeforeUnload);
 
   // Turbo swaps the page without a full unload: send a final progress report,
   // stop playback, and tear down the hls.js worker before this page is
@@ -350,6 +360,7 @@
     video.pause();
     teardownHLS();
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
+    window.removeEventListener('beforeunload', onBeforeUnload);
     video.removeAttribute('src');
     try { video.load(); } catch (e) {}
   }, { once: true });
