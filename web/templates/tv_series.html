@@ -1,6 +1,6 @@
 {{define "content"}}
 {{if .BackdropPath}}
-<div class="tv-backdrop" style="background-image:url('/art/tv/backdrop/{{.ShowID}}')"></div>
+<div class="tv-backdrop" style="background-image:url('/art/tv/backdrop/{{.ShowID}}{{if .BackdropVer}}?v={{.BackdropVer}}{{end}}')"></div>
 {{end}}
 <div class="tv-series-head">
   <h1>{{.ShowName}}</h1>

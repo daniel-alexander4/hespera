@@ -619,8 +619,12 @@ body::before {
   opacity: 0.85;
 }
 .tv-backdrop {
+  /* Width-capped 16:9 banner: shows the whole backdrop (cover on a 16:9 box
+     crops nothing) at a sane height (~405px), instead of a thin full-bleed
+     strip that cropped most of the image away. */
   width: 100%;
-  height: 240px;
+  max-width: 720px;
+  aspect-ratio: 16 / 9;
   background-size: cover;
   background-position: center;
   border-radius: 8px;

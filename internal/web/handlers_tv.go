@@ -440,6 +440,7 @@ ORDER BY i.season_number
 	// (e.g. it matched before this feature, or has none), enqueue a background
 	// fetch so it populates on the next view — the handler never blocks on it.
 	var cast []castMemberRow
+	var backdropVer string
 	if sid, err := strconv.Atoi(seriesID); err == nil && sid > 0 {
 		cast = h.loadSeriesCast(r.Context(), sid)
 		if !h.castFetched(r.Context(), sid) {
@@ -451,6 +452,15 @@ ORDER BY i.season_number
 		if show.BackdropPath != "" && !h.metaMarkerExists(r.Context(), fmt.Sprintf("show:%d:backdrop_hires", sid)) {
 			h.enqueueMetaFetch(r.Context(), fmt.Sprintf("backdrop:%d", sid), "tv_backdrop_refresh",
 				func(ctx context.Context, m *tmdb.Matcher) error { return m.RefetchBackdrop(ctx, sid) })
+		}
+		// Cache-bust the backdrop URL with its fetched_at so a w500→w1280 upgrade
+		// (or any re-fetch) reaches the browser — the URL is otherwise stable and
+		// the image would be served from cache.
+		var fa string
+		if h.db.QueryRowContext(r.Context(),
+			"SELECT fetched_at FROM tv_series_art WHERE art_type='series_backdrop' AND tmdb_series_id=?",
+			sid).Scan(&fa) == nil {
+			backdropVer = artVersion(fa)
 		}
 	}
 
@@ -466,7 +476,21 @@ ORDER BY i.season_number
 		"Seasons":        seasons,
 		"MissingSeasons": len(missing),
 		"Cast":           cast,
+		"BackdropVer":    backdropVer,
 	})
+}
+
+// artVersion reduces an art row's fetched_at timestamp to a compact URL-safe
+// cache-busting token (alphanumerics only), so the image URL changes whenever
+// the underlying file is re-fetched.
+func artVersion(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // missingSeasons returns rows for TMDB seasons that have no local files.
