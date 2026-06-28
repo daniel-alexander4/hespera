@@ -202,8 +202,9 @@ func (h *Handler) streamTVRemux(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
-	start := parseStartParam(r.URL.Query().Get("start"), storedDuration(src))
-	if err := video.StreamFFmpeg(r.Context(), w, video.RemuxArgs(clean, aud, start)); err != nil {
+	total := storedDuration(src)
+	start := parseStartParam(r.URL.Query().Get("start"), total)
+	if err := video.StreamFFmpegPatchMoov(r.Context(), w, video.RemuxArgs(clean, aud, start), maxf(total-start, 0)); err != nil {
 		// Headers/body may already be partially written; just log.
 		slog.Warn("tv remux stream", "file_id", fileID, "err", err)
 	}
@@ -251,8 +252,9 @@ func (h *Handler) streamTVBurnIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
-	start := parseStartParam(r.URL.Query().Get("start"), durationSeconds(probe.Format.Duration))
-	if err := video.StreamFFmpeg(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud))); err != nil {
+	total := durationSeconds(probe.Format.Duration)
+	start := parseStartParam(r.URL.Query().Get("start"), total)
+	if err := video.StreamFFmpegPatchMoov(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud)), maxf(total-start, 0)); err != nil {
 		// Headers/body may already be partially written; just log.
 		slog.Warn("tv burn-in stream", "file_id", fileID, "err", err)
 	}
