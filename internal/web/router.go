@@ -89,6 +89,16 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/stream/tv-hls/", h.streamTVHLS)
 	mux.HandleFunc("/stream/tv-subtitles/", h.streamTVSubtitles)
 
+	// Movie playback + streaming (reuses the playback/video layers; thin clones
+	// of the TV stream handlers over movie_files + movie_playback_progress).
+	mux.HandleFunc("/movie/playback-session", h.moviePlaybackSession)
+	mux.HandleFunc("/movie/playback-progress", h.moviePlaybackProgress)
+	mux.HandleFunc("/stream/movie/", h.streamMovieDirect)
+	mux.HandleFunc("/stream/movie-remux/", h.streamMovieRemux)
+	mux.HandleFunc("/stream/movie-burnin/", h.streamMovieBurnIn)
+	mux.HandleFunc("/stream/movie-hls/", h.streamMovieHLS)
+	mux.HandleFunc("/stream/movie-subtitles/", h.streamMovieSubtitles)
+
 	// TV art
 	mux.HandleFunc("/art/tv/", h.tvArt)
 
