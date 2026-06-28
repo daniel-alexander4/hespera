@@ -45,8 +45,39 @@ func New(db *sql.DB) *Service {
 		queue:   make(chan JobRequest, 128),
 		cancels: make(map[int64]context.CancelFunc),
 	}
+	s.reconcileStaleJobs()
 	go s.worker()
 	return s
+}
+
+// reconcileStaleJobs marks any 'running'/'queued' rows left by a previous process
+// (a crash or restart) as 'failed'. The in-memory queue is the only thing that
+// holds runnable work, so those rows can never make progress on their own — left
+// alone they hang in a non-terminal state forever and keep reporting cancelable.
+func (s *Service) reconcileStaleJobs() {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	res, err := s.db.Exec(
+		`UPDATE scan_jobs SET status=?, error=?, ended_at=? WHERE status IN (?, ?)`,
+		statusFailed, "interrupted by restart", now, statusRunning, statusQueued,
+	)
+	if err != nil {
+		slog.Warn("jobs reconcile stale", "err", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("jobs reconciled stale rows to failed", "count", n)
+	}
+}
+
+// Shutdown cancels any in-flight job contexts so a graceful exit lets the worker
+// mark them terminal promptly. Best-effort (the worker may not run before the
+// process exits) — reconcileStaleJobs on the next startup is the reliable backstop.
+func (s *Service) Shutdown() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, cancel := range s.cancels {
+		cancel()
+	}
 }
 
 func (s *Service) Enqueue(jobType string, libraryID int64, createdBy string, executor func(ctx context.Context, jobID, libraryID int64) error) (int64, error) {

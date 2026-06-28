@@ -157,6 +157,14 @@ func New(d Deps) (*Handler, error) {
 	return h, nil
 }
 
+// Shutdown releases background resources on a graceful exit — currently it
+// cancels in-flight job contexts so their rows are marked terminal promptly.
+func (h *Handler) Shutdown() {
+	if h.jobs != nil {
+		h.jobs.Shutdown()
+	}
+}
+
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 	t, ok := h.tpls[page]
 	if !ok {

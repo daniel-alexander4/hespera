@@ -163,6 +163,13 @@ func newMockMusicServer(t *testing.T) *httptest.Server {
 // A zero-interval shared limiter is used so throttle() never sleeps.
 func newTestMatcher(t *testing.T, db *sql.DB, srv *httptest.Server) *Matcher {
 	t.Helper()
+	// The mock art server is http on loopback, which the SSRF guard rejects; relax
+	// it for the duration of the test (restored on cleanup so the guard's own unit
+	// test still sees the real behavior).
+	prev := imageURLGuard
+	imageURLGuard = func(string) error { return nil }
+	t.Cleanup(func() { imageURLGuard = prev })
+
 	dataDir := t.TempDir()
 	thumbDir := filepath.Join(dataDir, "thumbs", "music")
 	if err := os.MkdirAll(thumbDir, 0o755); err != nil {

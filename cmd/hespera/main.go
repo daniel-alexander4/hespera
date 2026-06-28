@@ -69,6 +69,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_ = srv.Shutdown(ctx)
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Warn("http shutdown", "err", err)
+	}
+	h.Shutdown()
 	slog.Info("shutdown complete")
 }
