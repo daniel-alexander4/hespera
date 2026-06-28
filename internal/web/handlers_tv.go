@@ -69,7 +69,8 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	series, nav, unmatched, err := h.loadTVSeriesList(r.Context(), pageParam(r))
+	q := searchParam(r)
+	series, nav, unmatched, err := h.loadTVSeriesList(r.Context(), pageParam(r), q)
 	if err != nil {
 		httpError(w, 500, "internal server error", "load tv series list failed", "handler", "tvSeriesList", "err", err)
 		return
@@ -89,6 +90,7 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		"Title":           "TV Shows",
 		"Series":          series,
 		"SeriesPage":      nav,
+		"SeriesSearch":    searchBox{Action: "/tv", Q: q},
 		"UnmatchedCount":  unmatched,
 		"RecentlyWatched": recentlyWatched,
 		"RecentlyAdded":   recentlyAdded,
@@ -196,7 +198,7 @@ func (h *Handler) recentTVSeries(ctx context.Context, query string, limit int) (
 // banner, not rendered inline). Matched names resolve from the TMDB metadata
 // cache in Go, not on the SQL rows, so the alphabetical order — and thus the
 // pagination — is applied in Go after the metadata is loaded.
-func (h *Handler) loadTVSeriesList(ctx context.Context, page int) ([]tvSeriesRow, pageNav, int, error) {
+func (h *Handler) loadTVSeriesList(ctx context.Context, page int, q string) ([]tvSeriesRow, pageNav, int, error) {
 	matchedRows, err := h.db.QueryContext(ctx, `
 SELECT i.series_id, COUNT(*) AS ep_count
 FROM tv_series_identities i
@@ -251,8 +253,22 @@ ORDER BY i.series_id
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 
-	// Paginate the sorted slice in Go (see the doc comment on the name sort).
+	// A ?q= filter matches the show name — applied in Go (names are cache-resolved,
+	// not on the SQL rows), like the pagination.
+	if q != "" {
+		needle := strings.ToLower(q)
+		filtered := out[:0]
+		for _, s := range out {
+			if strings.Contains(strings.ToLower(s.Name), needle) {
+				filtered = append(filtered, s)
+			}
+		}
+		out = filtered
+	}
+
+	// Paginate the (filtered) sorted slice in Go (see the doc comment on the sort).
 	nav, offset := paginate(page, len(out), "/tv")
+	nav = nav.withQuery(q)
 	if offset > len(out) {
 		offset = len(out)
 	}

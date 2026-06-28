@@ -17,6 +17,7 @@
 
 <!-- Artists Tab -->
 <div class="subtab-panel" id="tab-artists">
+  {{if .ArtistsSearch}}{{template "searchForm" .ArtistsSearch}}{{end}}
   {{if .Artists}}
   <div class="band-albums-grid">
     {{range .Artists}}
@@ -36,6 +37,8 @@
     {{end}}
   </div>
   {{template "pagination" .ArtistsPage}}
+  {{else if and .ArtistsSearch .ArtistsSearch.Q}}
+  <div class="empty-state"><p>No artists match “{{.ArtistsSearch.Q}}”. <a href="/music">Clear search</a></p></div>
   {{else}}
   <div class="empty-state"><p>No artists found. Scan a music library to get started.</p></div>
   {{end}}
