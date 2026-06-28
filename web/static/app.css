@@ -197,6 +197,26 @@ a:hover {
   white-space: nowrap;
 }
 
+/* Resume-watching chip (TV) — reuses the now-playing cluster layout/colors. */
+.nw-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.nw-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.nw-icon .icon {
+  width: 1rem;
+  height: 1rem;
+}
+.nw-dismiss {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
 /* Light/dark toggle — sits at the top-right of the topbar */
 .theme-toggle {
   display: inline-flex;

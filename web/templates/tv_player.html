@@ -238,13 +238,19 @@
   });
   window.addEventListener('beforeunload', () => { lastReport = 0; reportProgress(false); });
 
-  // Turbo swaps the page without a full unload: send a final progress report and
-  // tear down the hls.js worker before this page is cached/replaced. once:true so
-  // it doesn't accumulate across repeat visits.
+  // Turbo swaps the page without a full unload: send a final progress report,
+  // stop playback, and tear down the hls.js worker before this page is
+  // cached/replaced. Pause + clear the source so a direct/remux stream (no hls
+  // instance to destroy) can't keep playing audio from a detached element. The
+  // topbar "resume" chip (tv_resume.js) then links back here. once:true so it
+  // doesn't accumulate across repeat visits.
   document.addEventListener('turbo:before-cache', () => {
     lastReport = 0;
     reportProgress(false);
+    video.pause();
     teardownHLS();
+    video.removeAttribute('src');
+    try { video.load(); } catch (e) {}
   }, { once: true });
 
   // --- OpenSubtitles search dialog (shown only when no text track is offered
