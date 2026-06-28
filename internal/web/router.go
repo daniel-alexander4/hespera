@@ -23,6 +23,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/libraries/new", h.librariesNew)
 	mux.HandleFunc("/libraries/scan", h.librariesScan)
 	mux.HandleFunc("/libraries/reprobe", h.librariesReprobe)
+	mux.HandleFunc("/libraries/jobs-status", h.librariesJobsStatus)
 	mux.HandleFunc("/libraries/delete", h.librariesDelete)
 
 	// Music browse

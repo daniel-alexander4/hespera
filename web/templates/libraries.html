@@ -21,28 +21,28 @@
       <td>{{.Type}}</td>
       <td><code>{{.RootPath}}</code></td>
       <td class="actions-cell">
-        <form method="post" action="/libraries/scan" class="inline-form">
+        <form method="post" action="/libraries/scan" class="inline-form" data-live-job>
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">{{template "icon-rotate-cw"}}Scan</button>
         </form>
         {{if eq .Type "music"}}
-        <form method="post" action="/music/match" class="inline-form">
+        <form method="post" action="/music/match" class="inline-form" data-live-job>
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
         </form>
         {{end}}
         {{if eq .Type "tv"}}
-        <form method="post" action="/tv/match" class="inline-form">
+        <form method="post" action="/tv/match" class="inline-form" data-live-job>
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
         </form>
-        <form method="post" action="/libraries/reprobe" class="inline-form" title="Re-probe files missing stream info so every episode is seekable/resumable">
+        <form method="post" action="/libraries/reprobe" class="inline-form" data-live-job title="Re-probe files missing stream info so every episode is seekable/resumable">
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">{{template "icon-play"}}Verify playback</button>
         </form>
         {{end}}
         {{if eq .Type "movies"}}
-        <form method="post" action="/movies/match" class="inline-form">
+        <form method="post" action="/movies/match" class="inline-form" data-live-job>
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
         </form>
@@ -51,6 +51,7 @@
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm btn-danger">{{template "icon-trash"}}Delete</button>
         </form>
+        <span class="lib-job-status" data-lib-status="{{.ID}}" hidden></span>
       </td>
     </tr>
     {{end}}
@@ -61,4 +62,99 @@
   <p>No libraries yet. Add one to get started.</p>
 </div>
 {{end}}
+
+<script>
+// Live per-library job status: clicking Scan/Match/Verify enqueues via fetch (no
+// navigation) and a poll of /libraries/jobs-status updates this row's badge in
+// place. The /settings/jobs page stays the full audit record. Re-runs on every
+// Turbo render; the interval is torn down on turbo:before-cache so it can't leak.
+(() => {
+  const rowEls = document.querySelectorAll('[data-lib-status]');
+  if (!rowEls.length) return;
+
+  const VERB = {
+    scan: 'Scanning', tvscan: 'Scanning', moviescan: 'Scanning',
+    music_match: 'Matching', tv_match: 'Matching', movie_match: 'Matching',
+    tag_writeback: 'Writing tags', tv_probe: 'Verifying',
+  };
+  const ACTIVE = new Set(['queued', 'running']);
+  const seenActive = new Set();   // libraries observed active during this page's life
+  const clearTimers = {};
+  let timer = null, graceLeft = 0;
+
+  const statusEl = (id) => document.querySelector('[data-lib-status="' + id + '"]');
+
+  function setBadge(el, status, text) {
+    el.innerHTML = '';
+    const b = document.createElement('span');
+    b.className = 'badge badge-' + status;
+    b.textContent = text;            // textContent — never inject job.error as HTML
+    el.appendChild(b);
+    el.hidden = false;
+  }
+
+  function render(id, job) {
+    const el = statusEl(id);
+    if (!el) return;
+    if (job && ACTIVE.has(job.status)) {
+      seenActive.add(id);
+      const verb = VERB[job.type] || 'Working';
+      const prog = job.status === 'running' && job.total > 0 ? ' ' + job.current + '/' + job.total : '';
+      setBadge(el, job.status, (job.status === 'queued' ? 'Queued' : verb) + prog);
+      return;
+    }
+    // Terminal (or gone): only surface for a library we watched go active, so a
+    // stale finished job never flashes on load.
+    if (!seenActive.has(id)) { el.hidden = true; el.textContent = ''; return; }
+    seenActive.delete(id);
+    if (job && job.status === 'failed') setBadge(el, 'failed', 'Failed' + (job.error ? ': ' + job.error : ''));
+    else if (job && job.status === 'canceled') setBadge(el, 'canceled', 'Canceled');
+    else setBadge(el, 'done', '✓ Done');
+    clearTimeout(clearTimers[id]);
+    clearTimers[id] = setTimeout(() => { const e = statusEl(id); if (e) { e.hidden = true; e.textContent = ''; } }, 6000);
+  }
+
+  const schedule = (ms) => { clearTimeout(timer); timer = setTimeout(poll, ms); };
+
+  async function poll() {
+    let data = null;
+    if (!document.hidden) {
+      try {
+        const res = await fetch('/libraries/jobs-status', { headers: { Accept: 'application/json' } });
+        if (res.ok) data = await res.json();
+      } catch (_) {}
+    }
+    let active = false;
+    rowEls.forEach((el) => {
+      const id = el.getAttribute('data-lib-status');
+      const job = data && data.jobs ? data.jobs[id] : null;
+      render(id, job);
+      if (job && ACTIVE.has(job.status)) active = true;
+    });
+    if (active) { graceLeft = 2; schedule(2000); }
+    else if (graceLeft > 0) { graceLeft--; schedule(2000); } // grace bridges the scan→match handoff
+    // else: idle — stop until the next action triggers a poll.
+  }
+
+  // Intercept the job-enqueueing forms: fetch POST (no nav), optimistic Queued, poll.
+  document.querySelectorAll('form[data-live-job]').forEach((form) => {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();                       // beats Turbo's bubble-phase submit
+      const id = form.querySelector('input[name="id"]').value;
+      const el = statusEl(id);
+      if (el) { seenActive.add(id); setBadge(el, 'queued', 'Queued'); }
+      fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' }, body: new URLSearchParams(new FormData(form)) })
+        .catch(() => {})
+        .finally(() => { graceLeft = 2; schedule(600); });
+    });
+  });
+
+  document.addEventListener('turbo:before-cache', () => {
+    clearTimeout(timer);
+    Object.values(clearTimers).forEach(clearTimeout);
+  }, { once: true });
+
+  poll(); // pick up any in-flight job on load
+})();
+</script>
 {{end}}
