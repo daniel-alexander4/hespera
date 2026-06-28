@@ -95,7 +95,7 @@ func RemuxArgs(src string, audioOrdinal int, startSec float64) []string {
 // (unlike the copy remux), so the start is exact; the only cost is that a bitmap
 // cue already on-screen before startSec won't reappear until its next display set
 // — acceptable for a mid-episode resume.
-func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int, startSec float64) []string {
+func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int, startSec float64, srcChannels int) []string {
 	subIdx := subOrdinal - 1
 	if subIdx < 0 {
 		subIdx = 0
@@ -110,8 +110,9 @@ func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int, startSec fl
 		"-filter_complex", filter,
 		"-map", "[v]", "-map", audioMap(audioOrdinal),
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
-		"-c:a", "aac", "-ac", "2", "-b:a", "160k",
+		"-c:a", "aac", "-b:a", "160k",
 	)
+	args = append(args, downmixArgs(srcChannels)...)
 	if startSec > 0 {
 		args = append(args, "-avoid_negative_ts", "make_zero")
 	}
@@ -132,9 +133,9 @@ func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int, startSec fl
 // accurate over a whole episode (no cumulative drift). Video is scaled down to
 // maxHeight (never up). Producing any segment on demand at constant cost is what
 // makes seeking work, regardless of how far into the file the segment sits.
-func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audioOrdinal int) []string {
+func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audioOrdinal, srcChannels int) []string {
 	ss := strconv.FormatFloat(startSec, 'f', -1, 64)
-	return []string{
+	args := []string{
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-ss", ss, "-i", src, "-t", strconv.FormatFloat(durSec, 'f', -1, 64),
 		"-map", "0:v:0", "-map", audioMap(audioOrdinal),
@@ -142,10 +143,13 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 		"-fps_mode", "cfr",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
 		"-force_key_frames", "expr:eq(n,0)",
-		"-c:a", "aac", "-ac", "2", "-b:a", "160k",
+		"-c:a", "aac", "-b:a", "160k",
+	}
+	args = append(args, downmixArgs(srcChannels)...)
+	return append(args,
 		"-output_ts_offset", ss, "-muxdelay", "0", "-muxpreload", "0",
 		"-f", "mpegts", outPath,
-	}
+	)
 }
 
 // VODPlaylist synthesises the complete VOD HLS manifest for a source of the
@@ -181,6 +185,24 @@ func audioMap(ordinal int) string {
 	return "0:a:0?"
 }
 
+// downmixArgs picks how a transcode folds the source audio to stereo. A naive
+// `-ac 2` downmix of a 5.1 source puts the centre channel (where dialogue lives)
+// ~3 dB *below* the front L/R (music/effects), which is why TV dialogue sounds
+// buried once a browser that can't decode Dolby transcodes it to stereo. For a
+// source with a centre channel (>=6 channels: 5.1/6.1/7.1) we instead fold with
+// a dialogue-forward `pan` — centre weighted above the fronts, surrounds/LFE
+// dropped — which is clip-safe (coefficients <1) and layout-agnostic (it names
+// only FC/FL/FR, present in every >=6-channel layout, so it never references a
+// back-vs-side channel that may be absent). The gate is >=6, not >2, because a
+// `pan` naming FC would *error* on a 3-5-channel layout that lacks a centre.
+// Sources with <6 channels keep the standard `-ac 2` fold unchanged.
+func downmixArgs(srcChannels int) []string {
+	if srcChannels >= 6 {
+		return []string{"-af", "pan=stereo|FL=0.7*FC+0.5*FL|FR=0.7*FC+0.5*FR"}
+	}
+	return []string{"-ac", "2"}
+}
+
 // segBuild tracks one in-flight segment transcode so concurrent callers for the
 // same segment share it (e.g. hls.js prefetch racing a seek to the same point).
 type segBuild struct {
@@ -201,14 +223,14 @@ var (
 // callers for the same segment share one build. The transcode writes to a temp
 // file and atomically renames, so a partial segment is never served, and it runs
 // on its own context so a near-done segment still caches if the caller gives up.
-func EnsureSegment(ctx context.Context, cacheRoot, src string, modTime time.Time, size int64, maxHeight, index int, totalDur float64) (string, error) {
+func EnsureSegment(ctx context.Context, cacheRoot, src string, modTime time.Time, size int64, maxHeight, index int, totalDur float64, srcChannels int) (string, error) {
 	dir := filepath.Join(cacheRoot, hlsKey(src, modTime, size, maxHeight))
 	path := filepath.Join(dir, fmt.Sprintf("seg%05d.ts", index))
 	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
 		touch(dir)
 		return path, nil
 	}
-	b := startOrJoinSegBuild(dir, src, maxHeight, index, totalDur)
+	b := startOrJoinSegBuild(dir, src, maxHeight, index, totalDur, srcChannels)
 	select {
 	case <-b.ready:
 	case <-ctx.Done():
@@ -221,7 +243,7 @@ func EnsureSegment(ctx context.Context, cacheRoot, src string, modTime time.Time
 	return path, nil
 }
 
-func startOrJoinSegBuild(dir, src string, maxHeight, index int, totalDur float64) *segBuild {
+func startOrJoinSegBuild(dir, src string, maxHeight, index int, totalDur float64, srcChannels int) *segBuild {
 	key := dir + "|" + strconv.Itoa(index)
 	segBuildsMu.Lock()
 	defer segBuildsMu.Unlock()
@@ -230,11 +252,11 @@ func startOrJoinSegBuild(dir, src string, maxHeight, index int, totalDur float64
 	}
 	b := &segBuild{ready: make(chan struct{})}
 	segBuilds[key] = b
-	go runSegBuild(b, key, dir, src, maxHeight, index, totalDur)
+	go runSegBuild(b, key, dir, src, maxHeight, index, totalDur, srcChannels)
 	return b
 }
 
-func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalDur float64) {
+func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalDur float64, srcChannels int) {
 	defer func() {
 		segBuildsMu.Lock()
 		delete(segBuilds, key)
@@ -267,7 +289,7 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 	}
 	final := filepath.Join(dir, fmt.Sprintf("seg%05d.ts", index))
 	tmp := filepath.Join(dir, fmt.Sprintf(".seg%05d.ts.tmp", index))
-	cmd := exec.CommandContext(buildCtx, "ffmpeg", SegmentArgs(src, tmp, start, dur, maxHeight, 0)...)
+	cmd := exec.CommandContext(buildCtx, "ffmpeg", SegmentArgs(src, tmp, start, dur, maxHeight, 0, srcChannels)...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
