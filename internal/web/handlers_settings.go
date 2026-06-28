@@ -588,6 +588,49 @@ func (h *Handler) librariesReprobe(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/libraries", http.StatusSeeOther)
 }
 
+// librariesJobsStatus returns the latest scan/match job per library as JSON, so
+// the libraries page can show a live per-row status (verb + progress) without
+// navigating to the jobs page. Library-scoped jobs only (library_id>0); the
+// /settings/jobs page remains the full audit record. The JS decides what to
+// display from this (it only surfaces a terminal badge for a library it watched
+// go active, so old finished jobs never flash on load).
+func (h *Handler) librariesJobsStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	rows, err := h.db.QueryContext(r.Context(), `
+SELECT s.library_id, s.job_type, s.status, s.progress_current, s.progress_total, s.error
+FROM scan_jobs s
+WHERE s.library_id > 0
+  AND s.id = (SELECT MAX(id) FROM scan_jobs WHERE library_id = s.library_id)
+`)
+	if err != nil {
+		jsonErr(w, 500, "internal server error", "db query failed", "handler", "librariesJobsStatus", "err", err)
+		return
+	}
+	defer rows.Close()
+	jobs := map[string]map[string]any{}
+	for rows.Next() {
+		var libID int64
+		var jobType, status, errMsg string
+		var cur, total int
+		if err := rows.Scan(&libID, &jobType, &status, &cur, &total, &errMsg); err != nil {
+			jsonErr(w, 500, "internal server error", "row scan failed", "handler", "librariesJobsStatus", "err", err)
+			return
+		}
+		jobs[strconv.FormatInt(libID, 10)] = map[string]any{
+			"type": jobType, "status": status, "current": cur, "total": total, "error": errMsg,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		jsonErr(w, 500, "internal server error", "rows iteration failed", "handler", "librariesJobsStatus", "err", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "jobs": jobs})
+}
+
 func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)

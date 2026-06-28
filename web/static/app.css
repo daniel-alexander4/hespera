@@ -509,6 +509,13 @@ body::before {
 .inline-form {
   display: inline;
 }
+/* Live per-library job status badge in the actions cell (libraries page). The
+   :not([hidden]) guard keeps the hidden attribute working (a bare display rule
+   would out-specify the UA [hidden]{display:none}). */
+.lib-job-status:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+}
 
 /* Badges */
 .badge {
