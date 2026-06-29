@@ -27,138 +27,233 @@ func New(cfg config.Config, db *sql.DB) *Scanner {
 }
 
 func (s *Scanner) ScanTV(ctx context.Context, jobID, libraryID int64) error {
-	var root string
-	if err := s.DB.QueryRowContext(ctx,
-		"SELECT root_path FROM libraries WHERE id=? AND type='tv'",
-		libraryID,
-	).Scan(&root); err != nil {
-		return fmt.Errorf("library %d not found or not tv: %w", libraryID, err)
+	cleanRoot, _, err := s.tvLibraryRoot(ctx, libraryID)
+	if err != nil {
+		return err
 	}
+	return s.scanTVRoots(ctx, jobID, libraryID, []string{cleanRoot})
+}
 
-	cleanRoot := filepath.Clean(root)
-	mediaRoot := filepath.Clean(s.Cfg.MediaRoot)
-	if !strings.HasPrefix(cleanRoot+string(os.PathSeparator), mediaRoot+string(os.PathSeparator)) && cleanRoot != mediaRoot {
-		return fmt.Errorf("root_path must be under %s (got %s)", mediaRoot, cleanRoot)
+// ScanTVDirs scans only the given directories (a series' show folder(s)) instead
+// of the whole library — used by the per-series "scan for new episodes" button.
+// Each dir is validated to exist and lie under the library root + media root; a
+// vanished dir is dropped (never scanned, so it can't prune the series away), and
+// if none remain it's an error rather than a silent no-op. Relink/prune are
+// scoped per dir, so only rows under the scanned show folder(s) can be pruned.
+func (s *Scanner) ScanTVDirs(ctx context.Context, jobID, libraryID int64, dirs []string) error {
+	cleanRoot, mediaRoot, err := s.tvLibraryRoot(ctx, libraryID)
+	if err != nil {
+		return err
 	}
-
-	// Count video files for progress.
-	totalFiles := 0
-	_ = filepath.WalkDir(cleanRoot, func(_ string, d fs.DirEntry, _ error) error {
-		if d != nil && !d.IsDir() && video.IsVideoExt(filepath.Ext(d.Name())) {
-			totalFiles++
+	var valid []string
+	for _, d := range dirs {
+		cd := filepath.Clean(d)
+		if !underRoot(cd, cleanRoot) || !underRoot(cd, mediaRoot) {
+			slog.Warn("tvscan series dir out of scope", "dir", cd, "library_root", cleanRoot)
+			continue
 		}
-		return nil
-	})
+		if fi, statErr := os.Stat(cd); statErr != nil || !fi.IsDir() {
+			slog.Warn("tvscan series dir missing", "dir", cd, "err", statErr)
+			continue
+		}
+		valid = append(valid, cd)
+	}
+	valid = dropNestedRoots(valid)
+	if len(valid) == 0 {
+		return fmt.Errorf("no scannable directories for series in library %d (folders missing?)", libraryID)
+	}
+	return s.scanTVRoots(ctx, jobID, libraryID, valid)
+}
+
+// tvLibraryRoot returns the cleaned library root + media root, validating the
+// library is a tv library whose root is under the media root.
+func (s *Scanner) tvLibraryRoot(ctx context.Context, libraryID int64) (cleanRoot, mediaRoot string, err error) {
+	var root string
+	if err = s.DB.QueryRowContext(ctx,
+		"SELECT root_path FROM libraries WHERE id=? AND type='tv'", libraryID,
+	).Scan(&root); err != nil {
+		return "", "", fmt.Errorf("library %d not found or not tv: %w", libraryID, err)
+	}
+	cleanRoot = filepath.Clean(root)
+	mediaRoot = filepath.Clean(s.Cfg.MediaRoot)
+	if !underRoot(cleanRoot, mediaRoot) {
+		return "", "", fmt.Errorf("root_path must be under %s (got %s)", mediaRoot, cleanRoot)
+	}
+	return cleanRoot, mediaRoot, nil
+}
+
+// scanTVRoots walks each root (pre-validated), ingests every video file, then
+// runs the move-relink + prune passes scoped to each root. ScanTV passes the
+// single library root; ScanTVDirs passes a series' show folder(s).
+func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots []string) error {
+	totalFiles := 0
+	for _, r := range roots {
+		_ = filepath.WalkDir(r, func(_ string, d fs.DirEntry, _ error) error {
+			if d != nil && !d.IsDir() && video.IsVideoExt(filepath.Ext(d.Name())) {
+				totalFiles++
+			}
+			return nil
+		})
+	}
 	if totalFiles > 0 {
 		_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", totalFiles, jobID)
 	}
 
 	processed := 0
 	scanErrors := 0
-	if err := filepath.WalkDir(cleanRoot, func(p string, d fs.DirEntry, walkErr error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			// Skip extras/sample subdirectories, but only when nested inside a
-			// show — a top-level folder of the same name (the show "Extras",
-			// "Trailers"…) is a real library entry and is kept.
-			if p != cleanRoot && IsJunkDirName(d.Name()) {
-				if rel, relErr := filepath.Rel(cleanRoot, p); relErr == nil && strings.ContainsRune(rel, filepath.Separator) {
-					return fs.SkipDir
+	for _, r := range roots {
+		walkRoot := r
+		if err := filepath.WalkDir(walkRoot, func(p string, d fs.DirEntry, walkErr error) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.IsDir() {
+				// Skip extras/sample subdirectories, but only when nested inside the
+				// walked root — a top-level folder of that name is a real entry.
+				if p != walkRoot && IsJunkDirName(d.Name()) {
+					if rel, relErr := filepath.Rel(walkRoot, p); relErr == nil && strings.ContainsRune(rel, filepath.Separator) {
+						return fs.SkipDir
+					}
+				}
+				return nil
+			}
+			if !video.IsVideoExt(filepath.Ext(p)) {
+				return nil
+			}
+			// Skip sample/extra clips by their release-tag token (never a real episode).
+			if IsJunkFile(strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))) {
+				return nil
+			}
+			counted, ingestErr := s.ingestTVFile(ctx, libraryID, p, d)
+			if ingestErr != nil {
+				scanErrors++
+				slog.Warn("tvscan file error", "path", p, "err", ingestErr)
+			}
+			if counted {
+				processed++
+				if processed%50 == 0 || processed == totalFiles {
+					_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
 				}
 			}
 			return nil
+		}); err != nil {
+			return err
 		}
-		if !video.IsVideoExt(filepath.Ext(p)) {
-			return nil
-		}
-		// Skip sample/extra clips by their release-tag token (never a real episode).
-		if IsJunkFile(strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))) {
-			return nil
-		}
-
-		resolvedPath, err := pathguard.ResolveExistingUnderRoot(mediaRoot, p)
-		if err != nil {
-			slog.Warn("tvscan guard", "path", p, "err", err)
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			slog.Warn("tvscan stat", "path", p, "err", err)
-			return nil
-		}
-		fileSize := info.Size()
-		mtimeUnix := info.ModTime().UTC().Unix()
-
-		// Identify episode from filename. This is pure path parsing (no I/O), so
-		// it runs on every scan — including for unchanged files below — letting a
-		// re-scan reconverge existing identities when the parsing logic improves.
-		ident := IdentifyFile(resolvedPath)
-
-		// Check if file is unchanged. If so, skip the expensive probe but still
-		// refresh the (cheap, derived) identity so re-scans pick up better
-		// filename parsing without the file itself having to change.
-		var existingID, existingSize, existingMtime int64
-		err = s.DB.QueryRowContext(ctx,
-			"SELECT id, file_size_bytes, mtime_unix FROM tv_series_files WHERE library_id=? AND abs_path=?",
-			libraryID, resolvedPath,
-		).Scan(&existingID, &existingSize, &existingMtime)
-		if err == nil && existingSize == fileSize && existingMtime == mtimeUnix {
-			if err := s.upsertIdentity(ctx, existingID, ident); err != nil {
-				scanErrors++
-				slog.Warn("tvscan identity refresh", "path", resolvedPath, "err", err)
-			}
-			processed++
-			if processed%50 == 0 {
-				_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
-			}
-			return nil
-		}
-
-		// Probe the file.
-		container := strings.TrimPrefix(strings.ToLower(filepath.Ext(resolvedPath)), ".")
-		var streamInfoJSON string
-		probeResult, probeErr := video.Probe(ctx, resolvedPath)
-		if probeErr != nil {
-			slog.Warn("tvscan probe", "path", resolvedPath, "err", probeErr)
-			streamInfoJSON = "{}"
-		} else {
-			b, _ := json.Marshal(probeResult)
-			streamInfoJSON = string(b)
-		}
-
-		// Upsert file record and identity; log and continue on per-file DB errors.
-		if err := s.upsertTVFile(ctx, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, ident); err != nil {
-			scanErrors++
-			slog.Warn("tvscan file error", "path", resolvedPath, "err", err)
-		}
-
-		processed++
-		if processed%50 == 0 || processed == totalFiles {
-			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
-		}
-		return nil
-	}); err != nil {
-		return err
 	}
 
-	// Final progress update.
 	_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
 
 	if scanErrors > 0 {
 		slog.Warn("tvscan completed with errors", "library_id", libraryID, "files_scanned", processed, "errors", scanErrors)
 	}
 
-	if err := s.relinkMovedFiles(ctx, libraryID, cleanRoot); err != nil {
-		return err
+	for _, r := range roots {
+		if err := s.relinkMovedFiles(ctx, libraryID, r); err != nil {
+			return err
+		}
+		if err := s.pruneMissingFiles(ctx, libraryID, r); err != nil {
+			return err
+		}
 	}
-	return s.pruneMissingFiles(ctx, libraryID, cleanRoot)
+	return nil
+}
+
+// ingestTVFile probes (or fast-paths an unchanged file) and upserts a single
+// video file. counted reports whether it was a real file we processed (so the
+// caller advances progress); a pathguard/stat failure returns counted=false with
+// no error (logged + skipped, as the library scan always did).
+func (s *Scanner) ingestTVFile(ctx context.Context, libraryID int64, p string, d fs.DirEntry) (counted bool, err error) {
+	mediaRoot := filepath.Clean(s.Cfg.MediaRoot)
+	resolvedPath, gErr := pathguard.ResolveExistingUnderRoot(mediaRoot, p)
+	if gErr != nil {
+		slog.Warn("tvscan guard", "path", p, "err", gErr)
+		return false, nil
+	}
+	info, iErr := d.Info()
+	if iErr != nil {
+		slog.Warn("tvscan stat", "path", p, "err", iErr)
+		return false, nil
+	}
+	fileSize := info.Size()
+	mtimeUnix := info.ModTime().UTC().Unix()
+
+	// Identify episode from filename — pure path parsing (no I/O), so it runs on
+	// every scan, letting a re-scan reconverge identities as parsing improves.
+	ident := IdentifyFile(resolvedPath)
+
+	// Unchanged-file fast path: skip the probe but refresh the derived identity.
+	var existingID, existingSize, existingMtime int64
+	if qErr := s.DB.QueryRowContext(ctx,
+		"SELECT id, file_size_bytes, mtime_unix FROM tv_series_files WHERE library_id=? AND abs_path=?",
+		libraryID, resolvedPath,
+	).Scan(&existingID, &existingSize, &existingMtime); qErr == nil && existingSize == fileSize && existingMtime == mtimeUnix {
+		return true, s.upsertIdentity(ctx, existingID, ident)
+	}
+
+	container := strings.TrimPrefix(strings.ToLower(filepath.Ext(resolvedPath)), ".")
+	var streamInfoJSON string
+	if probeResult, probeErr := video.Probe(ctx, resolvedPath); probeErr != nil {
+		slog.Warn("tvscan probe", "path", resolvedPath, "err", probeErr)
+		streamInfoJSON = "{}"
+	} else {
+		b, _ := json.Marshal(probeResult)
+		streamInfoJSON = string(b)
+	}
+	return true, s.upsertTVFile(ctx, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, ident)
+}
+
+// ShowDirsForFiles maps a series' file paths to the distinct show-folder(s) to
+// scan: the season directory's parent when the file sits under a season dir
+// (so a brand-new Season N/ is picked up), else the file's own directory (flat
+// layout). Deduplicated; pure (no I/O). Scanning the show folder — rather than
+// the individual season folders — is what lets a new season be discovered.
+func ShowDirsForFiles(paths []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range paths {
+		parent := filepath.Dir(p)
+		showDir := parent
+		if _, ok := ParseSeasonDir(filepath.Base(parent)); ok {
+			showDir = filepath.Dir(parent) // grandparent = the show folder
+		}
+		if showDir == "." || showDir == string(filepath.Separator) {
+			continue
+		}
+		if !seen[showDir] {
+			seen[showDir] = true
+			out = append(out, showDir)
+		}
+	}
+	return out
+}
+
+// underRoot reports whether path is root or nested under it.
+func underRoot(path, root string) bool {
+	return path == root || strings.HasPrefix(path, root+string(os.PathSeparator))
+}
+
+// dropNestedRoots removes any root that is already contained by another in the
+// set, so a parent + child pair doesn't double-scan/double-prune.
+func dropNestedRoots(roots []string) []string {
+	var out []string
+	for _, r := range roots {
+		nested := false
+		for _, other := range roots {
+			if other != r && underRoot(r, other) {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // upsertTVFile inserts or updates tv_series_files and tv_series_identities for a single file.
