@@ -19,6 +19,7 @@ type Config struct {
 	FanartTVAPIKey      string
 	TheAudioDBAPIKey    string
 	OpenSubtitlesAPIKey string
+	YouTubeAPIKey       string
 
 	AuthEnabled       bool
 	AuthSessionSecret string
@@ -46,6 +47,7 @@ func FromEnv() Config {
 		FanartTVAPIKey:      getenv("HESPERA_FANARTTV_API_KEY", ""),
 		TheAudioDBAPIKey:    getenv("HESPERA_THEAUDIODB_API_KEY", ""),
 		OpenSubtitlesAPIKey: getenv("HESPERA_OPENSUBTITLES_API_KEY", ""),
+		YouTubeAPIKey:       getenv("HESPERA_YOUTUBE_API_KEY", ""),
 		AuthEnabled: parseBoolDefaultTrue(
 			os.Getenv("AUTH_ENABLED"),
 		),

@@ -73,6 +73,22 @@
   </div>
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save</button>
+  </div>
+</form>
+
+<form method="post" action="/settings/api-keys" class="form-card">
+  <div class="form-group">
+    <label for="youtube_api_key">YouTube Data API Key <small class="form-help">(optional)</small></label>
+    {{if .YouTubeConfigured}}
+    <small class="form-help">Currently set ({{.YouTubeSource}}): <code>{{.YouTubeMasked}}</code></small>
+    {{else}}
+    <small class="form-help">Not configured. On the <em>Rediscover a Year</em> page, songs you don’t own play in-app from YouTube; without a key they open YouTube in a new tab instead.</small>
+    {{end}}
+    <input type="password" id="youtube_api_key" name="youtube_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to clear" />
+    <small class="form-help">Overrides <code>HESPERA_YOUTUBE_API_KEY</code>. Free key from the Google Cloud console (YouTube Data API v3; ~100 lookups/day). Submit blank to clear.</small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
     <a href="/settings" class="btn">Back</a>
   </div>
 </form>

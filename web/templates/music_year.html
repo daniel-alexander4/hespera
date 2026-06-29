@@ -51,7 +51,11 @@
     <details class="journey-songs">
       <summary>Charted songs ({{len .Songs}})</summary>
       <ul>
-        {{range .Songs}}<li><span class="js-title">{{.Title}}</span><span class="js-stat">#{{.Peak}} · {{.Weeks}} wk</span></li>{{end}}
+        {{range .Songs}}<li>
+          {{if .Owned}}<a class="js-play is-local" href="/music/player?album={{.AlbumID}}&track={{.TrackID}}" data-play title="Play from your library">{{template "icon-play"}}</a>
+          {{else}}<button type="button" class="js-play js-yt" data-artist="{{.Artist}}" data-song="{{.Title}}" title="Play on YouTube">{{template "icon-play"}}</button>{{end}}
+          <span class="js-title">{{.Title}}</span><span class="js-stat">#{{.Peak}} · {{.Weeks}} wk</span>
+        </li>{{end}}
       </ul>
     </details>
     {{end}}
@@ -61,4 +65,17 @@
 {{else if not .Building}}
 <div class="empty-state"><p>No Billboard chart data for {{.Year}}.</p></div>
 {{end}}
+
+<!-- In-app YouTube player for un-owned songs (youtube.js). Reuses the couch
+     overlay contract so it's remote-navigable; the iframe is injected on play
+     and removed on close so playback stops. -->
+<div id="yt-modal" class="playlist-modal hidden" data-couch-overlay>
+  <div class="playlist-panel yt-panel">
+    <div class="yt-modal-head">
+      <strong id="yt-title">YouTube</strong>
+      <button id="yt-close" type="button" class="btn btn-sm" data-couch-dismiss>Close</button>
+    </div>
+    <div id="yt-frame" class="yt-frame"></div>
+  </div>
+</div>
 {{end}}

@@ -338,6 +338,17 @@ CREATE TABLE IF NOT EXISTS year_journey_items (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_year_journey_items_year ON year_journey_items(year);
+
+-- Cache of song → YouTube video-id lookups (YouTube Data API search), so a
+-- charting song the user doesn't own is resolved at most once. Keyed by a
+-- normalized "artist|title". video_id '' is a cached miss (no embeddable hit /
+-- quota error) → the UI link-outs instead. Powers in-app YouTube playback on
+-- the year-journey page.
+CREATE TABLE IF NOT EXISTS youtube_lookups (
+  query_key TEXT PRIMARY KEY,
+  video_id TEXT NOT NULL DEFAULT '',
+  fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 func Migrate(db *sql.DB) error {

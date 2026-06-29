@@ -1606,3 +1606,65 @@ code {
   color: var(--text-soft);
   white-space: nowrap;
 }
+
+/* --- Year-journey per-song play buttons + YouTube overlay --- */
+.journey-songs li {
+  align-items: center;
+}
+.js-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  margin-right: 0.45rem;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--surface-panel);
+  color: var(--page-fg);
+  cursor: pointer;
+}
+.js-play:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.js-play .icon {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+.js-play.is-local {
+  border-color: #40a02b;
+  color: #40a02b;
+}
+.journey-songs li .js-title {
+  flex: 1 1 auto;
+}
+/* YouTube overlay reuses .playlist-modal (centered backdrop). The frame is a
+   16:9 box the injected iframe fills. */
+.yt-panel {
+  width: min(880px, 92vw);
+  max-width: 92vw;
+}
+.yt-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+.yt-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.yt-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
