@@ -106,20 +106,21 @@ func (h *Handler) musicYear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "music_year.html", map[string]any{
-		"Title":       "Rediscover " + strconv.Itoa(year),
-		"Year":        year,
-		"PrevYear":    clampYear(year-1, minY, maxY),
-		"NextYear":    clampYear(year+1, minY, maxY),
-		"MinYear":     minY,
-		"MaxYear":     maxY,
-		"Building":    data.Status == "building",
-		"Items":       data.Items,
-		"Total":       data.Total,
-		"Owned":       data.Owned,
-		"Played":      data.Played,
-		"AcquiredPct": acquiredPct,
-		"ResumeMonth": data.ResumeMonth,
-		"HasOwned":    data.Owned > 0,
+		"Title":         "Rediscover " + strconv.Itoa(year),
+		"Year":          year,
+		"PrevYear":      clampYear(year-1, minY, maxY),
+		"NextYear":      clampYear(year+1, minY, maxY),
+		"MinYear":       minY,
+		"MaxYear":       maxY,
+		"Building":      data.Status == "building",
+		"Items":         data.Items,
+		"Total":         data.Total,
+		"Owned":         data.Owned,
+		"Played":        data.Played,
+		"AcquiredPct":   acquiredPct,
+		"ResumeMonth":   data.ResumeMonth,
+		"HasOwned":      data.Owned > 0,
+		"HasYouTubeKey": h.effectiveYouTubeKey(r.Context()) != "",
 	})
 }
 

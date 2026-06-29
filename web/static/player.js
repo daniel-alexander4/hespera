@@ -29,6 +29,138 @@
   let karaokeToken = 0; // guards a stale lyrics fetch from overwriting a newer track
   let view = null; // now-playing view DOM refs, when that page is shown
 
+  // --- Playback engine: 'local' (the <audio>) or 'yt' (a hidden YouTube IFrame
+  // player, for un-owned year-journey songs). The transport reads/writes through
+  // the cur*/do*/seekTo accessors so the same controls drive either engine; the
+  // local code paths are unchanged when engine === 'local'.
+  let engine = 'local';
+  let yt = null; // YT.Player once created (reused across songs)
+  let ytPlaying = false;
+  let ytPoll = null; // drives timeupdate (YT has no timeupdate event)
+  let ytPendingVideoId = '';
+  let ytApiLoading = false;
+  let ytReadyCbs = [];
+
+  const curTime = () => (engine === 'yt' ? (yt && yt.getCurrentTime ? yt.getCurrentTime() : 0) : (audio.currentTime || 0));
+  const curDur = () => (engine === 'yt' ? (yt && yt.getDuration ? yt.getDuration() : 0) : audio.duration);
+  const curPaused = () => (engine === 'yt' ? !ytPlaying : audio.paused);
+  const seekTo = (s) => {
+    if (engine === 'yt') {
+      if (yt && yt.seekTo) yt.seekTo(s, true);
+    } else audio.currentTime = s;
+  };
+  const doPlay = () => {
+    if (engine === 'yt') {
+      if (yt && yt.playVideo) yt.playVideo();
+    } else audio.play().catch(() => {});
+  };
+  const doPause = () => {
+    if (engine === 'yt') {
+      if (yt && yt.pauseVideo) yt.pauseVideo();
+    } else audio.pause();
+  };
+
+  // Load the YouTube IFrame API once, then run cb when YT.Player is available.
+  const ensureYTApi = (cb) => {
+    if (window.YT && window.YT.Player) {
+      cb();
+      return;
+    }
+    ytReadyCbs.push(cb);
+    if (ytApiLoading) return;
+    ytApiLoading = true;
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (typeof prev === 'function') prev();
+      const cbs = ytReadyCbs;
+      ytReadyCbs = [];
+      cbs.forEach((f) => f());
+    };
+    const s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(s);
+  };
+
+  const ytStartPoll = () => {
+    if (ytPoll) return;
+    ytPoll = setInterval(() => {
+      if (engine !== 'yt') return;
+      renderKaraokeAt(curTime());
+      updateSeek();
+    }, 250);
+  };
+  const ytStopPoll = () => {
+    if (ytPoll) {
+      clearInterval(ytPoll);
+      ytPoll = null;
+    }
+  };
+
+  const onYTState = (e) => {
+    if (engine !== 'yt' || !window.YT) return;
+    const S = window.YT.PlayerState;
+    if (e.data === S.PLAYING) {
+      ytPlaying = true;
+      updateHeader();
+      ytStartPoll();
+      if (hasMediaSession) navigator.mediaSession.playbackState = 'playing';
+    } else if (e.data === S.PAUSED) {
+      ytPlaying = false;
+      updateHeader();
+      if (hasMediaSession) navigator.mediaSession.playbackState = 'paused';
+    } else if (e.data === S.ENDED) {
+      ytPlaying = false;
+      ytStopPoll();
+      updateHeader();
+      reportCurrentTrack(true);
+      playNext();
+    }
+  };
+  // Most music videos are embeddable; a 101/150 (embedding disabled) or other
+  // error just leaves the song idle (no gesture to recover to a tab with).
+  const onYTError = () => ytStopPoll();
+
+  // Load+play a videoId on the hidden player, creating it on first use.
+  const ytPlay = (videoId) => {
+    ytPendingVideoId = videoId;
+    ensureYTApi(() => {
+      if (yt) {
+        yt.loadVideoById(videoId);
+        ytStartPoll();
+        return;
+      }
+      yt = new window.YT.Player('yt-player', {
+        height: '0',
+        width: '0',
+        playerVars: { autoplay: 1, controls: 0, disablekb: 1, playsinline: 1, rel: 0 },
+        events: {
+          onReady: () => {
+            if (ytPendingVideoId) yt.loadVideoById(ytPendingVideoId);
+            ytStartPoll();
+          },
+          onStateChange: onYTState,
+          onError: onYTError,
+        },
+      });
+    });
+  };
+  const ytStop = () => {
+    ytStopPoll();
+    ytPlaying = false;
+    try {
+      if (yt && yt.pauseVideo) yt.pauseVideo();
+    } catch (_) {}
+  };
+
+  // Start an un-owned song as YouTube audio — a one-off takeover of the queue.
+  const playYouTubeSong = (videoId, artist, song) => {
+    reportCurrentTrack(false);
+    tracks = [{ kind: 'yt', videoId, title: song, artist, album: '', albumId: 0 }];
+    queue = [0];
+    currentPos = -1;
+    playAt(0);
+  };
+
   const currentTrack = () =>
     currentPos >= 0 && currentPos < queue.length ? tracks[queue[currentPos]] : null;
 
@@ -61,7 +193,7 @@
     if (currentTrackReported) return;
     const t = currentTrack();
     if (!t) return;
-    const playedMs = Math.max(0, Math.floor((audio.currentTime || 0) * 1000));
+    const playedMs = Math.max(0, Math.floor((curTime() || 0) * 1000));
     if (!completed && playedMs < MIN_REPORT_MS) return;
     currentTrackReported = true;
     reportPlayEvent({ track_id: t.id, played_ms: playedMs, completed: !!completed, source: 'page' }, opts);
@@ -71,12 +203,9 @@
   const setMediaMetadata = (t) => {
     if (!hasMediaSession || !t) return;
     try {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: t.title || '',
-        artist: t.artist || '',
-        album: t.album || '',
-        artwork: [{ src: '/art/album/' + t.albumId, sizes: '512x512', type: 'image/jpeg' }],
-      });
+      const meta = { title: t.title || '', artist: t.artist || '', album: t.album || '' };
+      if (t.albumId) meta.artwork = [{ src: '/art/album/' + t.albumId, sizes: '512x512', type: 'image/jpeg' }];
+      navigator.mediaSession.metadata = new MediaMetadata(meta);
     } catch (_) {}
   };
 
@@ -104,11 +233,12 @@
   // Reflect playback position into the now-playing view's scrubber + time label.
   const updateSeek = () => {
     if (!view || !view.seek) return;
-    const d = audio.duration;
+    const d = curDur();
+    const ct = curTime();
     if (!view.seeking) {
-      view.seek.value = Number.isFinite(d) && d > 0 ? String((audio.currentTime / d) * 1000) : '0';
+      view.seek.value = Number.isFinite(d) && d > 0 ? String((ct / d) * 1000) : '0';
     }
-    view.timeLabel.textContent = fmtTime(audio.currentTime) + ' / ' + (Number.isFinite(d) && d > 0 ? fmtTime(d) : '–:––');
+    view.timeLabel.textContent = fmtTime(ct) + ' / ' + (Number.isFinite(d) && d > 0 ? fmtTime(d) : '–:––');
   };
 
   const renderKaraokeAt = (pos) => {
@@ -127,6 +257,14 @@
     if (view) {
       view.karaokeCurrent.textContent = 'Loading lyrics…';
       view.karaokeNext.textContent = '';
+    }
+    if (!t.id) {
+      // A YouTube (no-local-id) track has no lyrics in lyrics_cache.
+      if (view) {
+        view.karaokeCurrent.textContent = '';
+        view.karaokeNext.textContent = '';
+      }
+      return;
     }
     fetch('/music/lyrics/fetch', {
       method: 'POST',
@@ -163,7 +301,7 @@
     }
     npCluster.classList.remove('hidden');
     if (npTitle) npTitle.textContent = t.artist ? t.title + ' — ' + t.artist : t.title;
-    npCluster.classList.toggle('np-paused', audio.paused);
+    npCluster.classList.toggle('np-paused', curPaused());
   };
 
   // --- Core transport ---
@@ -173,8 +311,17 @@
     currentPos = pos;
     currentTrackReported = false;
     const t = tracks[queue[currentPos]];
-    audio.src = '/stream/track/' + t.id;
-    audio.play().catch(() => {});
+    if (t.kind === 'yt') {
+      engine = 'yt';
+      audio.pause(); // gated local listeners ignore this; just silences local
+      ytPlay(t.videoId);
+    } else {
+      const wasYT = engine === 'yt';
+      engine = 'local';
+      if (wasYT) ytStop();
+      audio.src = '/stream/track/' + t.id;
+      audio.play().catch(() => {});
+    }
     setMediaMetadata(t);
     updateHeader();
     loadKaraokeForTrack(t);
@@ -190,16 +337,16 @@
   };
 
   const playPrev = () => {
-    if (audio.currentTime > 10 || currentPos <= 0) {
-      audio.currentTime = 0;
+    if (curTime() > 10 || currentPos <= 0) {
+      seekTo(0);
       return;
     }
     playAt(currentPos - 1);
   };
 
   const toggle = () => {
-    if (audio.paused) audio.play().catch(() => {});
-    else audio.pause();
+    if (curPaused()) doPlay();
+    else doPause();
   };
 
   // --- Load a queue from /music/queue and start it ---
@@ -286,7 +433,7 @@
     view.coverImg.classList.remove('hidden');
     view.coverPh.classList.add('hidden');
     renderPlaylist();
-    renderKaraokeAt(audio.currentTime || 0);
+    renderKaraokeAt(curTime() || 0);
     updateSeek();
   };
 
@@ -320,12 +467,12 @@
 
     $('player-prev-btn').addEventListener('click', playPrev);
     $('player-rewind-btn').addEventListener('click', () => {
-      audio.currentTime = Math.max(0, audio.currentTime - 10);
+      seekTo(Math.max(0, curTime() - 10));
     });
     $('player-toggle-btn').addEventListener('click', toggle);
     $('player-forward-btn').addEventListener('click', () => {
-      const d = audio.duration;
-      audio.currentTime = Number.isFinite(d) && d > 0 ? Math.min(d, audio.currentTime + 10) : audio.currentTime + 10;
+      const d = curDur();
+      seekTo(Number.isFinite(d) && d > 0 ? Math.min(d, curTime() + 10) : curTime() + 10);
     });
     $('player-next-btn').addEventListener('click', () => playNext());
 
@@ -334,8 +481,8 @@
         view.seeking = true;
       });
       view.seek.addEventListener('change', () => {
-        const d = audio.duration;
-        if (Number.isFinite(d) && d > 0) audio.currentTime = (Number(view.seek.value) / 1000) * d;
+        const d = curDur();
+        if (Number.isFinite(d) && d > 0) seekTo((Number(view.seek.value) / 1000) * d);
         view.seeking = false;
       });
     }
@@ -365,20 +512,29 @@
   };
 
   // --- One-time wiring on the permanent audio + header + document ---
+  // These fire on the <audio> element, so they're only meaningful while the local
+  // engine is active; the YouTube engine drives the same handlers from onYTState.
   audio.addEventListener('ended', () => {
+    if (engine !== 'local') return;
     reportCurrentTrack(true);
     playNext();
   });
   audio.addEventListener('timeupdate', () => {
+    if (engine !== 'local') return;
     renderKaraokeAt(audio.currentTime || 0);
     updateSeek();
   });
-  audio.addEventListener('durationchange', updateSeek);
+  audio.addEventListener('durationchange', () => {
+    if (engine !== 'local') return;
+    updateSeek();
+  });
   audio.addEventListener('play', () => {
+    if (engine !== 'local') return;
     updateHeader();
     if (hasMediaSession) navigator.mediaSession.playbackState = 'playing';
   });
   audio.addEventListener('pause', () => {
+    if (engine !== 'local') return;
     updateHeader();
     if (hasMediaSession) navigator.mediaSession.playbackState = 'paused';
   });
@@ -391,15 +547,15 @@
         navigator.mediaSession.setActionHandler(action, handler);
       } catch (_) {}
     };
-    setHandler('play', () => audio.play().catch(() => {}));
-    setHandler('pause', () => audio.pause());
+    setHandler('play', doPlay);
+    setHandler('pause', doPause);
     setHandler('previoustrack', playPrev);
     setHandler('nexttrack', () => playNext());
     setHandler('seekbackward', (d) => {
-      audio.currentTime = Math.max(0, audio.currentTime - ((d && d.seekOffset) || 10));
+      seekTo(Math.max(0, curTime() - ((d && d.seekOffset) || 10)));
     });
     setHandler('seekforward', (d) => {
-      audio.currentTime = audio.currentTime + ((d && d.seekOffset) || 10);
+      seekTo(curTime() + ((d && d.seekOffset) || 10));
     });
   }
 
@@ -416,6 +572,31 @@
     },
     true,
   );
+
+  // [data-yt] (un-owned year-journey song): with a key, resolve to a videoId and
+  // play it as audio through this player; without a key, open a YouTube search
+  // tab synchronously in the gesture (popup-safe). Bound once, document-level.
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest && e.target.closest('.js-yt');
+    if (!el) return;
+    e.preventDefault();
+    const artist = el.getAttribute('data-artist') || '';
+    const song = el.getAttribute('data-song') || '';
+    if (el.getAttribute('data-haskey') === '1') {
+      fetch('/music/youtube/resolve?artist=' + encodeURIComponent(artist) + '&song=' + encodeURIComponent(song), {
+        headers: { Accept: 'application/json' },
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('resolve failed'))))
+        .then((d) => {
+          if (d.videoId) playYouTubeSong(d.videoId, artist, song);
+          else if (d.searchUrl) window.open(d.searchUrl, '_blank');
+        })
+        .catch(() => {});
+    } else {
+      const q = encodeURIComponent((artist ? artist + ' ' : '') + song);
+      window.open('https://www.youtube.com/results?search_query=' + q, '_blank');
+    }
+  });
 
   // The era "play a year range" GET form → load that queue in place.
   document.addEventListener(
@@ -437,8 +618,9 @@
     'play',
     (e) => {
       const el = e.target;
-      if (el !== audio && (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') && !audio.paused) {
-        audio.pause();
+      if (el !== audio && (el.tagName === 'VIDEO' || el.tagName === 'AUDIO')) {
+        if (!audio.paused) audio.pause();
+        if (engine === 'yt' && ytPlaying) ytStop();
       }
     },
     true,
