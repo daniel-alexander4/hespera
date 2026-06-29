@@ -65,17 +65,4 @@
 {{else if not .Building}}
 <div class="empty-state"><p>No Billboard chart data for {{.Year}}.</p></div>
 {{end}}
-
-<!-- In-app YouTube player for un-owned songs (youtube.js). Reuses the couch
-     overlay contract so it's remote-navigable; the iframe is injected on play
-     and removed on close so playback stops. -->
-<div id="yt-modal" class="playlist-modal hidden" data-couch-overlay>
-  <div class="playlist-panel yt-panel">
-    <div class="yt-modal-head">
-      <strong id="yt-title">YouTube</strong>
-      <button id="yt-close" type="button" class="btn btn-sm" data-couch-dismiss>Close</button>
-    </div>
-    <div id="yt-frame" class="yt-frame"></div>
-  </div>
-</div>
 {{end}}

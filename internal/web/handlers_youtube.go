@@ -71,8 +71,9 @@ func (h *Handler) musicYouTubeResolve(w http.ResponseWriter, r *http.Request) {
 	out := map[string]string{"searchUrl": ytSearchURL(artist, song)}
 	if videoID != "" {
 		out["videoId"] = videoID
-		// youtube-nocookie + minimal params: autoplay, no related-video clutter.
-		out["embedUrl"] = "https://www.youtube-nocookie.com/embed/" + videoID + "?autoplay=1&rel=0&modestbranding=1"
+		// The YouTube watch page (autoplays on open); the play button opens it in
+		// a new tab. searchUrl remains the no-key / no-match fallback.
+		out["watchUrl"] = "https://www.youtube.com/watch?v=" + videoID
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

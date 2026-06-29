@@ -1641,30 +1641,3 @@ code {
 .journey-songs li .js-title {
   flex: 1 1 auto;
 }
-/* YouTube overlay reuses .playlist-modal (centered backdrop). The frame is a
-   16:9 box the injected iframe fills. */
-.yt-panel {
-  width: min(880px, 92vw);
-  max-width: 92vw;
-}
-.yt-modal-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.6rem;
-}
-.yt-frame {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  border-radius: 6px;
-  overflow: hidden;
-}
-.yt-frame iframe {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-}

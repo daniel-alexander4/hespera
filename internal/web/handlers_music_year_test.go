@@ -182,8 +182,7 @@ func TestMusicYearRealTemplate(t *testing.T) {
 		"Rediscover 1968",
 		"Charted songs",
 		"Play 1968",
-		`class="js-play js-yt"`, // an un-owned charted song → YouTube play button
-		`id="yt-modal"`,         // the in-app YouTube overlay
+		`class="js-play js-yt"`, // an un-owned charted song → opens YouTube
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("real template missing %q", want)
