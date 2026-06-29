@@ -68,7 +68,7 @@ func (m *Matcher) RunTVMatch(ctx context.Context, jobID, libraryID int64) error 
 
 	// Query all unresolved identities for this library.
 	rows, err := m.db.QueryContext(ctx, `
-SELECT i.file_id, i.guessed_title, i.season_number, i.air_date
+SELECT i.file_id, i.guessed_title, i.season_number, i.air_date, i.year
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 WHERE i.status = 'unmatched'
@@ -84,17 +84,20 @@ WHERE i.status = 'unmatched'
 		fileID       int64
 		seasonNumber int
 		airDate      string // "YYYY-MM-DD" for date-based files; "" otherwise
+		year         int    // show release year from the folder (0 = unknown)
 	}
-	// Group by normalized title.
+	// Group by (normalized title, year) — keying on the year too keeps two eras of
+	// a same-named show (e.g. Doctor Who 2005 vs 2023) as distinct groups so each
+	// matches its own TMDB series.
 	groups := make(map[string][]fileEntry)
 	var groupOrder []string
 	for rows.Next() {
 		var fe fileEntry
 		var title string
-		if err := rows.Scan(&fe.fileID, &title, &fe.seasonNumber, &fe.airDate); err != nil {
+		if err := rows.Scan(&fe.fileID, &title, &fe.seasonNumber, &fe.airDate, &fe.year); err != nil {
 			return err
 		}
-		key := strings.ToLower(strings.TrimSpace(title))
+		key := strings.ToLower(strings.TrimSpace(title)) + "|" + strconv.Itoa(fe.year)
 		if _, exists := groups[key]; !exists {
 			groupOrder = append(groupOrder, key)
 		}
@@ -117,6 +120,7 @@ WHERE i.status = 'unmatched'
 		}
 
 		files := groups[key]
+		groupYear := files[0].year
 		// Use the raw (un-lowered) title from the first file for the search.
 		var rawTitle string
 		_ = m.db.QueryRowContext(ctx,
@@ -124,10 +128,10 @@ WHERE i.status = 'unmatched'
 			files[0].fileID,
 		).Scan(&rawTitle)
 		if rawTitle == "" {
-			rawTitle = key
+			rawTitle = strings.SplitN(key, "|", 2)[0] // key is "title|year"
 		}
 
-		slog.Info("tmdb match", "title", rawTitle, "files", len(files))
+		slog.Info("tmdb match", "title", rawTitle, "year", groupYear, "files", len(files))
 
 		results, err := m.client.SearchTV(ctx, rawTitle)
 		if err != nil {
@@ -135,7 +139,7 @@ WHERE i.status = 'unmatched'
 			continue
 		}
 
-		bestResult, bestScore := pickBestResult(results, rawTitle)
+		bestResult, bestScore := pickBestResult(results, rawTitle, groupYear)
 		if bestResult == nil || bestScore < 0.80 {
 			slog.Info("tmdb no match", "title", rawTitle, "best_score", bestScore)
 			continue
@@ -472,7 +476,11 @@ func (m *Matcher) SearchTV(ctx context.Context, query string) ([]TVSearchResult,
 	return m.client.SearchTV(ctx, query)
 }
 
-func pickBestResult(results []TVSearchResult, query string) (*TVSearchResult, float64) {
+// pickBestResult scores candidates by name similarity + a small popularity
+// bonus, and — when year > 0 (the show folder carried one) — by first-air-year
+// agreement, which disambiguates reboots that share a name (Doctor Who 1963 vs
+// 2005 vs 2023). year == 0 leaves the original name+popularity behavior intact.
+func pickBestResult(results []TVSearchResult, query string, year int) (*TVSearchResult, float64) {
 	if len(results) == 0 {
 		return nil, 0
 	}
@@ -486,6 +494,17 @@ func pickBestResult(results []TVSearchResult, query string) (*TVSearchResult, fl
 			popBonus = 0.1
 		}
 		score := sim + popBonus
+		// releaseYear/absInt are shared with the movie scorer (movie.go).
+		if ry := releaseYear(results[i].FirstAirDate); year > 0 && ry > 0 {
+			switch diff := absInt(ry - year); {
+			case diff == 0:
+				score += 0.15
+			case diff == 1:
+				score += 0.05
+			default:
+				score -= 0.20
+			}
+		}
 		if score > bestScore {
 			bestScore = score
 			best = &results[i]

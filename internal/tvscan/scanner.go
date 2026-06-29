@@ -297,17 +297,18 @@ func (s *Scanner) upsertIdentity(ctx context.Context, fileID int64, ident *Episo
 	if ident != nil {
 		epCSV := episodeNumbersCSV(ident.EpisodeNumbers)
 		_, err := s.DB.ExecContext(ctx, `
-INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method, air_date)
-VALUES (?, 'unmatched', ?, ?, ?, ?, ?, ?)
+INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method, air_date, year)
+VALUES (?, 'unmatched', ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(file_id) DO UPDATE SET
   guessed_title=excluded.guessed_title,
   season_number=excluded.season_number,
   episode_numbers_csv=excluded.episode_numbers_csv,
   match_confidence=excluded.match_confidence,
   match_method=excluded.match_method,
-  air_date=excluded.air_date
+  air_date=excluded.air_date,
+  year=excluded.year
 WHERE status NOT IN ('matched', 'skipped')
-`, fileID, ident.ShowTitle, ident.SeasonNumber, epCSV, ident.Confidence, ident.Method, ident.AirDate)
+`, fileID, ident.ShowTitle, ident.SeasonNumber, epCSV, ident.Confidence, ident.Method, ident.AirDate, ident.Year)
 		if err != nil {
 			return fmt.Errorf("upsert tv_series_identities: %w", err)
 		}
@@ -421,7 +422,8 @@ UPDATE tv_series_identities AS dst SET
   match_method = src.match_method,
   matched_at = src.matched_at,
   guessed_title = src.guessed_title,
-  air_date = src.air_date
+  air_date = src.air_date,
+  year = src.year
 FROM tv_series_identities AS src
 WHERE dst.file_id = ? AND src.file_id = ? AND src.status IN ('matched', 'skipped')
 `, toID, fromID); err != nil {

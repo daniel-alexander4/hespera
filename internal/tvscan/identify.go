@@ -18,6 +18,11 @@ type EpisodeIdentity struct {
 	// the filename. SeasonNumber/EpisodeNumbers are unknown at scan time and are
 	// resolved later by the TMDB matcher against episode air dates.
 	AirDate string
+	// Year is the show's release year, taken ONLY from the show folder name
+	// (Dan's rule: "always prefer the date in the folder"). 0 when the folder
+	// carries none. The matcher uses it to disambiguate reboots — e.g. Doctor Who
+	// 1963 vs 2005 vs 2023 — and the folder's year is stripped from ShowTitle.
+	Year int
 }
 
 var (
@@ -65,13 +70,14 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 	if m := reSXE.FindStringSubmatchIndex(base); m != nil {
 		season, _ := strconv.Atoi(base[m[2]:m[3]])
 		episodes := parseEpisodeBlock(base[m[4]:m[5]])
-		title, conf := resolveTitle(dir, cleanTitle(base[:m[0]]))
+		title, year, conf := resolveTitleYear(dir, cleanTitle(base[:m[0]]))
 		return &EpisodeIdentity{
 			ShowTitle:      title,
 			SeasonNumber:   season,
 			EpisodeNumbers: episodes,
 			Confidence:     conf,
 			Method:         "sxe",
+			Year:           year,
 		}
 	}
 
@@ -84,13 +90,14 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 				episodes = expandRange(ep, end)
 			}
 		}
-		title, conf := resolveTitle(dir, cleanTitle(base[:m[0]]))
+		title, year, conf := resolveTitleYear(dir, cleanTitle(base[:m[0]]))
 		return &EpisodeIdentity{
 			ShowTitle:      title,
 			SeasonNumber:   season,
 			EpisodeNumbers: episodes,
 			Confidence:     conf,
 			Method:         "x_format",
+			Year:           year,
 		}
 	}
 
@@ -99,13 +106,14 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 	// episode air dates.
 	if m := reAirDate.FindStringSubmatchIndex(base); m != nil {
 		if date, ok := parseAirDate(base[m[2]:m[3]], base[m[4]:m[5]], base[m[6]:m[7]]); ok {
-			title, _ := resolveTitle(dir, cleanTitle(base[:m[0]]))
+			title, year, _ := resolveTitleYear(dir, cleanTitle(base[:m[0]]))
 			return &EpisodeIdentity{
 				ShowTitle:    title,
 				SeasonNumber: -1,
 				Confidence:   0.50,
 				Method:       "airdate",
 				AirDate:      date,
+				Year:         year,
 			}
 		}
 	}
@@ -114,21 +122,24 @@ func IdentifyFile(absPath string) *EpisodeIdentity {
 	// the season is authoritative and these weak filename signals (Episode N,
 	// E-only, N of M, "- 01 -", a bare number) can't misfire across the library.
 	if seasonNum, ok := ParseSeasonDir(filepath.Base(dir)); ok {
+		title, year, _ := resolveTitleYear(dir, "")
 		if ep, found := seasonDirEpisode(base); found {
 			return &EpisodeIdentity{
-				ShowTitle:      showTitleFromSeasonDir(dir),
+				ShowTitle:      title,
 				SeasonNumber:   seasonNum,
 				EpisodeNumbers: []int{ep},
 				Confidence:     0.60,
 				Method:         "season_ep",
+				Year:           year,
 			}
 		}
 		// No episode marker at all — record the season, leave the episode unknown.
 		return &EpisodeIdentity{
-			ShowTitle:    showTitleFromSeasonDir(dir),
+			ShowTitle:    title,
 			SeasonNumber: seasonNum,
 			Confidence:   0.30,
 			Method:       "season_dir",
+			Year:         year,
 		}
 	}
 
@@ -162,6 +173,63 @@ func seasonDirEpisode(base string) (int, bool) {
 		return n, true
 	}
 	return 0, false
+}
+
+var (
+	// A release year wrapped in parens/brackets in a folder name — the strong,
+	// unambiguous signal (Doctor Who (2023)). Preferred over a bare year.
+	reFolderYearParen = regexp.MustCompile(`[\(\[]((?:19|20)\d{2})[\)\]]`)
+	// A bare year token in a folder name (Doctor Who 2023). Only used in a
+	// non-leading position so a show literally titled by a year (1883, 1923, 2012)
+	// keeps its title.
+	reFolderYearBare = regexp.MustCompile(`\b((?:19|20)\d{2})\b`)
+)
+
+// titleYearFromFolder extracts a release year from a show-folder name and returns
+// the folder title with the year removed + the year (0 if none). A parenthesized
+// year wins; otherwise a trailing, non-leading bare year. Returns ("",0) when no
+// usable year is present, so the caller falls back to the existing title logic.
+func titleYearFromFolder(name string) (title string, year int) {
+	maxYear := time.Now().Year() + 1
+	if locs := reFolderYearParen.FindAllStringSubmatchIndex(name, -1); len(locs) > 0 {
+		m := locs[len(locs)-1] // last occurrence
+		y, _ := strconv.Atoi(name[m[2]:m[3]])
+		if y >= 1900 && y <= maxYear {
+			if t := cleanTitle(name[:m[0]]); t != "" {
+				return t, y
+			}
+		}
+	}
+	if locs := reFolderYearBare.FindAllStringSubmatchIndex(name, -1); len(locs) > 0 {
+		for i := len(locs) - 1; i >= 0; i-- {
+			m := locs[i]
+			y, _ := strconv.Atoi(name[m[2]:m[3]])
+			if y >= 1900 && y <= maxYear && m[0] > 0 { // m[0]>0: not at the start (keep "1883")
+				if t := cleanTitle(name[:m[0]]); t != "" {
+					return t, y
+				}
+			}
+		}
+	}
+	return "", 0
+}
+
+// resolveTitleYear resolves the show title + a release-year hint, preferring a
+// year carried by the show folder ("always prefer the date in the folder"). The
+// show folder is the season-dir's parent when the file is under a season dir,
+// else the file's own directory. When the show folder carries a year, its
+// (year-stripped) title and the year are used; otherwise this falls through to
+// resolveTitle and reports year 0 — leaving every no-year case unchanged.
+func resolveTitleYear(dir, fileTitle string) (title string, year int, conf float64) {
+	showFolder := dir
+	if _, ok := ParseSeasonDir(filepath.Base(dir)); ok {
+		showFolder = filepath.Dir(dir)
+	}
+	if ft, fy := titleYearFromFolder(filepath.Base(showFolder)); fy > 0 {
+		return ft, fy, 0.75 // a parenthesized/trailing folder year is a strong signal
+	}
+	t, c := resolveTitle(dir, fileTitle)
+	return t, 0, c
 }
 
 // resolveTitle picks the show title for an episode whose season/episode were

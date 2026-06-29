@@ -7,7 +7,7 @@ import (
 func TestPickBestResult(t *testing.T) {
 	t.Run("empty_nil_results", func(t *testing.T) {
 		// nil input
-		res, score := pickBestResult(nil, "anything")
+		res, score := pickBestResult(nil, "anything", 0)
 		if res != nil {
 			t.Fatalf("expected nil result for nil input, got %+v", res)
 		}
@@ -16,7 +16,7 @@ func TestPickBestResult(t *testing.T) {
 		}
 
 		// empty slice
-		res, score = pickBestResult([]TVSearchResult{}, "anything")
+		res, score = pickBestResult([]TVSearchResult{}, "anything", 0)
 		if res != nil {
 			t.Fatalf("expected nil result for empty input, got %+v", res)
 		}
@@ -29,7 +29,7 @@ func TestPickBestResult(t *testing.T) {
 		results := []TVSearchResult{
 			{ID: 1396, Name: "Breaking Bad", Popularity: 100},
 		}
-		res, score := pickBestResult(results, "Breaking Bad")
+		res, score := pickBestResult(results, "Breaking Bad", 0)
 		if res == nil {
 			t.Fatalf("expected non-nil result")
 		}
@@ -47,7 +47,7 @@ func TestPickBestResult(t *testing.T) {
 			{ID: 1396, Name: "Breaking Bad", Popularity: 234.5},
 			{ID: 999, Name: "Breaking Bad: Criminal Elements", Popularity: 12.3},
 		}
-		res, _ := pickBestResult(results, "Breaking Bad")
+		res, _ := pickBestResult(results, "Breaking Bad", 0)
 		if res == nil {
 			t.Fatalf("expected non-nil result")
 		}
@@ -62,7 +62,7 @@ func TestPickBestResult(t *testing.T) {
 		results := []TVSearchResult{
 			{ID: 1, Name: "Breaking Bad", Popularity: 50000},
 		}
-		_, score := pickBestResult(results, "Breaking Bad")
+		_, score := pickBestResult(results, "Breaking Bad", 0)
 		// Exact match similarity = 1.0, capped pop bonus = 0.1, so score should be 1.1.
 		if score > 1.1+0.001 {
 			t.Fatalf("score = %v, exceeds similarity+0.1 cap", score)
@@ -78,7 +78,7 @@ func TestPickBestResult(t *testing.T) {
 		results := []TVSearchResult{
 			{ID: 1396, Name: "Breaking Bad", Popularity: 0},
 		}
-		_, score := pickBestResult(results, "Breaking Bad")
+		_, score := pickBestResult(results, "Breaking Bad", 0)
 		// Exact match with zero popularity: score = 1.0 + 0.0 = 1.0
 		if score < 0.80 {
 			t.Fatalf("score = %v, exact match should be >= 0.80", score)
@@ -89,7 +89,7 @@ func TestPickBestResult(t *testing.T) {
 		results := []TVSearchResult{
 			{ID: 1, Name: "Breaking Bad", Popularity: 100},
 		}
-		_, score := pickBestResult(results, "Totally Different Show")
+		_, score := pickBestResult(results, "Totally Different Show", 0)
 		// NormalizedSimilarity("Totally Different Show", "Breaking Bad") ~ 0.1818
 		if score >= 0.80 {
 			t.Fatalf("score = %v, dissimilar query should be < 0.80", score)
@@ -102,7 +102,7 @@ func TestPickBestResult(t *testing.T) {
 		results := []TVSearchResult{
 			{ID: 1, Name: "Breaking Bad", Popularity: 0},
 		}
-		_, score := pickBestResult(results, "Breakng Bad X")
+		_, score := pickBestResult(results, "Breakng Bad X", 0)
 		if score >= 0.80 {
 			t.Fatalf("score = %v, want < 0.80 for near-boundary case", score)
 		}
@@ -111,4 +111,21 @@ func TestPickBestResult(t *testing.T) {
 			t.Fatalf("score = %v, expected near-boundary (> 0.50)", score)
 		}
 	})
+}
+
+func TestPickBestResultYearDisambiguation(t *testing.T) {
+	// Two same-named eras; the more popular one is the wrong year.
+	results := []TVSearchResult{
+		{ID: 57243, Name: "Doctor Who", FirstAirDate: "2005-03-26", Popularity: 200},
+		{ID: 121340, Name: "Doctor Who", FirstAirDate: "2023-11-25", Popularity: 50},
+	}
+	best, score := pickBestResult(results, "Doctor Who", 2023)
+	if best == nil || best.ID != 121340 {
+		t.Fatalf("year 2023 should pick the 2023 series, got %+v (score %.3f)", best, score)
+	}
+	// No year hint → falls back to popularity (the 2005 series).
+	best, _ = pickBestResult(results, "Doctor Who", 0)
+	if best == nil || best.ID != 57243 {
+		t.Fatalf("no year → highest popularity (2005), got %+v", best)
+	}
 }
