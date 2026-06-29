@@ -398,3 +398,37 @@ func TestIdentifyNoJunkTitle(t *testing.T) {
 		}
 	}
 }
+
+func TestIdentifyFolderYear(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		wantTitle string
+		wantYear  int
+		wantSeas  int
+	}{
+		{"parenthesized folder year, flat layout", "/media/tv/Doctor Who (2023)/Doctor.Who.2023.S02E01.720p.x264.mkv", "Doctor Who", 2023, 2},
+		{"folder year + season dir", "/media/tv/Show Name (2019)/Season 1/Show.Name.S01E01.mkv", "Show Name", 2019, 1},
+		{"trailing bare folder year", "/media/tv/Doctor Who 2005/Doctor.Who.S01E01.mkv", "Doctor Who", 2005, 1},
+		{"year-titled show keeps its title (no year)", "/media/tv/1883/1883.S01E01.mkv", "1883", 0, 1},
+		{"no folder year → unchanged (filename title)", "/media/tv/Breaking Bad/Breaking.Bad.S01E01.mkv", "Breaking Bad", 0, 1},
+		{"no folder year, season dir → folder title, no year", "/media/tv/Doctor Who/Season 2/Doctor.Who.S02E03.mkv", "Doctor Who", 0, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IdentifyFile(tt.path)
+			if got == nil {
+				t.Fatalf("IdentifyFile(%q) = nil", tt.path)
+			}
+			if got.ShowTitle != tt.wantTitle {
+				t.Errorf("title = %q, want %q", got.ShowTitle, tt.wantTitle)
+			}
+			if got.Year != tt.wantYear {
+				t.Errorf("year = %d, want %d", got.Year, tt.wantYear)
+			}
+			if got.SeasonNumber != tt.wantSeas {
+				t.Errorf("season = %d, want %d", got.SeasonNumber, tt.wantSeas)
+			}
+		})
+	}
+}

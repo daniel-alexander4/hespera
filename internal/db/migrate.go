@@ -361,6 +361,11 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "tv_series_identities", "air_date", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// year is the show's release year taken from the show folder name (e.g.
+	// "Doctor Who (2023)"), used by the matcher to disambiguate reboots. 0 = none.
+	if err := ensureColumn(db, "tv_series_identities", "year", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// art_checked_at records the last time the cover-art re-fetch pass probed a
 	// matched-but-art-less album, so genuinely art-less albums aren't re-probed
 	// on every match run (a TTL re-sweep retries them since CAA accrues art).
