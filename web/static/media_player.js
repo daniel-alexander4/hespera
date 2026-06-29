@@ -309,11 +309,12 @@ function initMediaPlayer() {
     });
   }
 
-  // Fullscreen the whole player block so the custom transport + scrubber stay
-  // usable in fullscreen (there are no native controls to fall back on).
+  // Fullscreen the video-wrap (which holds the auto-hiding controls overlay), so
+  // the custom transport + scrubber stay reachable in fullscreen — there are no
+  // native controls to fall back on.
   const fsBtn = document.getElementById('tvFullscreenBtn');
   if (fsBtn) {
-    const fsTarget = video.closest('.tv-player-page') || video;
+    const fsTarget = video.closest('.tv-player-video-wrap') || video;
     fsBtn.addEventListener('click', () => {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
@@ -370,6 +371,37 @@ function initMediaPlayer() {
   }
   video.addEventListener('volumechange', reflectVolume);
   reflectVolume();
+
+  // --- controls overlay auto-hide --- the controls overlay the video and fade
+  //     out after a few seconds of inactivity, so they stay reachable in
+  //     fullscreen without exiting. Reveal on pointer/keyboard activity over the
+  //     player; never hide while paused, while a control is focused (couch/
+  //     keyboard), while the pointer is over the overlay, or mid scrubber-drag.
+  const wrap = video.closest('.tv-player-video-wrap');
+  const overlay = document.getElementById('mediaOverlay');
+  if (wrap && overlay) {
+    const HIDE_MS = 2500;
+    let hideTimer = null, overlayHover = false;
+    const showControls = () => wrap.classList.remove('controls-hidden');
+    const hideControls = () => {
+      if (video.paused || dragging || overlayHover || overlay.contains(document.activeElement)) return;
+      wrap.classList.add('controls-hidden');
+    };
+    const bump = () => {
+      showControls();
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(hideControls, HIDE_MS);
+    };
+    ['pointermove', 'pointerdown', 'keydown'].forEach((ev) => wrap.addEventListener(ev, bump));
+    overlay.addEventListener('pointerenter', () => { overlayHover = true; showControls(); });
+    overlay.addEventListener('pointerleave', () => { overlayHover = false; bump(); });
+    overlay.addEventListener('focusin', showControls);
+    overlay.addEventListener('focusout', bump);
+    video.addEventListener('pause', showControls);  // paused → pin controls up
+    video.addEventListener('play', bump);
+    document.addEventListener('turbo:before-cache', () => clearTimeout(hideTimer), { once: true });
+    bump(); // start visible, then fade
+  }
 
   // --- "Even loudness": client-side dynamic-range compression via Web Audio.
   //     Compresses the decoded audio in the browser, so it evens the loud

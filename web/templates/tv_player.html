@@ -5,7 +5,7 @@
     <h2>S{{.SeasonNum}} — {{.EpName}}</h2>
   </div>
 
-  <div class="tv-player-video-wrap">
+  <div class="tv-player-video-wrap" id="tvPlayerWrap">
     <video id="tvVideo" class="tv-video" autoplay
            data-media-kind="tv"
            data-file-id="{{.FileID}}"
@@ -13,20 +13,22 @@
            data-os-enabled="{{if .OpenSubtitlesEnabled}}1{{end}}">
       Your browser does not support video playback.
     </video>
-  </div>
-
-  {{template "media-seekbar" .}}
-  {{template "media-transport" .}}
-
-  <div class="tv-player-controls">
-    <label class="tv-track-pick" id="audioPick" hidden>Audio
-      <select id="audioSelect"></select>
-    </label>
-    <label class="tv-track-pick" id="subPick" hidden>Subtitles
-      <select id="subSelect"></select>
-    </label>
-    <button type="button" id="subsSearchBtn" class="btn btn-sm" hidden>{{template "icon-search"}}Search subtitles</button>
-    <span id="playbackMode" class="tv-playback-mode"></span>
+    {{/* Controls overlay the video (auto-hide on inactivity via media_player.js)
+         so they stay reachable in fullscreen without exiting. */}}
+    <div class="media-overlay" id="mediaOverlay">
+      {{template "media-seekbar" .}}
+      {{template "media-transport" .}}
+      <div class="tv-player-controls">
+        <label class="tv-track-pick" id="audioPick" hidden>Audio
+          <select id="audioSelect"></select>
+        </label>
+        <label class="tv-track-pick" id="subPick" hidden>Subtitles
+          <select id="subSelect"></select>
+        </label>
+        <button type="button" id="subsSearchBtn" class="btn btn-sm" hidden>{{template "icon-search"}}Search subtitles</button>
+        <span id="playbackMode" class="tv-playback-mode"></span>
+      </div>
+    </div>
   </div>
 
   <div class="tv-player-nav">

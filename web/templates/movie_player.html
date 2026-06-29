@@ -5,26 +5,28 @@
     {{if .Year}}<h2>{{.Year}}</h2>{{end}}
   </div>
 
-  <div class="tv-player-video-wrap">
+  <div class="tv-player-video-wrap" id="tvPlayerWrap">
     <video id="tvVideo" class="tv-video" autoplay
            data-media-kind="movie"
            data-file-id="{{.FileID}}"
            data-next-file="0">
       Your browser does not support video playback.
     </video>
-  </div>
-
-  {{template "media-seekbar" .}}
-  {{template "media-transport" .}}
-
-  <div class="tv-player-controls">
-    <label class="tv-track-pick" id="audioPick" hidden>Audio
-      <select id="audioSelect"></select>
-    </label>
-    <label class="tv-track-pick" id="subPick" hidden>Subtitles
-      <select id="subSelect"></select>
-    </label>
-    <span id="playbackMode" class="tv-playback-mode"></span>
+    {{/* Controls overlay the video (auto-hide via media_player.js) so they stay
+         reachable in fullscreen without exiting. */}}
+    <div class="media-overlay" id="mediaOverlay">
+      {{template "media-seekbar" .}}
+      {{template "media-transport" .}}
+      <div class="tv-player-controls">
+        <label class="tv-track-pick" id="audioPick" hidden>Audio
+          <select id="audioSelect"></select>
+        </label>
+        <label class="tv-track-pick" id="subPick" hidden>Subtitles
+          <select id="subSelect"></select>
+        </label>
+        <span id="playbackMode" class="tv-playback-mode"></span>
+      </div>
+    </div>
   </div>
 
   <div class="tv-player-nav">
