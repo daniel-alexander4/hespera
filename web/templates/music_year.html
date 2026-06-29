@@ -1,0 +1,64 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Rediscover {{.Year}}</h1>
+  <form method="get" action="/music/year" class="year-picker">
+    <a class="btn btn-sm" href="/music/year?y={{.PrevYear}}" aria-label="Previous year">‹</a>
+    <input type="number" name="y" value="{{.Year}}" min="{{.MinYear}}" max="{{.MaxYear}}" aria-label="Year" />
+    <button type="submit" class="btn btn-sm">Go</button>
+    <a class="btn btn-sm" href="/music/year?y={{.NextYear}}" aria-label="Next year">›</a>
+  </form>
+</div>
+
+<p class="journey-intro">The albums and singles that hit the Billboard Hot&nbsp;100 in {{.Year}} — work through the year in release order. Acquire what you’re missing and it lights up here once you scan it in.</p>
+
+{{if .Building}}
+<div class="journey-banner">Building {{.Year}} from the charts… this runs once and can take a few minutes. Reload to see more as it fills in.</div>
+{{end}}
+
+{{if .Total}}
+<div class="journey-progress">
+  <div class="journey-bar"><span style="width:{{.AcquiredPct}}%"></span></div>
+  <div class="journey-progress-row">
+    <span class="journey-count">{{.Owned}} of {{.Total}} acquired{{if .HasOwned}} · {{.Played}} listened{{end}}</span>
+    {{if .HasOwned}}
+    <span class="journey-actions">
+      <a class="btn btn-primary" href="/music/player?source=journey&y={{.Year}}" data-play>{{template "icon-play"}}Play {{.Year}}</a>
+      {{if .ResumeMonth}}<span class="journey-resume">You’re up to {{.ResumeMonth}}</span>{{end}}
+    </span>
+    {{end}}
+  </div>
+</div>
+
+<div class="band-albums-grid">
+  {{range .Items}}
+  <div class="journey-card{{if .Owned}} is-owned{{end}}">
+    {{if .Owned}}<a class="journey-main" href="/music/album/{{.AlbumID}}">{{else}}<div class="journey-main">{{end}}
+      <div class="band-album-art">
+        {{if .ArtURL}}
+        <img src="{{.ArtURL}}" alt="{{.Title}}" loading="lazy" referrerpolicy="no-referrer" />
+        {{else}}
+        <div class="album-art-ph">{{if .IsSingle}}{{template "icon-music"}}{{else}}{{template "icon-disc"}}{{end}}</div>
+        {{end}}
+        {{if .Owned}}<span class="journey-owned" title="In your library">✓</span>{{end}}
+        {{if .IsSingle}}<span class="journey-kind">single</span>{{end}}
+      </div>
+      <div class="band-album-meta">
+        <div class="artist-card-name">{{.Title}}</div>
+        <div class="artist-card-stats">{{.ArtistName}}{{if .DisplayDate}} · {{.DisplayDate}}{{end}} · #{{.ChartPeak}}</div>
+      </div>
+    {{if .Owned}}</a>{{else}}</div>{{end}}
+    {{if .Songs}}
+    <details class="journey-songs">
+      <summary>Charted songs ({{len .Songs}})</summary>
+      <ul>
+        {{range .Songs}}<li><span class="js-title">{{.Title}}</span><span class="js-stat">#{{.Peak}} · {{.Weeks}} wk</span></li>{{end}}
+      </ul>
+    </details>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{else if not .Building}}
+<div class="empty-state"><p>No Billboard chart data for {{.Year}}.</p></div>
+{{end}}
+{{end}}

@@ -1615,6 +1615,17 @@ WHERE pop.rn<=? ORDER BY t.popularity DESC, t.id`, libraryID, popularPerArtistLi
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.library_id=? AND al.year BETWEEN ? AND ? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID, from, to)
 		q.Title = fmt.Sprintf("%d–%d", from, to)
+	case "journey":
+		// The owned charting albums/singles of a year, in chronological release
+		// order — the "Rediscover a Year" playthrough.
+		year, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("y")))
+		if year <= 0 {
+			return q, true, nil
+		}
+		libraryID := h.resolveMusicLibraryID(r)
+		q.Tracks, err = h.journeyQueueTracks(r.Context(), libraryID, year)
+		q.Title = fmt.Sprintf("Rediscover %d", year)
+		q.BackURL = fmt.Sprintf("/music/year?y=%d", year)
 	default: // single album
 		albumID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("album")), 10, 64)
 		if perr != nil || albumID <= 0 {
