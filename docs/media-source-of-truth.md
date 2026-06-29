@@ -169,7 +169,9 @@ them.
   `ON DELETE CASCADE`). Holds `status` (`matched`/`unmatched`/`skipped`),
   `provider`, `series_id` (TMDB id as text), `season_number`,
   `episode_numbers_csv`, `match_confidence`, `match_method`, `guessed_title`,
-  `air_date`.
+  `air_date`, and `year` (release year taken from the show **folder**, e.g.
+  `Doctor Who (2023)` — 0 if none; the matcher groups by `(title, year)` and
+  prefers the candidate whose first-air year matches, disambiguating reboots).
 - **No relational series/season/episode model** — show/season/episode metadata
   is JSON blobs in `tv_series_metadata_cache`, keyed by `entity_key` strings
   (e.g. `show:123:season:1:episode:4`), survives file churn.
