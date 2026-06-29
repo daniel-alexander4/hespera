@@ -9,6 +9,16 @@
   {{range .Genres}}<span class="meta-tag">{{.Name}}</span> {{end}}
 </div>
 
+{{if .LibraryID}}
+<div class="tv-series-actions">
+  <form method="post" action="/tv/series/scan" class="inline-form" data-live-job data-status-target="{{.LibraryID}}" title="Rescan only this series' folder(s) for new or changed episodes">
+    <input type="hidden" name="series_id" value="{{.ShowID}}" />
+    <button type="submit" class="btn btn-sm">{{template "icon-rotate-cw"}}Scan for new episodes</button>
+  </form>
+  <span class="lib-job-status" data-lib-status="{{.LibraryID}}" hidden></span>
+</div>
+{{end}}
+
 {{if .Overview}}
 <div class="tv-overview">
   <p>{{.Overview}}</p>

@@ -516,6 +516,13 @@ body::before {
   display: inline-flex;
   align-items: center;
 }
+/* Per-series "scan for new episodes" action row (TV series page). */
+.tv-series-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+}
 
 /* Badges */
 .badge {

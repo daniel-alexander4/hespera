@@ -18,7 +18,12 @@ import (
 	"hespera/internal/jobs"
 	"hespera/internal/pathguard"
 	"hespera/internal/tmdb"
+	"hespera/internal/tvscan"
 )
+
+// maxSeriesScanDirs caps how many distinct show folders a per-series scan walks
+// before falling back to a full library scan (a pathologically scattered series).
+const maxSeriesScanDirs = 8
 
 // --- Row types ---
 
@@ -443,6 +448,14 @@ ORDER BY i.season_number
 		year = show.FirstAirDate[:4]
 	}
 
+	// The library this series lives in, for the per-series "scan for new episodes"
+	// button + its live status badge (0 → no matched files, button hidden).
+	var libraryID int64
+	_ = h.db.QueryRowContext(r.Context(), `
+SELECT f.library_id FROM tv_series_files f
+JOIN tv_series_identities i ON i.file_id = f.id
+WHERE i.series_id = ? AND i.status = 'matched' LIMIT 1`, seriesID).Scan(&libraryID)
+
 	// Cast strip. Loaded from cache; if this series' cast was never fetched
 	// (e.g. it matched before this feature, or has none), enqueue a background
 	// fetch so it populates on the next view — the handler never blocks on it.
@@ -484,6 +497,7 @@ ORDER BY i.season_number
 		"MissingSeasons": len(missing),
 		"Cast":           cast,
 		"BackdropVer":    backdropVer,
+		"LibraryID":      libraryID,
 	})
 }
 
@@ -720,6 +734,106 @@ func (h *Handler) tvMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/libraries", http.StatusSeeOther)
+}
+
+// tvSeriesScan rescans only one series' show folder(s) — for picking up a newly
+// added episode/season without re-walking the whole TV library. It derives the
+// folder(s) from the series' existing matched file paths (ShowDirsForFiles),
+// enqueues a scoped scan, then chains a tv_match so the new file is identified.
+func (h *Handler) tvSeriesScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvSeriesScan", "err", err)
+		return
+	}
+	seriesID := strings.TrimSpace(r.FormValue("series_id"))
+	if _, e := strconv.Atoi(seriesID); e != nil {
+		http.Error(w, "invalid series_id", 400)
+		return
+	}
+
+	// A series lives in one TV library; take the first library_id seen and scope
+	// the scan to its files only.
+	rows, err := h.db.QueryContext(r.Context(), `
+SELECT f.abs_path, f.library_id
+FROM tv_series_files f
+JOIN tv_series_identities i ON i.file_id = f.id
+WHERE i.series_id = ? AND i.status = 'matched'
+`, seriesID)
+	if err != nil {
+		httpError(w, 500, "internal server error", "db query failed", "handler", "tvSeriesScan", "err", err)
+		return
+	}
+	defer rows.Close()
+	var libraryID int64
+	var paths []string
+	for rows.Next() {
+		var ap string
+		var lib int64
+		if err := rows.Scan(&ap, &lib); err != nil {
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeriesScan", "err", err)
+			return
+		}
+		if libraryID == 0 {
+			libraryID = lib
+		}
+		if lib == libraryID {
+			paths = append(paths, ap)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvSeriesScan", "err", err)
+		return
+	}
+	if libraryID == 0 || len(paths) == 0 {
+		http.Error(w, "no files for this series", 404)
+		return
+	}
+
+	dirs := tvscan.ShowDirsForFiles(paths)
+	scanner := tvscan.New(h.cfg, h.db)
+	tmdbKey := h.effectiveTMDBKey(r.Context())
+
+	jobID, err := h.jobs.Enqueue("tvscan", libraryID, "user", func(ctx context.Context, jID, libID int64) error {
+		var scanErr error
+		if len(dirs) == 0 || len(dirs) > maxSeriesScanDirs {
+			scanErr = scanner.ScanTV(ctx, jID, libID) // fallback: scattered/none → full scan
+		} else {
+			scanErr = scanner.ScanTVDirs(ctx, jID, libID, dirs)
+		}
+		if scanErr != nil {
+			return scanErr
+		}
+		if tmdbKey != "" {
+			matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
+			_, _ = h.jobs.Enqueue("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+				return matcher.RunTVMatch(ctx, mJID, mLibID)
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, jobs.ErrQueueFull) {
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "tvSeriesScan", "err", err)
+			return
+		}
+		httpError(w, 500, "internal server error", "enqueue series scan failed", "handler", "tvSeriesScan", "err", err)
+		return
+	}
+
+	if requestWantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"message": "series scan queued",
+			"data":    map[string]any{"library_id": libraryID, "job_id": jobID},
+		})
+		return
+	}
+	http.Redirect(w, r, "/tv/series/"+seriesID, http.StatusSeeOther)
 }
 
 // --- TV Art ---
