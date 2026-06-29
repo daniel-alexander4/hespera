@@ -77,6 +77,18 @@ func (h *Handler) effectiveOpenSubtitlesKey(ctx context.Context) string {
 	return h.cfg.OpenSubtitlesAPIKey
 }
 
+// effectiveYouTubeKey resolves the optional YouTube Data API key the same way:
+// the app_settings (UI) value wins, else the env default. Empty disables in-app
+// YouTube playback on the year-journey page (it falls back to a link-out).
+func (h *Handler) effectiveYouTubeKey(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='youtube_api_key'").Scan(&v)
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	return h.cfg.YouTubeAPIKey
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -130,6 +142,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		fanCfg, fanSrc, fanMask := h.keyStatus(ctx, "fanarttv_api_key", h.cfg.FanartTVAPIKey, h.effectiveFanartKey(ctx))
 		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
 		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
+		ytCfg, ytSrc, ytMask := h.keyStatus(ctx, "youtube_api_key", h.cfg.YouTubeAPIKey, h.effectiveYouTubeKey(ctx))
 		h.render(w, "settings_apikeys.html", map[string]any{
 			"Title":                   "API Keys",
 			"TMDBConfigured":          tmdbCfg,
@@ -144,6 +157,9 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesConfigured": osCfg,
 			"OpenSubtitlesSource":     osSrc,
 			"OpenSubtitlesMasked":     osMask,
+			"YouTubeConfigured":       ytCfg,
+			"YouTubeSource":           ytSrc,
+			"YouTubeMasked":           ytMask,
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -178,7 +194,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
 			return
 		}
-		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "opensubtitles_api_key"} {
+		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "opensubtitles_api_key", "youtube_api_key"} {
 			if _, ok := r.Form[field]; ok {
 				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
 					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)

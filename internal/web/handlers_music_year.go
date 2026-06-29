@@ -30,9 +30,22 @@ type journeyItemView struct {
 	Played      bool
 	AlbumID     int64 // deep-link target when owned (album, or a single's parent album)
 	TrackID     int64 // single's owned track, for queue expansion
-	Songs       []billboard.Song
+	Songs       []journeySong
 
 	sortDate string // internal: effective YYYY-MM-DD used for ordering
+}
+
+// journeySong is one Billboard-charting song in an item's panel, with its
+// per-song library reconcile: an owned song plays locally, an un-owned one plays
+// via YouTube (resolved on click).
+type journeySong struct {
+	Artist  string
+	Title   string
+	Peak    int
+	Weeks   int
+	Owned   bool
+	AlbumID int64
+	TrackID int64
 }
 
 // IsSingle reports whether the target is a standalone charting single.
@@ -186,7 +199,13 @@ func (h *Handler) loadJourney(ctx context.Context, libraryID int64, year int) jo
 			ArtURL:      it.artURL,
 		}
 		akey := match.NormalizeForDedup(it.artist)
-		v.Songs = songsByArtist[akey]
+		for _, s := range songsByArtist[akey] {
+			js := journeySong{Artist: it.artist, Title: s.Title, Peak: s.Peak, Weeks: s.Weeks}
+			if tr, ok := tracksByTA[taKey(s.Title, it.artist)]; ok {
+				js.Owned, js.TrackID, js.AlbumID = true, tr.id, tr.albumID
+			}
+			v.Songs = append(v.Songs, js)
+		}
 		v.sortDate = journeySortDate(it.releaseDate, earliestDebut[akey], year)
 
 		if it.kind == "album" {

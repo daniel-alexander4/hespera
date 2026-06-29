@@ -178,7 +178,13 @@ func TestMusicYearRealTemplate(t *testing.T) {
 		t.Fatalf("GET /music/year = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Rediscover 1968", "Charted songs", "Play 1968"} {
+	for _, want := range []string{
+		"Rediscover 1968",
+		"Charted songs",
+		"Play 1968",
+		`class="js-play js-yt"`, // an un-owned charted song → YouTube play button
+		`id="yt-modal"`,         // the in-app YouTube overlay
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("real template missing %q", want)
 		}
