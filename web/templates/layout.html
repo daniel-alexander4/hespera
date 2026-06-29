@@ -49,7 +49,6 @@
   <script src="{{staticv "/static/player.js"}}" defer></script>
   <script src="{{staticv "/static/tv_resume.js"}}" defer></script>
   <script src="{{staticv "/static/job_status.js"}}" defer></script>
-  <script src="{{staticv "/static/youtube.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -96,6 +95,11 @@
       <a id="np-title-link" class="np-title-link" href="/music/player" title="Open the player"><span id="np-title" class="np-title"></span></a>
     </div>
     <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
+    <!-- Hidden YouTube IFrame host for in-app playback of un-owned year-journey
+         songs. The permanent wrapper is what Turbo carries across navigations
+         (the API replaces the inner #yt-player div with an iframe, so the iframe
+         itself isn't data-turbo-permanent — the wrapper keeps it alive). -->
+    <div id="yt-host" data-turbo-permanent class="hidden"><div id="yt-player"></div></div>
     <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle light and dark theme">
       <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="5"></circle>
