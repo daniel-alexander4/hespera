@@ -140,6 +140,23 @@ they only parse filenames/tags and probe streams. Matchers
 - `lyrics_cache` (DB) keyed by `(track_id, provider_key)`; caches hits **and**
   misses.
 
+### Discovery caches (NOT a source of truth)
+The "Rediscover a Year" feature adds **walled-off** tables that never own any
+media data and are never written by the scanner or matcher:
+- `year_journeys` (year PK) + `year_journey_items` — the Billboard-charting
+  albums/singles of a year (chart facts + a resolved MusicBrainz identity + a
+  hotlinked Cover Art Archive URL), built by the `year_journey_build` job from
+  the embedded `internal/billboard` index. **Ownership is derived at view time**
+  by reconciling each item against `music_albums`/`music_tracks` (release-group
+  MBID, then normalized title+artist); listened-progress derives from
+  `play_history`. Nothing here is authoritative — dropping these tables only
+  discards a rebuildable discovery list, never library state.
+- `youtube_lookups` (`query_key` PK) — caches song→YouTube videoId resolutions
+  (hits and misses) for in-app playback of un-owned songs. Pure cache.
+
+These reconcile *onto* the library; the library never reads from or depends on
+them.
+
 ---
 
 ## 4. TV
