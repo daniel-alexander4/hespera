@@ -87,6 +87,17 @@ func (c *CAAClient) FetchCover(ctx context.Context, releaseGroupID string, relea
 	return "", nil
 }
 
+// CoverURL returns a hotlinkable Cover Art Archive front-cover URL for a release
+// group without downloading it (unlike FetchCover). Used for not-yet-owned
+// albums on the year-journey page, which hotlink the remote thumbnail the same
+// way out-of-library art does, so thumbgc never reaps it. Returns "" if none.
+func (c *CAAClient) CoverURL(ctx context.Context, releaseGroupID string) (string, error) {
+	if releaseGroupID == "" {
+		return "", nil
+	}
+	return c.findCoverURL(ctx, fmt.Sprintf("%s/release-group/%s", c.baseURL, releaseGroupID))
+}
+
 func (c *CAAClient) findCoverURL(ctx context.Context, endpoint string) (string, error) {
 	c.limiter.wait()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

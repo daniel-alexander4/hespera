@@ -322,6 +322,45 @@ func (c *MBClient) SearchArtist(ctx context.Context, name string) (string, error
 	return best.ID, nil
 }
 
+// ResolveArtistBySong resolves an artist MBID from a song title plus a performer
+// name (a "song-anchored" lookup). Searching recordings by title AND artist is
+// far more collision-resistant than an artist-name-only search: two different
+// artists sharing a name almost never also share a charting song title, so the
+// recording that matches both pins the right artist. Returns "" when nothing
+// scores confidently. Used to resolve Billboard chart performers to MusicBrainz.
+func (c *MBClient) ResolveArtistBySong(ctx context.Context, performer, title string) (string, error) {
+	q := fmt.Sprintf(`recording:"%s" AND artist:"%s"`, mbEscape(title), mbEscape(performer))
+	path := fmt.Sprintf("/recording?query=%s&limit=5&fmt=json", url.QueryEscape(q))
+	body, err := c.get(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Recordings []struct {
+			Score        int             `json:"score"`
+			ArtistCredit []mbArtistEntry `json:"artist-credit"`
+		} `json:"recordings"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("parse recording search: %w", err)
+	}
+	for _, rec := range result.Recordings {
+		if rec.Score < 80 || len(rec.ArtistCredit) == 0 {
+			continue
+		}
+		credit := rec.ArtistCredit[0]
+		if credit.Artist.ID == "" {
+			continue
+		}
+		// Guard against a high-scoring recording credited to a different act.
+		if NormalizedSimilarity(credit.Name, performer) < 0.6 {
+			continue
+		}
+		return credit.Artist.ID, nil
+	}
+	return "", nil
+}
+
 // ArtistCandidate is a MusicBrainz artist search result, carrying the fields a
 // human needs to disambiguate same-named artists (disambiguation comment, type,
 // country, life span). Used by the manual artist-disambiguation control.
@@ -404,6 +443,7 @@ type ReleaseGroupBrief struct {
 	Title string
 	Type  string // primary-type, e.g. "Album"
 	Year  int    // from first-release-date; 0 if unknown
+	Date  string // raw first-release-date (may be year-only or empty)
 }
 
 // BrowseArtistReleaseGroups returns an artist's album release-groups (newest
@@ -437,7 +477,7 @@ func (c *MBClient) BrowseArtistReleaseGroups(ctx context.Context, artistMBID str
 				year = y
 			}
 		}
-		out = append(out, ReleaseGroupBrief{MBID: rg.ID, Title: rg.Title, Type: rg.PrimaryType, Year: year})
+		out = append(out, ReleaseGroupBrief{MBID: rg.ID, Title: rg.Title, Type: rg.PrimaryType, Year: year, Date: rg.FirstReleaseDate})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Year > out[j].Year })
 	return out, nil

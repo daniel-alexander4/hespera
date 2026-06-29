@@ -1419,3 +1419,147 @@ code {
   padding: 0.1em 0.35em;
   border-radius: 4px;
 }
+
+/* --- Rediscover a Year (year-journey) --- */
+.year-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.year-picker input[type="number"] {
+  width: 5.5rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  color: var(--page-fg);
+  font: inherit;
+}
+.journey-intro {
+  color: var(--text-muted);
+  max-width: 60ch;
+  margin: 0 0 1rem;
+}
+.journey-banner {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 1rem;
+  color: var(--page-fg);
+  font-size: 0.9rem;
+}
+.journey-progress {
+  margin-bottom: 1.25rem;
+}
+.journey-bar {
+  height: 8px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.journey-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.journey-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.journey-count {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.journey-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.journey-resume {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}
+/* The journey card wraps the existing album-card art/meta plus a charted-songs
+   disclosure, so it can't itself be the <a> (a <details> can't nest in a link). */
+.journey-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.journey-card.is-owned {
+  border-color: var(--accent);
+}
+.journey-main {
+  display: block;
+  color: var(--page-fg);
+  text-decoration: none;
+}
+.journey-card .band-album-art {
+  position: relative;
+}
+.journey-owned {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #40a02b;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.journey-kind {
+  position: absolute;
+  bottom: 0.35rem;
+  left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.journey-card:not(.is-owned) {
+  opacity: 0.92;
+}
+.journey-songs {
+  border-top: 1px solid var(--border-default);
+  font-size: 0.82rem;
+}
+.journey-songs > summary {
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
+}
+.journey-songs[open] > summary {
+  color: var(--page-fg);
+}
+.journey-songs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.6rem 0.5rem;
+}
+.journey-songs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+.journey-songs .js-stat {
+  color: var(--text-soft);
+  white-space: nowrap;
+}

@@ -52,7 +52,7 @@ func setupTemplateDir(t *testing.T, dir string) {
 		"home.html", "login.html", "libraries.html", "libraries_new.html",
 		"settings.html", "settings_jobs.html", "music_home.html", "music_artist.html",
 		"music_artist_external.html", "music_artist_disambiguate.html", "music_artist_art.html",
-		"music_album.html", "music_albums.html", "music_compilations.html", "player.html",
+		"music_album.html", "music_albums.html", "music_compilations.html", "music_year.html", "player.html",
 		"music_match_review.html", "music_album_edit.html", "music_track_edit.html", "music_duplicates.html",
 		"settings_tags.html", "settings_apikeys.html", "tv_home.html", "tv_series.html",
 		"tv_season.html", "tv_match_review.html", "tv_player.html", "person.html",
@@ -115,6 +115,17 @@ func setupTemplateDir(t *testing.T, dir string) {
 	if err := os.WriteFile(filepath.Join(tplDir, "music_albums.html"), []byte(albumsTpl), 0o644); err != nil {
 		t.Fatalf("WriteFile music_albums.html override: %v", err)
 	}
+
+	// Functional stub for the year-journey page: renders the acquired counts, the
+	// Play control (only when something is owned), and one row per item in the
+	// handler's chronological order, so a test can assert reconcile + ordering.
+	yearTpl := `{{define "content"}}<p id="counts">{{.Owned}}/{{.Total}}</p>` +
+		`{{if .Building}}<p id="building">building</p>{{end}}` +
+		`{{if .HasOwned}}<a id="play" href="/music/player?source=journey&y={{.Year}}" data-play>Play</a>{{end}}` +
+		`{{range .Items}}<div class="jitem" data-owned="{{.Owned}}" data-kind="{{.Kind}}">{{.Title}}</div>{{end}}{{end}}`
+	if err := os.WriteFile(filepath.Join(tplDir, "music_year.html"), []byte(yearTpl), 0o644); err != nil {
+		t.Fatalf("WriteFile music_year.html override: %v", err)
+	}
 }
 
 // withChdir changes to dir for the duration of the test and restores on cleanup.
@@ -166,7 +177,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 31
+	expectedPages := 32
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}
