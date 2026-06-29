@@ -51,8 +51,8 @@ func TestYouTubeResolveCacheHit(t *testing.T) {
 	if out["videoId"] != "dQw4w9WgXcQ" {
 		t.Fatalf("cached videoId not returned: %v", out)
 	}
-	if !strings.Contains(out["embedUrl"], "youtube-nocookie.com/embed/dQw4w9WgXcQ") {
-		t.Fatalf("embedUrl wrong: %v", out)
+	if !strings.Contains(out["watchUrl"], "youtube.com/watch?v=dQw4w9WgXcQ") {
+		t.Fatalf("watchUrl wrong: %v", out)
 	}
 }
 
