@@ -18,6 +18,12 @@
 <p class="form-help">No playable file for this movie.</p>
 {{end}}
 
+<form method="post" action="/movie/unmatch" class="movie-unmatch"
+      onsubmit="return confirm('Unmatch this film and return it to the match-review list?');">
+  <input type="hidden" name="tmdb_id" value="{{.TMDBID}}">
+  <button type="submit" class="btn btn-sm">Wrong match? Unmatch</button>
+</form>
+
 {{if .Tagline}}<p class="tv-tagline"><em>{{.Tagline}}</em></p>{{end}}
 
 {{if .Overview}}

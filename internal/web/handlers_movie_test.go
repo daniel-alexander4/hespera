@@ -206,6 +206,60 @@ func TestMovieMatchReviewHandlers(t *testing.T) {
 			t.Fatalf("expected 400, got %d", rec.Code)
 		}
 	})
+
+	t.Run("POST_unmatch_resets_and_drops_art", func(t *testing.T) {
+		seedMovieFile(t, db, "Unmatch Me", 2021, "matched", 4242, h.cfg.MediaRoot)
+		if _, err := db.Exec(
+			"INSERT INTO movie_art (tmdb_movie_id, art_type, art_path) VALUES (4242,'poster','/x.jpg')",
+		); err != nil {
+			t.Fatalf("seed art: %v", err)
+		}
+
+		body := strings.NewReader("tmdb_id=4242")
+		req := httptest.NewRequest(http.MethodPost, "/movie/unmatch", body)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rec.Code)
+		}
+
+		var status string
+		var tmdbID int
+		if err := db.QueryRow(
+			"SELECT match_status, tmdb_id FROM movie_files WHERE guessed_title='Unmatch Me'",
+		).Scan(&status, &tmdbID); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if status != "" || tmdbID != 0 {
+			t.Fatalf("expected unmatched (''/0), got '%s'/%d", status, tmdbID)
+		}
+		var artCount int
+		_ = db.QueryRow("SELECT COUNT(*) FROM movie_art WHERE tmdb_movie_id=4242").Scan(&artCount)
+		if artCount != 0 {
+			t.Fatalf("expected movie_art dropped, got %d rows", artCount)
+		}
+	})
+
+	t.Run("POST_unmatch_bad_id", func(t *testing.T) {
+		body := strings.NewReader("tmdb_id=0")
+		req := httptest.NewRequest(http.MethodPost, "/movie/unmatch", body)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("GET_unmatch_405", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/movie/unmatch", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", rec.Code)
+		}
+	})
 }
 
 func TestMovieDetailAndArt(t *testing.T) {
