@@ -7,15 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"hespera"
 	"hespera/internal/auth"
 	"hespera/internal/config"
 	"hespera/internal/jobs"
@@ -25,13 +24,20 @@ import (
 type Deps struct {
 	Cfg config.Config
 	DB  *sql.DB
+	// Version stamps the static-asset cache-buster (?v=). Empty → "dev".
+	Version string
+	// AssetsFS overrides the web asset tree (rooted at web/, with templates/ and
+	// static/ subtrees). Nil → the embedded assets (the production path); tests
+	// inject a stub FS so handler-logic tests stay decoupled from the real
+	// template HTML.
+	AssetsFS fs.FS
 }
 
 type Handler struct {
 	cfg       config.Config
 	db        *sql.DB
 	tpls      map[string]*template.Template
-	staticDir string
+	staticFS  fs.FS
 	jobs      *jobs.Service
 	startedAt time.Time
 	auth      *auth.Manager
@@ -45,10 +51,17 @@ type Handler struct {
 }
 
 func New(d Deps) (*Handler, error) {
-	staticDir := filepath.Join("web", "static")
-
-	layoutPath := filepath.Join("web", "templates", "layout.html")
-	partialPaths, _ := filepath.Glob(filepath.Join("web", "templates", "partials_*.html"))
+	// Assets are embedded (see ../../embed.go), so the binary is self-contained
+	// and finds its templates/static regardless of the working directory. Tests
+	// may inject a stub tree via Deps.AssetsFS.
+	webRoot := d.AssetsFS
+	if webRoot == nil {
+		webRoot = hespera.WebFS()
+	}
+	staticFS, err := fs.Sub(webRoot, "static")
+	if err != nil {
+		return nil, fmt.Errorf("static sub-fs: %w", err)
+	}
 
 	pages := []string{
 		"home.html",
@@ -87,43 +100,39 @@ func New(d Deps) (*Handler, error) {
 	}
 
 	tpls := make(map[string]*template.Template, len(pages))
+	// Embedded files have no meaningful mtime, so the cache-buster is the build
+	// version — a new release invalidates every cached asset at once.
+	assetVersion := d.Version
+	if assetVersion == "" {
+		assetVersion = "dev"
+	}
 	staticURL := func(rawPath string) string {
 		p := strings.TrimSpace(rawPath)
 		if p == "" {
 			return rawPath
 		}
-		rel := strings.TrimPrefix(strings.TrimPrefix(p, "/"), "static/")
-		fp := filepath.Join(staticDir, rel)
-		v := "dev"
-		if info, err := os.Stat(fp); err == nil {
-			v = strconv.FormatInt(info.ModTime().Unix(), 10)
-		}
 		sep := "?"
 		if strings.Contains(p, "?") {
 			sep = "&"
 		}
-		return p + sep + "v=" + v
+		return p + sep + "v=" + assetVersion
 	}
 
 	layoutBase, err := template.New("layout.html").Funcs(template.FuncMap{
 		"staticv": staticURL,
-	}).ParseFiles(layoutPath)
+	}).ParseFS(webRoot, "templates/layout.html")
 	if err != nil {
 		return nil, fmt.Errorf("layout template: %w", err)
 	}
 
 	var errs []error
 	for _, p := range pages {
-		pagePath := filepath.Join("web", "templates", p)
 		t, cloneErr := layoutBase.Clone()
 		if cloneErr != nil {
 			errs = append(errs, fmt.Errorf("template %s: clone failed: %w", p, cloneErr))
 			continue
 		}
-		parsePaths := make([]string, 0, len(partialPaths)+1)
-		parsePaths = append(parsePaths, partialPaths...)
-		parsePaths = append(parsePaths, pagePath)
-		t, err = t.ParseFiles(parsePaths...)
+		t, err = t.ParseFS(webRoot, "templates/partials_*.html", "templates/"+p)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("template %s: %w", p, err))
 			continue
@@ -149,7 +158,7 @@ func New(d Deps) (*Handler, error) {
 		cfg:       d.Cfg,
 		db:        d.DB,
 		tpls:      tpls,
-		staticDir: staticDir,
+		staticFS:  staticFS,
 		jobs:      jobs.New(d.DB),
 		startedAt: time.Now().UTC(),
 		auth:      auth.New(d.Cfg, d.DB),

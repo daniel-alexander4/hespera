@@ -143,8 +143,6 @@ func TestTVMatchReviewHandlers(t *testing.T) {
 	t.Run("POST_approve_updates_status", func(t *testing.T) {
 		// Create a separate handler with TMDBAPIKey set.
 		dir := t.TempDir()
-		setupTemplateDir(t, dir)
-		withChdir(t, dir)
 		approveDB := openTestDB(t)
 
 		// Create media root directory for path validation.
@@ -154,8 +152,9 @@ func TestTVMatchReviewHandlers(t *testing.T) {
 		}
 
 		ah, err := New(Deps{
-			Cfg: config.Config{DataDir: dir, MediaRoot: mediaRoot, TMDBAPIKey: "test-key"},
-			DB:  approveDB,
+			Cfg:      config.Config{DataDir: dir, MediaRoot: mediaRoot, TMDBAPIKey: "test-key"},
+			DB:       approveDB,
+			AssetsFS: stubAssetsFS(),
 		})
 		if err != nil {
 			t.Fatalf("New: %v", err)

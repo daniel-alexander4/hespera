@@ -2,7 +2,6 @@ package web
 
 import (
 	"net/http"
-	"path/filepath"
 )
 
 func (h *Handler) Router() http.Handler {
@@ -11,7 +10,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/", h.home)
 	mux.HandleFunc("/healthz", h.healthz)
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(h.staticDir, "hespera-favicon.ico"))
+		http.ServeFileFS(w, r, h.staticFS, "hespera-favicon.ico")
 	})
 	mux.HandleFunc("/login", h.login)
 	mux.HandleFunc("/auth/challenge", h.authChallenge)
@@ -123,10 +122,10 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/movie/art/clear", h.movieArtClear)
 	mux.HandleFunc("/art/movie/", h.movieArt)
 
-	// Static files
+	// Static files (served from the embedded asset tree)
 	mux.Handle(
 		"/static/",
-		http.StripPrefix("/static/", http.FileServer(http.Dir(h.staticDir))),
+		http.StripPrefix("/static/", http.FileServer(http.FS(h.staticFS))),
 	)
 
 	// Settings

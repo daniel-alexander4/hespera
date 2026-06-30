@@ -2001,8 +2001,7 @@ func (h *Handler) artistArt(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveStaticImageFallback(w http.ResponseWriter, r *http.Request, fileName, contentType string) {
-	fp := filepath.Join(h.staticDir, fileName)
-	f, err := os.Open(fp)
+	f, err := h.staticFS.Open(fileName)
 	if err != nil {
 		http.NotFound(w, r)
 		return

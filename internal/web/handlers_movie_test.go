@@ -111,16 +111,15 @@ func TestMovieMatchReviewHandlers(t *testing.T) {
 		// returns 303 immediately and the metadata fetch runs as a background job
 		// (which fails on the fake key, but the DB row is updated synchronously).
 		dir := t.TempDir()
-		setupTemplateDir(t, dir)
-		withChdir(t, dir)
 		approveDB := openTestDB(t)
 		mediaRoot := filepath.Join(dir, "media")
 		if err := os.MkdirAll(mediaRoot, 0o755); err != nil {
 			t.Fatalf("MkdirAll media: %v", err)
 		}
 		ah, err := New(Deps{
-			Cfg: config.Config{DataDir: dir, MediaRoot: mediaRoot, TMDBAPIKey: "test-key"},
-			DB:  approveDB,
+			Cfg:      config.Config{DataDir: dir, MediaRoot: mediaRoot, TMDBAPIKey: "test-key"},
+			DB:       approveDB,
+			AssetsFS: stubAssetsFS(),
 		})
 		if err != nil {
 			t.Fatalf("New: %v", err)
@@ -322,16 +321,15 @@ func TestMovieCastBackfillEnqueue(t *testing.T) {
 	// movieDetail enqueues a movie_cast_fetch job once when the movie:%d:cast
 	// marker is absent and a TMDB key is set, and not when the marker exists.
 	dir := t.TempDir()
-	setupTemplateDir(t, dir)
-	withChdir(t, dir)
 	db := openTestDB(t)
 	mediaRoot := filepath.Join(dir, "media")
 	if err := os.MkdirAll(mediaRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll media: %v", err)
 	}
 	h, err := New(Deps{
-		Cfg: config.Config{DataDir: dir, MediaRoot: mediaRoot, TMDBAPIKey: "test-key"},
-		DB:  db,
+		Cfg:      config.Config{DataDir: dir, MediaRoot: mediaRoot, TMDBAPIKey: "test-key"},
+		DB:       db,
+		AssetsFS: stubAssetsFS(),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
