@@ -281,8 +281,11 @@ func (h *Handler) personDetail(w http.ResponseWriter, r *http.Request) {
 		"HasArt":       scanNullString(artPath) != "",
 		"Bio":          cleanBio,
 		"WikipediaURL": wikipediaURL,
-		"TVCredits":    tvCredits,
-		"FilmCredits":  filmCredits,
+		// Source link for the bio: Wikipedia when the prose is attributed to it,
+		// else the TMDB person page (where we fetched the data from).
+		"TMDBURL":     fmt.Sprintf("https://www.themoviedb.org/person/%d", personID),
+		"TVCredits":   tvCredits,
+		"FilmCredits": filmCredits,
 	})
 }
 

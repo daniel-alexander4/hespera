@@ -15,7 +15,8 @@
     {{if .Bio}}
     <div class="artist-bio">
       <p>{{.Bio}}</p>
-      {{if .WikipediaURL}}<p class="bio-source"><a href="{{.WikipediaURL}}" target="_blank" rel="noopener noreferrer">Read more on Wikipedia</a></p>{{end}}
+      {{if .WikipediaURL}}<p class="bio-source"><a href="{{.WikipediaURL}}" target="_blank" rel="noopener noreferrer">Read more on Wikipedia</a></p>
+      {{else if .TMDBURL}}<p class="bio-source"><a href="{{.TMDBURL}}" target="_blank" rel="noopener noreferrer">View on TMDB</a></p>{{end}}
     </div>
     {{else}}
     <p class="form-help">Biography is loading — check back in a moment.</p>
