@@ -28,7 +28,7 @@ type chartCard struct {
 	Owned   bool
 	AlbumID int64  // owned: deep-link + local /art/album cover
 	TrackID int64  // owned: the track to play
-	ArtURL  string // un-owned: cached YouTube thumbnail, else "" (placeholder)
+	ArtURL  string // un-owned: cached iTunes cover, else YouTube thumbnail, else "" (placeholder)
 }
 
 // weekView is one weekly chart as the page renders it: a date label and the
@@ -46,6 +46,9 @@ type journeyData struct {
 	Weeks      []weekView
 	TotalSongs int // distinct songs that charted that year (= debuts)
 	OwnedSongs int // of those, owned in the library
+	// needsArt is the distinct un-owned songs with no cached cover yet — the
+	// work list for the background iTunes backfill (internal, never rendered).
+	needsArt []artQuery
 }
 
 // billboardEnabled reports whether the user has opted into the chart-data
@@ -106,22 +109,23 @@ func (h *Handler) musicYear(w http.ResponseWriter, r *http.Request) {
 
 	libraryID := h.resolveMusicLibraryID(r)
 	data := h.loadJourney(r.Context(), libraryID, year, topFirst)
+	h.enqueueItunesArtFetch(ctx, year, data.needsArt) // fill un-owned covers in the background
 
 	// The play/toggle hrefs are built in the template from literal text + values
 	// (Year, TopFirst), not a precomputed query string — html/template URL-escapes
 	// a whole "a=1&b=2" action (& → %26), which would break the link.
 	h.render(w, "music_year.html", map[string]any{
-		"Title":         "Rediscover " + strconv.Itoa(year),
-		"Year":          year,
-		"PrevYear":      clampYear(year-1, minY, maxY),
-		"NextYear":      clampYear(year+1, minY, maxY),
-		"MinYear":       minY,
-		"MaxYear":       maxY,
-		"Weeks":         data.Weeks,
-		"TotalSongs":    data.TotalSongs,
-		"OwnedSongs":    data.OwnedSongs,
-		"TopFirst":      topFirst,
-		"HasOwned":      data.OwnedSongs > 0,
+		"Title":        "Rediscover " + strconv.Itoa(year),
+		"Year":         year,
+		"PrevYear":     clampYear(year-1, minY, maxY),
+		"NextYear":     clampYear(year+1, minY, maxY),
+		"MinYear":      minY,
+		"MaxYear":      maxY,
+		"Weeks":        data.Weeks,
+		"TotalSongs":   data.TotalSongs,
+		"OwnedSongs":   data.OwnedSongs,
+		"TopFirst":     topFirst,
+		"HasOwned":     data.OwnedSongs > 0,
 		"YouTubeInApp": h.effectiveYouTubeInApp(r.Context()),
 	})
 }
@@ -149,9 +153,11 @@ func (h *Handler) loadJourney(ctx context.Context, libraryID int64, year int, to
 	}
 	tracksByTA := h.libraryTrackIndex(ctx, libraryID)
 	ytThumbs := h.ytThumbIndex(ctx)
+	itunesArt := h.itunesArtIndex(ctx)
 
 	var out journeyData
 	seen := map[string]bool{}
+	seenArt := map[string]bool{}
 	for _, wk := range weeks {
 		wv := weekView{Date: wk.Date, Label: weekLabel(wk.Date)}
 		for _, e := range wk.Entries { // stored ascending by position
@@ -159,8 +165,19 @@ func (h *Handler) loadJourney(ctx context.Context, libraryID int64, year int, to
 			card := chartCard{Pos: e.Pos, Title: e.Title, Artist: e.Artist, IsDebut: !seen[k]}
 			if tr, ok := tracksByTA[k]; ok {
 				card.Owned, card.TrackID, card.AlbumID = true, tr.id, tr.albumID
-			} else if vid := ytThumbs[ytLookupKey(e.Artist, e.Title)]; vid != "" {
-				card.ArtURL = "https://i.ytimg.com/vi/" + vid + "/mqdefault.jpg"
+			} else {
+				// Cover-art cascade: cached iTunes cover → cached YouTube thumb →
+				// placeholder. Songs never tried by iTunes (not in the cache, even
+				// as a miss) are queued once for the background backfill.
+				if u := itunesArt[k]; u != "" {
+					card.ArtURL = u
+				} else if vid := ytThumbs[ytLookupKey(e.Artist, e.Title)]; vid != "" {
+					card.ArtURL = "https://i.ytimg.com/vi/" + vid + "/mqdefault.jpg"
+				}
+				if _, cached := itunesArt[k]; !cached && !seenArt[k] {
+					seenArt[k] = true
+					out.needsArt = append(out.needsArt, artQuery{Artist: e.Artist, Title: e.Title})
+				}
 			}
 			if card.IsDebut {
 				seen[k] = true
