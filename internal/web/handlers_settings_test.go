@@ -1,14 +1,59 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestOpenSubtitlesCombinedForm covers the merged key+UA form: both save
+// together; a blank key on a later submit keeps the stored key (so editing the
+// UA can't wipe it); a blank UA reverts to the default.
+func TestOpenSubtitlesCombinedForm(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := h.Router()
+	ctx := context.Background()
+	post := func(key, ua string) {
+		t.Helper()
+		body := strings.NewReader(url.Values{"opensubtitles_api_key": {key}, "opensubtitles_user_agent": {ua}}.Encode())
+		req := httptest.NewRequest(http.MethodPost, "/settings/api-keys", body)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rec.Code)
+		}
+	}
+
+	post("mykey123", "MyApp v2")
+	if got := h.effectiveOpenSubtitlesKey(ctx); got != "mykey123" {
+		t.Fatalf("key = %q, want mykey123", got)
+	}
+	if got := h.effectiveOpenSubtitlesUserAgent(ctx); got != "MyApp v2" {
+		t.Fatalf("UA = %q, want MyApp v2", got)
+	}
+
+	// Blank key + new UA → key kept, UA updated (no wipe).
+	post("", "MyApp v3")
+	if got := h.effectiveOpenSubtitlesKey(ctx); got != "mykey123" {
+		t.Fatalf("blank submit wiped the key: %q", got)
+	}
+	if got := h.effectiveOpenSubtitlesUserAgent(ctx); got != "MyApp v3" {
+		t.Fatalf("UA = %q, want MyApp v3", got)
+	}
+
+	// Blank UA → reverts to the built-in default.
+	post("", "")
+	if got := h.effectiveOpenSubtitlesUserAgent(ctx); got != "Hespera v1.0" {
+		t.Fatalf("blank UA = %q, want default Hespera v1.0", got)
+	}
+}
 
 func TestSettingsHandlers(t *testing.T) {
 	h, _ := newTestHandler(t)

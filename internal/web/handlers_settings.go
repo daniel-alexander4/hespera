@@ -226,7 +226,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
 			return
 		}
-		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "opensubtitles_api_key", "youtube_api_key"} {
+		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "youtube_api_key"} {
 			if _, ok := r.Form[field]; ok {
 				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
 					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
@@ -236,11 +236,21 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if _, ok := r.Form["opensubtitles_user_agent"]; ok {
-			// Not a secret — a consumer UA. Blank clears it (reverts to env/default).
+		// OpenSubtitles key + User-Agent share one form, so save both together.
+		// The UA (not a secret) always takes its submitted value (blank → default);
+		// the key is saved only when non-blank, so editing the UA never wipes a
+		// stored key (no way to distinguish "blank to clear" from "blank to keep"
+		// in a combined form — keep wins as the safe choice).
+		if _, ok := r.Form["opensubtitles_api_key"]; ok {
 			if err := h.saveAPIKey(ctx, "opensubtitles_user_agent", strings.TrimSpace(r.FormValue("opensubtitles_user_agent"))); err != nil {
 				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 				return
+			}
+			if key := strings.TrimSpace(r.FormValue("opensubtitles_api_key")); key != "" {
+				if err := h.saveAPIKey(ctx, "opensubtitles_api_key", key); err != nil {
+					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
+					return
+				}
 			}
 			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
 			return
