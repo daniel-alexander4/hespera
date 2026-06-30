@@ -173,6 +173,34 @@ func TestYouTubeCombinedForm(t *testing.T) {
 	}
 }
 
+// TestBillboardCheckboxDisable covers the checkbox-only Billboard form: an
+// unchecked box (sentinel present, checkbox absent) disables the feature. (The
+// enable path is exercised via the DB-seeding helper elsewhere; enabling enqueues
+// a real network fetch, so it isn't POSTed here.)
+func TestBillboardCheckboxDisable(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+	ctx := context.Background()
+	if _, err := db.Exec("INSERT INTO app_settings (key,value) VALUES ('billboard_enabled','1') ON CONFLICT(key) DO UPDATE SET value='1'"); err != nil {
+		t.Fatalf("pre-enable: %v", err)
+	}
+	if !h.billboardEnabled(ctx) {
+		t.Fatal("precondition: should be enabled")
+	}
+	// Box unchecked → only the sentinel submits.
+	body := strings.NewReader(url.Values{"billboard_present": {"1"}}.Encode())
+	req := httptest.NewRequest(http.MethodPost, "/settings/api-keys", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", rec.Code)
+	}
+	if h.billboardEnabled(ctx) {
+		t.Fatal("unchecked box should disable the feature")
+	}
+}
+
 func TestSettingsJobsFragment(t *testing.T) {
 	h, db := newTestHandler(t)
 	router := h.Router()

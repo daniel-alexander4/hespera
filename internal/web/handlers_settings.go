@@ -295,7 +295,10 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
 			return
 		}
-		if _, ok := r.Form["billboard_enabled"]; ok {
+		if _, ok := r.Form["billboard_present"]; ok {
+			// Checkbox-only form: an unchecked box submits nothing, so the
+			// always-present sentinel triggers the branch and the checkbox's
+			// absence reads as off.
 			on := r.FormValue("billboard_enabled") == "1"
 			val := ""
 			if on {
