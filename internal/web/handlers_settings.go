@@ -30,6 +30,20 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// settingsAbout renders the static About & Attributions page — the single place
+// all third-party data-source and open-source attributions live (incl. the
+// TMDB API notice required by TMDB's terms, which permit it on an About/Credits
+// page rather than every page).
+func (h *Handler) settingsAbout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	h.render(w, "settings_about.html", map[string]any{
+		"Title": "About & Attributions",
+	})
+}
+
 // effectiveTMDBKey returns the runtime-configured TMDB API key: the value set
 // via the settings UI (app_settings) if non-empty, otherwise the env-provided
 // key from config. This is the single source of truth for the key across

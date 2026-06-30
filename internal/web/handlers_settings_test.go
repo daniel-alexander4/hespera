@@ -33,6 +33,44 @@ func TestSettingsHandlers(t *testing.T) {
 	})
 }
 
+func TestSettingsAbout(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := h.Router()
+
+	t.Run("GET /settings/about 200", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/settings/about", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+	})
+
+	t.Run("POST /settings/about 405", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/settings/about", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", rec.Code)
+		}
+	})
+}
+
+// TestAboutPageTMDBNotice guards the verbatim TMDB attribution (required by
+// TMDB's API terms) against accidental removal. Asserted against the real
+// template — the test stub renders placeholder content — read from the
+// package-relative path.
+func TestAboutPageTMDBNotice(t *testing.T) {
+	const notice = "This product uses the TMDB API but is not endorsed or certified by TMDB."
+	b, err := os.ReadFile(filepath.Join("..", "..", "web", "templates", "settings_about.html"))
+	if err != nil {
+		t.Fatalf("read settings_about.html: %v", err)
+	}
+	if !strings.Contains(string(b), notice) {
+		t.Fatalf("settings_about.html must contain the verbatim TMDB notice: %q", notice)
+	}
+}
+
 func TestSettingsJobsFragment(t *testing.T) {
 	h, db := newTestHandler(t)
 	router := h.Router()

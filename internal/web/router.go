@@ -135,6 +135,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/settings/jobs/cancel", h.settingsJobsCancel)
 	mux.HandleFunc("/settings/tags", h.settingsTagEditor)
 	mux.HandleFunc("/settings/api-keys", h.settingsAPIKeys)
+	mux.HandleFunc("/settings/about", h.settingsAbout)
 
 	var handler http.Handler = mux
 	if h.auth != nil {
