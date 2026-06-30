@@ -73,6 +73,7 @@ type albumDetailRow struct {
 }
 
 type trackRow struct {
+	Kind          string // "" = local library track; "yt" = un-owned, played via YouTube
 	ID            int64
 	AlbumID       int64
 	AlbumTitle    string
@@ -1622,8 +1623,10 @@ WHERE pop.rn<=? ORDER BY t.popularity DESC, t.id`, libraryID, popularPerArtistLi
 		if year <= 0 {
 			return q, true, nil
 		}
+		topFirst := r.URL.Query().Get("dir") == "top"
+		hasYTKey := h.effectiveYouTubeKey(r.Context()) != ""
 		libraryID := h.resolveMusicLibraryID(r)
-		q.Tracks, err = h.journeyQueueTracks(r.Context(), libraryID, year)
+		q.Tracks, err = h.journeyQueueTracks(r.Context(), libraryID, year, topFirst, hasYTKey)
 		q.Title = fmt.Sprintf("Rediscover %d", year)
 		q.BackURL = fmt.Sprintf("/music/year?y=%d", year)
 	default: // single album
@@ -1680,6 +1683,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type queueTrackJSON struct {
+		Kind    string `json:"kind,omitempty"` // "yt" = resolve+play via YouTube; "" = local
 		ID      int64  `json:"id"`
 		AlbumID int64  `json:"albumId"`
 		Album   string `json:"album"`
@@ -1692,7 +1696,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		Tracks  []queueTrackJSON `json:"tracks"`
 	}{Title: q.Title, BackURL: q.BackURL, Tracks: make([]queueTrackJSON, 0, len(q.Tracks))}
 	for _, t := range q.Tracks {
-		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist})
+		out.Tracks = append(out.Tracks, queueTrackJSON{Kind: t.Kind, ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

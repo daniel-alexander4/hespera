@@ -129,10 +129,10 @@ func setupTemplateDir(t *testing.T, dir string) {
 	// Functional stub for the year-journey page: renders the acquired counts, the
 	// Play control (only when something is owned), and one row per item in the
 	// handler's chronological order, so a test can assert reconcile + ordering.
-	yearTpl := `{{define "content"}}<p id="counts">{{.Owned}}/{{.Total}}</p>` +
-		`{{if .Building}}<p id="building">building</p>{{end}}` +
-		`{{if .HasOwned}}<a id="play" href="/music/player?source=journey&y={{.Year}}" data-play>Play</a>{{end}}` +
-		`{{range .Items}}<div class="jitem" data-owned="{{.Owned}}" data-kind="{{.Kind}}">{{.Title}}</div>{{end}}{{end}}`
+	yearTpl := `{{define "content"}}<p id="counts">{{.OwnedSongs}}/{{.TotalSongs}}</p>` +
+		`<a id="play" href="/music/player?source=journey&y={{.Year}}{{if .TopFirst}}&dir=top{{end}}" data-play>Play</a>` +
+		`<a id="dir" href="/music/year?y={{.Year}}{{if not .TopFirst}}&dir=top{{end}}">dir</a>` +
+		`{{range .Weeks}}<section class="wk" data-date="{{.Date}}">{{range .Cards}}<div class="row" data-pos="{{.Pos}}" data-debut="{{.IsDebut}}" data-owned="{{.Owned}}">{{.Title}}</div>{{end}}</section>{{end}}{{end}}`
 	if err := os.WriteFile(filepath.Join(tplDir, "music_year.html"), []byte(yearTpl), 0o644); err != nil {
 		t.Fatalf("WriteFile music_year.html override: %v", err)
 	}

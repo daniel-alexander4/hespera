@@ -118,7 +118,10 @@
   };
   // Most music videos are embeddable; a 101/150 (embedding disabled) or other
   // error just leaves the song idle (no gesture to recover to a tab with).
-  const onYTError = () => ytStopPoll();
+  const onYTError = () => {
+    ytStopPoll();
+    playNext(); // a non-embeddable video (101/150) shouldn't stall the journey queue
+  };
 
   // Load+play a videoId on the hidden player, creating it on first use.
   const ytPlay = (videoId) => {
@@ -193,6 +196,10 @@
     if (currentTrackReported) return;
     const t = currentTrack();
     if (!t) return;
+    if (!t.id) { // YouTube tracks have no local id — nothing to log
+      currentTrackReported = true;
+      return;
+    }
     const playedMs = Math.max(0, Math.floor((curTime() || 0) * 1000));
     if (!completed && playedMs < MIN_REPORT_MS) return;
     currentTrackReported = true;
@@ -329,6 +336,34 @@
     renderView(); // empty state if the now-playing page is open
   };
 
+  // Resolve a queued un-owned (yt-kind) track to a YouTube videoId on demand,
+  // then play it. A miss / no key skips to the next track so the journey keeps
+  // moving instead of stalling on a song with no playable video. Quota is spent
+  // only on songs actually reached (one cached API call per song, ever).
+  const resolveAndPlayYT = (t) => {
+    fetch(
+      '/music/youtube/resolve?artist=' + encodeURIComponent(t.artist || '') + '&song=' + encodeURIComponent(t.title || ''),
+      { headers: { Accept: 'application/json' } },
+    )
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('resolve'))))
+      .then((d) => {
+        if (currentTrack() !== t) return; // user advanced while resolving
+        if (d.videoId) {
+          t.videoId = d.videoId;
+          if (!t.coverUrl) t.coverUrl = 'https://i.ytimg.com/vi/' + d.videoId + '/mqdefault.jpg';
+          setMediaMetadata(t);
+          updateHeader();
+          renderView();
+          ytPlay(d.videoId);
+        } else {
+          playNext(); // no embeddable video (no key / no match) — skip
+        }
+      })
+      .catch(() => {
+        if (currentTrack() === t) playNext();
+      });
+  };
+
   // --- Core transport ---
   const playAt = (pos) => {
     if (pos < 0 || pos >= queue.length) return;
@@ -339,7 +374,11 @@
     if (t.kind === 'yt') {
       engine = 'yt';
       audio.pause(); // gated local listeners ignore this; just silences local
-      ytPlay(t.videoId);
+      if (t.videoId) {
+        ytPlay(t.videoId);
+      } else {
+        resolveAndPlayYT(t); // queued un-owned song: resolve a videoId, then play
+      }
     } else {
       const wasYT = engine === 'yt';
       engine = 'local';
