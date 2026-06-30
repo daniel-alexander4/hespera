@@ -417,8 +417,10 @@ function initMediaPlayer() {
   //     suspended (autoplay policy) never silences playback. Preference persists
   //     in localStorage, mirroring the theme toggle. ---
   const boostBtn = document.getElementById('tvBoostBtn');
-  let boostOn = false;
-  try { boostOn = localStorage.getItem('tv_boost') === '1'; } catch (e) {}
+  // Default ON — quiet dialogue under loud music/SFX is the common pain point, so
+  // it's on unless the user has explicitly turned it off.
+  let boostOn = true;
+  try { boostOn = localStorage.getItem('tv_boost') !== '0'; } catch (e) {}
   let audioCtx = null, srcNode = null, compressor = null, makeup = null, graphBuilt = false;
 
   function buildAudioGraph() {
@@ -461,8 +463,12 @@ function initMediaPlayer() {
 
   function reflectBoost() {
     if (!boostBtn) return;
-    boostBtn.classList.toggle('btn-primary', boostOn);
+    // aria-pressed drives the solid-accent "on" style (#tvBoostBtn[aria-pressed]
+    // in app.css) — clearer than .btn-primary, which is near-invisible in light
+    // mode. Keep the title in sync so the state is obvious on hover too.
+    boostBtn.classList.toggle('is-on', boostOn);
     boostBtn.setAttribute('aria-pressed', boostOn ? 'true' : 'false');
+    boostBtn.setAttribute('title', boostOn ? 'Dialogue boost: On' : 'Dialogue boost: Off');
   }
 
   if (boostBtn) {
