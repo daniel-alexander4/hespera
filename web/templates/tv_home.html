@@ -89,7 +89,7 @@
   </div>
   {{template "pagination" .SeriesPage}}
   {{else if and .SeriesSearch .SeriesSearch.Q}}
-  <p class="empty-state">No shows match “{{.SeriesSearch.Q}}”. <a href="/tv">Clear search</a></p>
+  <p class="empty-state">No shows match “{{.SeriesSearch.Q}}”. <a href="/tv" class="btn btn-sm">Clear search</a></p>
   {{end}}
 </div>
 

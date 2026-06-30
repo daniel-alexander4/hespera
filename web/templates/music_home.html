@@ -38,7 +38,7 @@
   </div>
   {{template "pagination" .ArtistsPage}}
   {{else if and .ArtistsSearch .ArtistsSearch.Q}}
-  <div class="empty-state"><p>No artists match “{{.ArtistsSearch.Q}}”. <a href="/music">Clear search</a></p></div>
+  <div class="empty-state"><p>No artists match “{{.ArtistsSearch.Q}}”. <a href="/music" class="btn btn-sm">Clear search</a></p></div>
   {{else}}
   <div class="empty-state"><p>No artists found. Scan a music library to get started.</p></div>
   {{end}}
