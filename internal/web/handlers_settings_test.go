@@ -116,6 +116,63 @@ func TestAboutPageTMDBNotice(t *testing.T) {
 	}
 }
 
+// TestYouTubeInAppGating: in-app YouTube playback needs BOTH a key and the
+// opt-in toggle (off by default).
+func TestYouTubeInAppGating(t *testing.T) {
+	h, db := newTestHandler(t)
+	ctx := context.Background()
+	set := func(key, val string) {
+		if _, err := db.Exec("INSERT INTO app_settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, val); err != nil {
+			t.Fatalf("set %s: %v", key, err)
+		}
+	}
+	if h.effectiveYouTubeInApp(ctx) {
+		t.Fatal("no key, toggle off → in-app off")
+	}
+	set("youtube_inapp_enabled", "1")
+	if h.effectiveYouTubeInApp(ctx) {
+		t.Fatal("toggle on but no key → still off")
+	}
+	set("youtube_api_key", "k")
+	if !h.effectiveYouTubeInApp(ctx) {
+		t.Fatal("key + toggle → in-app on")
+	}
+	set("youtube_inapp_enabled", "")
+	if h.effectiveYouTubeInApp(ctx) {
+		t.Fatal("toggle off (with a key) → in-app off")
+	}
+}
+
+// TestYouTubeCombinedForm: the key + opt-in checkbox share one form; the box
+// always saves (absent = off), the key only when non-blank (no wipe).
+func TestYouTubeCombinedForm(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := h.Router()
+	ctx := context.Background()
+	post := func(vals url.Values) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/settings/api-keys", strings.NewReader(vals.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rec.Code)
+		}
+	}
+	post(url.Values{"youtube_api_key": {"mykey"}, "youtube_inapp_enabled": {"1"}})
+	if h.effectiveYouTubeKey(ctx) != "mykey" || !h.youtubeInappEnabled(ctx) {
+		t.Fatalf("set both: key=%q inapp=%v", h.effectiveYouTubeKey(ctx), h.youtubeInappEnabled(ctx))
+	}
+	// Uncheck (checkbox absent) + blank key → key kept, toggle off.
+	post(url.Values{"youtube_api_key": {""}})
+	if h.effectiveYouTubeKey(ctx) != "mykey" {
+		t.Fatal("blank key wiped the stored key")
+	}
+	if h.youtubeInappEnabled(ctx) {
+		t.Fatal("unchecked box should disable in-app")
+	}
+}
+
 func TestSettingsJobsFragment(t *testing.T) {
 	h, db := newTestHandler(t)
 	router := h.Router()

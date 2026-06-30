@@ -87,10 +87,17 @@
     {{if .YouTubeConfigured}}
     <small class="form-help">Currently set ({{.YouTubeSource}}): <code>{{.YouTubeMasked}}</code></small>
     {{else}}
-    <small class="form-help">Not configured. On the <em>Rediscover a Year</em> page, songs you don’t own play in-app from YouTube; without a key they open YouTube in a new tab instead.</small>
+    <small class="form-help">Not configured. Needed to resolve a song to a YouTube video for in-app playback.</small>
     {{end}}
-    <input type="password" id="youtube_api_key" name="youtube_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to clear" />
-    <small class="form-help">Overrides <code>HESPERA_YOUTUBE_API_KEY</code>. Free key from the Google Cloud console (YouTube Data API v3; ~100 lookups/day). Submit blank to clear.</small>
+    <input type="password" id="youtube_api_key" name="youtube_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to keep the current one" />
+    <small class="form-help">Overrides <code>HESPERA_YOUTUBE_API_KEY</code>. Free key from the Google Cloud console (YouTube Data API v3; ~100 lookups/day). Leave blank to keep the current key.</small>
+  </div>
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="youtube_inapp_enabled" value="1"{{if .YouTubeInappEnabled}} checked{{end}} />
+      Play un-owned songs in-app from YouTube
+    </label>
+    <small class="form-help">Off (default): un-owned <em>Rediscover a Year</em> songs open in a YouTube tab. On: they play as audio in the Hespera player (requires a key). In-app playback uses a hidden YouTube player, which may not comply with YouTube's terms — opt in for personal use.</small>
   </div>
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save</button>

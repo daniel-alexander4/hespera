@@ -1624,9 +1624,11 @@ WHERE pop.rn<=? ORDER BY t.popularity DESC, t.id`, libraryID, popularPerArtistLi
 			return q, true, nil
 		}
 		topFirst := r.URL.Query().Get("dir") == "top"
-		hasYTKey := h.effectiveYouTubeKey(r.Context()) != ""
+		// Emit YouTube tracks only when the in-app engine is opted in (key + toggle);
+		// otherwise the journey queue is owned-only and un-owned songs link out.
+		ytInApp := h.effectiveYouTubeInApp(r.Context())
 		libraryID := h.resolveMusicLibraryID(r)
-		q.Tracks, err = h.journeyQueueTracks(r.Context(), libraryID, year, topFirst, hasYTKey)
+		q.Tracks, err = h.journeyQueueTracks(r.Context(), libraryID, year, topFirst, ytInApp)
 		q.Title = fmt.Sprintf("Rediscover %d", year)
 		q.BackURL = fmt.Sprintf("/music/year?y=%d", year)
 	default: // single album

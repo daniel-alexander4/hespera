@@ -1733,3 +1733,8 @@ code {
   color: var(--page-fg);
   border-color: var(--accent);
 }
+
+/* Inline checkbox + label (e.g. the YouTube in-app opt-in): blank when off,
+   Catppuccin green when checked. */
+.form-check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 500; }
+.form-check input[type="checkbox"] { accent-color: var(--badge-success-fg); width: 1.05rem; height: 1.05rem; }

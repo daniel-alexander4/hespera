@@ -122,7 +122,7 @@ func (h *Handler) musicYear(w http.ResponseWriter, r *http.Request) {
 		"OwnedSongs":    data.OwnedSongs,
 		"TopFirst":      topFirst,
 		"HasOwned":      data.OwnedSongs > 0,
-		"HasYouTubeKey": h.effectiveYouTubeKey(r.Context()) != "",
+		"YouTubeInApp": h.effectiveYouTubeInApp(r.Context()),
 	})
 }
 
