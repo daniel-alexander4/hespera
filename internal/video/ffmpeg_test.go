@@ -29,6 +29,9 @@ func TestSegmentArgs(t *testing.T) {
 	for _, want := range []string{
 		"-ss 60", "-i /m/ep.mkv", "-t 6", "-c:v libx264", "-c:a aac", "-ac 2", "-f mpegts",
 		"scale=-2:'min(ih,720)'", "-force_key_frames expr:eq(n,0)",
+		// No B-frames, so per-segment DTS==PTS and adjacent HLS segments don't
+		// overlap in DTS (Chrome MSE rejects that → playback never starts).
+		"-bf 0",
 		"-output_ts_offset 60", "/cache/x/seg00010.ts",
 	} {
 		if !strings.Contains(joined, want) {
