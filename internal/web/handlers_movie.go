@@ -791,6 +791,14 @@ func (h *Handler) movieArtUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture the prior art file (if any) so a re-upload that changes the
+	// extension — png→jpg lands at a different filename — doesn't orphan it on
+	// disk. The match-time thumbgc sweep is the backstop, but it may not run for a
+	// long time on a stable library, so clean up the superseded file right here.
+	var oldPath string
+	_ = h.db.QueryRowContext(r.Context(),
+		"SELECT art_path FROM movie_art WHERE tmdb_movie_id=? AND art_type=?", tmdbID, artType).Scan(&oldPath)
+
 	// manual=1 protects this row from a (re)match's downloadMovieArt gate.
 	if _, err := h.db.ExecContext(r.Context(), `
 INSERT INTO movie_art (tmdb_movie_id, art_type, art_path, manual)
@@ -800,6 +808,11 @@ ON CONFLICT(tmdb_movie_id, art_type) DO UPDATE SET
 `, tmdbID, artType, outPath); err != nil {
 		httpError(w, 500, "internal server error", "upsert movie_art failed", "handler", "movieArtUpload", "err", err)
 		return
+	}
+	if oldPath != "" && filepath.Clean(oldPath) != outPath {
+		if clean, perr := pathguard.ResolveExistingUnderRoot(filepath.Clean(h.cfg.DataDir), oldPath); perr == nil {
+			_ = os.Remove(clean)
+		}
 	}
 	http.Redirect(w, r, fmt.Sprintf("/movie/%d", tmdbID), http.StatusSeeOther)
 }

@@ -37,7 +37,8 @@ var artExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp"
 // IMPORTANT: queries MUST enumerate every art_path column whose files live under
 // dir. Adding a new art_path column without adding its query here would let this
 // delete referenced art. Today: thumbs/music ← music_albums + music_artists;
-// thumbs/tv ← tv_series_art + people (actor profile images).
+// thumbs/tv ← tv_series_art + people (actor profile images);
+// thumbs/movies ← movie_art (TMDB + manual covers/backdrops).
 func Sweep(ctx context.Context, db *sql.DB, dir string, grace time.Duration, queries ...string) (int, error) {
 	referenced, err := referencedSet(ctx, db, queries...)
 	if err != nil {
