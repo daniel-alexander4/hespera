@@ -309,6 +309,15 @@ func (m *Matcher) downloadMovieArt(ctx context.Context, movieID int, artType, tm
 	if tmdbPath == "" {
 		return
 	}
+	// A manual upload owns this art — never overwrite it on (re)match. TMDB art
+	// (manual=0 / no row) stays refreshable so Unmatch→re-approve still fixes a
+	// wrong poster.
+	var manual int
+	_ = m.db.QueryRowContext(ctx,
+		"SELECT manual FROM movie_art WHERE tmdb_movie_id=? AND art_type=?", movieID, artType).Scan(&manual)
+	if manual == 1 {
+		return
+	}
 	dest := filepath.Join(m.artDir, fmt.Sprintf("movie_%d_%s.jpg", movieID, artType))
 	var err error
 	if artType == "backdrop" {

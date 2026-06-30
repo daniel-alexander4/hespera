@@ -24,6 +24,41 @@
   <button type="submit" class="btn btn-sm">Wrong match? Unmatch</button>
 </form>
 
+<details class="movie-art-edit">
+  <summary>Artwork</summary>
+  <div class="movie-art-edit-body">
+    <img class="movie-art-poster-preview" src="/art/movie/poster/{{.TMDBID}}" alt="current poster" loading="lazy" />
+    <div class="movie-art-edit-forms">
+      <form method="post" action="/movie/art" enctype="multipart/form-data" class="form-stack">
+        <input type="hidden" name="tmdb_id" value="{{.TMDBID}}">
+        <div class="form-group">
+          <label for="movie-art-type">Replace</label>
+          <select id="movie-art-type" name="art_type" class="input">
+            <option value="poster">Poster</option>
+            <option value="backdrop">Backdrop</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="movie-art-file">Image (JPEG, PNG, or WebP)</label>
+          <input type="file" id="movie-art-file" name="art" accept="image/jpeg,image/png,image/webp" required class="input" />
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Upload artwork</button>
+        </div>
+      </form>
+      <form method="post" action="/movie/art/clear" class="movie-art-revert"
+            onsubmit="return confirm('Remove the manual artwork and restore the TMDB image?');">
+        <input type="hidden" name="tmdb_id" value="{{.TMDBID}}">
+        <select name="art_type" class="input" aria-label="Artwork to revert">
+          <option value="poster">Poster</option>
+          <option value="backdrop">Backdrop</option>
+        </select>
+        <button type="submit" class="btn btn-sm">Revert to TMDB</button>
+      </form>
+    </div>
+  </div>
+</details>
+
 {{if .Tagline}}<p class="tv-tagline"><em>{{.Tagline}}</em></p>{{end}}
 
 {{if .Overview}}
