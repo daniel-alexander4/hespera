@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Locally-hosted media server in Go: Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite storage, server-rendered HTML templates with vanilla CSS/JS. Four direct deps: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`.
+Locally-hosted media server in Go: Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite storage, server-rendered HTML templates with vanilla CSS/JS. Four direct deps: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`. Licensed **GPL-3.0** (`LICENSE`); third-party attributions in `THIRD_PARTY_LICENSES.md`, kept current by `TestThirdPartyLicensesCurrent` (`cmd/hespera`) — it fails the build if a direct dep in `go.mod` isn't listed there, so **adding a dependency requires updating `THIRD_PARTY_LICENSES.md`**.
 
 ## Build & Run Commands
 
