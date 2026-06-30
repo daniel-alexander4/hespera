@@ -73,6 +73,7 @@ func New(d Deps) (*Handler, error) {
 		"music_duplicates.html",
 		"settings_tags.html",
 		"settings_apikeys.html",
+		"settings_about.html",
 		"tv_home.html",
 		"tv_series.html",
 		"tv_season.html",
