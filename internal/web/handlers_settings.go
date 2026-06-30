@@ -211,6 +211,8 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"YouTubeMasked":           ytMask,
 			"YouTubeInappEnabled":     h.youtubeInappEnabled(ctx),
 			"BillboardEnabled":        h.billboardEnabled(ctx),
+			"AuthEnabledSetting":      h.authEnabledSetting(ctx),
+			"AuthActive":              h.auth.Enabled(),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -293,6 +295,25 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["auth_present"]; ok {
+			// Auth on/off toggle. Enabling first ensures a session secret exists
+			// (generated if none), so the next launch boots with auth on instead of
+			// a "secret required" config error. Applies at restart — the active
+			// middleware is wired at construction, not per request.
+			on := r.FormValue("auth_enabled") == "1"
+			if on {
+				if err := h.ensureAuthSecret(ctx); err != nil {
+					httpError(w, 500, "internal server error", "generate session secret failed", "handler", "settingsAPIKeys", "err", err)
+					return
+				}
+			}
+			if err := h.saveAuthEnabled(ctx, on); err != nil {
+				httpError(w, 500, "internal server error", "save auth toggle failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=auth", http.StatusSeeOther)
 			return
 		}
 		if _, ok := r.Form["billboard_present"]; ok {
@@ -505,10 +526,39 @@ func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "libraries.html", map[string]any{
-		"Title":     "Libraries",
-		"Libraries": libs,
-		"MediaRoot": h.cfg.MediaRoot,
+		"Title":            "Libraries",
+		"Libraries":        libs,
+		"MediaRoot":        h.cfg.MediaRoot,
+		"Saved":            r.URL.Query().Get("saved"),
+		"MediaRootInvalid": r.URL.Query().Get("mediaroot") == "invalid",
 	})
+}
+
+// librariesMediaRoot persists the media folder (the pathguard containment root)
+// from the libraries page, so it's configurable without an env var. It's an
+// app_settings override applied at the next launch (see resolveEffectiveConfig);
+// a blank submission reverts to the env/default. Validated absolute + existing.
+func (h *Handler) librariesMediaRoot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "librariesMediaRoot", "err", err)
+		return
+	}
+	root := strings.TrimSpace(r.FormValue("media_root"))
+	if root != "" {
+		if err := validateMediaFolder(root); err != nil {
+			http.Redirect(w, r, "/libraries?mediaroot=invalid", http.StatusSeeOther)
+			return
+		}
+	}
+	if err := h.saveAPIKey(r.Context(), "media_root", root); err != nil {
+		httpError(w, 500, "internal server error", "save media root failed", "handler", "librariesMediaRoot", "err", err)
+		return
+	}
+	http.Redirect(w, r, "/libraries?saved=mediaroot", http.StatusSeeOther)
 }
 
 func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {

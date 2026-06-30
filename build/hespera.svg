@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hespera (the evening star, Hesperus): a four-point star over a deep night
+     ground, in the Catppuccin Mocha palette. Placeholder app icon. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="56" fill="#1e1e2e"/>
+  <circle cx="128" cy="128" r="92" fill="#181825"/>
+  <path d="M128 40
+           C 138 96, 160 118, 216 128
+           C 160 138, 138 160, 128 216
+           C 118 160, 96 138, 40 128
+           C 96 118, 118 96, 128 40 Z"
+        fill="#cba6f7"/>
+  <circle cx="128" cy="128" r="14" fill="#f5e0dc"/>
+</svg>

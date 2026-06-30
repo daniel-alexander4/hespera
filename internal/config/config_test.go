@@ -36,8 +36,11 @@ func TestFromEnvDefaults(t *testing.T) {
 			t.Fatalf("default path must be absolute, got %q", p)
 		}
 	}
-	if !cfg.AuthEnabled {
-		t.Fatalf("expected AuthEnabled=true by default")
+	// Auth is off by default: Hespera ships as a loopback-only single-machine app
+	// where it adds no protection. Exposing it (or Docker server mode) opts in via
+	// AUTH_ENABLED=true or the Settings toggle.
+	if cfg.AuthEnabled {
+		t.Fatalf("expected AuthEnabled=false by default")
 	}
 	if cfg.FFmpegConcurrentLimit != 4 {
 		t.Fatalf("expected FFmpegConcurrentLimit=4, got %d", cfg.FFmpegConcurrentLimit)

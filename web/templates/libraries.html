@@ -4,6 +4,21 @@
   <a href="/libraries/new" class="btn btn-primary">{{template "icon-plus"}}Add Library</a>
 </div>
 
+{{if .MediaRootInvalid}}<p class="form-help">That path isn't an absolute, existing folder — not saved.</p>{{end}}
+{{if eq .Saved "mediaroot"}}<p class="form-help">Media folder saved — restart Hespera to apply.</p>{{end}}
+
+<form method="post" action="/libraries/media-root" class="form-card">
+  <div class="form-group">
+    <label for="media_root">Media folder</label>
+    <small class="form-help">Libraries live under this folder. Currently: <code>{{.MediaRoot}}</code></small>
+    <input type="text" id="media_root" name="media_root" class="input" value="{{.MediaRoot}}" placeholder="/absolute/path/to/media" />
+    <small class="form-help">An absolute path to an existing folder. Submit blank to revert to the default. <strong>Applies after you restart Hespera.</strong></small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn">Save media folder</button>
+  </div>
+</form>
+
 {{if .Libraries}}
 <table class="table">
   <thead>

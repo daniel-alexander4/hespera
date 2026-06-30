@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"hespera/internal/browser"
 	"hespera/internal/config"
 	"hespera/internal/db"
+	"hespera/internal/singleton"
 	"hespera/internal/video"
 	"hespera/internal/web"
 )
@@ -22,6 +25,15 @@ var version = "dev"
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.Info("starting", "version", version)
+
+	// --replace (passed by the desktop launcher) SIGTERMs any other running
+	// instance so a relaunch from the menu takes over cleanly. The app binds a
+	// random loopback port, so this never has to wait for the old port to free.
+	if hasFlag("--replace") || hasFlag("-replace") {
+		if n := singleton.ReplaceOthers(); n > 0 {
+			slog.Info("replaced running instance", "count", n)
+		}
+	}
 
 	cfg := config.FromEnv()
 	if err := cfg.Validate(); err != nil {
@@ -61,8 +73,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// App mode (the default) opens a chromeless browser window and binds a random
+	// loopback port — Hespera runs as a single-machine app. HESPERA_NO_BROWSER
+	// opts out (server/headless/Docker), keeping the env-configured listen
+	// address. An explicit HESPERA_LISTEN is always honored.
+	appMode := os.Getenv("HESPERA_NO_BROWSER") == ""
+	listenAddr := cfg.Listen
+	if appMode && os.Getenv("HESPERA_LISTEN") == "" {
+		listenAddr = "127.0.0.1:0"
+	}
+
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		slog.Error("listen failed", "addr", listenAddr, "err", err)
+		os.Exit(1)
+	}
+	boundAddr := ln.Addr().String()
+
 	srv := &http.Server{
-		Addr:              cfg.Listen,
 		Handler:           h.Router(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -71,12 +99,21 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		slog.Info("listening", "addr", cfg.Listen)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("listen failed", "err", err)
+		slog.Info("listening", "addr", boundAddr)
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			slog.Error("serve failed", "err", err)
 			os.Exit(1)
 		}
 	}()
+
+	if appMode {
+		url := appURL(boundAddr)
+		if _, err := browser.Open(url); err != nil {
+			slog.Warn("could not open app window — browse to it manually", "url", url, "err", err)
+		} else {
+			slog.Info("opened app window", "url", url)
+		}
+	}
 
 	<-stop
 
@@ -88,4 +125,29 @@ func main() {
 	}
 	h.Shutdown()
 	slog.Info("shutdown complete")
+}
+
+// hasFlag reports whether a bare CLI flag is present in the arguments.
+func hasFlag(name string) bool {
+	for _, a := range os.Args[1:] {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// appURL turns a bound listener address into the URL to open in the app window,
+// substituting a concrete loopback host for an empty/wildcard bind so the URL is
+// always reachable.
+func appURL(boundAddr string) string {
+	host, port, err := net.SplitHostPort(boundAddr)
+	if err != nil {
+		return "http://" + boundAddr + "/"
+	}
+	switch host {
+	case "", "::", "0.0.0.0":
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/"
 }

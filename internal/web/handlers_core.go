@@ -58,6 +58,11 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	hasActivity := len(continueWatching) > 0 || len(recentlyPlayed) > 0 ||
 		len(recentlyAddedAlbums) > 0 || len(recentlyAddedTV) > 0 || len(recentlyAddedMovies) > 0
 
+	// First-run: no libraries configured yet → the landing page shows a setup
+	// prompt (set the media folder, add a library) instead of empty carousels.
+	var libCount int
+	_ = h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM libraries").Scan(&libCount)
+
 	h.render(w, "home.html", map[string]any{
 		"Title":               "Home",
 		"MusicLibraryID":      musicLib,
@@ -69,6 +74,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		"RecentlyAddedMovies": recentlyAddedMovies,
 		"Stats":               stats,
 		"HasActivity":         hasActivity,
+		"NeedsSetup":          libCount == 0,
 	})
 }
 

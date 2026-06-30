@@ -1,9 +1,11 @@
 # Hespera
 
-A self-hosted media server for **Music, TV, and Movies**, with automatic
-metadata matching. Written in Go: a single static binary serves a web app on
-`:8080` that you stream from any device on your network. SQLite storage,
-server-rendered HTML, no external services required to run.
+A local app for your **Music, TV, and Movies**, with automatic metadata
+matching. Written in Go: a single static binary that opens a chromeless app
+window on your machine (loopback-only — a single-machine app, not a network
+server). SQLite storage, server-rendered HTML, no external services required to
+run. A Docker server mode is also available if you want to reach it from other
+devices.
 
 Licensed under the [GNU GPL v3](LICENSE); third-party attributions in
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
@@ -21,9 +23,10 @@ macOS, and Windows** (amd64 + arm64).
 ```
 
 Builds Hespera, packages a `.deb`, and installs it — placing `hespera` and
-`hescli` in `/usr/bin` and pulling the runtime dependencies (**ffmpeg**,
-**openssh-client**) via apt. No background service is installed; start the
-server yourself:
+`hescli` in `/usr/bin`, an app-menu entry + icon, and pulling the runtime
+dependencies (**ffmpeg**, **openssh-client**) via apt. No background service is
+installed; launch **Hespera** from your app menu (or run `hespera`) and it opens
+an app window:
 
 ```sh
 hespera
@@ -62,27 +65,28 @@ github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`).
 ## Run
 
 ```sh
-HESPERA_MEDIA_ROOT=/path/to/your/media \
-AUTH_ENABLED=false \
 hespera
 ```
 
-Then open <http://localhost:8080>.
+That's it — Hespera opens an app window automatically, bound to a random
+loopback port (so it never collides with anything else). On first run, the
+window walks you through pointing it at your media folder and adding a library;
+you can also set the media folder under **Libraries** or with
+`HESPERA_MEDIA_ROOT`. It stores its database, caches, and downloaded artwork in
+a per-user data directory (`~/.config/hespera` on Linux, the equivalent on
+macOS/Windows).
 
-By default the server stores its database, caches, and downloaded artwork in a
-per-user data directory (`~/.config/hespera` on Linux, the equivalent on
-macOS/Windows). Point `HESPERA_MEDIA_ROOT` at your media library — there is no
-universal default, so it falls back to your home directory until you set it.
+`HESPERA_NO_BROWSER=1` runs **server mode** instead: no window, binds
+`HESPERA_LISTEN` (default `:8080`) so you can reach it from other devices — this
+is what the Docker image uses.
 
 ### Authentication
 
-`AUTH_ENABLED` defaults to **true**, which requires an `AUTH_SESSION_SECRET`
-(16+ chars) and `ssh-keygen` on PATH for SSH-pubkey login. For a simple
-trusted-LAN setup, disable it:
-
-```sh
-AUTH_ENABLED=false hespera
-```
+`AUTH_ENABLED` defaults to **false**: as a loopback-only single-machine app,
+only your computer can reach Hespera, so no sign-in is needed. If you expose it
+beyond `localhost` (e.g. server mode), turn on **Require sign-in** under
+Settings → API Keys (or set `AUTH_ENABLED=true` with an `AUTH_SESSION_SECRET`
+of 16+ chars and `ssh-keygen` on PATH for SSH-pubkey login).
 
 ### Configuration
 

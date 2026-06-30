@@ -8,6 +8,9 @@ services:
       - /etc/hespera/data:/var/lib/hespera
       - /media/hespera:/media/hespera
     environment:
+      # Server mode: bind all interfaces and don't try to open a desktop browser
+      # window inside the container (the binary opens an app window by default).
+      HESPERA_NO_BROWSER: "1"
       HESPERA_LISTEN: ":8080"
       HESPERA_DATA_DIR: "/var/lib/hespera"
       HESPERA_MEDIA_ROOT: "/media/hespera"

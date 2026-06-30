@@ -1,8 +1,8 @@
 # nfpm config for the Hespera .deb. The build scripts set ARCH/VERSION in the
 # environment and stage the binaries to dist/hespera and dist/hescli (nfpm
 # expands ${ARCH}/${VERSION} but not contents.src globs, so those paths are
-# literal). No systemd unit or desktop entry: Hespera is started on demand by
-# the user (`hespera`) and browsed to over the LAN.
+# literal). No systemd unit: Hespera is launched on demand as a desktop app
+# (the .desktop entry below opens a chromeless window) — there is no service.
 name: hespera
 arch: ${ARCH}
 version: ${VERSION}
@@ -10,9 +10,9 @@ section: net
 priority: optional
 maintainer: Dan <daniel@alexander4.org>
 description: |
-  Hespera — a self-hosted media server for Music, TV, and Movies with automatic
-  metadata matching. Serves a web app on :8080; stream from any device on your
-  network.
+  Hespera — a local app for your Music, TV, and Movies with automatic metadata
+  matching. Launches a chromeless app window on your machine (loopback-only); a
+  Docker server mode is also available.
 # ffmpeg powers TV/movie transcoding + tag recovery; openssh-client provides the
 # ssh-keygen used by the optional pubkey auth. apt pulls them on install.
 depends:
@@ -27,6 +27,17 @@ contents:
     dst: /usr/bin/hescli
     file_info:
       mode: 0755
+  # Desktop launcher + icon so Hespera appears in the app menu and opens a
+  # chromeless window. StartupWMClass=Hespera matches the --class the launcher
+  # passes Chromium, so the panel shows this icon (see internal/browser).
+  - src: build/hespera.desktop
+    dst: /usr/share/applications/hespera.desktop
+    file_info:
+      mode: 0644
+  - src: build/hespera.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/hespera.svg
+    file_info:
+      mode: 0644
   # License + third-party attribution (THIRD_PARTY_LICENSES.md is kept current by
   # TestThirdPartyLicensesCurrent).
   - src: LICENSE
