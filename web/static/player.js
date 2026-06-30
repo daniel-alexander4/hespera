@@ -483,6 +483,33 @@
   };
 
   // --- Now-playing view (/music/player) binding ---
+  // Open/close the right-side playlist drawer. The element stays in the DOM and
+  // animates via a transform; on close we add .hidden only after the slide-out
+  // finishes so couch mode (which reads any on-screen, sized overlay as open)
+  // treats the parked, off-screen drawer as closed.
+  const setPlaylistOpen = (open) => {
+    if (!view || !view.playlistDrawer) return;
+    const d = view.playlistDrawer;
+    const s = view.playlistScrim;
+    if (open) {
+      d.classList.remove('hidden');
+      if (s) s.classList.remove('hidden');
+      void d.offsetWidth; // force reflow so the transform transition runs
+      d.classList.add('open');
+      if (s) s.classList.add('open');
+    } else {
+      d.classList.remove('open');
+      if (s) s.classList.remove('open');
+      // Hide after the slide-out completes; skip if it was reopened meanwhile.
+      d.addEventListener('transitionend', () => {
+        if (!d.classList.contains('open')) {
+          d.classList.add('hidden');
+          if (s) s.classList.add('hidden');
+        }
+      }, { once: true });
+    }
+  };
+
   const renderPlaylist = () => {
     if (!view) return;
     view.playlistList.innerHTML = '';
@@ -499,7 +526,7 @@
       btn.textContent = prefix + t.album + ' — ' + t.title;
       btn.addEventListener('click', () => {
         playAt(idx);
-        view.playlistModal.classList.add('hidden');
+        setPlaylistOpen(false);
       });
       li.appendChild(btn);
       view.playlistList.appendChild(li);
@@ -513,10 +540,13 @@
     if (!t) {
       view.empty.classList.remove('hidden');
       view.main.classList.add('hidden');
+      if (view.transport) view.transport.classList.add('hidden');
+      setPlaylistOpen(false);
       return;
     }
     view.empty.classList.add('hidden');
     view.main.classList.remove('hidden');
+    if (view.transport) view.transport.classList.remove('hidden');
     view.albumTitle.textContent = t.album;
     const artist = (t.artist || '').trim();
     view.trackTitle.textContent = artist ? t.title + ' — ' + artist : t.title;
@@ -553,8 +583,11 @@
       karaokeNext: $('player-karaoke-next'),
       playlistOpenBtn: $('playlist-open-btn'),
       playlistCloseBtn: $('playlist-close-btn'),
-      playlistModal: $('playlist-modal'),
+      playlistDrawer: $('playlist-drawer'),
+      playlistScrim: $('playlist-scrim'),
       playlistList: $('playlist-list'),
+      transport: $('player-transport'),
+      transportToggle: $('player-transport-toggle'),
     };
 
     $('player-prev-btn').addEventListener('click', playPrev);
@@ -589,12 +622,30 @@
       view.coverImg.src = '/static/missing.album.webp';
     });
     if (view.playlistOpenBtn)
-      view.playlistOpenBtn.addEventListener('click', () => view.playlistModal.classList.remove('hidden'));
+      view.playlistOpenBtn.addEventListener('click', () => setPlaylistOpen(true));
     if (view.playlistCloseBtn)
-      view.playlistCloseBtn.addEventListener('click', () => view.playlistModal.classList.add('hidden'));
-    view.playlistModal.addEventListener('click', (e) => {
-      if (e.target === view.playlistModal) view.playlistModal.classList.add('hidden');
-    });
+      view.playlistCloseBtn.addEventListener('click', () => setPlaylistOpen(false));
+    if (view.playlistScrim)
+      view.playlistScrim.addEventListener('click', () => setPlaylistOpen(false));
+
+    // Collapsing transport overlay: the grab tab slides the bar down, persisted
+    // so a deliberate collapse survives navigation back to the now-playing page.
+    if (view.transport && view.transportToggle) {
+      const collapsed = localStorage.getItem('player_transport_collapsed') === '1';
+      const applyCollapsed = (c) => {
+        view.transport.classList.toggle('collapsed', c);
+        view.transportToggle.setAttribute('aria-expanded', String(!c));
+        view.transportToggle.setAttribute(
+          'aria-label', c ? 'Expand controls' : 'Collapse controls');
+        view.transportToggle.setAttribute('title', c ? 'Expand controls' : 'Collapse controls');
+      };
+      applyCollapsed(collapsed);
+      view.transportToggle.addEventListener('click', () => {
+        const c = !view.transport.classList.contains('collapsed');
+        applyCollapsed(c);
+        localStorage.setItem('player_transport_collapsed', c ? '1' : '0');
+      });
+    }
 
     renderView();
 
