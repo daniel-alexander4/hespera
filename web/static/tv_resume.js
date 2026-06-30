@@ -33,16 +33,21 @@
   const sync = () => {
     const video = document.getElementById('tvVideo');
     if (video) {
-      // On a player page: remember what's playing, hide the chip (you're here).
-      const fileID = parseInt(video.dataset.fileId, 10);
-      if (fileID > 0) {
-        const showEl = document.querySelector('.tv-player-header h1');
-        const epEl = document.querySelector('.tv-player-header h2');
-        const label = [
-          showEl && showEl.textContent.trim(),
-          epEl && epEl.textContent.trim(),
-        ].filter(Boolean).join(' · ') || 'Resume watching';
-        write({ fileID, label });
+      // On a player page. The movie player reuses #tvVideo + .tv-player-header,
+      // so only record a target for the TV player — its file-id namespace and
+      // the /tv/player link the chip builds are TV-specific (movie file ids
+      // collide and would mis-route). Either way, hide the chip while you're here.
+      if (video.dataset.mediaKind === 'tv') {
+        const fileID = parseInt(video.dataset.fileId, 10);
+        if (fileID > 0) {
+          const showEl = document.querySelector('.tv-player-header h1');
+          const epEl = document.querySelector('.tv-player-header h2');
+          const label = [
+            showEl && showEl.textContent.trim(),
+            epEl && epEl.textContent.trim(),
+          ].filter(Boolean).join(' · ') || 'Resume watching';
+          write({ fileID, label });
+        }
       }
       hide();
       return;
