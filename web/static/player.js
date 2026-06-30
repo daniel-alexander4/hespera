@@ -560,19 +560,18 @@
   };
 
   // --- Auto-collapsing transport ---
-  // The bottom transport bar auto-collapses after a few seconds of inactivity and
-  // re-reveals on pointer/keyboard/touch activity, mirroring the TV player's
-  // auto-hiding controls overlay. The grab tab still toggles it manually. These
-  // helpers act on the current `view`, so the document-level activity listeners
-  // (bound once below) and the per-bind wiring share one code path without leaks.
+  // The bottom transport bar fully slides off-screen after a few seconds of
+  // inactivity and re-reveals on pointer/keyboard/touch activity, mirroring the TV
+  // player's auto-hiding controls overlay (no grab tab — activity brings it back).
+  // These helpers act on the current `view`, so the document-level activity
+  // listeners (bound once below) and the per-bind wiring share one code path
+  // without leaks.
   const TRANSPORT_AUTO_MS = 3000;
   let transportTimer = null, transportHover = false;
   const applyTransportCollapsed = (c) => {
-    if (!view || !view.transport || !view.transportToggle) return;
+    if (!view || !view.transport) return;
     view.transport.classList.toggle('collapsed', c);
-    view.transportToggle.setAttribute('aria-expanded', String(!c));
-    view.transportToggle.setAttribute('aria-label', c ? 'Expand controls' : 'Collapse controls');
-    view.transportToggle.setAttribute('title', c ? 'Expand controls' : 'Collapse controls');
+    view.transport.setAttribute('aria-hidden', String(c));
   };
   const idleCollapseTransport = () => {
     if (!view || !view.transport) return;
@@ -619,7 +618,6 @@
       playlistScrim: $('playlist-scrim'),
       playlistList: $('playlist-list'),
       transport: $('player-transport'),
-      transportToggle: $('player-transport-toggle'),
     };
 
     $('player-prev-btn').addEventListener('click', playPrev);
@@ -660,19 +658,11 @@
     if (view.playlistScrim)
       view.playlistScrim.addEventListener('click', () => setPlaylistOpen(false));
 
-    // Collapsing transport overlay. The grab tab toggles it manually; it also
-    // auto-collapses after a few seconds of inactivity and re-reveals on activity
-    // (see the shared helpers above). Persistence governs only the initial state.
-    if (view.transport && view.transportToggle) {
-      if (localStorage.getItem('player_transport_collapsed') === '1') applyTransportCollapsed(true);
-      else revealTransport(); // expanded → arm the idle countdown
-      view.transportToggle.addEventListener('click', () => {
-        const c = !view.transport.classList.contains('collapsed');
-        applyTransportCollapsed(c);
-        localStorage.setItem('player_transport_collapsed', c ? '1' : '0');
-        clearTimeout(transportTimer);
-        if (!c) transportTimer = setTimeout(idleCollapseTransport, TRANSPORT_AUTO_MS);
-      });
+    // Auto-collapsing transport: starts revealed (arming the idle countdown) and
+    // re-reveals on activity (see the shared helpers above). No manual tab — it
+    // slides fully off-screen and comes back on the next pointer/key/touch.
+    if (view.transport) {
+      revealTransport(); // visible → arm the idle countdown
       // Keep it open while the pointer rests on the bar; resume the countdown on leave.
       view.transport.addEventListener('pointerenter', () => { transportHover = true; applyTransportCollapsed(false); clearTimeout(transportTimer); });
       view.transport.addEventListener('pointerleave', () => { transportHover = false; revealTransport(); });
