@@ -8,13 +8,37 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"hespera/internal/pathguard"
 	"hespera/internal/tmdb"
 )
+
+// wikiBioAttribution matches TMDB's trailing Wikipedia attribution sentence,
+// which it appends to Wikipedia-sourced person bios (the title is preceded by a
+// regular and/or non-breaking space; \x{00a0} covers the NBSP that \s doesn't).
+var wikiBioAttribution = regexp.MustCompile(`(?s)[\s\x{00a0}]*Description above from the Wikipedia article[\s\x{00a0}]+(.+?),[\s\x{00a0}]*licensed under CC-BY-SA,[\s\x{00a0}]*full list of contributors on Wikipedia\.?[\s\x{00a0}]*$`)
+
+// splitWikipediaBio strips that attribution sentence from a person bio and
+// returns the cleaned prose plus a link to the source article, so the page shows
+// the bio and a single "Read more on Wikipedia" link instead of the raw notice.
+func splitWikipediaBio(bio string) (clean, wikipediaURL string) {
+	m := wikiBioAttribution.FindStringSubmatchIndex(bio)
+	if m == nil {
+		return bio, ""
+	}
+	clean = strings.TrimSpace(bio[:m[0]])
+	title := strings.Join(strings.Fields(bio[m[2]:m[3]]), "_") // Fields splits on NBSP too
+	if title == "" {
+		return clean, ""
+	}
+	return clean, "https://en.wikipedia.org/wiki/" + url.PathEscape(title)
+}
 
 // tmdbPosterBase is the TMDB image base for hotlinked posters of shows not in
 // the local library (the actor's wider filmography). These are external
@@ -249,14 +273,17 @@ func (h *Handler) personDetail(w http.ResponseWriter, r *http.Request) {
 		inLib[t.SeriesID] = true
 	}
 
+	cleanBio, wikipediaURL := splitWikipediaBio(bio)
+
 	h.render(w, "person.html", map[string]any{
-		"Title":      nonEmpty(name, "Actor"),
-		"PersonID":   personID,
-		"Name":       name,
-		"HasArt":     scanNullString(artPath) != "",
-		"Bio":        bio,
-		"Titles":     titles,
-		"OtherShows": buildOtherShows(scanNullString(filmographyJSON), inLib),
+		"Title":        nonEmpty(name, "Actor"),
+		"PersonID":     personID,
+		"Name":         name,
+		"HasArt":       scanNullString(artPath) != "",
+		"Bio":          cleanBio,
+		"WikipediaURL": wikipediaURL,
+		"Titles":       titles,
+		"OtherShows":   buildOtherShows(scanNullString(filmographyJSON), inLib),
 	})
 }
 
