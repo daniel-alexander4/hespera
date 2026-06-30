@@ -164,11 +164,12 @@ func TestFetchPersonBio(t *testing.T) {
 	ctx := context.Background()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/3/person/17419/tv_credits", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/3/person/17419/combined_credits", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"cast":[
-			{"id":1396,"name":"Breaking Bad","character":"Walter White","poster_path":"/bb.jpg","first_air_date":"2008-01-20","episode_count":62},
-			{"id":1100,"name":"Malcolm in the Middle","character":"Hal","poster_path":"/mm.jpg","first_air_date":"2000-01-09","episode_count":151}
+			{"id":1396,"media_type":"tv","name":"Breaking Bad","character":"Walter White","poster_path":"/bb.jpg","first_air_date":"2008-01-20","episode_count":62},
+			{"id":1100,"media_type":"tv","name":"Malcolm in the Middle","character":"Hal","poster_path":"/mm.jpg","first_air_date":"2000-01-09","episode_count":151},
+			{"id":12,"media_type":"movie","title":"Drive","character":"Shannon","poster_path":"/dr.jpg","release_date":"2011-09-16"}
 		]}`)
 	})
 	mux.HandleFunc("/3/person/17419", func(w http.ResponseWriter, r *http.Request) {
@@ -204,12 +205,19 @@ func TestFetchPersonBio(t *testing.T) {
 	if bio != "An American actor." || art == "" || fetched == "" {
 		t.Fatalf("person row: bio=%q art=%q fetched=%q", bio, art, fetched)
 	}
-	// Filmography cached, ordered by episode count (Malcolm 151 before Breaking Bad 62).
-	var credits []PersonTVCredit
+	// Combined filmography cached, newest-first (Drive 2011, Breaking Bad 2008,
+	// Malcolm 2000), with the film tagged media_type=movie.
+	var credits []PersonCredit
 	if err := json.Unmarshal([]byte(filmo), &credits); err != nil {
 		t.Fatalf("filmography unmarshal: %v (%q)", err, filmo)
 	}
-	if len(credits) != 2 || credits[0].ID != 1100 || credits[1].ID != 1396 {
-		t.Fatalf("filmography = %+v", credits)
+	if len(credits) != 3 {
+		t.Fatalf("filmography len = %d, want 3: %+v", len(credits), credits)
+	}
+	if credits[0].ID != 12 || !credits[0].IsMovie() {
+		t.Fatalf("first credit should be the 2011 film Drive, got %+v", credits[0])
+	}
+	if credits[1].ID != 1396 || credits[2].ID != 1100 {
+		t.Fatalf("TV order wrong (want BB 2008 then Malcolm 2000): %+v", credits)
 	}
 }

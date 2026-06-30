@@ -51,9 +51,9 @@ func TestCastAndPersonQueries(t *testing.T) {
 		t.Fatalf("cast[1] should have no art: %+v", cast[1])
 	}
 
-	titles := h.loadPersonTitles(ctx, 17419)
-	if len(titles) != 1 || titles[0].SeriesID != "1396" || titles[0].Character != "Walter White" {
-		t.Fatalf("titles = %+v", titles)
+	ownedTV := h.loadPersonOwnedIDs(ctx, 17419, personOwnedTVQuery)
+	if len(ownedTV) != 1 || !ownedTV[1396] {
+		t.Fatalf("ownedTV = %+v, want {1396:true}", ownedTV)
 	}
 
 	// castFetched is false until the marker is written.
@@ -70,28 +70,62 @@ func TestCastAndPersonQueries(t *testing.T) {
 	}
 }
 
-// TestBuildOtherShows covers the out-of-library filmography: in-library shows are
-// excluded, years are derived, and posters hotlink to TMDB.
-func TestBuildOtherShows(t *testing.T) {
+// TestBuildFilmography covers the combined-credits split: TV vs film by
+// media_type, Owned flags from the per-type ownership sets (owned → local link,
+// no hotlink; un-owned → hotlinked poster), and back-compat with an old
+// tv_credits blob (no media_type → all TV).
+func TestBuildFilmography(t *testing.T) {
 	blob := `[
-		{"id":1396,"name":"Breaking Bad","character":"Walt","poster_path":"/bb.jpg","first_air_date":"2008-01-20"},
-		{"id":1100,"name":"Malcolm","character":"Hal","poster_path":"","first_air_date":"2000-01-09"}
+		{"id":1396,"media_type":"tv","name":"Breaking Bad","character":"Walt","poster_path":"/bb.jpg","first_air_date":"2008-01-20"},
+		{"id":603,"media_type":"movie","title":"The Matrix","character":"Neo","poster_path":"/mx.jpg","release_date":"1999-03-31"},
+		{"id":12,"media_type":"movie","title":"Drive","character":"Driver","poster_path":"/dr.jpg","release_date":"2011-09-16"}
 	]`
-	out := buildOtherShows(blob, map[string]bool{"1396": true})
-	if len(out) != 1 {
-		t.Fatalf("len = %d, want 1 (1396 in library, excluded)", len(out))
+	tv, films := buildFilmography(blob, map[int]bool{1396: true}, map[int]bool{603: true})
+
+	if len(tv) != 1 || tv[0].Title != "Breaking Bad" || tv[0].Year != "2008" || !tv[0].Owned || tv[0].PosterURL != "" {
+		t.Fatalf("tv = %+v (want one owned Breaking Bad, no hotlink)", tv)
 	}
-	if out[0].Name != "Malcolm" || out[0].Year != "2000" || out[0].Character != "Hal" || out[0].PosterURL != "" {
-		t.Fatalf("out[0] = %+v", out[0])
+	if len(films) != 2 {
+		t.Fatalf("films len = %d, want 2", len(films))
+	}
+	var matrix, drive filmographyRow
+	for _, f := range films {
+		switch f.ID {
+		case 603:
+			matrix = f
+		case 12:
+			drive = f
+		}
+	}
+	if !matrix.Owned || matrix.PosterURL != "" {
+		t.Fatalf("Matrix should be owned with no hotlink: %+v", matrix)
+	}
+	if drive.Owned || drive.Year != "2011" || drive.PosterURL != "https://image.tmdb.org/t/p/w342/dr.jpg" {
+		t.Fatalf("Drive should be un-owned + hotlinked: %+v", drive)
 	}
 
-	out2 := buildOtherShows(`[{"id":5,"name":"X","poster_path":"/x.jpg","first_air_date":"2020-05-01"}]`, nil)
-	if len(out2) != 1 || out2[0].PosterURL != "https://image.tmdb.org/t/p/w342/x.jpg" {
-		t.Fatalf("out2 = %+v", out2)
+	// Back-compat: an old tv_credits blob (no media_type) → all TV, hotlinked.
+	tv2, films2 := buildFilmography(`[{"id":5,"name":"X","poster_path":"/x.jpg","first_air_date":"2020-05-01"}]`, nil, nil)
+	if len(films2) != 0 || len(tv2) != 1 || tv2[0].PosterURL != "https://image.tmdb.org/t/p/w342/x.jpg" {
+		t.Fatalf("old blob → one un-owned TV row: tv=%+v films=%+v", tv2, films2)
 	}
 
-	if buildOtherShows("", nil) != nil {
-		t.Fatal("empty filmography should yield nil")
+	if tv3, films3 := buildFilmography("", nil, nil); tv3 != nil || films3 != nil {
+		t.Fatal("empty filmography should yield nil, nil")
+	}
+}
+
+// TestFilmographyNeedsUpgrade gates the one-time lazy re-fetch: an old TV-only
+// blob upgrades; a combined blob and an empty/"null" blob do not (no re-loop).
+func TestFilmographyNeedsUpgrade(t *testing.T) {
+	if !filmographyNeedsUpgrade(`[{"id":5,"name":"X","first_air_date":"2020-01-01"}]`) {
+		t.Fatal("old tv_credits blob should need upgrade")
+	}
+	if filmographyNeedsUpgrade(`[{"id":5,"media_type":"tv","name":"X"}]`) {
+		t.Fatal("combined blob should NOT need upgrade")
+	}
+	if filmographyNeedsUpgrade("null") || filmographyNeedsUpgrade("[]") || filmographyNeedsUpgrade("") {
+		t.Fatal("empty/null blob should NOT loop")
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"hespera/internal/pathguard"
@@ -151,98 +150,92 @@ func (h *Handler) movieCastFetched(ctx context.Context, tmdbID int) bool {
 		fmt.Sprintf("movie:%d:cast", tmdbID)).Scan(&x) == nil
 }
 
-type personTitleRow struct {
-	SeriesID   string
-	Name       string
-	PosterPath string
-	Character  string
-}
-
-// loadPersonTitles returns the matched, in-library TV series this person appears
-// in (the "other shows" list), with the character they played in each.
-func (h *Handler) loadPersonTitles(ctx context.Context, personID int64) []personTitleRow {
-	rows, err := h.db.QueryContext(ctx, `
-SELECT i.series_id, c.character_name
-FROM credits c
-JOIN tv_series_identities i ON CAST(i.series_id AS INTEGER) = c.media_id
-WHERE c.person_id=? AND c.media_type='tv' AND i.status='matched' AND i.series_id != ''
-GROUP BY i.series_id
-`, personID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	chars := map[string]string{}
-	var ids []string
-	for rows.Next() {
-		var sid, ch string
-		if err := rows.Scan(&sid, &ch); err != nil {
-			return nil
-		}
-		if _, seen := chars[sid]; !seen {
-			ids = append(ids, sid)
-		}
-		chars[sid] = ch
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	metas := h.loadShowMetaSummaries(ctx, ids)
-	out := make([]personTitleRow, 0, len(ids))
-	for _, sid := range ids {
-		meta := metas[sid]
-		name := meta.name
-		if name == "" {
-			name = "Unknown Series (TMDB " + sid + ")"
-		}
-		out = append(out, personTitleRow{
-			SeriesID:   sid,
-			Name:       name,
-			PosterPath: meta.posterPath,
-			Character:  chars[sid],
-		})
-	}
-	return out
-}
-
-type otherShowRow struct {
-	Name      string
+// filmographyRow is one credit card on the actor page (TV or film). Owned titles
+// link into the library with local art; un-owned ones hotlink a TMDB poster.
+type filmographyRow struct {
+	ID        int
+	Title     string
 	Year      string
 	Character string
-	PosterURL string // hotlinked TMDB thumbnail, or "" for none
+	Owned     bool
+	PosterURL string // hotlinked TMDB thumbnail (un-owned only), else ""
 }
 
-// buildOtherShows turns a cached filmography JSON blob into the actor's shows
-// that are NOT in the local library, with hotlinked TMDB poster thumbnails.
-func buildOtherShows(filmographyJSON string, inLibrary map[string]bool) []otherShowRow {
+// loadPersonOwnedIDs returns the set of TMDB ids of the given media_type that
+// this person is cast in AND that are matched in the library, so the filmography
+// can link those locally instead of hotlinking. Keyed per media-type because a
+// TV series id and a movie id can collide as integers.
+func (h *Handler) loadPersonOwnedIDs(ctx context.Context, personID int64, query string) map[int]bool {
+	owned := map[int]bool{}
+	rows, err := h.db.QueryContext(ctx, query, personID)
+	if err != nil {
+		return owned
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		if rows.Scan(&id) == nil {
+			owned[id] = true
+		}
+	}
+	return owned
+}
+
+const personOwnedTVQuery = `
+SELECT DISTINCT CAST(i.series_id AS INTEGER)
+FROM credits c
+JOIN tv_series_identities i ON CAST(i.series_id AS INTEGER) = c.media_id
+WHERE c.person_id=? AND c.media_type='tv' AND i.status='matched' AND i.series_id != ''`
+
+const personOwnedMovieQuery = `
+SELECT DISTINCT mf.tmdb_id
+FROM credits c
+JOIN movie_files mf ON mf.tmdb_id = c.media_id
+WHERE c.person_id=? AND c.media_type='movie' AND mf.match_status='matched' AND mf.tmdb_id != 0`
+
+// buildFilmography splits a cached combined-credits blob into TV and film rows,
+// marking each Owned against the per-type ownership sets. An old tv_credits blob
+// (no media_type) renders entirely as TV (back-compat) until the lazy re-fetch
+// upgrades it.
+func buildFilmography(filmographyJSON string, ownedTV, ownedMovie map[int]bool) (tv, films []filmographyRow) {
 	if filmographyJSON == "" {
-		return nil
+		return nil, nil
 	}
-	var credits []tmdb.PersonTVCredit
+	var credits []tmdb.PersonCredit
 	if json.Unmarshal([]byte(filmographyJSON), &credits) != nil {
-		return nil
+		return nil, nil
 	}
-	var out []otherShowRow
 	for _, c := range credits {
-		if inLibrary[strconv.Itoa(c.ID)] {
-			continue
+		row := filmographyRow{ID: c.ID, Title: c.CreditTitle(), Year: c.CreditYear(), Character: c.Character}
+		if c.IsMovie() {
+			row.Owned = ownedMovie[c.ID]
+			if !row.Owned && c.PosterPath != "" {
+				row.PosterURL = tmdbPosterBase + c.PosterPath
+			}
+			films = append(films, row)
+		} else {
+			row.Owned = ownedTV[c.ID]
+			if !row.Owned && c.PosterPath != "" {
+				row.PosterURL = tmdbPosterBase + c.PosterPath
+			}
+			tv = append(tv, row)
 		}
-		year := ""
-		if len(c.FirstAirDate) >= 4 {
-			year = c.FirstAirDate[:4]
-		}
-		poster := ""
-		if c.PosterPath != "" {
-			poster = tmdbPosterBase + c.PosterPath
-		}
-		out = append(out, otherShowRow{Name: c.Name, Year: year, Character: c.Character, PosterURL: poster})
 	}
-	return out
+	return tv, films
 }
 
-// personDetail renders an actor page: bio + image + the in-library titles they
-// appear in + their other (out-of-library) shows. The bio/image/filmography are
-// fetched lazily in the background on first view.
+// filmographyNeedsUpgrade reports whether a cached blob predates combined credits
+// (a non-trivial tv_credits-shaped blob with no media_type), so the actor's films
+// are missing and a one-time lazy re-fetch is warranted. An empty/"null" blob
+// returns false (no credits to upgrade — wouldn't loop).
+func filmographyNeedsUpgrade(filmographyJSON string) bool {
+	fj := strings.TrimSpace(filmographyJSON)
+	return len(fj) > 4 && !strings.Contains(fj, "media_type")
+}
+
+// personDetail renders an actor page: bio + image + their full filmography split
+// into TV Shows and Films, owned titles linking into the library. Bio/image/
+// filmography are fetched lazily in the background on first view.
 func (h *Handler) personDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -260,18 +253,19 @@ func (h *Handler) personDetail(w http.ResponseWriter, r *http.Request) {
 		"SELECT name, art_path, bio, bio_fetched_at, filmography_json FROM people WHERE tmdb_id=?", personID,
 	).Scan(&name, &artPath, &bio, &bioFetchedAt, &filmographyJSON) == nil
 
-	// Lazily fetch the bio (image + filmography) the first time, in the background.
-	if !hasRow || bioFetchedAt == "" {
+	fj := scanNullString(filmographyJSON)
+	// Lazily fetch the bio (image + filmography) the first time, and re-fetch once
+	// to upgrade a pre-combined-credits blob to the full TV+film set — in the
+	// background. The upgraded blob carries media_type, so it won't re-trigger.
+	if !hasRow || bioFetchedAt == "" || filmographyNeedsUpgrade(fj) {
 		pid := int(personID)
 		h.enqueueMetaFetch(r.Context(), fmt.Sprintf("person:%d", pid), "person_fetch",
 			func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchPersonBio(ctx, pid) })
 	}
 
-	titles := h.loadPersonTitles(r.Context(), personID)
-	inLib := make(map[string]bool, len(titles))
-	for _, t := range titles {
-		inLib[t.SeriesID] = true
-	}
+	ownedTV := h.loadPersonOwnedIDs(r.Context(), personID, personOwnedTVQuery)
+	ownedMovie := h.loadPersonOwnedIDs(r.Context(), personID, personOwnedMovieQuery)
+	tvCredits, filmCredits := buildFilmography(fj, ownedTV, ownedMovie)
 
 	cleanBio, wikipediaURL := splitWikipediaBio(bio)
 
@@ -282,8 +276,8 @@ func (h *Handler) personDetail(w http.ResponseWriter, r *http.Request) {
 		"HasArt":       scanNullString(artPath) != "",
 		"Bio":          cleanBio,
 		"WikipediaURL": wikipediaURL,
-		"Titles":       titles,
-		"OtherShows":   buildOtherShows(scanNullString(filmographyJSON), inLib),
+		"TVCredits":    tvCredits,
+		"FilmCredits":  filmCredits,
 	})
 }
 
