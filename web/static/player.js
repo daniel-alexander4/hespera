@@ -28,6 +28,13 @@
   let karaokeLines = [];
   let karaokeToken = 0; // guards a stale lyrics fetch from overwriting a newer track
   let view = null; // now-playing view DOM refs, when that page is shown
+  // The autoload query of the queue currently loaded into the player. Persists
+  // across Turbo navigations (this script loads once in the shell), so returning
+  // to /music/player — via the back button, a restoration visit, or a cached
+  // preview re-render — doesn't reload-and-restart a queue that's already
+  // playing. Only a *different* play request (new params) re-loads. Cleared on
+  // stop so the same queue can be started again afterwards.
+  let loadedAutoload = null;
 
   // --- Playback engine: 'local' (the <audio>) or 'yt' (a hidden YouTube IFrame
   // player, for un-owned year-journey songs). The transport reads/writes through
@@ -326,6 +333,7 @@
     queue = [];
     currentPos = -1;
     currentTrackReported = true;
+    loadedAutoload = null; // a fresh start after stop should autoload again
     if (hasMediaSession) {
       try {
         navigator.mediaSession.metadata = null;
@@ -594,8 +602,15 @@
     // Autoload whenever the URL carries play params (a play-nav landed here) —
     // not only when idle, so starting a new song while one plays swaps the queue.
     // The bare /music/player (the breadcrumb back) has no params → no reload.
+    // Guard against re-loading the queue that's already playing: a revisit to the
+    // same params URL (back button, Turbo restoration/preview) carries the same
+    // data-autoload, and reloading would interrupt the current track and restart
+    // from the beginning. Only a genuinely new request (different params) loads.
     const autoload = page.getAttribute('data-autoload');
-    if (autoload) playFromHref('?' + autoload);
+    if (autoload && autoload !== loadedAutoload) {
+      loadedAutoload = autoload;
+      playFromHref('?' + autoload);
+    }
   };
 
   // --- One-time wiring on the permanent audio + header + document ---
