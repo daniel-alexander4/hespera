@@ -141,6 +141,16 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 		"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'",
 		"-fps_mode", "cfr",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+		// No B-frames. Each segment is encoded independently and placed on the
+		// timeline with -output_ts_offset; with B-frames the reorder makes the
+		// segment's first DTS land ~1 reorder-depth *before* its boundary, so
+		// adjacent segments overlap in DTS and Chrome's MediaSource rejects the
+		// append ("Parsed buffers not in DTS sequence" → MediaError 3, playback
+		// never starts — worst on a mid-timeline resume). With -bf 0, DTS==PTS and
+		// each segment starts exactly on its boundary, so segments are contiguous
+		// and monotonic. Negligible compression cost; standard for segmented
+		// on-demand transcode. (Bump segEncodeVersion when changing this.)
+		"-bf", "0",
 		"-force_key_frames", "expr:eq(n,0)",
 		"-c:a", "aac", "-b:a", "160k",
 	}
@@ -313,8 +323,17 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 	finish(nil)
 }
 
+// segEncodeVersion is part of the segment cache key (hlsKey). Bump it whenever
+// SegmentArgs changes the encoded segment bytes in a way that must NOT mix with
+// previously-cached segments — the cache key otherwise keys only on the source +
+// downscale + audio track, so a stale segment from an older encoder would be
+// served (and, at a boundary with a new one, could re-introduce the very DTS
+// discontinuity the encoder change fixes). Bumping orphans the old segments;
+// PruneCache reaps them. v1: added -bf 0 for monotonic cross-segment DTS.
+const segEncodeVersion = 1
+
 func hlsKey(src string, modTime time.Time, size int64, maxHeight, audioOrdinal int) string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal)))
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d|v%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal, segEncodeVersion)))
 	return hex.EncodeToString(h[:8])
 }
 
