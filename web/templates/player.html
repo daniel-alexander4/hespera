@@ -29,14 +29,10 @@
   </div>
 </div>
 
-{{/* Transport (seek + controls) is a collapsing overlay pinned to the bottom of
-     the screen; the grab tab toggles it. player.js wires #player-transport-toggle
-     and persists the collapsed state in localStorage. */}}
+{{/* Transport (seek + controls) is an auto-hiding overlay pinned to the bottom of
+     the screen: player.js slides it fully off-screen after a few seconds of
+     inactivity and brings it back on pointer/keyboard/touch activity. */}}
 <div id="player-transport" class="player-transport">
-  <button id="player-transport-toggle" type="button" class="player-transport-tab"
-          aria-label="Collapse controls" title="Collapse controls" aria-expanded="true">
-    {{template "icon-chevron-down"}}
-  </button>
   <div class="player-transport-body">
     <div class="player-seek-row">
       <input id="player-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek" />
