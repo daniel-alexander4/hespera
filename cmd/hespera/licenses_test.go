@@ -7,11 +7,14 @@ import (
 	"testing"
 )
 
-// TestThirdPartyLicensesCurrent fails if a direct dependency in go.mod is not
-// listed in THIRD_PARTY_LICENSES.md. GPLv3 distribution requires retaining each
-// third-party component's attribution, so adding a dependency must update the
-// notice — this guard makes forgetting it a build failure rather than silent
-// drift. (It checks presence of the module path, not the license text itself.)
+// TestThirdPartyLicensesCurrent fails if any module in go.mod's require blocks
+// — direct or indirect — is not listed in THIRD_PARTY_LICENSES.md. The indirect
+// modules are the transitive deps that compile into the binary, so they ship
+// with it and their attribution must be retained too (GPLv3 distribution). This
+// guard makes forgetting a dependency a build failure rather than silent drift.
+// (It checks presence of the module path, not the verbatim license text. A new
+// test-only module that `go mod tidy` parks in the indirect block will also be
+// required here — over-attribution is harmless and the prompt is intentional.)
 func TestThirdPartyLicensesCurrent(t *testing.T) {
 	gomod, err := os.ReadFile("../../go.mod")
 	if err != nil {
@@ -23,13 +26,18 @@ func TestThirdPartyLicensesCurrent(t *testing.T) {
 	}
 	noticeStr := string(notice)
 
-	// Direct deps = lines inside a require ( … ) block that aren't // indirect.
+	// Every module inside a require ( … ) block — direct and indirect alike —
+	// ships in the binary, so each must be attributed.
 	reBlock := regexp.MustCompile(`(?s)require \((.*?)\)`)
 	var missing []string
 	for _, block := range reBlock.FindAllStringSubmatch(string(gomod), -1) {
 		for _, line := range strings.Split(block[1], "\n") {
+			// Drop the "// indirect" trailing comment but keep the module.
+			if i := strings.Index(line, "//"); i >= 0 {
+				line = line[:i]
+			}
 			line = strings.TrimSpace(line)
-			if line == "" || strings.Contains(line, "// indirect") {
+			if line == "" {
 				continue
 			}
 			path := strings.Fields(line)[0] // module path is the first token
@@ -39,6 +47,6 @@ func TestThirdPartyLicensesCurrent(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Fatalf("direct dependencies missing from THIRD_PARTY_LICENSES.md (add them): %v", missing)
+		t.Fatalf("dependencies missing from THIRD_PARTY_LICENSES.md (add them): %v", missing)
 	}
 }
