@@ -1193,7 +1193,13 @@ body::before {
   right: 0;
   bottom: 0;
   z-index: 250;
+  /* Semi-transparent like the TV controls overlay — the page art shows through,
+     kept legible by a backdrop blur. Opaque fallback for browsers without
+     color-mix/backdrop-filter. */
   background: var(--surface-card);
+  background: color-mix(in srgb, var(--surface-card) 72%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   border-top: 1px solid var(--border-default);
   box-shadow: 0 -2px 14px rgba(0, 0, 0, 0.28);
   transition: transform 0.28s ease;
@@ -1221,6 +1227,10 @@ body::before {
   border-radius: 10px 10px 0 0;
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.18);
   cursor: pointer;
+  /* Match the bar's translucency (the var(--surface-card) above is the fallback). */
+  background: color-mix(in srgb, var(--surface-card) 72%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
 .player-transport-tab .icon {
   width: 1.1rem;

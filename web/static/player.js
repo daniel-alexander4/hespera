@@ -559,12 +559,44 @@
     updateSeek();
   };
 
+  // --- Auto-collapsing transport ---
+  // The bottom transport bar auto-collapses after a few seconds of inactivity and
+  // re-reveals on pointer/keyboard/touch activity, mirroring the TV player's
+  // auto-hiding controls overlay. The grab tab still toggles it manually. These
+  // helpers act on the current `view`, so the document-level activity listeners
+  // (bound once below) and the per-bind wiring share one code path without leaks.
+  const TRANSPORT_AUTO_MS = 3000;
+  let transportTimer = null, transportHover = false;
+  const applyTransportCollapsed = (c) => {
+    if (!view || !view.transport || !view.transportToggle) return;
+    view.transport.classList.toggle('collapsed', c);
+    view.transportToggle.setAttribute('aria-expanded', String(!c));
+    view.transportToggle.setAttribute('aria-label', c ? 'Expand controls' : 'Collapse controls');
+    view.transportToggle.setAttribute('title', c ? 'Expand controls' : 'Collapse controls');
+  };
+  const idleCollapseTransport = () => {
+    if (!view || !view.transport) return;
+    // Stay open while paused, mid seek-drag, hovering the bar, or a control in it
+    // is keyboard-focused (couch nav) — the same guards as the TV overlay.
+    const ae = document.activeElement;
+    if (curPaused() || view.seeking || transportHover ||
+        (ae && ae !== document.body && view.transport.contains(ae) && ae.matches && ae.matches(':focus-visible'))) return;
+    applyTransportCollapsed(true);
+  };
+  const revealTransport = () => {
+    if (!view || !view.transport) return;
+    if (view.transport.classList.contains('collapsed')) applyTransportCollapsed(false);
+    clearTimeout(transportTimer);
+    transportTimer = setTimeout(idleCollapseTransport, TRANSPORT_AUTO_MS);
+  };
+
   // Locate and wire the now-playing view if it's on the page. Runs per Turbo
   // visit; the view nodes are fresh each time, so listeners bind cleanly.
   const bindView = () => {
     const page = document.querySelector('.player-page');
     if (!page) {
       view = null;
+      clearTimeout(transportTimer); // no player view → stop any pending auto-collapse
       return;
     }
     const $ = (id) => document.getElementById(id);
@@ -628,23 +660,22 @@
     if (view.playlistScrim)
       view.playlistScrim.addEventListener('click', () => setPlaylistOpen(false));
 
-    // Collapsing transport overlay: the grab tab slides the bar down, persisted
-    // so a deliberate collapse survives navigation back to the now-playing page.
+    // Collapsing transport overlay. The grab tab toggles it manually; it also
+    // auto-collapses after a few seconds of inactivity and re-reveals on activity
+    // (see the shared helpers above). Persistence governs only the initial state.
     if (view.transport && view.transportToggle) {
-      const collapsed = localStorage.getItem('player_transport_collapsed') === '1';
-      const applyCollapsed = (c) => {
-        view.transport.classList.toggle('collapsed', c);
-        view.transportToggle.setAttribute('aria-expanded', String(!c));
-        view.transportToggle.setAttribute(
-          'aria-label', c ? 'Expand controls' : 'Collapse controls');
-        view.transportToggle.setAttribute('title', c ? 'Expand controls' : 'Collapse controls');
-      };
-      applyCollapsed(collapsed);
+      if (localStorage.getItem('player_transport_collapsed') === '1') applyTransportCollapsed(true);
+      else revealTransport(); // expanded → arm the idle countdown
       view.transportToggle.addEventListener('click', () => {
         const c = !view.transport.classList.contains('collapsed');
-        applyCollapsed(c);
+        applyTransportCollapsed(c);
         localStorage.setItem('player_transport_collapsed', c ? '1' : '0');
+        clearTimeout(transportTimer);
+        if (!c) transportTimer = setTimeout(idleCollapseTransport, TRANSPORT_AUTO_MS);
       });
+      // Keep it open while the pointer rests on the bar; resume the countdown on leave.
+      view.transport.addEventListener('pointerenter', () => { transportHover = true; applyTransportCollapsed(false); clearTimeout(transportTimer); });
+      view.transport.addEventListener('pointerleave', () => { transportHover = false; revealTransport(); });
     }
 
     renderView();
@@ -795,6 +826,11 @@
     },
     true,
   );
+
+  // Reveal the auto-collapsing transport on any activity (bound once, document-
+  // level; a no-op when the now-playing view isn't on the page).
+  ['pointermove', 'pointerdown', 'keydown', 'touchstart'].forEach((ev) =>
+    document.addEventListener(ev, revealTransport, { passive: true }));
 
   // Final listen report when the tab actually closes (rare under Turbo).
   window.addEventListener('beforeunload', () => reportCurrentTrack(false, { beacon: true }));
