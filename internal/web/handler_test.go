@@ -87,6 +87,16 @@ func setupTemplateDir(t *testing.T, dir string) {
 		t.Fatalf("WriteFile tv_match_review.html override: %v", err)
 	}
 
+	// Overwrite movie_match_review.html with a functional stub rendering the
+	// Groups the handler passes (mirrors the tv_match_review override).
+	movieReviewTpl := `{{define "content"}}` +
+		`{{if .Groups}}{{range .Groups}}<span>{{.GuessedTitle}}</span>{{end}}` +
+		`{{else}}<p>No movies need review</p>{{end}}` +
+		`{{end}}`
+	if err := os.WriteFile(filepath.Join(tplDir, "movie_match_review.html"), []byte(movieReviewTpl), 0o644); err != nil {
+		t.Fatalf("WriteFile movie_match_review.html override: %v", err)
+	}
+
 	// Overwrite settings_jobs.html with a functional stub mirroring the real
 	// structure: a `content` block that embeds a reusable `jobs-container` block,
 	// so the live-poll fragment endpoint (ExecuteTemplate "jobs-container") and
