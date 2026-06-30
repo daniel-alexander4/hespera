@@ -116,16 +116,24 @@ func TestBuildFilmography(t *testing.T) {
 }
 
 // TestFilmographyNeedsUpgrade gates the one-time lazy re-fetch: an old TV-only
-// blob upgrades; a combined blob and an empty/"null" blob do not (no re-loop).
+// blob and a never-written ("") blob upgrade; a combined blob and a
+// fetched-but-empty "[]"/"null" blob do not (the latter is what keeps it
+// loop-proof — a re-fetch that finds no credits writes "[]", not "").
 func TestFilmographyNeedsUpgrade(t *testing.T) {
 	if !filmographyNeedsUpgrade(`[{"id":5,"name":"X","first_air_date":"2020-01-01"}]`) {
 		t.Fatal("old tv_credits blob should need upgrade")
 	}
+	if !filmographyNeedsUpgrade("") {
+		t.Fatal("empty-string blob (never written) should need upgrade")
+	}
+	if !filmographyNeedsUpgrade("   ") {
+		t.Fatal("whitespace-only blob should need upgrade")
+	}
 	if filmographyNeedsUpgrade(`[{"id":5,"media_type":"tv","name":"X"}]`) {
 		t.Fatal("combined blob should NOT need upgrade")
 	}
-	if filmographyNeedsUpgrade("null") || filmographyNeedsUpgrade("[]") || filmographyNeedsUpgrade("") {
-		t.Fatal("empty/null blob should NOT loop")
+	if filmographyNeedsUpgrade("[]") || filmographyNeedsUpgrade("null") {
+		t.Fatal("fetched-but-empty ([]/null) must NOT re-trigger (loop guard)")
 	}
 }
 

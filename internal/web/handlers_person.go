@@ -224,13 +224,18 @@ func buildFilmography(filmographyJSON string, ownedTV, ownedMovie map[int]bool) 
 	return tv, films
 }
 
-// filmographyNeedsUpgrade reports whether a cached blob predates combined credits
-// (a non-trivial tv_credits-shaped blob with no media_type), so the actor's films
-// are missing and a one-time lazy re-fetch is warranted. An empty/"null" blob
-// returns false (no credits to upgrade — wouldn't loop).
+// filmographyNeedsUpgrade reports whether a cached blob warrants a one-time lazy
+// re-fetch of combined credits. Two cases: an empty-string blob (""), which means
+// the filmography was never successfully written — e.g. an actor fetched before
+// the filmography_json column existed (the column is NOT NULL DEFAULT '', so a
+// failed/absent write leaves ''); or a non-trivial tv_credits-shaped blob with no
+// media_type (predates combined credits). Loop-proof: a re-fetch result is always
+// a combined blob (carries media_type → stops) or "[]" (len 2 ≠ "" → stops), never
+// "" again, so it fires at most once per actor (a failed fetch stays '' and
+// correctly retries). "[]"/"null" return false — already fetched, no credits.
 func filmographyNeedsUpgrade(filmographyJSON string) bool {
 	fj := strings.TrimSpace(filmographyJSON)
-	return len(fj) > 4 && !strings.Contains(fj, "media_type")
+	return fj == "" || (len(fj) > 4 && !strings.Contains(fj, "media_type"))
 }
 
 // personDetail renders an actor page: bio + image + their full filmography split
