@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -194,4 +195,76 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// TestLoadJourneyArtCascade covers the un-owned cover-art path: an uncached song
+// is queued for the iTunes backfill, a cached hit shows its cover, and a cached
+// miss stays a placeholder without being re-queried.
+func TestLoadJourneyArtCascade(t *testing.T) {
+	h, db := newTestHandler(t)
+	libID := seedHeyJude(t, db)
+	enableBillboard1968(t, h, db)
+	ctx := context.Background()
+
+	// Before any cache: the two un-owned songs are queued for backfill; the owned
+	// one (Hey Jude) is not.
+	first := h.loadJourney(ctx, libID, 1968, false)
+	if got := needArtTitles(first.needsArt); !sameSet(got, []string{"Fire", "Harper Valley P.T.A."}) {
+		t.Fatalf("needsArt before cache = %v, want the two un-owned songs", got)
+	}
+
+	// Cache a hit for Fire and a miss for Harper.
+	if _, err := db.Exec("INSERT INTO itunes_art (query_key, art_url) VALUES (?,?),(?,?)",
+		taKey("Fire", "Arthur Brown"), "https://img/600x600bb.jpg",
+		taKey("Harper Valley P.T.A.", "Jeannie C. Riley"), ""); err != nil {
+		t.Fatalf("seed itunes_art: %v", err)
+	}
+
+	// After caching both: nothing is re-queued.
+	second := h.loadJourney(ctx, libID, 1968, false)
+	if len(second.needsArt) != 0 {
+		t.Fatalf("needsArt after caching both = %v, want empty (no re-query)", needArtTitles(second.needsArt))
+	}
+	var fireArt, harperArt string
+	for _, wk := range second.Weeks {
+		for _, c := range wk.Cards {
+			switch c.Title {
+			case "Fire":
+				fireArt = c.ArtURL
+			case "Harper Valley P.T.A.":
+				harperArt = c.ArtURL
+			}
+		}
+	}
+	if fireArt != "https://img/600x600bb.jpg" {
+		t.Fatalf("Fire art = %q, want cached iTunes cover", fireArt)
+	}
+	if harperArt != "" {
+		t.Fatalf("Harper (cached miss) art = %q, want placeholder", harperArt)
+	}
+}
+
+func needArtTitles(qs []artQuery) []string {
+	var out []string
+	for _, q := range qs {
+		out = append(out, q.Title)
+	}
+	return out
+}
+
+func sameSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	m := map[string]int{}
+	for _, s := range got {
+		m[s]++
+	}
+	for _, s := range want {
+		if m[s] == 0 {
+			return false
+		}
+		m[s]--
+	}
+	return true
 }

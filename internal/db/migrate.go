@@ -318,6 +318,17 @@ CREATE TABLE IF NOT EXISTS youtube_lookups (
   video_id TEXT NOT NULL DEFAULT '',
   fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Cache of song → iTunes cover-art URL (keyless iTunes Search API), so an
+-- un-owned charting song on the year-journey page shows a real cover instead of
+-- a placeholder, resolved at most once. Keyed by the same normalized
+-- "title|artist" the library reconcile uses (taKey). art_url '' is a cached
+-- miss (no iTunes match) → the card stays a placeholder without re-querying.
+CREATE TABLE IF NOT EXISTS itunes_art (
+  query_key TEXT PRIMARY KEY,
+  art_url TEXT NOT NULL DEFAULT '',
+  fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 func Migrate(db *sql.DB) error {

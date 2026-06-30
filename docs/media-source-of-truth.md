@@ -150,8 +150,11 @@ data:
   Nothing is persisted. (The former `year_journeys`/`year_journey_items` build
   cache was retired and is dropped by a migration.)
 - `youtube_lookups` (`query_key` PK) — caches song→YouTube videoId resolutions
-  (hits and misses) for in-app playback of un-owned songs; also supplies the
-  un-owned chart-row thumbnail. Pure cache.
+  (hits and misses) for in-app playback of un-owned songs; also supplies a
+  fallback un-owned chart-row thumbnail. Pure cache.
+- `itunes_art` (`query_key` PK) — caches song→iTunes cover-art URL (hits and
+  misses, keyed by the same normalized title+artist) for the un-owned chart-row
+  cover, filled by a keyless background backfill. Pure cache.
 
 These reconcile *onto* the library; the library never reads from or depends on
 them.
