@@ -298,15 +298,17 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   border-top: 1px solid var(--border-default);
 }
 
-/* Hespera logo as a fixed, full-viewport background on every page. z-index:-1
+/* Hespera artwork as a fixed, full-viewport background on every page. z-index:-1
    sits it behind all page content (above the opaque body background, below the
    normal-flow topbar/main/footer), and fixed keeps it pinned while the page
-   scrolls. pointer-events:none so it never intercepts clicks. */
+   scrolls. pointer-events:none so it never intercepts clicks. Uses the
+   square-cornered variant (hespera-bg.svg) — the app-icon's rounded frame would
+   otherwise show its corners when stretched edge-to-edge. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background-image: url("/static/hespera-icon.svg");
+  background-image: url("/static/hespera-bg.svg");
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
