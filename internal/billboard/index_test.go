@@ -12,47 +12,43 @@ func TestYearsCovered(t *testing.T) {
 	}
 }
 
-func TestYear1968(t *testing.T) {
-	acts := Year(1968)
-	if len(acts) < 200 {
-		t.Fatalf("1968 has %d artists, want >=200", len(acts))
+func TestWeeklyCharts1968(t *testing.T) {
+	weeks := WeeklyCharts(1968)
+	if len(weeks) < 50 || len(weeks) > 53 {
+		t.Fatalf("1968 has %d weekly charts, want ~52", len(weeks))
 	}
-	// Ordered by peak ascending — the first act must be a #1.
-	if acts[0].Peak != 1 {
-		t.Fatalf("first 1968 act peak = %d, want 1", acts[0].Peak)
-	}
-	// Spot-check a known 1968 chart-topper and its song data.
-	var beatles *Artist
-	for i := range acts {
-		if acts[i].Name == "The Beatles" {
-			beatles = &acts[i]
-			break
+	// Weeks are chronological.
+	for i := 1; i < len(weeks); i++ {
+		if weeks[i-1].Date >= weeks[i].Date {
+			t.Fatalf("weeks not chronological at %d: %q then %q", i, weeks[i-1].Date, weeks[i].Date)
 		}
 	}
-	if beatles == nil {
-		t.Fatal("The Beatles not found in 1968")
-	}
-	if beatles.Peak != 1 {
-		t.Fatalf("Beatles 1968 peak = %d, want 1", beatles.Peak)
-	}
-	if len(beatles.Songs) == 0 {
-		t.Fatal("Beatles have no songs")
-	}
-	for _, s := range beatles.Songs {
-		if s.Title == "" || s.Peak <= 0 || len(s.Debut) != 10 {
-			t.Fatalf("malformed song: %+v", s)
+	for _, w := range weeks {
+		if len(w.Date) != 10 {
+			t.Fatalf("bad chart date %q", w.Date)
 		}
-	}
-	// Songs sorted by peak ascending.
-	for i := 1; i < len(beatles.Songs); i++ {
-		if beatles.Songs[i-1].Peak > beatles.Songs[i].Peak {
-			t.Fatalf("songs not sorted by peak: %+v", beatles.Songs)
+		if len(w.Entries) == 0 {
+			t.Fatalf("week %s has no entries", w.Date)
+		}
+		// Entries ordered by ascending position; a #1 leads each chart.
+		if w.Entries[0].Pos != 1 {
+			t.Fatalf("week %s first entry pos = %d, want 1", w.Date, w.Entries[0].Pos)
+		}
+		for i := 1; i < len(w.Entries); i++ {
+			if w.Entries[i-1].Pos > w.Entries[i].Pos {
+				t.Fatalf("week %s entries not sorted by pos", w.Date)
+			}
+		}
+		for _, e := range w.Entries {
+			if e.Title == "" || e.Artist == "" || e.Pos <= 0 {
+				t.Fatalf("malformed entry in %s: %+v", w.Date, e)
+			}
 		}
 	}
 }
 
-func TestYearMiss(t *testing.T) {
-	if got := Year(1900); got != nil {
-		t.Fatalf("Year(1900) = %v, want nil", got)
+func TestWeeklyChartsMiss(t *testing.T) {
+	if got := WeeklyCharts(1900); got != nil {
+		t.Fatalf("WeeklyCharts(1900) = %v, want nil", got)
 	}
 }

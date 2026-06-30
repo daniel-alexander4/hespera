@@ -1,13 +1,14 @@
 //go:build ignore
 
-// Command gen builds the embedded Billboard Hot 100 per-year index
+// Command gen builds the embedded Billboard Hot 100 weekly index
 // (data.json.gz) consumed by package billboard.
 //
-// It reads the public Billboard Hot 100 weekly archive (1958–present) and
-// collapses the ~330k weekly chart rows into one entry per (year, artist,
-// song), keeping each song's peak position, total weeks on chart, and the
-// date it first appeared during that year. The result is grouped by artist
-// within each year and written as a gzipped JSON map keyed by year.
+// It reads the public Billboard Hot 100 weekly archive (1958–2021) and keeps
+// the full weekly grid: for each weekly chart it records the ordered list of
+// (position, song, artist). The result is grouped by year and written as a
+// gzipped JSON map keyed by year string — each year is the list of its weekly
+// charts in chronological order. Per-song facts (peak, weeks-on-chart, debut)
+// are derived from this grid at read time, so the grid is the single source.
 //
 // Data source (factual chart data; weekly Hot 100 archive):
 //
@@ -39,22 +40,21 @@ import (
 
 const archiveURL = "https://raw.githubusercontent.com/utdata/rwd-billboard-data/main/data-out/hot100_archive_1958_2021.csv"
 
-type song struct {
-	Title string `json:"title"`
-	Peak  int    `json:"peak"`
-	Weeks int    `json:"weeks"`
-	Debut string `json:"debut"`
+// Compact JSON keys keep the embedded grid small (it repeats per weekly row).
+type chartEntry struct {
+	Pos    int    `json:"p"`
+	Title  string `json:"t"`
+	Artist string `json:"a"`
 }
 
-type artist struct {
-	Name  string `json:"artist"`
-	Peak  int    `json:"peak"`
-	Songs []song `json:"songs"`
+type weeklyChart struct {
+	Date    string       `json:"d"` // YYYY-MM-DD chart date
+	Entries []chartEntry `json:"e"` // ordered by position ascending
 }
 
 func main() {
 	in := flag.String("in", "", "path to the Hot 100 archive CSV (downloads the public archive if empty)")
-	out := flag.String("out", "data.json.gz", "output path for the gzipped per-year index")
+	out := flag.String("out", "data.json.gz", "output path for the gzipped per-year weekly index")
 	flag.Parse()
 
 	var r io.ReadCloser
@@ -88,12 +88,9 @@ func main() {
 		log.Fatalf("unexpected header: %v", header)
 	}
 
-	// year -> artist -> title -> aggregate
-	type agg struct {
-		peak, weeks int
-		debut       string
-	}
-	years := map[string]map[string]map[string]*agg{}
+	// year -> chart_date -> ordered entries
+	type weekKey = string
+	years := map[string]map[weekKey][]chartEntry{}
 
 	rows := 0
 	for {
@@ -105,72 +102,38 @@ func main() {
 			log.Fatalf("read row %d: %v", rows, err)
 		}
 		rows++
-		date, title, performer := rec[0], rec[2], rec[3]
+		date, posStr, title, performer := rec[0], rec[1], rec[2], rec[3]
 		if len(date) < 4 || title == "" || performer == "" {
 			continue
 		}
-		year := date[:4]
-		peak, _ := strconv.Atoi(rec[5])
-		weeks, _ := strconv.Atoi(rec[6])
-		if peak <= 0 {
-			peak, _ = strconv.Atoi(rec[1]) // fall back to the week position
-		}
-
-		am := years[year]
-		if am == nil {
-			am = map[string]map[string]*agg{}
-			years[year] = am
-		}
-		tm := am[performer]
-		if tm == nil {
-			tm = map[string]*agg{}
-			am[performer] = tm
-		}
-		a := tm[title]
-		if a == nil {
-			a = &agg{peak: peak, weeks: weeks, debut: date}
-			tm[title] = a
+		pos, _ := strconv.Atoi(posStr)
+		if pos <= 0 {
 			continue
 		}
-		if peak > 0 && (a.peak == 0 || peak < a.peak) {
-			a.peak = peak
+		year := date[:4]
+		wm := years[year]
+		if wm == nil {
+			wm = map[weekKey][]chartEntry{}
+			years[year] = wm
 		}
-		if weeks > a.weeks {
-			a.weeks = weeks
-		}
-		if date < a.debut {
-			a.debut = date
-		}
+		wm[date] = append(wm[date], chartEntry{Pos: pos, Title: title, Artist: performer})
 	}
 	log.Printf("read %d weekly rows across %d years", rows, len(years))
 
-	out2 := map[string][]artist{}
-	for year, am := range years {
-		list := make([]artist, 0, len(am))
-		for name, tm := range am {
-			songs := make([]song, 0, len(tm))
-			best := 0
-			for title, a := range tm {
-				songs = append(songs, song{Title: title, Peak: a.peak, Weeks: a.weeks, Debut: a.debut})
-				if a.peak > 0 && (best == 0 || a.peak < best) {
-					best = a.peak
-				}
-			}
-			sort.Slice(songs, func(i, j int) bool {
-				if songs[i].Peak != songs[j].Peak {
-					return songs[i].Peak < songs[j].Peak
-				}
-				return songs[i].Title < songs[j].Title
-			})
-			list = append(list, artist{Name: name, Peak: best, Songs: songs})
+	out2 := map[string][]weeklyChart{}
+	for year, wm := range years {
+		dates := make([]string, 0, len(wm))
+		for d := range wm {
+			dates = append(dates, d)
 		}
-		sort.Slice(list, func(i, j int) bool {
-			if list[i].Peak != list[j].Peak {
-				return list[i].Peak < list[j].Peak
-			}
-			return list[i].Name < list[j].Name
-		})
-		out2[year] = list
+		sort.Strings(dates) // ISO dates sort chronologically
+		weeks := make([]weeklyChart, 0, len(dates))
+		for _, d := range dates {
+			entries := wm[d]
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Pos < entries[j].Pos })
+			weeks = append(weeks, weeklyChart{Date: d, Entries: entries})
+		}
+		out2[year] = weeks
 	}
 
 	f, err := os.Create(*out)

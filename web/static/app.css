@@ -1641,3 +1641,95 @@ code {
 .journey-songs li .js-title {
   flex: 1 1 auto;
 }
+
+/* Weekly chart rows for "Rediscover a Year" (the week-by-week listen-through). */
+.chart-week {
+  margin: 1.4rem 0 0.6rem;
+}
+.chart-week-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 0.35rem;
+  padding: 0.25rem 0;
+  font-size: 0.95rem;
+  color: var(--page-fg);
+  background: var(--page-bg);
+  border-bottom: 1px solid var(--border-default);
+}
+.chart-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chart-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.25rem 0.3rem;
+  border-radius: 6px;
+}
+.chart-row.is-recur {
+  opacity: 0.45; /* later weeks = chart context, not part of the listen-through */
+}
+.chart-row.is-debut {
+  background: var(--surface-card);
+}
+.chart-pos {
+  flex: 0 0 2.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.chart-art {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+}
+.chart-art img,
+.chart-art .album-art-ph {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.chart-song {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.chart-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-row.is-owned .chart-title {
+  color: var(--accent);
+}
+.chart-artist {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-play {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chart-play:hover {
+  color: var(--page-fg);
+  border-color: var(--accent);
+}

@@ -141,18 +141,17 @@ they only parse filenames/tags and probe streams. Matchers
   misses.
 
 ### Discovery caches (NOT a source of truth)
-The "Rediscover a Year" feature adds **walled-off** tables that never own any
-media data and are never written by the scanner or matcher:
-- `year_journeys` (year PK) + `year_journey_items` — the Billboard-charting
-  albums/singles of a year (chart facts + a resolved MusicBrainz identity + a
-  hotlinked Cover Art Archive URL), built by the `year_journey_build` job from
-  the embedded `internal/billboard` index. **Ownership is derived at view time**
-  by reconciling each item against `music_albums`/`music_tracks` (release-group
-  MBID, then normalized title+artist); listened-progress derives from
-  `play_history`. Nothing here is authoritative — dropping these tables only
-  discards a rebuildable discovery list, never library state.
+The "Rediscover a Year" feature reconciles *onto* the library and owns no media
+data:
+- **No tables.** The year's week-by-week Hot 100 comes entirely from the
+  embedded `internal/billboard` weekly grid (factual chart data, read-only), and
+  the page is built at view time — ownership by reconciling each charting song
+  against `music_tracks` (normalized title+artist), debut/order from the grid.
+  Nothing is persisted. (The former `year_journeys`/`year_journey_items` build
+  cache was retired and is dropped by a migration.)
 - `youtube_lookups` (`query_key` PK) — caches song→YouTube videoId resolutions
-  (hits and misses) for in-app playback of un-owned songs. Pure cache.
+  (hits and misses) for in-app playback of un-owned songs; also supplies the
+  un-owned chart-row thumbnail. Pure cache.
 
 These reconcile *onto* the library; the library never reads from or depends on
 them.

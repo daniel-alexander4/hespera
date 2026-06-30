@@ -307,38 +307,6 @@ CREATE TABLE IF NOT EXISTS external_artists (
 );
 
 -- Year-journey ("Rediscover a Year"): a walled-off discovery list of the
--- Billboard-charting albums/singles of a given year, kept entirely separate
--- from music_albums/music_tracks so the real library views/counts/search are
--- untouched. Ownership, listened-progress, and chronological order are derived
--- at view time (reconciled against the library by release-group MBID then
--- normalized title+artist; progress from play_history). One row per built year.
-CREATE TABLE IF NOT EXISTS year_journeys (
-  year INTEGER PRIMARY KEY,
-  status TEXT NOT NULL DEFAULT 'building', -- building | ready
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  built_at TEXT NOT NULL DEFAULT ''
-);
-
--- One acquire-target per row: an artist's album released that year, or (when the
--- act had no album that year) their top charting single. art_url is a hotlinked
--- Cover Art Archive thumbnail for albums (not downloaded), '' for singles.
--- release_date is the MB first-release-date (albums; may be year-only) or the
--- single's chart-debut date. chart_peak is the act's best Hot 100 peak that year.
-CREATE TABLE IF NOT EXISTS year_journey_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  year INTEGER NOT NULL REFERENCES year_journeys(year) ON DELETE CASCADE,
-  kind TEXT NOT NULL DEFAULT 'album', -- album | single
-  artist_name TEXT NOT NULL DEFAULT '',
-  artist_mbid TEXT NOT NULL DEFAULT '',
-  title TEXT NOT NULL DEFAULT '',
-  rg_mbid TEXT NOT NULL DEFAULT '',
-  release_date TEXT NOT NULL DEFAULT '',
-  chart_peak INTEGER NOT NULL DEFAULT 0,
-  art_url TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_year_journey_items_year ON year_journey_items(year);
-
 -- Cache of song → YouTube video-id lookups (YouTube Data API search), so a
 -- charting song the user doesn't own is resolved at most once. Keyed by a
 -- normalized "artist|title". video_id '' is a cached miss (no embeddable hit /
@@ -414,6 +382,13 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 	if err := migrateIdentitiesMatchedUnmatched(db); err != nil {
+		return err
+	}
+	// year_journey_* retired: "Rediscover a Year" is now built entirely from the
+	// embedded Billboard weekly grid + view-time library joins, so the old per-act
+	// build cache is dead weight. It was a walled-off, non-authoritative cache —
+	// dropping it loses nothing the page can't re-derive.
+	if _, err := db.Exec(`DROP TABLE IF EXISTS year_journey_items; DROP TABLE IF EXISTS year_journeys;`); err != nil {
 		return err
 	}
 	return nil
