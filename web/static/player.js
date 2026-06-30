@@ -305,6 +305,30 @@
     npCluster.classList.toggle('np-paused', curPaused());
   };
 
+  // Stop playback entirely and dismiss the now-playing cluster (the X control).
+  const stopPlayback = () => {
+    reportCurrentTrack(false);
+    if (engine === 'yt') {
+      ytStop();
+    } else {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load(); // detach the source so it can't resume
+    }
+    tracks = [];
+    queue = [];
+    currentPos = -1;
+    currentTrackReported = true;
+    if (hasMediaSession) {
+      try {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+      } catch (_) {}
+    }
+    updateHeader(); // currentTrack() is null -> hides #np-cluster
+    renderView(); // empty state if the now-playing page is open
+  };
+
   // --- Core transport ---
   const playAt = (pos) => {
     if (pos < 0 || pos >= queue.length) return;
@@ -541,6 +565,10 @@
   });
 
   if (npToggle) npToggle.addEventListener('click', toggle);
+  {
+    const npClose = document.getElementById('np-close');
+    if (npClose) npClose.addEventListener('click', stopPlayback);
+  }
 
   if (hasMediaSession) {
     const setHandler = (action, handler) => {
