@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,18 +48,53 @@ type journeyData struct {
 	OwnedSongs int // of those, owned in the library
 }
 
-// musicYear renders "Rediscover a Year": the year's full week-by-week Hot 100,
+// billboardEnabled reports whether the user has opted into the chart-data
+// feature. It's off by default; the Settings toggle that enables it carries a
+// licensing notice (the chart data is a third party's intellectual property and
+// is fetched at runtime, never shipped).
+func (h *Handler) billboardEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='billboard_enabled'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
+// enqueueBillboardFetch kicks the one-time runtime fetch of the weekly chart
+// index into DataDir (keyless, deduped). No-op if a fetch is already in flight.
+func (h *Handler) enqueueBillboardFetch(ctx context.Context) {
+	if _, busy := h.metaFetch.LoadOrStore("billboard:fetch", true); busy {
+		return
+	}
+	_, err := h.jobs.Enqueue("billboard_fetch", 0, "user", func(jctx context.Context, jobID, libID int64) error {
+		defer h.metaFetch.Delete("billboard:fetch")
+		return billboard.BuildIndex(h.cfg.DataDir, "")
+	})
+	if err != nil {
+		h.metaFetch.Delete("billboard:fetch")
+		slog.Warn("enqueue billboard fetch", "err", err)
+	}
+}
+
+// musicYear renders "Rediscover a Year": the year's full week-by-week chart,
 // every song at its position each week, reconciled against the library at view
-// time. No background build — the weekly grid is embedded and the page is built
-// entirely from local data on each request.
+// time. The chart data is fetched at runtime into DataDir only once the user
+// opts in (the feature is off by default), so this gates on that toggle: off →
+// an enable prompt; on-but-not-yet-fetched → a one-time background fetch + a
+// building state; otherwise the page is built entirely from local data.
 func (h *Handler) musicYear(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	minY, maxY, ok := billboard.Years()
+	ctx := r.Context()
+	if !h.billboardEnabled(ctx) {
+		h.render(w, "music_year.html", map[string]any{"Title": "Rediscover a Year", "Disabled": true})
+		return
+	}
+	minY, maxY, ok := billboard.Years(h.cfg.DataDir)
 	if !ok {
-		httpError(w, 500, "internal server error", "billboard dataset unavailable", "handler", "musicYear")
+		// Opted in but the data hasn't landed yet — kick the fetch, show building.
+		h.enqueueBillboardFetch(ctx)
+		h.render(w, "music_year.html", map[string]any{"Title": "Rediscover a Year", "Building": true})
 		return
 	}
 	year := defaultJourneyYear
@@ -107,7 +143,7 @@ func clampYear(y, lo, hi int) int {
 // the display direction; weeks are always returned chronologically, only the
 // cards within a week are ordered by topFirst. All local — no network.
 func (h *Handler) loadJourney(ctx context.Context, libraryID int64, year int, topFirst bool) journeyData {
-	weeks := billboard.WeeklyCharts(year)
+	weeks := billboard.WeeklyCharts(h.cfg.DataDir, year)
 	if len(weeks) == 0 {
 		return journeyData{}
 	}

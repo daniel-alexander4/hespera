@@ -10,9 +10,34 @@ import (
 	"strings"
 	"testing"
 
+	"hespera/internal/billboard"
 	"hespera/internal/config"
 	isodb "hespera/internal/db"
 )
+
+// enableBillboard1968 turns the chart-data feature on and builds a tiny
+// fabricated 1968 fixture into the handler's DataDir (the real dataset is no
+// longer shipped — it's fetched at runtime), so the year page renders. The
+// fixture owns "Hey Jude" (matched by seedHeyJude) and includes un-owned songs
+// so the un-owned/YouTube path renders too.
+func enableBillboard1968(t *testing.T, h *Handler, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec("INSERT INTO app_settings (key,value) VALUES ('billboard_enabled','1') ON CONFLICT(key) DO UPDATE SET value='1'"); err != nil {
+		t.Fatalf("enable billboard: %v", err)
+	}
+	csv := "chart_date,current_position,title,performer,previous_position,peak_position,weeks_on_chart\n" +
+		"1968-09-28,2,Harper Valley P.T.A.,Jeannie C. Riley,1,1,8\n" +
+		"1968-09-28,1,Hey Jude,The Beatles,3,1,3\n" +
+		"1968-10-05,1,Hey Jude,The Beatles,1,1,4\n" +
+		"1968-10-05,2,Fire,Arthur Brown,4,2,6\n"
+	csvPath := filepath.Join(t.TempDir(), "fix.csv")
+	if err := os.WriteFile(csvPath, []byte(csv), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if err := billboard.BuildIndex(h.cfg.DataDir, csvPath); err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+}
 
 // seedHeyJude builds a small library owning "Hey Jude" by The Beatles — a #1
 // song on the real embedded 1968 Hot 100 — so the weekly view reconciles it as
@@ -47,6 +72,7 @@ func seedHeyJude(t *testing.T, db *sql.DB) int64 {
 func TestMusicYearWeekly(t *testing.T) {
 	h, db := newTestHandler(t)
 	seedHeyJude(t, db)
+	enableBillboard1968(t, h, db)
 	router := h.Router()
 
 	req := httptest.NewRequest(http.MethodGet, "/music/year?y=1968", nil)
@@ -83,6 +109,7 @@ func TestMusicYearWeekly(t *testing.T) {
 func TestJourneyQueueOwnedOnlyNoKey(t *testing.T) {
 	h, db := newTestHandler(t)
 	seedHeyJude(t, db)
+	enableBillboard1968(t, h, db)
 	router := h.Router()
 
 	// No YouTube key configured → the journey queue is owned-only.
@@ -139,6 +166,7 @@ func TestMusicYearRealTemplate(t *testing.T) {
 		t.Fatalf("New with real templates: %v", err)
 	}
 	seedHeyJude(t, db)
+	enableBillboard1968(t, h, db)
 
 	req := httptest.NewRequest(http.MethodGet, "/music/year?y=1968", nil)
 	rec := httptest.NewRecorder()

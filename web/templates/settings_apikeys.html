@@ -89,6 +89,27 @@
   </div>
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save</button>
+  </div>
+</form>
+
+<form method="post" action="/settings/api-keys" class="form-card">
+  <div class="form-group">
+    <label>Chart data — Rediscover a Year <small class="form-help">(off by default)</small></label>
+    <small class="form-help">
+      The <em>Rediscover a Year</em> feature plays the week-by-week <strong>Billboard Hot&nbsp;100</strong> of any year.
+      That chart data is a third party's intellectual property and is <strong>not shipped with Hespera</strong> —
+      enabling this fetches it at runtime from a public archive into your data directory. Enable for personal use only.
+    </small>
+    {{if .BillboardEnabled}}
+    <small class="form-help">Currently <strong>enabled</strong> — the chart index is fetched once in the background.</small>
+    <input type="hidden" name="billboard_enabled" value="0" />
+    {{else}}
+    <input type="hidden" name="billboard_enabled" value="1" />
+    {{end}}
+  </div>
+  <div class="form-actions">
+    {{if .BillboardEnabled}}<button type="submit" class="btn">Disable</button>
+    {{else}}<button type="submit" class="btn btn-primary">Enable</button>{{end}}
     <a href="/settings" class="btn">Back</a>
   </div>
 </form>

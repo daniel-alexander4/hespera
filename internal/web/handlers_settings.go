@@ -174,6 +174,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"YouTubeConfigured":       ytCfg,
 			"YouTubeSource":           ytSrc,
 			"YouTubeMasked":           ytMask,
+			"BillboardEnabled":        h.billboardEnabled(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -217,6 +218,22 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
 				return
 			}
+		}
+		if _, ok := r.Form["billboard_enabled"]; ok {
+			on := r.FormValue("billboard_enabled") == "1"
+			val := ""
+			if on {
+				val = "1"
+			}
+			if err := h.saveAPIKey(ctx, "billboard_enabled", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			if on {
+				h.enqueueBillboardFetch(ctx) // kick the one-time runtime fetch
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
 		}
 		http.Redirect(w, r, "/settings/api-keys", http.StatusSeeOther)
 	default:
