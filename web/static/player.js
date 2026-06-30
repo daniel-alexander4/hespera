@@ -431,12 +431,29 @@
         tracks = next;
         queue = tracks.map((_, i) => i);
         if (o.shuffle) queue = shuffleArray(queue);
+        // Resolve a start position: by track id (owned) or by title+artist (for
+        // mixed owned/YouTube journey queues, whose yt entries have no id).
+        let at = -1;
         if (o.startTrackId > 0) {
-          const at = queue.findIndex((idx) => tracks[idx].id === o.startTrackId);
-          if (at >= 0) {
-            if (o.shuffle) queue.unshift(queue.splice(at, 1)[0]);
-            else queue = queue.slice(at);
-          }
+          at = queue.findIndex((idx) => tracks[idx].id === o.startTrackId);
+        } else if (o.startTitle) {
+          const t0 = o.startTitle.trim().toLowerCase();
+          const a0 = (o.startArtist || '').trim().toLowerCase();
+          at = queue.findIndex(
+            (idx) =>
+              (tracks[idx].title || '').trim().toLowerCase() === t0 &&
+              (tracks[idx].artist || '').trim().toLowerCase() === a0,
+          );
+        }
+        if (at >= 0 && o.keepPrev) {
+          // Start at the song but keep earlier ones queued as "previous" (journey).
+          playAt(at);
+          return;
+        }
+        if (at >= 0) {
+          // "Play from here": drop earlier tracks (album semantics).
+          if (o.shuffle) queue.unshift(queue.splice(at, 1)[0]);
+          else queue = queue.slice(at);
         }
         if (!queue.length) return;
         playAt(0);
@@ -451,6 +468,9 @@
     loadQueue(qs, {
       shuffle: params.get('shuffle') === '1',
       startTrackId: parseInt(params.get('track') || '0', 10) || 0,
+      startTitle: params.get('startTitle') || '',
+      startArtist: params.get('startArtist') || '',
+      keepPrev: params.get('keep') === '1',
     });
   };
 
@@ -571,8 +591,11 @@
     renderView();
 
     // Direct deep link / no-JS fallback: /music/player?album=N told us to load.
+    // Autoload whenever the URL carries play params (a play-nav landed here) —
+    // not only when idle, so starting a new song while one plays swaps the queue.
+    // The bare /music/player (the breadcrumb back) has no params → no reload.
     const autoload = page.getAttribute('data-autoload');
-    if (autoload && !queue.length) playFromHref('?' + autoload);
+    if (autoload) playFromHref('?' + autoload);
   };
 
   // --- One-time wiring on the permanent audio + header + document ---
@@ -627,16 +650,21 @@
     });
   }
 
-  // Intercept [data-play] clicks before Turbo sees them (capture phase) so play
-  // happens in place instead of navigating; the href is the no-JS fallback.
+  // A [data-play] click takes you to the now-playing page, which autoloads the
+  // queue from the href's params (the Turbo-permanent <audio> survives the swap).
+  // When you're ALREADY on the player page, navigating to itself would be wasteful
+  // — load the new queue in place instead. Otherwise let Turbo navigate the link.
   document.addEventListener(
     'click',
     (e) => {
       const el = e.target.closest && e.target.closest('[data-play]');
       if (!el) return;
-      e.preventDefault();
-      e.stopPropagation();
-      playFromHref(el.getAttribute('href') || el.getAttribute('data-play') || '');
+      if (location.pathname === '/music/player') {
+        e.preventDefault();
+        e.stopPropagation();
+        playFromHref(el.getAttribute('href') || el.getAttribute('data-play') || '');
+      }
+      // else: fall through — Turbo navigates the <a href="/music/player?…">.
     },
     true,
   );
@@ -667,7 +695,8 @@
     }
   });
 
-  // The era "play a year range" GET form → load that queue in place.
+  // The era "play a year range" GET form → go to the player page with that
+  // range's queue (in place if already there), matching every other play control.
   document.addEventListener(
     'submit',
     (e) => {
@@ -676,7 +705,13 @@
       e.preventDefault();
       e.stopPropagation();
       const qs = new URLSearchParams(new FormData(form)).toString();
-      loadQueue(qs, { shuffle: form.getAttribute('data-shuffle') === '1' });
+      if (location.pathname === '/music/player') {
+        playFromHref('?' + qs);
+      } else if (window.Turbo) {
+        window.Turbo.visit('/music/player?' + qs);
+      } else {
+        location.assign('/music/player?' + qs);
+      }
     },
     true,
   );

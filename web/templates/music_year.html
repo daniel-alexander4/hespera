@@ -47,8 +47,9 @@
       </span>
       <span class="chart-song"><span class="chart-title">{{.Title}}</span><span class="chart-artist">{{.Artist}}</span></span>
       {{if .IsDebut}}
-      {{if .Owned}}<a class="js-play is-local chart-play" href="/music/player?album={{.AlbumID}}&track={{.TrackID}}" data-play title="Play from your library">{{template "icon-play"}}</a>
-      {{else}}<button type="button" class="js-play js-yt chart-play" data-artist="{{.Artist}}" data-song="{{.Title}}"{{if .ArtURL}} data-art="{{.ArtURL}}"{{end}}{{if $.YouTubeInApp}} data-haskey="1"{{end}} title="Play{{if $.YouTubeInApp}} (YouTube audio){{else}} on YouTube{{end}}">{{template "icon-play"}}</button>{{end}}
+      {{if .Owned}}<a class="js-play is-local chart-play" href="/music/player?source=journey&y={{$.Year}}{{if $.TopFirst}}&dir=top{{end}}&track={{.TrackID}}&keep=1" data-play title="Play the year from here">{{template "icon-play"}}</a>
+      {{else if $.YouTubeInApp}}<a class="js-play chart-play" href="/music/player?source=journey&y={{$.Year}}{{if $.TopFirst}}&dir=top{{end}}&startTitle={{.Title}}&startArtist={{.Artist}}&keep=1" data-play title="Play the year from here (YouTube audio)">{{template "icon-play"}}</a>
+      {{else}}<button type="button" class="js-play js-yt chart-play" data-artist="{{.Artist}}" data-song="{{.Title}}"{{if .ArtURL}} data-art="{{.ArtURL}}"{{end}} title="Play on YouTube">{{template "icon-play"}}</button>{{end}}
       {{end}}
     </li>
     {{end}}
