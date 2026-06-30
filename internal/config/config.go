@@ -15,11 +15,12 @@ type Config struct {
 	DBPath    string
 	MediaRoot string
 
-	TMDBAPIKey          string
-	FanartTVAPIKey      string
-	TheAudioDBAPIKey    string
-	OpenSubtitlesAPIKey string
-	YouTubeAPIKey       string
+	TMDBAPIKey             string
+	FanartTVAPIKey         string
+	TheAudioDBAPIKey       string
+	OpenSubtitlesAPIKey    string
+	OpenSubtitlesUserAgent string
+	YouTubeAPIKey          string
 
 	AuthEnabled       bool
 	AuthSessionSecret string
@@ -39,15 +40,16 @@ func FromEnv() Config {
 	mediaRoot := getenv("HESPERA_MEDIA_ROOT", "/media")
 
 	return Config{
-		Listen:              listen,
-		DataDir:             dataDir,
-		DBPath:              dbPath,
-		MediaRoot:           mediaRoot,
-		TMDBAPIKey:          getenv("HESPERA_TMDB_API_KEY", ""),
-		FanartTVAPIKey:      getenv("HESPERA_FANARTTV_API_KEY", ""),
-		TheAudioDBAPIKey:    getenv("HESPERA_THEAUDIODB_API_KEY", ""),
-		OpenSubtitlesAPIKey: getenv("HESPERA_OPENSUBTITLES_API_KEY", ""),
-		YouTubeAPIKey:       getenv("HESPERA_YOUTUBE_API_KEY", ""),
+		Listen:                 listen,
+		DataDir:                dataDir,
+		DBPath:                 dbPath,
+		MediaRoot:              mediaRoot,
+		TMDBAPIKey:             getenv("HESPERA_TMDB_API_KEY", ""),
+		FanartTVAPIKey:         getenv("HESPERA_FANARTTV_API_KEY", ""),
+		TheAudioDBAPIKey:       getenv("HESPERA_THEAUDIODB_API_KEY", ""),
+		OpenSubtitlesAPIKey:    getenv("HESPERA_OPENSUBTITLES_API_KEY", ""),
+		OpenSubtitlesUserAgent: getenv("HESPERA_OPENSUBTITLES_USER_AGENT", ""),
+		YouTubeAPIKey:          getenv("HESPERA_YOUTUBE_API_KEY", ""),
 		AuthEnabled: parseBoolDefaultTrue(
 			os.Getenv("AUTH_ENABLED"),
 		),

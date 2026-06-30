@@ -62,7 +62,7 @@ func (h *Handler) tvSubtitlesSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := normalizeLang(r.URL.Query().Get("lang"))
 
-	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()))
+	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()), h.effectiveOpenSubtitlesUserAgent(r.Context()))
 	if client == nil {
 		jsonError(w, "subtitle search is not configured (set an OpenSubtitles API key in Settings)", http.StatusServiceUnavailable)
 		return
@@ -111,7 +111,7 @@ func (h *Handler) tvSubtitlesFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()))
+	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()), h.effectiveOpenSubtitlesUserAgent(r.Context()))
 	if client == nil {
 		jsonError(w, "subtitle download is not configured", http.StatusServiceUnavailable)
 		return

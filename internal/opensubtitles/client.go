@@ -21,11 +21,12 @@ import (
 	"time"
 )
 
-// userAgent identifies the registered OpenSubtitles consumer. The app is
-// registered as "MediaSurfer" (verified working for both search and download),
-// so this stays "MediaSurfer v1.0" rather than "Hespera" — OpenSubtitles ties
-// the UA to the registered app name.
-const userAgent = "MediaSurfer v1.0"
+// defaultUserAgent is the fallback User-Agent when none is configured. The UA
+// must identify a consumer app *registered with OpenSubtitles* ("AppName vX.Y")
+// — an unregistered UA is rejected with HTTP 403 — so it's injected via New
+// (resolved from settings/env by the caller) and overridable; this default is
+// only used when nothing is set.
+const defaultUserAgent = "Hespera v1.0"
 
 const baseURL = "https://api.opensubtitles.com/api/v1"
 
@@ -49,22 +50,29 @@ func (l *rateLimiter) wait() {
 // OSClient talks to the OpenSubtitles REST API. Construct with New; a nil
 // *OSClient is a valid no-op receiver (Search/Download return empty/err).
 type OSClient struct {
-	client  *http.Client
-	apiKey  string
-	baseURL string
-	limiter *rateLimiter
+	client    *http.Client
+	apiKey    string
+	baseURL   string
+	limiter   *rateLimiter
+	userAgent string
 }
 
 // New returns a client, or nil when apiKey is empty so callers can gate on nil.
-func New(apiKey string) *OSClient {
+// userAgent must name a consumer app registered with OpenSubtitles ("AppName
+// vX.Y"); an empty value falls back to defaultUserAgent.
+func New(apiKey, userAgent string) *OSClient {
 	if apiKey == "" {
 		return nil
 	}
+	if userAgent == "" {
+		userAgent = defaultUserAgent
+	}
 	return &OSClient{
-		client:  &http.Client{Timeout: 15 * time.Second},
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		limiter: &rateLimiter{interval: time.Second},
+		client:    &http.Client{Timeout: 15 * time.Second},
+		apiKey:    apiKey,
+		baseURL:   baseURL,
+		limiter:   &rateLimiter{interval: time.Second},
+		userAgent: userAgent,
 	}
 }
 
@@ -201,6 +209,6 @@ func (c *OSClient) Download(ctx context.Context, fileID int64) (link string, err
 
 func (c *OSClient) setHeaders(req *http.Request) {
 	req.Header.Set("Api-Key", c.apiKey)
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", c.userAgent)
 	req.Header.Set("Accept", "application/json")
 }

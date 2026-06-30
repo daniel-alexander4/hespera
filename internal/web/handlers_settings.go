@@ -91,6 +91,22 @@ func (h *Handler) effectiveOpenSubtitlesKey(ctx context.Context) string {
 	return h.cfg.OpenSubtitlesAPIKey
 }
 
+// effectiveOpenSubtitlesUserAgent resolves the OpenSubtitles consumer User-Agent:
+// the app_settings (UI) value wins, then the env default, else a built-in
+// fallback. The UA must name a consumer app *registered with OpenSubtitles*
+// ("AppName vX.Y") — an unregistered UA is 403'd — so it's user-configurable.
+func (h *Handler) effectiveOpenSubtitlesUserAgent(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='opensubtitles_user_agent'").Scan(&v)
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	if ua := strings.TrimSpace(h.cfg.OpenSubtitlesUserAgent); ua != "" {
+		return ua
+	}
+	return "Hespera v1.0"
+}
+
 // effectiveYouTubeKey resolves the optional YouTube Data API key the same way:
 // the app_settings (UI) value wins, else the env default. Empty disables in-app
 // YouTube playback on the year-journey page (it falls back to a link-out).
@@ -171,6 +187,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesConfigured": osCfg,
 			"OpenSubtitlesSource":     osSrc,
 			"OpenSubtitlesMasked":     osMask,
+			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
 			"YouTubeConfigured":       ytCfg,
 			"YouTubeSource":           ytSrc,
 			"YouTubeMasked":           ytMask,
@@ -218,6 +235,15 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
 				return
 			}
+		}
+		if _, ok := r.Form["opensubtitles_user_agent"]; ok {
+			// Not a secret — a consumer UA. Blank clears it (reverts to env/default).
+			if err := h.saveAPIKey(ctx, "opensubtitles_user_agent", strings.TrimSpace(r.FormValue("opensubtitles_user_agent"))); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
 		}
 		if _, ok := r.Form["billboard_enabled"]; ok {
 			on := r.FormValue("billboard_enabled") == "1"
