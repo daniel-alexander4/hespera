@@ -37,7 +37,7 @@
     </div>
   </a>
   {{else}}
-  <div class="band-album-card band-album-card--poster">
+  <a href="https://www.themoviedb.org/tv/{{.ID}}" target="_blank" rel="noopener noreferrer" class="band-album-card band-album-card--poster">
     <div class="band-album-art">
       {{if .PosterURL}}<img src="{{.PosterURL}}" alt="{{.Title}}" loading="lazy" referrerpolicy="no-referrer" />{{else}}<div class="album-art-ph">TV</div>{{end}}
     </div>
@@ -45,7 +45,7 @@
       <div class="artist-card-name">{{.Title}}</div>
       <div class="artist-card-stats">{{.Year}}{{if and .Year .Character}} · {{end}}{{.Character}}</div>
     </div>
-  </div>
+  </a>
   {{end}}
   {{end}}
 </div>
@@ -64,7 +64,7 @@
     </div>
   </a>
   {{else}}
-  <div class="band-album-card band-album-card--poster">
+  <a href="https://www.themoviedb.org/movie/{{.ID}}" target="_blank" rel="noopener noreferrer" class="band-album-card band-album-card--poster">
     <div class="band-album-art">
       {{if .PosterURL}}<img src="{{.PosterURL}}" alt="{{.Title}}" loading="lazy" referrerpolicy="no-referrer" />{{else}}<div class="album-art-ph">Film</div>{{end}}
     </div>
@@ -72,7 +72,7 @@
       <div class="artist-card-name">{{.Title}}</div>
       <div class="artist-card-stats">{{.Year}}{{if and .Year .Character}} · {{end}}{{.Character}}</div>
     </div>
-  </div>
+  </a>
   {{end}}
   {{end}}
 </div>
