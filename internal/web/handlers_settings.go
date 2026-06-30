@@ -119,6 +119,24 @@ func (h *Handler) effectiveYouTubeKey(ctx context.Context) string {
 	return h.cfg.YouTubeAPIKey
 }
 
+// youtubeInappEnabled reports whether the user opted into in-app YouTube audio
+// playback (off by default — the engine plays YouTube as hidden background
+// audio, a YouTube-ToS gray area, so it's opt-in; off links out to a YouTube tab
+// instead).
+func (h *Handler) youtubeInappEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='youtube_inapp_enabled'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
+// effectiveYouTubeInApp gates the in-app YouTube audio engine: it needs both a
+// configured key (to resolve videos) and the opt-in toggle on. The single source
+// of truth for whether the per-song button and the journey queue use the hidden
+// engine vs. link out.
+func (h *Handler) effectiveYouTubeInApp(ctx context.Context) bool {
+	return h.effectiveYouTubeKey(ctx) != "" && h.youtubeInappEnabled(ctx)
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -191,6 +209,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"YouTubeConfigured":       ytCfg,
 			"YouTubeSource":           ytSrc,
 			"YouTubeMasked":           ytMask,
+			"YouTubeInappEnabled":     h.youtubeInappEnabled(ctx),
 			"BillboardEnabled":        h.billboardEnabled(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
@@ -226,7 +245,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
 			return
 		}
-		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "youtube_api_key"} {
+		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key"} {
 			if _, ok := r.Form[field]; ok {
 				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
 					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
@@ -235,6 +254,27 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
 				return
 			}
+		}
+		// YouTube key + the in-app-playback opt-in checkbox share one form. The
+		// checkbox always saves (absent = unchecked = off); the key only when
+		// non-blank, so toggling the checkbox never wipes a stored key.
+		if _, ok := r.Form["youtube_api_key"]; ok {
+			val := ""
+			if r.FormValue("youtube_inapp_enabled") == "1" {
+				val = "1"
+			}
+			if err := h.saveAPIKey(ctx, "youtube_inapp_enabled", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			if key := strings.TrimSpace(r.FormValue("youtube_api_key")); key != "" {
+				if err := h.saveAPIKey(ctx, "youtube_api_key", key); err != nil {
+					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
+					return
+				}
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
 		}
 		// OpenSubtitles key + User-Agent share one form, so save both together.
 		// The UA (not a secret) always takes its submitted value (blank → default);
