@@ -1738,3 +1738,22 @@ code {
    Catppuccin green when checked. */
 .form-check { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-weight: 500; }
 .form-check input[type="checkbox"] { accent-color: var(--badge-success-fg); width: 1.05rem; height: 1.05rem; }
+
+/* Per-movie manual artwork upload (movie detail page). */
+.movie-art-edit { margin: 0.75rem 0; }
+.movie-art-edit > summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }
+.movie-art-edit-body {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.movie-art-poster-preview {
+  width: 110px;
+  height: auto;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.movie-art-edit-forms { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.movie-art-revert { display: flex; gap: 0.4rem; align-items: center; }

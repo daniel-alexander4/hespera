@@ -2,7 +2,9 @@ package web
 
 import (
 	"context"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"hespera/internal/jobs"
+	"hespera/internal/music"
 	"hespera/internal/pathguard"
 	"hespera/internal/tmdb"
 )
@@ -319,20 +322,20 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "movie_detail.html", map[string]any{
-		"Title":        movie.Title,
-		"TMDBID":       tmdbID,
-		"MovieTitle":   movie.Title,
-		"Year":         year,
-		"Overview":     movie.Overview,
-		"Genres":       movie.Genres,
-		"Runtime":      movie.Runtime,
-		"Tagline":      movie.Tagline,
-		"HasBackdrop":  movie.BackdropPath != "",
-		"BackdropVer":  backdropVer,
-		"FileID":       fileID,
-		"ResumePct":    resumePct,
-		"Completed":    completed,
-		"Cast":         cast,
+		"Title":       movie.Title,
+		"TMDBID":      tmdbID,
+		"MovieTitle":  movie.Title,
+		"Year":        year,
+		"Overview":    movie.Overview,
+		"Genres":      movie.Genres,
+		"Runtime":     movie.Runtime,
+		"Tagline":     movie.Tagline,
+		"HasBackdrop": movie.BackdropPath != "",
+		"BackdropVer": backdropVer,
+		"FileID":      fileID,
+		"ResumePct":   resumePct,
+		"Completed":   completed,
+		"Cast":        cast,
 	})
 }
 
@@ -416,6 +419,7 @@ func (h *Handler) movieArt(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	w.Header().Set("Content-Type", artMIMEFromExt(clean))
+	w.Header().Set("X-Content-Type-Options", "nosniff") // manual uploads serve user bytes
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = io.Copy(w, f)
 }
@@ -696,4 +700,148 @@ WHERE tmdb_id=? AND match_status='matched'
 	// can reclaim the files (best-effort — a stale row would only leak disk).
 	_, _ = h.db.ExecContext(r.Context(), "DELETE FROM movie_art WHERE tmdb_movie_id=?", tmdbID)
 	http.Redirect(w, r, "/movies/match/review", http.StatusSeeOther)
+}
+
+// movieArtUpload stores a user-supplied poster or backdrop for a matched movie,
+// marking the movie_art row manual=1 so a later (re)match's downloadMovieArt
+// skips it. Mirrors musicAlbumArtUpload (bytes-sniffed MIME, 15 MiB cap,
+// temp+rename); mounted under /movie/ so the auth + same-origin CSRF middleware
+// applies (an /art/* path would not CSRF-guard the POST).
+func (h *Handler) movieArtUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAlbumArtBytes+(1<<20))
+	if err := r.ParseMultipartForm(maxAlbumArtBytes); err != nil {
+		http.Error(w, "upload too large or malformed", http.StatusBadRequest)
+		return
+	}
+	tmdbID, err := strconv.Atoi(strings.TrimSpace(r.FormValue("tmdb_id")))
+	if err != nil || tmdbID <= 0 {
+		http.Error(w, "invalid tmdb_id", http.StatusBadRequest)
+		return
+	}
+	artType := strings.TrimSpace(r.FormValue("art_type"))
+	if artType != "poster" && artType != "backdrop" {
+		http.Error(w, "art_type must be poster or backdrop", http.StatusBadRequest)
+		return
+	}
+	// Only matched movies have a detail page / TMDB id to key art on.
+	var exists int
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT 1 FROM movie_files WHERE tmdb_id=? AND match_status='matched' LIMIT 1", tmdbID).Scan(&exists); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	file, _, err := r.FormFile("art")
+	if err != nil {
+		http.Error(w, "no image file provided", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxAlbumArtBytes))
+	if err != nil {
+		httpError(w, 500, "internal server error", "read upload failed", "handler", "movieArtUpload", "err", err)
+		return
+	}
+	// MIME from the bytes — never the client content-type/filename; jpeg/png/webp.
+	detected := http.DetectContentType(data)
+	if err := music.VerifyImage(detected, data); err != nil {
+		http.Error(w, "file is not a valid image", http.StatusBadRequest)
+		return
+	}
+	ext, err := music.ArtFileExt(detected)
+	if err != nil {
+		http.Error(w, "unsupported image format (use JPEG, PNG, or WebP)", http.StatusBadRequest)
+		return
+	}
+
+	thumbDir := filepath.Join(h.cfg.DataDir, "thumbs", "movies")
+	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
+		httpError(w, 500, "internal server error", "mkdir thumbs failed", "handler", "movieArtUpload", "err", err)
+		return
+	}
+	// Stable per-(movie,type) name with a distinct prefix so it never collides
+	// with the TMDB download file (movie_<id>_<type>.jpg).
+	sum := sha1.Sum([]byte(fmt.Sprintf("manual-movie-%d-%s", tmdbID, artType)))
+	outPath := filepath.Join(thumbDir, hex.EncodeToString(sum[:])+ext)
+
+	tmp, err := os.CreateTemp(thumbDir, "art-*")
+	if err != nil {
+		httpError(w, 500, "internal server error", "create temp failed", "handler", "movieArtUpload", "err", err)
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		httpError(w, 500, "internal server error", "write art failed", "handler", "movieArtUpload", "err", err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		httpError(w, 500, "internal server error", "close art failed", "handler", "movieArtUpload", "err", err)
+		return
+	}
+	if err := os.Rename(tmpName, outPath); err != nil {
+		_ = os.Remove(tmpName)
+		httpError(w, 500, "internal server error", "publish art failed", "handler", "movieArtUpload", "err", err)
+		return
+	}
+
+	// manual=1 protects this row from a (re)match's downloadMovieArt gate.
+	if _, err := h.db.ExecContext(r.Context(), `
+INSERT INTO movie_art (tmdb_movie_id, art_type, art_path, manual)
+VALUES (?, ?, ?, 1)
+ON CONFLICT(tmdb_movie_id, art_type) DO UPDATE SET
+  art_path=excluded.art_path, manual=1, fetched_at=datetime('now')
+`, tmdbID, artType, outPath); err != nil {
+		httpError(w, 500, "internal server error", "upsert movie_art failed", "handler", "movieArtUpload", "err", err)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/movie/%d", tmdbID), http.StatusSeeOther)
+}
+
+// movieArtClear removes a manual art override for one slot (poster/backdrop) and
+// re-fetches that film's TMDB art in the background — a targeted revert that,
+// unlike Unmatch, keeps the match (and any other manual art slot) intact.
+func (h *Handler) movieArtClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "movieArtClear", "err", err)
+		return
+	}
+	tmdbID, err := strconv.Atoi(strings.TrimSpace(r.FormValue("tmdb_id")))
+	if err != nil || tmdbID <= 0 {
+		http.Error(w, "invalid tmdb_id", http.StatusBadRequest)
+		return
+	}
+	artType := strings.TrimSpace(r.FormValue("art_type"))
+	if artType != "poster" && artType != "backdrop" {
+		http.Error(w, "art_type must be poster or backdrop", http.StatusBadRequest)
+		return
+	}
+	var artPath string
+	_ = h.db.QueryRowContext(r.Context(),
+		"SELECT art_path FROM movie_art WHERE tmdb_movie_id=? AND art_type=? AND manual=1", tmdbID, artType).Scan(&artPath)
+	if _, err := h.db.ExecContext(r.Context(),
+		"DELETE FROM movie_art WHERE tmdb_movie_id=? AND art_type=? AND manual=1", tmdbID, artType); err != nil {
+		httpError(w, 500, "internal server error", "delete movie_art failed", "handler", "movieArtClear", "err", err)
+		return
+	}
+	if artPath != "" {
+		if clean, perr := pathguard.ResolveExistingUnderRoot(filepath.Clean(h.cfg.DataDir), artPath); perr == nil {
+			_ = os.Remove(clean)
+		}
+	}
+	// Re-pull TMDB art (the gate no longer fires now the manual row is gone).
+	id := tmdbID
+	h.enqueueMovieMetaFetch(r.Context(), fmt.Sprintf("movie-meta:%d", id), "movie_metadata_fetch",
+		func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchMovieMetadata(ctx, id) })
+	http.Redirect(w, r, fmt.Sprintf("/movie/%d", id), http.StatusSeeOther)
 }

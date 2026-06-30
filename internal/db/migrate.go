@@ -215,6 +215,7 @@ CREATE TABLE IF NOT EXISTS movie_art (
   tmdb_movie_id INTEGER NOT NULL DEFAULT 0,
   art_type TEXT NOT NULL DEFAULT '',
   art_path TEXT NOT NULL DEFAULT '',
+  manual INTEGER NOT NULL DEFAULT 0, -- 1 = a user-uploaded override; a (re)match must not clobber it
   fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -366,6 +367,12 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 	if err := ensureColumn(db, "movie_files", "tmdb_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// movie_art.manual marks a user-uploaded cover/backdrop so a (re)match's
+	// downloadMovieArt skips it instead of overwriting. Added here for DBs that
+	// created movie_art before the column existed.
+	if err := ensureColumn(db, "movie_art", "manual", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	// people: filmography_json caches an actor's wider TV credits ("Other shows").
