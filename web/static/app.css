@@ -426,6 +426,22 @@ body::before {
   cursor: not-allowed;
 }
 
+/* Dialogue-boost toggle "on" state — a solid accent fill so it's unmistakably
+   active in BOTH themes (the default .btn-primary tint is near-invisible against
+   the player overlay in light mode). The accent ring keeps it readable over the
+   dark overlay gradient too. */
+#tvBoostBtn.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+#tvBoostBtn.is-on:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--text-on-accent);
+}
+
 /* Forms */
 .form-card {
   background: var(--surface-card);
