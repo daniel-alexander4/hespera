@@ -13,7 +13,10 @@
   </div>
   <div class="artist-side">
     {{if .Bio}}
-    <div class="artist-bio"><p>{{.Bio}}</p></div>
+    <div class="artist-bio">
+      <p>{{.Bio}}</p>
+      {{if .WikipediaURL}}<p class="bio-source"><a href="{{.WikipediaURL}}" target="_blank" rel="noopener noreferrer">Read more on Wikipedia</a></p>{{end}}
+    </div>
     {{else}}
     <p class="form-help">Biography is loading — check back in a moment.</p>
     {{end}}

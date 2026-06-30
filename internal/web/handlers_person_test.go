@@ -94,3 +94,42 @@ func TestBuildOtherShows(t *testing.T) {
 		t.Fatal("empty filmography should yield nil")
 	}
 }
+
+func TestSplitWikipediaBio(t *testing.T) {
+	tests := []struct {
+		name      string
+		bio       string
+		wantClean string
+		wantURL   string
+	}{
+		{
+			name:      "space and nbsp before title",
+			bio:       "Host of Survivor.\n\nDescription above from the Wikipedia article \u00a0Jeff Probst, licensed under CC-BY-SA, full list of contributors on Wikipedia.",
+			wantClean: "Host of Survivor.",
+			wantURL:   "https://en.wikipedia.org/wiki/Jeff_Probst",
+		},
+		{
+			name:      "nbsp only before title",
+			bio:       "An actress.\n\nDescription above from the Wikipedia article\u00a0Samantha Morton, licensed under CC-BY-SA, full list of contributors on Wikipedia.",
+			wantClean: "An actress.",
+			wantURL:   "https://en.wikipedia.org/wiki/Samantha_Morton",
+		},
+		{
+			name:      "no attribution is passed through unchanged",
+			bio:       "Just a plain biography with no notice.",
+			wantClean: "Just a plain biography with no notice.",
+			wantURL:   "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clean, gotURL := splitWikipediaBio(tc.bio)
+			if clean != tc.wantClean {
+				t.Fatalf("clean = %q, want %q", clean, tc.wantClean)
+			}
+			if gotURL != tc.wantURL {
+				t.Fatalf("url = %q, want %q", gotURL, tc.wantURL)
+			}
+		})
+	}
+}
