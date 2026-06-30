@@ -9,6 +9,7 @@ func (h *Handler) Router() http.Handler {
 
 	mux.HandleFunc("/", h.home)
 	mux.HandleFunc("/healthz", h.healthz)
+	mux.HandleFunc("/shutdown", h.shutdown)
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, h.staticFS, "hespera-favicon.ico")
 	})

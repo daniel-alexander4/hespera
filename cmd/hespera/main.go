@@ -6,7 +6,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -63,10 +66,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// quit lets the UI's power button (POST /shutdown) initiate the same graceful
+	// shutdown as a SIGTERM, cross-platform (syscall.Kill is Unix-only). main
+	// selects on both below.
+	quit := make(chan struct{})
+	var quitOnce sync.Once
+	quitFunc := func() { quitOnce.Do(func() { close(quit) }) }
+
 	h, err := web.New(web.Deps{
 		Cfg:     cfg,
 		DB:      dbConn,
 		Version: version,
+		Quit:    quitFunc,
 	})
 	if err != nil {
 		slog.Error("web handler initialization failed", "err", err)
@@ -106,16 +117,38 @@ func main() {
 		}
 	}()
 
+	var browserCmd *exec.Cmd
 	if appMode {
 		url := appURL(boundAddr)
-		if _, err := browser.Open(url); err != nil {
+		// A dedicated profile under the data dir makes the launched process own
+		// the window, so quitting (power button / signal) can close it.
+		profileDir := filepath.Join(cfg.DataDir, "browser")
+		if c, err := browser.Open(url, profileDir); err != nil {
 			slog.Warn("could not open app window — browse to it manually", "url", url, "err", err)
 		} else {
+			browserCmd = c
 			slog.Info("opened app window", "url", url)
 		}
 	}
 
-	<-stop
+	// Quit on a signal (SIGINT/SIGTERM) or the UI power button (POST /shutdown).
+	select {
+	case <-stop:
+	case <-quit:
+		slog.Info("shutdown requested via UI")
+	}
+
+	// Close the app window we launched: the dedicated profile (see browser.Open)
+	// means this process owns its window, so stopping it closes the window. Try a
+	// graceful SIGTERM first (clean Chrome exit, no "restore pages" next launch);
+	// fall back to Kill (Windows, where SIGTERM isn't delivered). A no-op in the
+	// default-browser-tab fallback — that cmd already exited and isn't the user's
+	// browser, so we never close their window.
+	if browserCmd != nil && browserCmd.Process != nil {
+		if err := browserCmd.Process.Signal(syscall.SIGTERM); err != nil {
+			_ = browserCmd.Process.Kill()
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

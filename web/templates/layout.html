@@ -102,6 +102,9 @@
          (the API replaces the inner #yt-player div with an iframe, so the iframe
          itself isn't data-turbo-permanent — the wrapper keeps it alive). -->
     <div id="yt-host" data-turbo-permanent class="hidden"><div id="yt-player"></div></div>
+    <div class="topbar-controls">
+    <button type="button" class="topbar-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
+    <button type="button" class="topbar-btn topbar-btn--power" data-app-quit aria-label="Quit Hespera" title="Quit Hespera">{{template "icon-power"}}</button>
     <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle light and dark theme">
       <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="5"></circle>
@@ -118,6 +121,7 @@
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
       </svg>
     </button>
+    </div>
   </header>
 
   <main class="main">
@@ -195,6 +199,19 @@
         root.setAttribute('data-mode', next);
         try { localStorage.setItem('iso_theme_mode', next); } catch (_) {}
         sync();
+      });
+    })();
+
+    (() => {
+      const reload = document.querySelector('[data-app-reload]');
+      if (reload) reload.addEventListener('click', () => window.location.reload());
+      const quit = document.querySelector('[data-app-quit]');
+      if (quit) quit.addEventListener('click', async () => {
+        if (!window.confirm('Quit Hespera? The app will close.')) return;
+        try { await fetch('/shutdown', { method: 'POST' }); } catch (_) { /* server is stopping */ }
+        document.body.innerHTML =
+          '<div style="display:flex;align-items:center;justify-content:center;min-height:90vh;color:#a6adc8;font:1.1rem system-ui,sans-serif;">Hespera has shut down — you can close this window.</div>';
+        window.close(); // closes the chromeless app window; the message remains if the browser blocks it
       });
     })();
   </script>
