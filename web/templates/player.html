@@ -17,25 +17,10 @@
       <div class="player-info">
         <div class="text-muted"><strong>Album:</strong> <span id="player-album-title">&#8212;</span></div>
         <div class="text-muted"><strong>Track:</strong> <span id="player-track-title">&#8212;</span></div>
-
-        <div class="player-seek-row">
-          <input id="player-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek" />
-          <span id="player-time" class="text-muted">0:00 / &#8211;:&#8211;&#8211;</span>
-        </div>
-
-        <div class="player-controls">
-          <button id="player-prev-btn" type="button" class="btn btn-sm" aria-label="Previous or restart" title="Previous or restart">{{template "icon-skip-back"}}</button>
-          <button id="player-rewind-btn" type="button" class="btn btn-sm" aria-label="Rewind 10s" title="Rewind 10s">{{template "icon-rewind"}}</button>
-          <button id="player-toggle-btn" type="button" class="btn btn-primary btn-sm" aria-label="Play/Pause" title="Play/Pause">{{template "icon-pause"}}</button>
-          <button id="player-forward-btn" type="button" class="btn btn-sm" aria-label="Forward 10s" title="Forward 10s">{{template "icon-fast-forward"}}</button>
-          <button id="player-next-btn" type="button" class="btn btn-sm" aria-label="Next track" title="Next track">{{template "icon-skip-forward"}}</button>
-        </div>
-
-        <button id="playlist-open-btn" type="button" class="btn btn-sm" aria-label="Show playlist" title="Show playlist">Playlist</button>
       </div>
     </div>
 
-    {{/* Lyrics sit below the cover + controls, centered on the page, large enough
+    {{/* Lyrics sit below the cover, centered on the page, large enough
          to read from the couch (see .player-shell-karaoke in app.css). */}}
     <div id="player-karaoke" class="player-shell-karaoke text-muted">
       <div id="player-karaoke-current" class="player-shell-karaoke-current">Lyrics unavailable</div>
@@ -44,15 +29,44 @@
   </div>
 </div>
 
-<div id="playlist-modal" class="playlist-modal hidden" data-couch-overlay>
-  <div class="playlist-panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-      <strong>Playlist</strong>
-      <button id="playlist-close-btn" type="button" class="btn btn-sm" data-couch-dismiss>Close</button>
+{{/* Transport (seek + controls) is a collapsing overlay pinned to the bottom of
+     the screen; the grab tab toggles it. player.js wires #player-transport-toggle
+     and persists the collapsed state in localStorage. */}}
+<div id="player-transport" class="player-transport">
+  <button id="player-transport-toggle" type="button" class="player-transport-tab"
+          aria-label="Collapse controls" title="Collapse controls" aria-expanded="true">
+    {{template "icon-chevron-down"}}
+  </button>
+  <div class="player-transport-body">
+    <div class="player-seek-row">
+      <input id="player-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek" />
+      <span id="player-time" class="text-muted">0:00 / &#8211;:&#8211;&#8211;</span>
     </div>
-    <ol id="playlist-list" class="tracks"></ol>
+
+    <div class="player-transport-controls">
+      <div class="player-controls">
+        <button id="player-prev-btn" type="button" class="btn btn-sm" aria-label="Previous or restart" title="Previous or restart">{{template "icon-skip-back"}}</button>
+        <button id="player-rewind-btn" type="button" class="btn btn-sm" aria-label="Rewind 10s" title="Rewind 10s">{{template "icon-rewind"}}</button>
+        <button id="player-toggle-btn" type="button" class="btn btn-primary btn-sm" aria-label="Play/Pause" title="Play/Pause">{{template "icon-pause"}}</button>
+        <button id="player-forward-btn" type="button" class="btn btn-sm" aria-label="Forward 10s" title="Forward 10s">{{template "icon-fast-forward"}}</button>
+        <button id="player-next-btn" type="button" class="btn btn-sm" aria-label="Next track" title="Next track">{{template "icon-skip-forward"}}</button>
+      </div>
+      <button id="playlist-open-btn" type="button" class="btn btn-sm playlist-open-btn" aria-label="Show playlist" title="Show playlist">{{template "icon-list-music"}}<span>Playlist</span></button>
+    </div>
   </div>
 </div>
+
+{{/* Playlist drawer slides in from the right. Kept in the DOM and animated via a
+     transform; player.js adds .hidden once the slide-out finishes so couch mode
+     reads it as closed (a fixed, off-screen element still has a bounding box). */}}
+<div id="playlist-scrim" class="playlist-scrim hidden"></div>
+<aside id="playlist-drawer" class="playlist-drawer hidden" data-couch-overlay aria-label="Playlist">
+  <div class="playlist-drawer-head">
+    <strong>Playlist</strong>
+    <button id="playlist-close-btn" type="button" class="btn btn-sm" data-couch-dismiss aria-label="Close playlist" title="Close playlist">{{template "icon-x"}}</button>
+  </div>
+  <ol id="playlist-list" class="tracks"></ol>
+</aside>
 {{end}}
 
 {{/* Opt this page out of Turbo's cached-preview render. Unlike tv_player.html
