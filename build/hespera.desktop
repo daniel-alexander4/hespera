@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hespera
+Comment=Your local Music, TV, and Movies library
+Exec=hespera --replace
+Icon=hespera
+Terminal=false
+Categories=AudioVideo;Player;
+StartupNotify=true
+StartupWMClass=Hespera

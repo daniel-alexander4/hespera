@@ -51,6 +51,12 @@ type Handler struct {
 }
 
 func New(d Deps) (*Handler, error) {
+	// Overlay user-set runtime overrides (media folder, auth toggle) from
+	// app_settings onto the env/default config, once here at construction. Every
+	// MediaRoot reader and the auth Manager are built from this config, so this is
+	// the single override point — no call site reads those from app_settings.
+	d.Cfg = resolveEffectiveConfig(d.Cfg, d.DB)
+
 	// Assets are embedded (see ../../embed.go), so the binary is self-contained
 	// and finds its templates/static regardless of the working directory. Tests
 	// may inject a stub tree via Deps.AssetsFS.

@@ -51,7 +51,7 @@ func FromEnv() Config {
 		OpenSubtitlesAPIKey:    getenv("HESPERA_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUserAgent: getenv("HESPERA_OPENSUBTITLES_USER_AGENT", ""),
 		YouTubeAPIKey:          getenv("HESPERA_YOUTUBE_API_KEY", ""),
-		AuthEnabled: parseBoolDefaultTrue(
+		AuthEnabled: parseBoolDefaultFalse(
 			os.Getenv("AUTH_ENABLED"),
 		),
 		AuthSessionSecret: getenv("AUTH_SESSION_SECRET", ""),
@@ -155,15 +155,19 @@ func defaultMediaRoot() string {
 	return os.TempDir()
 }
 
-func parseBoolDefaultTrue(v string) bool {
+// parseBoolDefaultFalse parses an AUTH_ENABLED-style flag, defaulting to false
+// when unset. Hespera ships as a loopback-only single-machine app where auth
+// adds no protection (only localhost can connect), so the binary boots open by
+// default; a user exposing it (or running the Docker server) opts in via the
+// Settings toggle or AUTH_ENABLED=true. Docker's compose sets AUTH_ENABLED
+// explicitly, so this default doesn't change its behavior.
+func parseBoolDefaultFalse(v string) bool {
 	v = strings.TrimSpace(strings.ToLower(v))
 	switch v {
-	case "", "1", "true", "yes", "on":
+	case "1", "true", "yes", "on":
 		return true
-	case "0", "false", "no", "off":
-		return false
 	default:
-		return true
+		return false
 	}
 }
 

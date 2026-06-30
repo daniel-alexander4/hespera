@@ -20,6 +20,7 @@ func (h *Handler) Router() http.Handler {
 	// Libraries
 	mux.HandleFunc("/libraries", h.libraries)
 	mux.HandleFunc("/libraries/new", h.librariesNew)
+	mux.HandleFunc("/libraries/media-root", h.librariesMediaRoot)
 	mux.HandleFunc("/libraries/scan", h.librariesScan)
 	mux.HandleFunc("/libraries/reprobe", h.librariesReprobe)
 	mux.HandleFunc("/libraries/jobs-status", h.librariesJobsStatus)

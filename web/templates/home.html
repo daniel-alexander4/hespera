@@ -135,7 +135,16 @@
 </div>
 {{end}}
 
-{{if not .HasActivity}}
+{{if .NeedsSetup}}
+<div class="empty-state">
+  <h3>Let's get set up</h3>
+  <p>Two quick steps to start using Hespera:</p>
+  <ol>
+    <li>Point Hespera at your <a href="/libraries">media folder</a> (where your music, TV, and movies live).</li>
+    <li><a href="/libraries/new">Add a library</a> under it, then scan and match.</li>
+  </ol>
+</div>
+{{else if not .HasActivity}}
 <div class="empty-state">
   <p>No media yet. Use <a href="/libraries">Libraries</a> to add a library, then scan and match.</p>
 </div>

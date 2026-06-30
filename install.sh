@@ -34,7 +34,12 @@ echo "installing $DEB (sudo)…"
 # apt install (not dpkg -i) so the ffmpeg/openssh-client dependencies resolve.
 sudo apt install -y "./$DEB"
 
+# Refresh the desktop + icon caches so the menu entry and icon appear now.
+sudo update-desktop-database >/dev/null 2>&1 || true
+sudo gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1 || true
+
 rm -f dist/hespera dist/hescli
 echo
-echo "Installed. Start the server with 'hespera' and browse to http://localhost:8080."
-echo "Set HESPERA_MEDIA_ROOT to your media library (default: your home directory)."
+echo "Installed. Launch 'Hespera' from your app menu (or run 'hespera') — it opens"
+echo "an app window on this machine. Set your media folder in Libraries (or via"
+echo "HESPERA_MEDIA_ROOT; default: your home directory)."
