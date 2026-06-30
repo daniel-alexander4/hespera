@@ -118,6 +118,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/movies/match/approve", h.moviesMatchApprove)
 	mux.HandleFunc("/movies/match/skip", h.moviesMatchSkip)
 	mux.HandleFunc("/movies/match/search", h.moviesMatchSearch)
+	mux.HandleFunc("/movie/unmatch", h.movieUnmatch)
 	mux.HandleFunc("/art/movie/", h.movieArt)
 
 	// Static files

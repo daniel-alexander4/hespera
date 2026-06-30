@@ -646,3 +646,36 @@ WHERE lower(guessed_title)=lower(?) AND year=? AND match_status IN ('', 'unmatch
 	}
 	http.Redirect(w, r, "/movies/match/review", http.StatusSeeOther)
 }
+
+// movieUnmatch resets a matched film back to unmatched so it reappears in the
+// review list for re-matching — fixing a mis-match without a full library
+// re-Match. The music analogue is musicAlbumUnmatch. Keyed by tmdb_id (a film
+// may span several files); also drops the now-orphaned movie_art rows so the
+// thumbgc movie sweep can reclaim the image files.
+func (h *Handler) movieUnmatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "movieUnmatch", "err", err)
+		return
+	}
+	tmdbID, err := strconv.Atoi(strings.TrimSpace(r.FormValue("tmdb_id")))
+	if err != nil || tmdbID <= 0 {
+		http.Error(w, "invalid tmdb_id", 400)
+		return
+	}
+	if _, err := h.db.ExecContext(r.Context(), `
+UPDATE movie_files SET
+  tmdb_id=0, match_status='', match_source='', match_confidence=0, matched_at=''
+WHERE tmdb_id=? AND match_status='matched'
+`, tmdbID); err != nil {
+		httpError(w, 500, "internal server error", "db update failed", "handler", "movieUnmatch", "err", err)
+		return
+	}
+	// No movie_files row references this TMDB id anymore; drop its art so thumbgc
+	// can reclaim the files (best-effort — a stale row would only leak disk).
+	_, _ = h.db.ExecContext(r.Context(), "DELETE FROM movie_art WHERE tmdb_movie_id=?", tmdbID)
+	http.Redirect(w, r, "/movies/match/review", http.StatusSeeOther)
+}
