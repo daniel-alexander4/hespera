@@ -31,7 +31,21 @@ go test ./internal/config -run TestFromEnvDefaults
 # Format and vet
 go fmt ./...
 go vet ./...
+
+# Bump the semantic version (X.Y.Z in the VERSION file)
+./bump.sh patch            # Z+1 — a minor change / fix
+./bump.sh minor            # Y+1, Z=0 — a major feature
+./bump.sh major            # X+1, Y=Z=0 — a breaking release
+make bump-patch / bump-minor / bump-major   # Makefile wrappers
 ```
+
+> **Versioning (SemVer `X.Y.Z`).** The `VERSION` file is the single source of
+> truth; `build.sh`/`install.sh` stamp it into the binary via
+> `-ldflags "-X main.version=…"` (it also drives the `staticv` asset
+> cache-buster). **Bump policy:** **patch (Z)** for a minor change or fix,
+> **minor (Y)** for a major feature, **major (X)** only when Dan says. Bump as
+> part of the change's commit (use `./bump.sh <part>`); Y/Z are chosen by the
+> change's size, X is never bumped automatically.
 
 > **Binary vs Docker distribution.** The standalone binary runs as the invoking
 > user (no container, no root, **no systemd service**) and, by default, **opens an
