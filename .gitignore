@@ -4,6 +4,9 @@ bin/
 /isomedia
 /hespera
 
+# Release artifacts (cross-compiled binaries + .deb packages)
+dist/
+
 # IDE / editor
 .idea/
 .vscode/

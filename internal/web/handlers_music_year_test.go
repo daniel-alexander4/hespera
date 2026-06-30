@@ -142,16 +142,10 @@ func TestJourneyQueueOwnedOnlyNoKey(t *testing.T) {
 	}
 }
 
-// TestMusicYearRealTemplate renders the page through the REAL web/templates so a
-// field/method typo in music_year.html fails here.
+// TestMusicYearRealTemplate renders the page through the REAL embedded
+// web/templates (no AssetsFS override) so a field/method typo in music_year.html
+// fails here.
 func TestMusicYearRealTemplate(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	root := filepath.Join(wd, "..", "..") // internal/web → repo root (has web/templates)
-	withChdir(t, root)
-
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.sqlite")
 	db, err := isodb.Open(dbPath)

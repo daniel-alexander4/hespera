@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -18,14 +19,22 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.Listen != ":8080" {
 		t.Fatalf("expected Listen=:8080, got %q", cfg.Listen)
 	}
-	if cfg.DataDir != "/var/lib/hespera" {
-		t.Fatalf("expected DataDir=/var/lib/hespera, got %q", cfg.DataDir)
+	// The defaults are now per-user and OS-appropriate (no container, runs as the
+	// invoking user). Assert they match the resolvers and are absolute, rather
+	// than a hard-coded Unix path.
+	if want := defaultDataDir(); cfg.DataDir != want {
+		t.Fatalf("expected DataDir=%q, got %q", want, cfg.DataDir)
 	}
-	if cfg.DBPath != "/var/lib/hespera/hespera.sqlite" {
-		t.Fatalf("expected DBPath=/var/lib/hespera/hespera.sqlite, got %q", cfg.DBPath)
+	if want := filepath.Join(defaultDataDir(), "hespera.sqlite"); cfg.DBPath != want {
+		t.Fatalf("expected DBPath=%q, got %q", want, cfg.DBPath)
 	}
-	if cfg.MediaRoot != "/media" {
-		t.Fatalf("expected MediaRoot=/media, got %q", cfg.MediaRoot)
+	if want := defaultMediaRoot(); cfg.MediaRoot != want {
+		t.Fatalf("expected MediaRoot=%q, got %q", want, cfg.MediaRoot)
+	}
+	for _, p := range []string{cfg.DataDir, cfg.DBPath, cfg.MediaRoot} {
+		if !filepath.IsAbs(p) {
+			t.Fatalf("default path must be absolute, got %q", p)
+		}
 	}
 	if !cfg.AuthEnabled {
 		t.Fatalf("expected AuthEnabled=true by default")

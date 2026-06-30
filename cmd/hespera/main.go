@@ -15,8 +15,13 @@ import (
 	"hespera/internal/web"
 )
 
+// version is set at build time via -ldflags "-X main.version=…" (see build.sh);
+// it stamps the startup log and the static-asset cache-buster.
+var version = "dev"
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	slog.Info("starting", "version", version)
 
 	cfg := config.FromEnv()
 	if err := cfg.Validate(); err != nil {
@@ -25,6 +30,14 @@ func main() {
 	}
 
 	video.SetConcurrency(cfg.FFmpegConcurrentLimit, cfg.FFmpegAcquireTimeout)
+
+	// Create the data dir on first run — the binary runs as the invoking user
+	// (no container pre-creating /var/lib/hespera), so the default per-user dir
+	// won't exist yet and SQLite can't create its file in a missing directory.
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		slog.Error("create data dir failed", "dir", cfg.DataDir, "err", err)
+		os.Exit(1)
+	}
 
 	dbConn, err := db.Open(cfg.DBPath)
 	if err != nil {
@@ -39,8 +52,9 @@ func main() {
 	}
 
 	h, err := web.New(web.Deps{
-		Cfg: cfg,
-		DB:  dbConn,
+		Cfg:     cfg,
+		DB:      dbConn,
+		Version: version,
 	})
 	if err != nil {
 		slog.Error("web handler initialization failed", "err", err)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -35,9 +36,9 @@ type Config struct {
 
 func FromEnv() Config {
 	listen := getenv("HESPERA_LISTEN", ":8080")
-	dataDir := getenv("HESPERA_DATA_DIR", "/var/lib/hespera")
-	dbPath := getenv("HESPERA_DB_PATH", dataDir+"/hespera.sqlite")
-	mediaRoot := getenv("HESPERA_MEDIA_ROOT", "/media")
+	dataDir := getenv("HESPERA_DATA_DIR", defaultDataDir())
+	dbPath := getenv("HESPERA_DB_PATH", filepath.Join(dataDir, "hespera.sqlite"))
+	mediaRoot := getenv("HESPERA_MEDIA_ROOT", defaultMediaRoot())
 
 	return Config{
 		Listen:                 listen,
@@ -75,13 +76,13 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.Listen) == "" {
 		return errors.New("HESPERA_LISTEN is required")
 	}
-	if !strings.HasPrefix(c.DataDir, "/") {
+	if !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("HESPERA_DATA_DIR must be absolute: %q", c.DataDir)
 	}
-	if !strings.HasPrefix(c.DBPath, "/") {
+	if !filepath.IsAbs(c.DBPath) {
 		return fmt.Errorf("HESPERA_DB_PATH must be absolute: %q", c.DBPath)
 	}
-	if !strings.HasPrefix(c.MediaRoot, "/") {
+	if !filepath.IsAbs(c.MediaRoot) {
 		return fmt.Errorf("HESPERA_MEDIA_ROOT must be absolute: %q", c.MediaRoot)
 	}
 	if c.AuthEnabled && strings.TrimSpace(c.AuthSessionSecret) == "" {
@@ -124,6 +125,34 @@ func getenv(k, def string) string {
 		return def
 	}
 	return v
+}
+
+// defaultDataDir is a per-user, OS-appropriate, writable location for the SQLite
+// DB, caches, and downloaded art — used when HESPERA_DATA_DIR is unset. The
+// binary runs as the invoking user (no container, no root), so the old
+// root-owned /var/lib/hespera default would be unwritable. Resolves to an
+// absolute path on every platform (os.UserConfigDir → ~/.config, %AppData%,
+// ~/Library/Application Support); the Docker image is unaffected because its
+// compose sets HESPERA_DATA_DIR explicitly.
+func defaultDataDir() string {
+	if d, err := os.UserConfigDir(); err == nil && d != "" {
+		return filepath.Join(d, "hespera")
+	}
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
+		return filepath.Join(h, ".hespera")
+	}
+	return filepath.Join(os.TempDir(), "hespera")
+}
+
+// defaultMediaRoot is the fallback media library root. There is no universal
+// media location, so this just needs to be an absolute, valid path the server
+// can boot with; the user points HESPERA_MEDIA_ROOT at their actual media. The
+// home directory is absolute on every platform and a sane starting point.
+func defaultMediaRoot() string {
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
+		return h
+	}
+	return os.TempDir()
 }
 
 func parseBoolDefaultTrue(v string) bool {

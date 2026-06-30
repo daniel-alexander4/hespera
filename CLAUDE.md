@@ -2,16 +2,25 @@
 
 ## Project Overview
 
-Locally-hosted media server in Go: Music, TV, Movies with automatic metadata matching. Single Docker container, SQLite storage, server-rendered HTML templates with vanilla CSS/JS. Four direct deps: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`. Licensed **GPL-3.0** (`LICENSE`); third-party attributions in `THIRD_PARTY_LICENSES.md`, kept current by `TestThirdPartyLicensesCurrent` (`cmd/hespera`) — it fails the build if a direct dep in `go.mod` isn't listed there, so **adding a dependency requires updating `THIRD_PARTY_LICENSES.md`**.
+Locally-hosted media server in Go: Music, TV, Movies with automatic metadata matching. SQLite storage, server-rendered HTML templates with vanilla CSS/JS. **Distributed as self-contained cross-platform binaries** (Linux/macOS/Windows × amd64/arm64) — the `web/` UI assets are embedded via `//go:embed` (`embed.go`, `hespera.WebFS()`), so a binary finds its templates/static regardless of the working directory; a Docker image is still provided. Four direct deps: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`. Licensed **GPL-3.0** (`LICENSE`); third-party attributions in `THIRD_PARTY_LICENSES.md`, kept current by `TestThirdPartyLicensesCurrent` (`cmd/hespera`) — it fails the build if a direct dep in `go.mod` isn't listed there, so **adding a dependency requires updating `THIRD_PARTY_LICENSES.md`**.
 
 ## Build & Run Commands
 
 ```bash
-# Build binaries locally
+# Build binaries locally (quick dev build → ./bin)
 go build -o ./bin/hespera ./cmd/hespera
 go build -o ./bin/hescli ./cmd/hescli
+make build                  # same, via the Makefile
 
-# Build and run with Docker
+# Cross-compile + package for release (mirrors ~/repos/nib: bash + nfpm, no goreleaser)
+./build.sh                  # 6 binaries (Linux/macOS/Windows × amd64/arm64) + 2 .deb → dist/
+./install.sh                # build + .deb + `apt install` on this Debian/Ubuntu box
+make dist / make install    # Makefile wrappers
+# build.sh stamps the version via -ldflags "-X main.version=$VERSION" from the VERSION file;
+# the .deb (build/nfpm.yaml) ships hespera+hescli to /usr/bin and declares ffmpeg/openssh-client.
+# There is no service: the binary runs on demand as the invoking user (see the daemon note below).
+
+# Build and run with Docker (still supported; bundles ffmpeg)
 docker compose up --build
 
 # Tests: all / one package / one test
@@ -23,6 +32,19 @@ go test ./internal/config -run TestFromEnvDefaults
 go fmt ./...
 go vet ./...
 ```
+
+> **Binary vs Docker distribution.** The standalone binary runs as the invoking
+> user (no container, no root, **no systemd service** — start `hespera` yourself
+> and browse to `:8080`). Two consequences baked into the code: (1) `config`
+> defaults `DataDir` to a per-user dir (`os.UserConfigDir()/hespera`) and
+> validates paths with `filepath.IsAbs` (not a `/`-prefix), so Windows works;
+> `main` `MkdirAll`s the data dir on first run. (2) `web.New` loads templates via
+> `template.ParseFS` and serves `/static` + favicon from the embedded
+> `hespera.WebFS()`; the static cache-buster (`staticv`) is the build version,
+> not a file mtime. Tests inject a stub asset tree via `web.Deps.AssetsFS` (nil →
+> embedded), keeping handler-logic tests decoupled from the real template HTML.
+> Docker is unaffected — its compose sets `HESPERA_DATA_DIR`/`MEDIA_ROOT`
+> explicitly.
 
 ## Architecture
 

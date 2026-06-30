@@ -1,0 +1,39 @@
+# nfpm config for the Hespera .deb. The build scripts set ARCH/VERSION in the
+# environment and stage the binaries to dist/hespera and dist/hescli (nfpm
+# expands ${ARCH}/${VERSION} but not contents.src globs, so those paths are
+# literal). No systemd unit or desktop entry: Hespera is started on demand by
+# the user (`hespera`) and browsed to over the LAN.
+name: hespera
+arch: ${ARCH}
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: Dan <daniel@alexander4.org>
+description: |
+  Hespera — a self-hosted media server for Music, TV, and Movies with automatic
+  metadata matching. Serves a web app on :8080; stream from any device on your
+  network.
+# ffmpeg powers TV/movie transcoding + tag recovery; openssh-client provides the
+# ssh-keygen used by the optional pubkey auth. apt pulls them on install.
+depends:
+  - ffmpeg
+  - openssh-client
+contents:
+  - src: dist/hespera
+    dst: /usr/bin/hespera
+    file_info:
+      mode: 0755
+  - src: dist/hescli
+    dst: /usr/bin/hescli
+    file_info:
+      mode: 0755
+  # License + third-party attribution (THIRD_PARTY_LICENSES.md is kept current by
+  # TestThirdPartyLicensesCurrent).
+  - src: LICENSE
+    dst: /usr/share/doc/hespera/copyright
+    file_info:
+      mode: 0644
+  - src: THIRD_PARTY_LICENSES.md
+    dst: /usr/share/doc/hespera/THIRD_PARTY_LICENSES.md
+    file_info:
+      mode: 0644
