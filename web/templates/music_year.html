@@ -31,6 +31,7 @@
 
 <div class="band-albums-grid">
   {{range .Items}}
+  {{$art := .ArtURL}}
   <div class="journey-card{{if .Owned}} is-owned{{end}}">
     {{if .Owned}}<a class="journey-main" href="/music/album/{{.AlbumID}}">{{else}}<div class="journey-main">{{end}}
       <div class="band-album-art">
@@ -53,7 +54,7 @@
       <ul>
         {{range .Songs}}<li>
           {{if .Owned}}<a class="js-play is-local" href="/music/player?album={{.AlbumID}}&track={{.TrackID}}" data-play title="Play from your library">{{template "icon-play"}}</a>
-          {{else}}<button type="button" class="js-play js-yt" data-artist="{{.Artist}}" data-song="{{.Title}}"{{if $.HasYouTubeKey}} data-haskey="1"{{end}} title="Play{{if $.HasYouTubeKey}} (YouTube audio){{else}} on YouTube{{end}}">{{template "icon-play"}}</button>{{end}}
+          {{else}}<button type="button" class="js-play js-yt" data-artist="{{.Artist}}" data-song="{{.Title}}"{{if $art}} data-art="{{$art}}"{{end}}{{if $.HasYouTubeKey}} data-haskey="1"{{end}} title="Play{{if $.HasYouTubeKey}} (YouTube audio){{else}} on YouTube{{end}}">{{template "icon-play"}}</button>{{end}}
           <span class="js-title">{{.Title}}</span><span class="js-stat">#{{.Peak}} · {{.Weeks}} wk</span>
         </li>{{end}}
       </ul>

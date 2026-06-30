@@ -153,9 +153,9 @@
   };
 
   // Start an un-owned song as YouTube audio — a one-off takeover of the queue.
-  const playYouTubeSong = (videoId, artist, song) => {
+  const playYouTubeSong = (videoId, artist, song, coverUrl) => {
     reportCurrentTrack(false);
-    tracks = [{ kind: 'yt', videoId, title: song, artist, album: '', albumId: 0 }];
+    tracks = [{ kind: 'yt', videoId, title: song, artist, album: '', albumId: 0, coverUrl: coverUrl || '' }];
     queue = [0];
     currentPos = -1;
     playAt(0);
@@ -204,7 +204,8 @@
     if (!hasMediaSession || !t) return;
     try {
       const meta = { title: t.title || '', artist: t.artist || '', album: t.album || '' };
-      if (t.albumId) meta.artwork = [{ src: '/art/album/' + t.albumId, sizes: '512x512', type: 'image/jpeg' }];
+      const artSrc = t.coverUrl || (t.albumId ? '/art/album/' + t.albumId : '');
+      if (artSrc) meta.artwork = [{ src: artSrc, sizes: '512x512', type: 'image/jpeg' }];
       navigator.mediaSession.metadata = new MediaMetadata(meta);
     } catch (_) {}
   };
@@ -429,7 +430,7 @@
     const artist = (t.artist || '').trim();
     view.trackTitle.textContent = artist ? t.title + ' — ' + artist : t.title;
     delete view.coverImg.dataset.fallbackApplied;
-    view.coverImg.src = '/art/album/' + t.albumId;
+    view.coverImg.src = t.coverUrl || '/art/album/' + t.albumId;
     view.coverImg.classList.remove('hidden');
     view.coverPh.classList.add('hidden');
     renderPlaylist();
@@ -582,13 +583,14 @@
     e.preventDefault();
     const artist = el.getAttribute('data-artist') || '';
     const song = el.getAttribute('data-song') || '';
+    const artUrl = el.getAttribute('data-art') || '';
     if (el.getAttribute('data-haskey') === '1') {
       fetch('/music/youtube/resolve?artist=' + encodeURIComponent(artist) + '&song=' + encodeURIComponent(song), {
         headers: { Accept: 'application/json' },
       })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('resolve failed'))))
         .then((d) => {
-          if (d.videoId) playYouTubeSong(d.videoId, artist, song);
+          if (d.videoId) playYouTubeSong(d.videoId, artist, song, artUrl);
           else if (d.searchUrl) window.open(d.searchUrl, '_blank');
         })
         .catch(() => {});
