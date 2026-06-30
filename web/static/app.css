@@ -243,6 +243,39 @@ a:hover {
 html[data-mode="light"] .theme-toggle .icon-sun { display: block; }
 html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
 
+/* Topbar control cluster — reload + power sit next to the theme toggle, grouped
+   tightly (the topbar's own 1.5rem gap would scatter them). */
+.topbar-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.topbar-btn:hover {
+  color: var(--page-fg);
+  border-color: var(--accent);
+}
+.topbar-btn .icon { width: 1.05rem; height: 1.05rem; display: block; }
+/* Power button reads as destructive on hover. */
+.topbar-btn--power:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-bg, var(--surface-card));
+}
+
 /* Settings dropdown */
 .nav-settings {
   position: relative;

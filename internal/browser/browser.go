@@ -21,10 +21,26 @@ func fileExists(path string) bool {
 
 // Open launches url as an app-mode window, or a default-browser tab if no
 // app-mode-capable browser is found. It returns the started command (already
-// running) so the caller can wait on it, or an error if nothing could launch.
-func Open(url string) (*exec.Cmd, error) {
+// running) so the caller can wait on it — or stop it to close the window — or an
+// error if nothing could launch.
+//
+// userDataDir, when non-empty, runs the app window in a dedicated browser profile.
+// That forces a NEW browser process that OWNS the window instead of delegating to
+// an already-running Chrome and exiting immediately — so the caller can reliably
+// close the window on quit by stopping the returned process. Empty → shared
+// default profile (the window may then be owned by an existing instance and not
+// independently closable).
+func Open(url, userDataDir string) (*exec.Cmd, error) {
 	if path, ok := findChromium(); ok {
 		appArgs := []string{"--app=" + url, "--new-window"}
+		if userDataDir != "" {
+			// A unique profile guarantees this launch owns its window; the extra
+			// flags keep the fresh profile from showing first-run/setup prompts.
+			appArgs = append(appArgs,
+				"--user-data-dir="+userDataDir,
+				"--no-first-run",
+				"--no-default-browser-check")
+		}
 		if runtime.GOOS == "linux" {
 			// Set a stable WM_CLASS so the panel can match this window to
 			// hespera.desktop (StartupWMClass=Hespera) and show the themed icon

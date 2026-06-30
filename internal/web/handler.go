@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,10 @@ type Deps struct {
 	// inject a stub FS so handler-logic tests stay decoupled from the real
 	// template HTML.
 	AssetsFS fs.FS
+	// Quit initiates a graceful shutdown of the whole app (the topbar power
+	// button → POST /shutdown). main wires it to the same path as a SIGTERM; nil
+	// (e.g. in tests) disables the endpoint.
+	Quit func()
 }
 
 type Handler struct {
@@ -41,6 +46,9 @@ type Handler struct {
 	jobs      *jobs.Service
 	startedAt time.Time
 	auth      *auth.Manager
+	// quit gracefully stops the app (the topbar power button → POST /shutdown);
+	// nil disables the endpoint.
+	quit func()
 	// tmdbValidate checks whether a TMDB key is accepted (best-effort, used by
 	// the API-keys settings page). A field so tests can stub the network call.
 	tmdbValidate func(ctx context.Context, key string) (bool, error)
@@ -168,6 +176,7 @@ func New(d Deps) (*Handler, error) {
 		jobs:      jobs.New(d.DB),
 		startedAt: time.Now().UTC(),
 		auth:      auth.New(d.Cfg, d.DB),
+		quit:      d.Quit,
 		tmdbValidate: func(ctx context.Context, key string) (bool, error) {
 			return tmdb.NewClient(key).ValidateKey(ctx)
 		},
@@ -184,6 +193,37 @@ func (h *Handler) Shutdown() {
 	if h.jobs != nil {
 		h.jobs.Shutdown()
 	}
+}
+
+// shutdown quits the whole app (the topbar power button). It responds first, then
+// triggers the graceful shutdown so the client gets a reply before the server
+// stops. POST-only and same-origin (a destructive action): a cross-site page's
+// fetch carries a foreign Origin and is rejected; same-origin navigations that
+// omit Origin never reach this POST endpoint.
+func (h *Handler) shutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+	}
+	if h.quit == nil {
+		http.Error(w, "shutdown not available", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("shutting down"))
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	// Trigger after this handler returns and the response drains (srv.Shutdown
+	// waits for the active request), so the client reliably gets the reply.
+	go h.quit()
 }
 
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {
