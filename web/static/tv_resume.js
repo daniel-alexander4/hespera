@@ -1,8 +1,8 @@
-// Topbar "resume watching" chip for TV/video. The video lives on the player
-// page and is torn down on every Turbo navigation (it pauses + stops), so when
-// you click away this surfaces a link back to what you were watching. Playback
-// position is stored server-side (tv_playback_progress) and the player resumes
-// from it, so the link just needs the file id.
+// Topbar "resume watching" chip for video (TV and movies). The video lives on
+// the player page and is torn down on every Turbo navigation (it pauses +
+// stops), so when you click away this surfaces a link back to what you were
+// watching. Playback position is stored server-side ({tv,movie}_playback_progress)
+// and the player resumes from it, so the link just needs the kind + file id.
 //
 // State is kept in sessionStorage so the chip survives Turbo swaps and a hard
 // reload within the same tab, and is empty at the start of a session — it only
@@ -24,7 +24,8 @@
     const link = document.getElementById('nw-link');
     const title = document.getElementById('nw-title');
     if (!c || !link || !title) return;
-    link.href = '/tv/player?file=' + target.fileID;
+    // Default to 'tv' for entries written before the chip became multi-kind.
+    link.href = '/' + (target.kind || 'tv') + '/player?file=' + target.fileID;
     title.textContent = target.label;
     c.classList.remove('hidden');
   };
@@ -33,11 +34,12 @@
   const sync = () => {
     const video = document.getElementById('tvVideo');
     if (video) {
-      // On a player page. The movie player reuses #tvVideo + .tv-player-header,
-      // so only record a target for the TV player — its file-id namespace and
-      // the /tv/player link the chip builds are TV-specific (movie file ids
-      // collide and would mis-route). Either way, hide the chip while you're here.
-      if (video.dataset.mediaKind === 'tv') {
+      // On a player page. Both the TV and movie players use #tvVideo +
+      // .tv-player-header; record which kind so the chip links back to the right
+      // /<kind>/player (the file-id namespaces differ between the two tables, so
+      // the kind is what disambiguates them). Hide the chip while you're here.
+      const kind = video.dataset.mediaKind;
+      if (kind === 'tv' || kind === 'movie') {
         const fileID = parseInt(video.dataset.fileId, 10);
         if (fileID > 0) {
           const showEl = document.querySelector('.tv-player-header h1');
@@ -46,7 +48,7 @@
             showEl && showEl.textContent.trim(),
             epEl && epEl.textContent.trim(),
           ].filter(Boolean).join(' · ') || 'Resume watching';
-          write({ fileID, label });
+          write({ kind, fileID, label });
         }
       }
       hide();
