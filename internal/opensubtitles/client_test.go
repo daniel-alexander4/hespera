@@ -11,11 +11,15 @@ import (
 )
 
 func TestNewNilOnEmptyKey(t *testing.T) {
-	if New("") != nil {
+	if New("", "Some App v1") != nil {
 		t.Fatal("New(\"\") should return nil so callers can gate on a nil client")
 	}
-	if New("abc") == nil {
+	if New("abc", "Some App v1") == nil {
 		t.Fatal("New with a key should return a client")
+	}
+	// An empty UA falls back to the registered default, never a blank UA.
+	if c := New("abc", ""); c == nil || c.userAgent != defaultUserAgent {
+		t.Fatalf("empty UA should default to %q, got %+v", defaultUserAgent, c)
 	}
 }
 
@@ -23,7 +27,7 @@ func TestSearchParsesResultsAndSkipsFileless(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.String()
-		if r.Header.Get("Api-Key") != "k" || r.Header.Get("User-Agent") != userAgent {
+		if r.Header.Get("Api-Key") != "k" || r.Header.Get("User-Agent") != "TestApp v1" {
 			t.Errorf("missing/incorrect auth headers: %v / %v", r.Header.Get("Api-Key"), r.Header.Get("User-Agent"))
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -40,7 +44,7 @@ func TestSearchParsesResultsAndSkipsFileless(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New("k")
+	c := New("k", "TestApp v1")
 	c.baseURL = srv.URL
 
 	res, err := c.Search(context.Background(), "1396", 2, 5, "en")
@@ -61,7 +65,7 @@ func TestSearchParsesResultsAndSkipsFileless(t *testing.T) {
 }
 
 func TestSearchRejectsBadArgs(t *testing.T) {
-	c := New("k")
+	c := New("k", "")
 	if _, err := c.Search(context.Background(), "", 1, 1, "en"); err == nil {
 		t.Error("empty series id should error")
 	}
@@ -83,7 +87,7 @@ func TestDownloadReturnsLink(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New("k")
+	c := New("k", "")
 	c.baseURL = srv.URL
 
 	link, err := c.Download(context.Background(), 999)

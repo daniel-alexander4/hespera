@@ -78,6 +78,18 @@
 
 <form method="post" action="/settings/api-keys" class="form-card">
   <div class="form-group">
+    <label for="opensubtitles_user_agent">OpenSubtitles User-Agent <small class="form-help">(advanced)</small></label>
+    <small class="form-help">Identifies the consumer app to OpenSubtitles. Must name an app <strong>registered with OpenSubtitles</strong> (format <code>AppName vX.Y</code>) — an unregistered UA is rejected with HTTP&nbsp;403. Leave blank for the default.</small>
+    <input type="text" id="opensubtitles_user_agent" name="opensubtitles_user_agent" class="input" autocomplete="off" value="{{.OpenSubtitlesUserAgent}}" placeholder="Hespera v1.0" />
+    <small class="form-help">Overrides <code>HESPERA_OPENSUBTITLES_USER_AGENT</code>. Submit blank to clear (reverts to env/default).</small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+  </div>
+</form>
+
+<form method="post" action="/settings/api-keys" class="form-card">
+  <div class="form-group">
     <label for="youtube_api_key">YouTube Data API Key <small class="form-help">(optional)</small></label>
     {{if .YouTubeConfigured}}
     <small class="form-help">Currently set ({{.YouTubeSource}}): <code>{{.YouTubeMasked}}</code></small>
