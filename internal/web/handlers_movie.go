@@ -290,6 +290,16 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		backdropVer = artVersion(fa)
 	}
 
+	// Lazy cast backfill: a film matched before cast-fetch existed (or whose
+	// match-time fetch failed) gets its cast on first view, gated by the
+	// movie:%d:cast marker so it enqueues at most once. Mirrors tvSeriesDetail.
+	cast := h.loadMovieCast(r.Context(), tmdbID)
+	if !h.movieCastFetched(r.Context(), tmdbID) {
+		id := tmdbID
+		h.enqueueMovieMetaFetch(r.Context(), fmt.Sprintf("movie-cast:%d", id), "movie_cast_fetch",
+			func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchMovieCast(ctx, id) })
+	}
+
 	h.render(w, "movie_detail.html", map[string]any{
 		"Title":        movie.Title,
 		"TMDBID":       tmdbID,
@@ -304,7 +314,7 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		"FileID":       fileID,
 		"ResumePct":    resumePct,
 		"Completed":    completed,
-		"Cast":         h.loadMovieCast(r.Context(), tmdbID),
+		"Cast":         cast,
 	})
 }
 
@@ -520,9 +530,12 @@ func (h *Handler) moviesMatchSearch(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(results)
 }
 
-// moviesMatchApprove assigns a TMDB id to an unmatched (title, year) group and
-// pulls its metadata/art/cast synchronously, so the film shows up matched on
-// reload. Mirrors the TV approve flow.
+// moviesMatchApprove assigns a TMDB id to an unmatched (title, year) group: it
+// marks the rows matched, then enqueues the metadata/art/cast fetch as a
+// background job and redirects immediately. Mirrors tvMatchApprove (async) rather
+// than blocking the POST on FetchMovieMetadata's ~15 rate-limited cast-image
+// downloads. The metadata fetch uses a movie-configured matcher (art →
+// thumbs/movies) via enqueueMovieMetaFetch.
 func (h *Handler) moviesMatchApprove(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -539,19 +552,11 @@ func (h *Handler) moviesMatchApprove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid input", 400)
 		return
 	}
-	tmdbKey := h.effectiveTMDBKey(r.Context())
-	if tmdbKey == "" {
+	if h.effectiveTMDBKey(r.Context()) == "" {
 		http.Error(w, "TMDB API key not configured", 400)
 		return
 	}
 
-	// Pull metadata/art/cast first so the detail page has content immediately;
-	// non-fatal on a network error (the next match run fills the gap).
-	matcher := tmdb.NewMovieMatcher(h.db, tmdbKey, h.cfg.DataDir)
-	if err := matcher.FetchMovieMetadata(r.Context(), tmdbID); err != nil {
-		httpError(w, 502, "metadata fetch failed", "fetch movie metadata", "handler", "moviesMatchApprove", "err", err)
-		return
-	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := h.db.ExecContext(r.Context(), `
 UPDATE movie_files SET
@@ -561,6 +566,13 @@ WHERE lower(guessed_title)=lower(?) AND year=? AND match_status IN ('', 'unmatch
 		httpError(w, 500, "internal server error", "db update failed", "handler", "moviesMatchApprove", "err", err)
 		return
 	}
+
+	// Pull metadata/art/cast off-thread; the detail page fills in once it runs
+	// (and movieDetail's lazy backfill covers the cast either way).
+	id := tmdbID
+	h.enqueueMovieMetaFetch(r.Context(), fmt.Sprintf("movie-meta:%d", id), "movie_metadata_fetch",
+		func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchMovieMetadata(ctx, id) })
+
 	http.Redirect(w, r, "/movies/match/review", http.StatusSeeOther)
 }
 

@@ -365,6 +365,16 @@ VALUES (?, 'movie', ?, ?, ?)
 			return err
 		}
 	}
+	// Marker row (empty payload) so the lazy on-view backfill knows the fetch ran
+	// even for a film with no cast — mirrors the show:%d:cast marker in FetchTVCast.
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO movie_metadata_cache (entity_key, lang, payload_json, fetched_at)
+VALUES (?, 'en', '{}', datetime('now'))
+ON CONFLICT(entity_key) DO UPDATE SET fetched_at=excluded.fetched_at, updated_at=datetime('now')
+`, fmt.Sprintf("movie:%d:cast", movieID)); err != nil {
+		tx.Rollback()
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}

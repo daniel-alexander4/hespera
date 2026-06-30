@@ -45,6 +45,29 @@ func (h *Handler) enqueueMetaFetch(ctx context.Context, dedupeKey, jobType strin
 	}
 }
 
+// enqueueMovieMetaFetch is the movie twin of enqueueMetaFetch: same dedupe/no-key
+// guard and job plumbing, but it builds a *movie*-configured matcher
+// (NewMovieMatcher) so art downloads land in thumbs/movies — using the TV matcher
+// here would write posters to thumbs/tv and expose them to the TV thumbgc sweep.
+func (h *Handler) enqueueMovieMetaFetch(ctx context.Context, dedupeKey, jobType string, run func(ctx context.Context, m *tmdb.Matcher) error) {
+	tmdbKey := h.effectiveTMDBKey(ctx)
+	if tmdbKey == "" {
+		return
+	}
+	if _, busy := h.metaFetch.LoadOrStore(dedupeKey, true); busy {
+		return
+	}
+	matcher := tmdb.NewMovieMatcher(h.db, tmdbKey, h.cfg.DataDir)
+	_, err := h.jobs.Enqueue(jobType, 0, "system", func(jctx context.Context, jobID, libID int64) error {
+		defer h.metaFetch.Delete(dedupeKey)
+		return run(jctx, matcher)
+	})
+	if err != nil {
+		h.metaFetch.Delete(dedupeKey)
+		slog.Warn("enqueue movie meta fetch", "job", jobType, "key", dedupeKey, "err", err)
+	}
+}
+
 type castMemberRow struct {
 	PersonID  int64
 	Name      string
@@ -92,6 +115,16 @@ func (h *Handler) metaMarkerExists(ctx context.Context, entityKey string) bool {
 // castFetched reports whether a series' cast fetch has run (the marker exists).
 func (h *Handler) castFetched(ctx context.Context, seriesID int) bool {
 	return h.metaMarkerExists(ctx, fmt.Sprintf("show:%d:cast", seriesID))
+}
+
+// movieCastFetched reports whether a film's cast fetch has run. The marker lives
+// in movie_metadata_cache (its own table, conflict target entity_key — no lang),
+// so it can't reuse the tv_series_metadata_cache-specific metaMarkerExists.
+func (h *Handler) movieCastFetched(ctx context.Context, tmdbID int) bool {
+	var x int
+	return h.db.QueryRowContext(ctx,
+		"SELECT 1 FROM movie_metadata_cache WHERE entity_key=?",
+		fmt.Sprintf("movie:%d:cast", tmdbID)).Scan(&x) == nil
 }
 
 type personTitleRow struct {
