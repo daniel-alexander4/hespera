@@ -1,4 +1,15 @@
 {{define "content"}}
+{{if .Disabled}}
+<div class="page-header"><h1>Rediscover a Year</h1></div>
+<div class="empty-state">
+  <h2>This feature is off</h2>
+  <p>“Rediscover a Year” plays the week-by-week <strong>Billboard Hot&nbsp;100</strong> of any year. That chart data is a third party's intellectual property, so it isn't shipped with Hespera — it's fetched at runtime only if you turn this on.</p>
+  <p>Enable it (for personal use) in <a href="/settings/api-keys">Settings → API Keys</a>.</p>
+</div>
+{{else if .Building}}
+<div class="page-header"><h1>Rediscover a Year</h1></div>
+<div class="empty-state"><p>Fetching the chart index… this runs once in the background. Reload in a moment.</p></div>
+{{else}}
 <div class="page-header">
   <h1>Rediscover {{.Year}}</h1>
   <form method="get" action="/music/year" class="year-picker">
@@ -45,6 +56,7 @@
 </section>
 {{end}}
 {{else}}
-<div class="empty-state"><p>No Billboard chart data for {{.Year}}.</p></div>
+<div class="empty-state"><p>No chart data for {{.Year}}.</p></div>
+{{end}}
 {{end}}
 {{end}}

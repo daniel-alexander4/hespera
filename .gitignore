@@ -33,3 +33,6 @@ full.docker.reset.sh
 
 # Playwright MCP
 .playwright-mcp/
+
+# Billboard chart data is fetched at runtime into DataDir, never committed
+internal/billboard/data.json.gz
