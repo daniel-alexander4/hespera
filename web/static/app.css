@@ -409,6 +409,18 @@ body::before {
   font-size: 0.8rem;
 }
 
+/* A button sized to the heading/title it sits inline with — breadcrumb page-title
+   links and clickable episode names. Inherits the surrounding font-size/weight so
+   it reads at title scale (not the default 0.85rem chip), with em-based padding
+   that scales with it. Layer over .btn: class="btn btn-head". */
+.btn-head {
+  font-size: inherit;
+  font-weight: inherit;
+  padding: 0.08em 0.45em;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

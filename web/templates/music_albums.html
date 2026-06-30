@@ -24,7 +24,7 @@
 </div>
 {{template "pagination" .Page}}
 {{else if and .Search .Search.Q}}
-<div class="empty-state"><p>No albums match “{{.Search.Q}}”. <a href="/music/albums">Clear search</a></p></div>
+<div class="empty-state"><p>No albums match “{{.Search.Q}}”. <a href="/music/albums" class="btn btn-sm">Clear search</a></p></div>
 {{else}}
 <div class="empty-state"><p>No albums found.</p></div>
 {{end}}
