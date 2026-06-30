@@ -252,26 +252,44 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A representative local file for the Play link (+ resume), plus the parsed
+	// title/year as a fallback when the TMDB metadata isn't cached yet.
+	var fileID int64
+	var guessedTitle string
+	var fileYear int
+	_ = h.db.QueryRowContext(r.Context(),
+		"SELECT id, guessed_title, year FROM movie_files WHERE tmdb_id=? AND match_status='matched' ORDER BY id LIMIT 1",
+		tmdbID,
+	).Scan(&fileID, &guessedTitle, &fileYear)
+
+	var movie tmdb.Movie
 	var payload string
-	if err := h.db.QueryRowContext(r.Context(),
+	if metaErr := h.db.QueryRowContext(r.Context(),
 		"SELECT payload_json FROM movie_metadata_cache WHERE entity_key=?",
 		fmt.Sprintf("movie:%d", tmdbID),
-	).Scan(&payload); err != nil {
+	).Scan(&payload); metaErr == nil {
+		if err := json.Unmarshal([]byte(payload), &movie); err != nil {
+			http.Error(w, "corrupt metadata", 500)
+			return
+		}
+	} else if fileID == 0 {
+		// No metadata cached and no matched file → genuinely unknown film.
 		http.NotFound(w, r)
 		return
-	}
-	var movie tmdb.Movie
-	if err := json.Unmarshal([]byte(payload), &movie); err != nil {
-		http.Error(w, "corrupt metadata", 500)
-		return
+	} else {
+		// Matched film whose metadata fetch is still running (just approved) or
+		// failed: render from the local file so the page works (Play + the lazy
+		// cast backfill below) instead of 404ing — a reload shows the full data.
+		movie.Title = guessedTitle
+		if movie.Title == "" {
+			movie.Title = fmt.Sprintf("Movie (TMDB %d)", tmdbID)
+		}
 	}
 
-	// A representative local file for the Play link (+ resume).
-	var fileID int64
-	_ = h.db.QueryRowContext(r.Context(),
-		"SELECT id FROM movie_files WHERE tmdb_id=? AND match_status='matched' ORDER BY id LIMIT 1",
-		tmdbID,
-	).Scan(&fileID)
+	year := movieYear(movie.ReleaseDate)
+	if year == "" && fileYear > 0 {
+		year = strconv.Itoa(fileYear)
+	}
 
 	var resumePct int
 	var completed bool
@@ -304,7 +322,7 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		"Title":        movie.Title,
 		"TMDBID":       tmdbID,
 		"MovieTitle":   movie.Title,
-		"Year":         movieYear(movie.ReleaseDate),
+		"Year":         year,
 		"Overview":     movie.Overview,
 		"Genres":       movie.Genres,
 		"Runtime":      movie.Runtime,

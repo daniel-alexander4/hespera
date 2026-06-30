@@ -374,20 +374,32 @@ func (h *Handler) tvSeriesDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load show metadata.
+	// Load show metadata; fall back to a matched identity's guessed title when it
+	// isn't cached yet (a just-approved series whose tv_metadata_fetch job is
+	// still running, or one whose fetch failed) so the page renders its local
+	// seasons + lazy cast instead of 404ing — a reload shows the full data.
 	entityKey := "show:" + seriesID
+	var show tmdb.TVShow
 	var payload string
-	if err := h.db.QueryRowContext(r.Context(),
+	if metaErr := h.db.QueryRowContext(r.Context(),
 		"SELECT payload_json FROM tv_series_metadata_cache WHERE entity_key=? AND lang='en'",
 		entityKey,
-	).Scan(&payload); err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	var show tmdb.TVShow
-	if err := json.Unmarshal([]byte(payload), &show); err != nil {
-		http.Error(w, "corrupt metadata", 500)
-		return
+	).Scan(&payload); metaErr == nil {
+		if err := json.Unmarshal([]byte(payload), &show); err != nil {
+			http.Error(w, "corrupt metadata", 500)
+			return
+		}
+	} else {
+		var gt string
+		_ = h.db.QueryRowContext(r.Context(),
+			"SELECT guessed_title FROM tv_series_identities WHERE series_id=? AND status='matched' LIMIT 1",
+			seriesID,
+		).Scan(&gt)
+		if gt == "" {
+			http.NotFound(w, r)
+			return
+		}
+		show.Name = gt
 	}
 
 	// Query seasons that actually have files.

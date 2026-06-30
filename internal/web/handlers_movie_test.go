@@ -286,6 +286,18 @@ func TestMovieDetailAndArt(t *testing.T) {
 		}
 	})
 
+	t.Run("detail_200_metadata_missing_but_file_matched", func(t *testing.T) {
+		// A just-approved film whose metadata fetch hasn't finished: matched file,
+		// no movie_metadata_cache row → graceful render (200), not 404.
+		seedMovieFile(t, db, "Pending Meta", 2023, "matched", 888, h.cfg.MediaRoot)
+		req := httptest.NewRequest(http.MethodGet, "/movie/888", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 (graceful fallback), got %d; body: %s", rec.Code, rec.Body.String())
+		}
+	})
+
 	t.Run("art_404_bad_type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/art/movie/banner/555", nil)
 		rec := httptest.NewRecorder()

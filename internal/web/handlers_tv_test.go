@@ -365,3 +365,48 @@ func TestTvArtSeasonFallback(t *testing.T) {
 		}
 	})
 }
+
+func TestTVSeriesDetailMetadataFallback(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+
+	t.Run("404_unknown_series", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/tv/series/999999", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rec.Code)
+		}
+	})
+
+	t.Run("200_metadata_missing_but_identity_matched", func(t *testing.T) {
+		// A just-approved series whose tv_metadata_fetch hasn't finished: a matched
+		// identity with series_id but no tv_series_metadata_cache row → graceful
+		// render (200) from the guessed title, not 404.
+		res, err := db.Exec(
+			"INSERT INTO libraries (name, type, root_path) VALUES ('TV', 'tv', ?)", h.cfg.MediaRoot)
+		if err != nil {
+			t.Fatalf("insert library: %v", err)
+		}
+		libID, _ := res.LastInsertId()
+		fres, err := db.Exec(
+			"INSERT INTO tv_series_files (library_id, abs_path, container) VALUES (?, ?, 'mkv')",
+			libID, filepath.Join(h.cfg.MediaRoot, "fallback.mkv"))
+		if err != nil {
+			t.Fatalf("insert file: %v", err)
+		}
+		fileID, _ := fres.LastInsertId()
+		if _, err := db.Exec(
+			`INSERT INTO tv_series_identities (file_id, provider, series_id, status, guessed_title, season_number, episode_numbers_csv)
+			 VALUES (?, 'tmdb', '54321', 'matched', 'Fallback Show', 1, '1')`, fileID); err != nil {
+			t.Fatalf("insert identity: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/tv/series/54321", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 (graceful fallback), got %d; body: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
