@@ -384,7 +384,13 @@ function initMediaPlayer() {
     let hideTimer = null, overlayHover = false;
     const showControls = () => wrap.classList.remove('controls-hidden');
     const hideControls = () => {
-      if (video.paused || dragging || overlayHover || overlay.contains(document.activeElement)) return;
+      // The focus guard is for keyboard/remote (couch) nav — don't yank controls
+      // out from under the control being arrowed through. A mouse click also leaves
+      // a control focused, but with nothing to blur it, so gate on :focus-visible
+      // (set by keyboard focus, not mouse-click focus — matching the couch
+      // focus-visible system in tv.css) or the overlay would never hide after a click.
+      const ae = document.activeElement;
+      if (video.paused || dragging || overlayHover || (overlay.contains(ae) && ae.matches(':focus-visible'))) return;
       wrap.classList.add('controls-hidden');
     };
     const bump = () => {
