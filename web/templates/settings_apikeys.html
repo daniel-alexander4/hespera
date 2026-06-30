@@ -68,20 +68,13 @@
     {{else}}
     <small class="form-help">Not configured. Lets the TV player search &amp; download subtitles for episodes with no text subtitle track.</small>
     {{end}}
-    <input type="password" id="opensubtitles_api_key" name="opensubtitles_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to clear" />
-    <small class="form-help">Overrides <code>HESPERA_OPENSUBTITLES_API_KEY</code>. Free key from opensubtitles.com (100 downloads/day). Submit blank to clear.</small>
+    <input type="password" id="opensubtitles_api_key" name="opensubtitles_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to keep the current one" />
+    <small class="form-help">Overrides <code>HESPERA_OPENSUBTITLES_API_KEY</code>. Free key from opensubtitles.com (100 downloads/day). Leave blank to keep the current key.</small>
   </div>
-  <div class="form-actions">
-    <button type="submit" class="btn btn-primary">Save</button>
-  </div>
-</form>
-
-<form method="post" action="/settings/api-keys" class="form-card">
   <div class="form-group">
-    <label for="opensubtitles_user_agent">OpenSubtitles User-Agent <small class="form-help">(advanced)</small></label>
-    <small class="form-help">Identifies the consumer app to OpenSubtitles. Must name an app <strong>registered with OpenSubtitles</strong> (format <code>AppName vX.Y</code>) — an unregistered UA is rejected with HTTP&nbsp;403. Leave blank for the default.</small>
+    <label for="opensubtitles_user_agent">User-Agent <small class="form-help">(advanced)</small></label>
     <input type="text" id="opensubtitles_user_agent" name="opensubtitles_user_agent" class="input" autocomplete="off" value="{{.OpenSubtitlesUserAgent}}" placeholder="Hespera v1.0" />
-    <small class="form-help">Overrides <code>HESPERA_OPENSUBTITLES_USER_AGENT</code>. Submit blank to clear (reverts to env/default).</small>
+    <small class="form-help">Consumer app name (<code>AppName vX.Y</code>) — must be <strong>registered with OpenSubtitles</strong> or requests are rejected (403). Overrides <code>HESPERA_OPENSUBTITLES_USER_AGENT</code>; blank reverts to the default.</small>
   </div>
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save</button>
