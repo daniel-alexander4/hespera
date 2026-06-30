@@ -164,7 +164,9 @@ ON CONFLICT(tmdb_id) DO UPDATE SET
 	// nothing is downloaded here.
 	if credits, err := m.client.FetchPersonTVCredits(ctx, personID); err == nil {
 		data, _ := json.Marshal(topTVCredits(credits))
-		_, _ = m.db.ExecContext(ctx, "UPDATE people SET filmography_json=? WHERE tmdb_id=?", string(data), personID)
+		if _, err := m.db.ExecContext(ctx, "UPDATE people SET filmography_json=? WHERE tmdb_id=?", string(data), personID); err != nil {
+			slog.Warn("store person filmography", "person", personID, "err", err)
+		}
 	} else {
 		slog.Warn("tmdb person tv credits", "person", personID, "err", err)
 	}

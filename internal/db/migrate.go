@@ -400,6 +400,13 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "movie_files", "tmdb_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// people: filmography_json caches an actor's wider TV credits ("Other shows").
+	// Added here for DBs that created people before the column existed (the canonical
+	// CREATE TABLE carries it too); without it, personDetail's SELECT errors and the
+	// actor page can't read the stored name/bio.
+	if err := ensureColumn(db, "people", "filmography_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
 		return err
 	}
