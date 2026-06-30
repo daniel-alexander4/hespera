@@ -130,16 +130,48 @@ type Person struct {
 	ProfilePath string `json:"profile_path"`
 }
 
-// PersonTVCredit is one show from /person/{id}/tv_credits (cast) — the actor's
-// full TV filmography, used to surface shows not in the local library.
-type PersonTVCredit struct {
-	ID           int    `json:"id"`
+// PersonCredit is one acting credit from /person/{id}/combined_credits (cast) —
+// the actor's full TV + film filmography. media_type ("tv"|"movie") selects which
+// title/date fields are populated: TV uses Name/FirstAirDate/EpisodeCount, film
+// uses Title/ReleaseDate. Powers the actor page's TV-Shows and Films sections.
+type PersonCredit struct {
+	ID         int    `json:"id"`
+	MediaType  string `json:"media_type"`
+	Character  string `json:"character"`
+	PosterPath string `json:"poster_path"`
+	// TV fields
 	Name         string `json:"name"`
-	Character    string `json:"character"`
-	PosterPath   string `json:"poster_path"`
 	FirstAirDate string `json:"first_air_date"`
 	EpisodeCount int    `json:"episode_count"`
+	// Film fields
+	Title       string `json:"title"`
+	ReleaseDate string `json:"release_date"`
 }
+
+// CreditTitle returns the display title (TV Name or film Title); an old
+// tv_credits blob with no media_type falls back to Name.
+func (c PersonCredit) CreditTitle() string {
+	if c.Title != "" && c.MediaType == "movie" {
+		return c.Title
+	}
+	return c.Name
+}
+
+// CreditYear returns the 4-digit year from whichever date field applies.
+func (c PersonCredit) CreditYear() string {
+	d := c.FirstAirDate
+	if c.MediaType == "movie" {
+		d = c.ReleaseDate
+	}
+	if len(d) >= 4 {
+		return d[:4]
+	}
+	return ""
+}
+
+// IsMovie reports whether this credit is a film (vs a TV show). An old
+// tv_credits blob has no media_type, so it defaults to TV.
+func (c PersonCredit) IsMovie() bool { return c.MediaType == "movie" }
 
 // ValidateKey reports whether TMDB accepts the API key. A nil error with
 // valid=false means TMDB rejected the key (HTTP 401); a non-nil error means
@@ -310,12 +342,13 @@ func (c *Client) FetchPerson(ctx context.Context, personID int) (*Person, error)
 	return &p, nil
 }
 
-// FetchPersonTVCredits returns the person's TV cast credits (their filmography)
-// from /person/{id}/tv_credits.
-func (c *Client) FetchPersonTVCredits(ctx context.Context, personID int) ([]PersonTVCredit, error) {
+// FetchPersonCombinedCredits returns the person's full TV + film cast credits
+// from /person/{id}/combined_credits (one call; crew is ignored — acting roles
+// only). Each entry carries media_type so the caller can split TV vs film.
+func (c *Client) FetchPersonCombinedCredits(ctx context.Context, personID int) ([]PersonCredit, error) {
 	<-c.limiter
 
-	u := fmt.Sprintf("%s/person/%d/tv_credits?api_key=%s&language=en-US",
+	u := fmt.Sprintf("%s/person/%d/combined_credits?api_key=%s&language=en-US",
 		c.apiBase, personID, url.QueryEscape(c.apiKey))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
@@ -324,19 +357,19 @@ func (c *Client) FetchPersonTVCredits(ctx context.Context, personID int) ([]Pers
 	}
 	resp, err := c.do(req)
 	if err != nil {
-		return nil, fmt.Errorf("tmdb tv_credits: %w", err)
+		return nil, fmt.Errorf("tmdb combined_credits: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("tmdb tv_credits %d: status %d", personID, resp.StatusCode)
+		return nil, fmt.Errorf("tmdb combined_credits %d: status %d", personID, resp.StatusCode)
 	}
 
 	var out struct {
-		Cast []PersonTVCredit `json:"cast"`
+		Cast []PersonCredit `json:"cast"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("tmdb tv_credits decode: %w", err)
+		return nil, fmt.Errorf("tmdb combined_credits decode: %w", err)
 	}
 	return out.Cast, nil
 }

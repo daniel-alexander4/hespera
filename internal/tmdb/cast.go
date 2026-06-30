@@ -8,41 +8,38 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 )
 
 // castLimit caps how many cast members we store per title, by billing order, so
 // a large ensemble doesn't make an unwieldy strip or a burst of image downloads.
 const castLimit = 15
 
-// filmographyLimit caps how many of an actor's shows we cache/show on their page.
-const filmographyLimit = 24
-
-// topTVCredits dedupes an actor's tv_credits by show (keeping the entry with the
-// most episodes), orders by significance (episode count, then recency), and caps
-// the list.
-func topTVCredits(credits []PersonTVCredit) []PersonTVCredit {
-	byID := make(map[int]PersonTVCredit, len(credits))
+// topCredits dedupes an actor's combined credits by (media_type, id) — keeping
+// the TV entry with the most episodes when a show recurs — drops junk entries,
+// and orders newest-first. No cap: the actor page lists the full filmography.
+func topCredits(credits []PersonCredit) []PersonCredit {
+	byKey := make(map[string]PersonCredit, len(credits))
 	for _, c := range credits {
-		if c.ID == 0 || c.Name == "" {
+		if c.ID == 0 || c.CreditTitle() == "" {
 			continue
 		}
-		if ex, ok := byID[c.ID]; !ok || c.EpisodeCount > ex.EpisodeCount {
-			byID[c.ID] = c
+		key := c.MediaType + ":" + strconv.Itoa(c.ID)
+		if ex, ok := byKey[key]; !ok || c.EpisodeCount > ex.EpisodeCount {
+			byKey[key] = c
 		}
 	}
-	out := make([]PersonTVCredit, 0, len(byID))
-	for _, c := range byID {
+	out := make([]PersonCredit, 0, len(byKey))
+	for _, c := range byKey {
 		out = append(out, c)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].EpisodeCount != out[j].EpisodeCount {
-			return out[i].EpisodeCount > out[j].EpisodeCount
+		yi, yj := out[i].CreditYear(), out[j].CreditYear()
+		if yi != yj {
+			return yi > yj // newest first
 		}
-		return out[i].FirstAirDate > out[j].FirstAirDate
+		return out[i].CreditTitle() < out[j].CreditTitle()
 	})
-	if len(out) > filmographyLimit {
-		out = out[:filmographyLimit]
-	}
 	return out
 }
 
@@ -159,16 +156,16 @@ ON CONFLICT(tmdb_id) DO UPDATE SET
 		}
 	}
 
-	// Cache the actor's TV filmography (best-effort) — powers the "Other shows"
-	// (not-in-library) section. Posters for those are hotlinked client-side, so
-	// nothing is downloaded here.
-	if credits, err := m.client.FetchPersonTVCredits(ctx, personID); err == nil {
-		data, _ := json.Marshal(topTVCredits(credits))
+	// Cache the actor's full TV + film filmography (best-effort) — powers the
+	// TV-Shows and Films sections. Posters for out-of-library titles are hotlinked
+	// client-side, so nothing is downloaded here.
+	if credits, err := m.client.FetchPersonCombinedCredits(ctx, personID); err == nil {
+		data, _ := json.Marshal(topCredits(credits))
 		if _, err := m.db.ExecContext(ctx, "UPDATE people SET filmography_json=? WHERE tmdb_id=?", string(data), personID); err != nil {
 			slog.Warn("store person filmography", "person", personID, "err", err)
 		}
 	} else {
-		slog.Warn("tmdb person tv credits", "person", personID, "err", err)
+		slog.Warn("tmdb person combined credits", "person", personID, "err", err)
 	}
 	return nil
 }

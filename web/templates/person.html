@@ -23,44 +23,56 @@
   </div>
 </div>
 
-{{if .Titles}}
-<h3 class="section-title">In your library</h3>
+{{if .TVCredits}}
+<h3 class="section-title">TV Shows</h3>
 <div class="band-albums-grid">
-  {{range .Titles}}
-  <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
-    <div class="band-album-art">
-      {{if .PosterPath}}
-      <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
-      {{else}}
-      <div class="album-art-ph">TV</div>
-      {{end}}
-    </div>
+  {{range .TVCredits}}
+  {{if .Owned}}
+  <a href="/tv/series/{{.ID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art"><img src="/art/tv/poster/{{.ID}}" alt="{{.Title}}" loading="lazy" /></div>
     <div class="band-album-meta">
-      <div class="artist-card-name">{{.Name}}</div>
-      {{if .Character}}<div class="artist-card-stats">as {{.Character}}</div>{{end}}
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{.Year}}{{if and .Year .Character}} · {{end}}{{.Character}}</div>
     </div>
   </a>
+  {{else}}
+  <div class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .PosterURL}}<img src="{{.PosterURL}}" alt="{{.Title}}" loading="lazy" referrerpolicy="no-referrer" />{{else}}<div class="album-art-ph">TV</div>{{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{.Year}}{{if and .Year .Character}} · {{end}}{{.Character}}</div>
+    </div>
+  </div>
+  {{end}}
   {{end}}
 </div>
 {{end}}
 
-{{if .OtherShows}}
-<h3 class="section-title">Other shows</h3>
+{{if .FilmCredits}}
+<h3 class="section-title">Films</h3>
 <div class="band-albums-grid">
-  {{range .OtherShows}}
+  {{range .FilmCredits}}
+  {{if .Owned}}
+  <a href="/movie/{{.ID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art"><img src="/art/movie/poster/{{.ID}}" alt="{{.Title}}" loading="lazy" /></div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">{{.Year}}{{if and .Year .Character}} · {{end}}{{.Character}}</div>
+    </div>
+  </a>
+  {{else}}
   <div class="band-album-card band-album-card--poster">
     <div class="band-album-art">
-      {{if .PosterURL}}
-      <img src="{{.PosterURL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer" />
-      {{else}}
-      <div class="album-art-ph">TV</div>
-      {{end}}
+      {{if .PosterURL}}<img src="{{.PosterURL}}" alt="{{.Title}}" loading="lazy" referrerpolicy="no-referrer" />{{else}}<div class="album-art-ph">Film</div>{{end}}
     </div>
     <div class="band-album-meta">
-      <div class="artist-card-name">{{.Name}}</div>
+      <div class="artist-card-name">{{.Title}}</div>
       <div class="artist-card-stats">{{.Year}}{{if and .Year .Character}} · {{end}}{{.Character}}</div>
     </div>
   </div>
+  {{end}}
   {{end}}
 </div>
 {{end}}
