@@ -117,20 +117,23 @@ function initMediaPlayer() {
   })();
   let captionTrack = null; // the sidecar TextTrack we're painting, if any
   let lastCueKey = '';     // change-detection so we only touch the DOM on a real change
+  const rvfcSupported = typeof video.requestVideoFrameCallback === 'function';
+  let rvfcRunning = false;
 
-  // The active cue(s) are computed from video.currentTime against the parsed cue
-  // list — NOT read from captionTrack.activeCues. currentTime is the media
-  // presentation clock the audio/video ride (the HLS segments are stamped at true
-  // episode time via -output_ts_offset), so anchoring display to it keeps
-  // subtitles locked to the dialogue. The browser's own TextTrack cue scheduler
-  // (activeCues/cuechange) can drift ahead of that clock over a long MSE/HLS
-  // session — subtitles creeping earlier and earlier until you toggle them — and
-  // computing the active set ourselves sidesteps it entirely. A linear scan of a
-  // whole episode's cues a few times a second is trivial.
-  function computeActiveCues() {
+  // The active cue(s) are computed from a media-clock time against the parsed cue
+  // list — NOT read from captionTrack.activeCues. The clock is the frame's exact
+  // presentation time (requestVideoFrameCallback's metadata.mediaTime) where
+  // supported, else video.currentTime; both are the clock the audio/video ride
+  // (HLS segments are stamped at true episode time via -output_ts_offset), so
+  // anchoring display to it keeps subtitles locked to the dialogue. The browser's
+  // own TextTrack cue scheduler (activeCues/cuechange) can drift ahead of that
+  // clock over a long MSE/HLS session — subtitles creeping earlier and earlier
+  // until you toggle them — so we never touch it. A linear scan of an episode's
+  // cues per frame is trivial (a few µs).
+  function computeActiveCues(t) {
     const all = captionTrack && captionTrack.cues;
     if (!all || !all.length) return [];
-    const t = video.currentTime;
+    if (typeof t !== 'number') t = video.currentTime; // event-handler arg / no-arg → currentTime
     const out = [];
     for (let i = 0; i < all.length; i++) {
       const c = all[i];
@@ -139,9 +142,9 @@ function initMediaPlayer() {
     return out;
   }
 
-  function renderActiveCues() {
+  function renderActiveCues(t) {
     if (!captions) return;
-    const cues = computeActiveCues();
+    const cues = computeActiveCues(t);
     let key = '';
     for (let i = 0; i < cues.length; i++) key += cues[i].startTime + '|' + cues[i].text + '\n';
     if (key === lastCueKey) return;
@@ -157,8 +160,25 @@ function initMediaPlayer() {
     captions.hidden = false;
   }
 
+  // While a caption track is attached and frames are presenting, drive the render
+  // from each presented frame's exact media time — frame-accurate cue boundaries,
+  // with no dependence on the cue scheduler. requestVideoFrameCallback only fires
+  // while frames present (paused/stalled → the cue correctly stays put), so the
+  // unconditional timeupdate listener below remains the portable floor (and the
+  // sole driver on browsers without rVFC). Self-stops when rvfcRunning clears.
+  function frameTick(_now, meta) {
+    if (!rvfcRunning) return;
+    renderActiveCues(meta && typeof meta.mediaTime === 'number' ? meta.mediaTime : undefined);
+    video.requestVideoFrameCallback(frameTick);
+  }
+  function startRVFC() {
+    if (rvfcSupported && !rvfcRunning) { rvfcRunning = true; video.requestVideoFrameCallback(frameTick); }
+  }
+  function stopRVFC() { rvfcRunning = false; }
+
   function clearCaptionTrack() {
-    if (captionTrack) { captionTrack.removeEventListener('cuechange', renderActiveCues); captionTrack = null; }
+    stopRVFC();
+    captionTrack = null;
     lastCueKey = '';
     if (captions) { captions.textContent = ''; captions.hidden = true; }
   }
@@ -174,8 +194,8 @@ function initMediaPlayer() {
     if (!tt) return;
     tt.mode = 'hidden'; // parsed but unpainted; renderActiveCues does the painting
     captionTrack = tt;
-    tt.addEventListener('cuechange', renderActiveCues);
     renderActiveCues();
+    startRVFC();
   }
 
   function attachSubtitle(session) {
@@ -375,11 +395,11 @@ function initMediaPlayer() {
     renderScrub(dur > 0 ? currentAbsTime() / dur : 0, currentAbsTime());
   }
   video.addEventListener('timeupdate', updateScrubFromPlayback);
-  // Drive the caption render from the media clock. renderActiveCues recomputes the
-  // active cue from video.currentTime, so timeupdate (~4×/s) keeps it locked to the
-  // dialogue; cuechange (in addCaptionTrack) is kept only as an extra, boundary-
-  // precise trigger — even a drifted cuechange just recomputes against currentTime.
-  // renderActiveCues no-ops when the active set is unchanged.
+  // timeupdate (~4×/s) is the portable floor for the caption render — it keeps cues
+  // locked to currentTime everywhere (and is the sole driver on browsers without
+  // requestVideoFrameCallback), and it covers paused-seek (seeked fires timeupdate).
+  // The rVFC loop (addCaptionTrack) sharpens boundaries to ~1 frame where supported.
+  // renderActiveCues no-ops when the active set is unchanged, so the overlap is free.
   video.addEventListener('timeupdate', renderActiveCues);
   video.addEventListener('loadedmetadata', updateScrubFromPlayback);
 
@@ -683,6 +703,7 @@ function initMediaPlayer() {
     teardownHLS();
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
     if (subDebugTimer) clearInterval(subDebugTimer);
+    stopRVFC();
     window.removeEventListener('beforeunload', onBeforeUnload);
     video.removeAttribute('src');
     try { video.load(); } catch (e) {}
