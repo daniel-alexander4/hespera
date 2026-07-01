@@ -549,6 +549,16 @@ function initMediaPlayer() {
       // focus is :focus only (not :focus-visible), so it doesn't pin here.
       const ae = document.activeElement;
       if (video.paused || dragging || (overlay.contains(ae) && ae.matches(':focus-visible'))) return;
+      // Reaching here, a focused overlay control is mouse-focused (not
+      // :focus-visible). The hidden overlay is opacity:0 + pointer-events:none —
+      // which blocks the pointer but NOT keyboard activation, so a button the
+      // mouse last clicked would re-fire on Space/Enter while invisible. Drop its
+      // focus before hiding. <button> only: never a <select> (blur would close an
+      // open popup; selects blur themselves on change) and not the scrubber/volume
+      // (their arrow behavior is harmless). Blur before the class-add so the
+      // synchronous focusout→bump re-show is immediately overridden — overlay still
+      // ends hidden.
+      if (overlay.contains(ae) && ae.tagName === 'BUTTON') ae.blur();
       wrap.classList.add('controls-hidden');
     };
     const bump = () => {
