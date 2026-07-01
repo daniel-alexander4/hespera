@@ -1,0 +1,58 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Playlists</h1>
+</div>
+
+<div class="playlist-cards">
+
+  <!-- My Music: shuffle the local library, played in-app. -->
+  <section class="playlist-card">
+    <h2 class="playlist-card-title">{{template "icon-music"}} My Music</h2>
+    <p class="playlist-card-sub">Shuffle your own library.</p>
+    {{if .LibraryID}}
+    <div class="playlist-actions">
+      <a class="btn btn-primary" href="/music/player?source=all&amp;shuffle=1&amp;library={{.LibraryID}}" data-play>{{template "icon-shuffle"}}Shuffle All</a>
+      <a class="btn btn-primary" href="/music/player?source=popular&amp;shuffle=1&amp;library={{.LibraryID}}" data-play>{{template "icon-shuffle"}}Shuffle Most Popular</a>
+    </div>
+    {{else}}
+    <p class="playlist-note">No music library yet. <a href="/libraries">Add and scan one</a> to start shuffling.</p>
+    {{end}}
+  </section>
+
+  <!-- Top 100: Billboard Hot 100 charts, sourced from YouTube. -->
+  <section class="playlist-card" id="top100-card">
+    <h2 class="playlist-card-title">{{template "icon-music"}} Top 100</h2>
+    <p class="playlist-card-sub">Billboard Hot 100 charts, played from YouTube.</p>
+
+    {{if not .BillboardOn}}
+    <p class="playlist-note">Chart data is off. <a href="/settings/apikeys">Enable it in Settings</a> — it’s fetched at runtime and carries a licensing notice (the chart data is a third party’s intellectual property).</p>
+    {{else if .BillboardBuilding}}
+    <p class="playlist-note">Fetching chart data… reload this page in a moment.</p>
+    {{else if .BillboardReady}}
+      {{if not .HasYouTubeKey}}
+      <p class="playlist-note">Top 100 plays from YouTube. <a href="/settings/apikeys">Add a YouTube API key</a> in Settings to enable playback.</p>
+      {{else}}
+      <div class="playlist-controls">
+        <label class="playlist-field">Year
+          <select id="top100-year" class="input">
+            {{range .Years}}<option value="{{.}}"{{if eq . $.DefaultYear}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+        <label class="playlist-check"><input type="checkbox" id="top100-rev" /> Reverse order (#100 → #1)</label>
+      </div>
+      <div class="playlist-actions">
+        <button class="btn btn-primary" data-top100="year">{{template "icon-music"}}Play Year</button>
+        <button class="btn" data-top100="year-shuffle">{{template "icon-shuffle"}}Shuffle Year</button>
+        <button class="btn" data-top100="all-shuffle">{{template "icon-shuffle"}}Shuffle All Years</button>
+      </div>
+      {{if .TestAudio}}
+      <label class="playlist-check playlist-test"><input type="checkbox" id="top100-test" /> Test Audio — play in Hespera’s player instead of a YouTube window</label>
+      {{else}}
+      <p class="playlist-hint">Plays in a YouTube popout window. <a href="/settings/apikeys">Enable in-app “Test Audio”</a> in Settings to play through Hespera’s own player.</p>
+      {{end}}
+      {{end}}
+    {{end}}
+  </section>
+
+</div>
+{{end}}

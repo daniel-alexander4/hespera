@@ -6,9 +6,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"hespera/internal/billboard"
+	"hespera/internal/config"
 )
 
 // buildTop100Fixture turns on the chart-data feature and writes a tiny fabricated
@@ -87,4 +89,71 @@ func TestTop100Queue(t *testing.T) {
 			t.Fatalf("all-years pool has %d tracks, want 3 (the only year)", len(tracks))
 		}
 	})
+}
+
+func TestMusicPlaylistsPage(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+	body := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/music/playlists", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("playlists page = %d, want 200", rec.Code)
+		}
+		return rec.Body.String()
+	}
+
+	t.Run("billboard off and no key gates the Top 100 card", func(t *testing.T) {
+		b := body()
+		if !contains(b, `data-bbenabled="false"`) {
+			t.Fatalf("expected billboard off, body=%q", b)
+		}
+		if !contains(b, `data-haskey="false"`) {
+			t.Fatalf("expected no youtube key, body=%q", b)
+		}
+	})
+
+	t.Run("billboard data + youtube key unlocks the year picker", func(t *testing.T) {
+		buildTop100Fixture(t, h) // enables billboard + writes the 1968 grid
+		if _, err := db.Exec("INSERT INTO app_settings (key,value) VALUES ('youtube_api_key','k') ON CONFLICT(key) DO UPDATE SET value='k'"); err != nil {
+			t.Fatalf("set youtube key: %v", err)
+		}
+		b := body()
+		if !contains(b, `data-ready="true"`) || !contains(b, `data-haskey="true"`) {
+			t.Fatalf("expected ready+key, body=%q", b)
+		}
+		if !contains(b, `<option value="1968"`) {
+			t.Fatalf("expected 1968 in the year picker, body=%q", b)
+		}
+		if !contains(b, `data-test="false"`) {
+			t.Fatalf("Test Audio should be off without the in-app opt-in, body=%q", b)
+		}
+	})
+
+	t.Run("in-app opt-in enables Test Audio", func(t *testing.T) {
+		if _, err := db.Exec("INSERT INTO app_settings (key,value) VALUES ('youtube_inapp_enabled','1') ON CONFLICT(key) DO UPDATE SET value='1'"); err != nil {
+			t.Fatalf("set inapp: %v", err)
+		}
+		if b := body(); !contains(b, `data-test="true"`) {
+			t.Fatalf("expected Test Audio on, body=%q", b)
+		}
+	})
+}
+
+func contains(haystack, needle string) bool { return strings.Contains(haystack, needle) }
+
+// TestEmbeddedTemplatesCompile constructs a Handler against the real embedded
+// web/ assets (no stub AssetsFS), so a syntax error in any page template —
+// including music_playlists.html — fails the build here rather than at runtime.
+func TestEmbeddedTemplatesCompile(t *testing.T) {
+	db := openTestDB(t)
+	dir := t.TempDir()
+	h, err := New(Deps{Cfg: config.Config{DataDir: dir, MediaRoot: dir}, DB: db})
+	if err != nil {
+		t.Fatalf("New with embedded assets: %v", err)
+	}
+	if _, ok := h.tpls["music_playlists.html"]; !ok {
+		t.Fatal("music_playlists.html did not compile")
+	}
 }
