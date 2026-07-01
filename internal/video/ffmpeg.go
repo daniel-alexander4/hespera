@@ -140,6 +140,14 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 		"-map", "0:v:0", "-map", audioMap(audioOrdinal),
 		"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'",
 		"-fps_mode", "cfr",
+		// Cap the encoder threads so each on-demand segment doesn't burst across
+		// every core. Unthrottled, libx264 grabs ~all cores and finishes a 6s
+		// segment in ~1.3s, then idles — a tall CPU spike every segment, worse when
+		// hls.js prefetches two at once (concurrent encodes oversubscribe the box).
+		// -threads 3 keeps each encode to ~3 cores (~28% lower peak) while still
+		// finishing a 6s segment in ~1.7s (well under realtime), so seek latency and
+		// buffer-ahead are unaffected. (Bump segEncodeVersion when changing this.)
+		"-threads", "3",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
 		// No B-frames. Each segment is encoded independently and placed on the
 		// timeline with -output_ts_offset; with B-frames the reorder makes the
@@ -172,6 +180,82 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 		"-output_ts_offset", ss, "-muxdelay", "0", "-muxpreload", "0",
 		"-f", "mpegts", outPath,
 	)
+}
+
+// segWarmupLead is how far before an interior segment's boundary the audio encode
+// starts, so the AAC encoder's startup priming lands on the discarded lead-in and
+// the segment's real audio begins warm (see buildSegment).
+const segWarmupLead = 0.5
+
+// buildSegment transcodes one HLS segment to tmp. Interior segments (start > 0) use
+// a two-pass audio warm-up so the segment join carries real audio instead of AAC
+// encoder priming: re-encoding each segment independently otherwise re-primes, and
+// that ~37ms of priming overwrites real audio at every 6s join (an audible per-6s
+// click). Pass 1 encodes audio from start−segWarmupLead (warming the encoder
+// through the lead-in); pass 2 stream-copies that audio from the boundary (dropping
+// the warm-up and its priming) and muxes a freshly-encoded video segment.
+// Segment 0 has no room for a lead-in — its priming sits at negative PTS and the
+// decoder trims it — so it keeps the single-pass SegmentArgs.
+func buildSegment(ctx context.Context, src, tmp string, start, dur float64, maxHeight, audioOrdinal, srcChannels, index int) error {
+	if start <= 0 {
+		return runFFmpegSegment(ctx, SegmentArgs(src, tmp, start, dur, maxHeight, audioOrdinal, srcChannels), index)
+	}
+	atmp := tmp + ".aud.ts"
+	defer os.Remove(atmp)
+	if err := runFFmpegSegment(ctx, audioWarmArgs(src, atmp, start, dur, audioOrdinal, srcChannels), index); err != nil {
+		return err
+	}
+	return runFFmpegSegment(ctx, segmentMuxArgs(src, atmp, tmp, start, dur, maxHeight), index)
+}
+
+// runFFmpegSegment runs one ffmpeg invocation for a segment build, wrapping any
+// failure with the segment index and a tail of stderr.
+func runFFmpegSegment(ctx context.Context, args []string, index int) error {
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg segment %d: %w: %s", index, err, tail(errBuf.String(), 300))
+	}
+	return nil
+}
+
+// audioWarmArgs encodes [start−segWarmupLead, start+dur] of audio to a temp mpegts.
+// The AAC encoder primes at the lead-in start; by the segment boundary it's warm.
+func audioWarmArgs(src, out string, start, dur float64, audioOrdinal, srcChannels int) []string {
+	args := []string{
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-ss", strconv.FormatFloat(start-segWarmupLead, 'f', -1, 64),
+		"-i", src,
+		"-t", strconv.FormatFloat(dur+segWarmupLead, 'f', -1, 64),
+		"-map", audioMap(audioOrdinal),
+		"-c:a", "aac", "-b:a", "160k",
+	}
+	args = append(args, downmixArgs(srcChannels)...)
+	return append(args, "-muxdelay", "0", "-muxpreload", "0", "-f", "mpegts", out)
+}
+
+// segmentMuxArgs stream-copies the warmed audio (dropping the lead-in via an input
+// -ss, which on a copy trims whole AAC frames — no re-encode, so the warm frames
+// and their absence of fresh priming survive) and muxes a freshly-encoded video
+// segment, placed on the timeline at start.
+func segmentMuxArgs(src, audioTmp, out string, start, dur float64, maxHeight int) []string {
+	ss := strconv.FormatFloat(start, 'f', -1, 64)
+	return []string{
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-ss", strconv.FormatFloat(segWarmupLead, 'f', -1, 64), "-i", audioTmp,
+		"-ss", ss, "-i", src, "-t", strconv.FormatFloat(dur, 'f', -1, 64),
+		"-map", "0:a:0", "-map", "1:v:0",
+		"-c:a", "copy",
+		"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'",
+		"-fps_mode", "cfr",
+		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+		"-bf", "0",
+		"-force_key_frames", "expr:eq(n,0)",
+		"-avoid_negative_ts", "disabled",
+		"-output_ts_offset", ss, "-muxdelay", "0", "-muxpreload", "0",
+		"-f", "mpegts", out,
+	}
 }
 
 // VODPlaylist synthesises the complete VOD HLS manifest for a source of the
@@ -320,12 +404,9 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 	}
 	final := filepath.Join(dir, fmt.Sprintf("seg%05d.ts", index))
 	tmp := filepath.Join(dir, fmt.Sprintf(".seg%05d.ts.tmp", index))
-	cmd := exec.CommandContext(buildCtx, "ffmpeg", SegmentArgs(src, tmp, start, dur, maxHeight, audioOrdinal, srcChannels)...)
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
+	if err := buildSegment(buildCtx, src, tmp, start, dur, maxHeight, audioOrdinal, srcChannels, index); err != nil {
 		_ = os.Remove(tmp)
-		finish(fmt.Errorf("ffmpeg segment %d: %w: %s", index, err, tail(errBuf.String(), 300)))
+		finish(err)
 		return
 	}
 	if err := os.Rename(tmp, final); err != nil {
@@ -345,7 +426,9 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 // PruneCache reaps them. v1: added -bf 0 for monotonic cross-segment DTS.
 // v2: added -avoid_negative_ts disabled so a high-fps segment 0 doesn't overrun
 // its boundary (the mpegts priming up-shift); fixes 50fps episodes not playing.
-const segEncodeVersion = 2
+// v3: capped encoder to -threads 3 to flatten the per-segment CPU spike (changes
+// the encoded bytes, so old all-cores segments must not mix with new ones).
+const segEncodeVersion = 3
 
 func hlsKey(src string, modTime time.Time, size int64, maxHeight, audioOrdinal int) string {
 	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d|v%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal, segEncodeVersion)))

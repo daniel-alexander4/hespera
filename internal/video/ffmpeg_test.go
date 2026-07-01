@@ -35,6 +35,8 @@ func TestSegmentArgs(t *testing.T) {
 		// Disable the mpegts priming up-shift so a high-fps segment 0 doesn't
 		// overrun its boundary into the next segment (50fps episodes wouldn't play).
 		"-avoid_negative_ts disabled",
+		// Cap encoder threads so each segment encode doesn't spike across every core.
+		"-threads 3",
 		"-output_ts_offset 60", "/cache/x/seg00010.ts",
 	} {
 		if !strings.Contains(joined, want) {
