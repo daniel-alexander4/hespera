@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -32,10 +33,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 
 	// Every dashboard section is best-effort: a failed query warns and renders an
 	// empty row rather than failing the whole landing page.
-	continueWatching, err := h.recentTVSeries(ctx, tvRecentlyWatchedQuery, 12)
-	if err != nil {
-		slog.Warn("home: load continue-watching failed", "err", err)
-	}
+	continueWatching := h.loadContinueWatching(ctx, 12)
 	recentlyPlayed, err := h.loadRecentlyPlayedArtists(ctx, musicLib, 12)
 	if err != nil {
 		slog.Warn("home: load recently-played failed", "err", err)
@@ -76,6 +74,56 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		"HasActivity":         hasActivity,
 		"NeedsSetup":          libCount == 0,
 	})
+}
+
+// continueItem is one card in the home "Continue Watching" row, which merges
+// in-progress TV and movies. Kind selects the link + art in the template; the
+// per-kind fields are populated for that kind only.
+type continueItem struct {
+	Kind        string // "tv" | "movie"
+	Title       string
+	Year        string
+	RecencyUnix int64 // last-watched; used to interleave, not rendered
+	// tv
+	SeriesID     string
+	SeasonNumber int
+	HasPoster    bool
+	// movie
+	TMDBID int
+}
+
+// loadContinueWatching merges in-progress TV (recentTVSeries) and movies
+// (loadMovieContinueWatching) into one row ordered by most-recent activity. Each
+// source is best-effort — one failing still renders the other — and the two
+// canonical loaders own their queries/metadata, so this only interleaves. Both
+// sources are fetched to the same limit, so the top `limit` overall are a subset
+// of their union; the final slice is capped to limit.
+func (h *Handler) loadContinueWatching(ctx context.Context, limit int) []continueItem {
+	tvRows, err := h.recentTVSeries(ctx, tvRecentlyWatchedQuery, limit)
+	if err != nil {
+		slog.Warn("home: load continue-watching tv failed", "err", err)
+	}
+	movieRows, err := h.loadMovieContinueWatching(ctx, limit)
+	if err != nil {
+		slog.Warn("home: load continue-watching movies failed", "err", err)
+	}
+	items := make([]continueItem, 0, len(tvRows)+len(movieRows))
+	for _, r := range tvRows {
+		items = append(items, continueItem{
+			Kind: "tv", Title: r.Name, Year: r.Year, RecencyUnix: r.RecencyUnix,
+			SeriesID: r.SeriesID, SeasonNumber: r.SeasonNumber, HasPoster: r.PosterPath != "",
+		})
+	}
+	for _, r := range movieRows {
+		items = append(items, continueItem{
+			Kind: "movie", Title: r.Title, Year: r.Year, RecencyUnix: r.RecencyUnix, TMDBID: r.TMDBID,
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].RecencyUnix > items[j].RecencyUnix })
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return items
 }
 
 // loadHomeStats returns a best-effort library summary for the landing page; any

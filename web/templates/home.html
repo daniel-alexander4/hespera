@@ -39,19 +39,31 @@
 <h3 class="section-title">Continue Watching</h3>
 <div class="home-carousel-row">
   {{range .ContinueWatching}}
+  {{if eq .Kind "movie"}}
+  <a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+    </div>
+  </a>
+  {{else}}
   <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNumber}}" class="band-album-card band-album-card--poster">
     <div class="band-album-art">
-      {{if .PosterPath}}
-      <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+      {{if .HasPoster}}
+      <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Title}}" loading="lazy" />
       {{else}}
       <div class="album-art-ph">TV</div>
       {{end}}
     </div>
     <div class="band-album-meta">
-      <div class="artist-card-name">{{.Name}}</div>
+      <div class="artist-card-name">{{.Title}}</div>
       {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
     </div>
   </a>
+  {{end}}
   {{end}}
 </div>
 {{end}}
