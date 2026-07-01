@@ -1628,6 +1628,13 @@ ORDER BY t.popularity DESC, t.id`, libraryID, popularIncludeAllMaxTracks, popula
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.library_id=? AND al.year BETWEEN ? AND ? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID, from, to)
 		q.Title = fmt.Sprintf("%d–%d", from, to)
+	case "top100":
+		// Billboard Hot 100 charts (every song that charted, sourced from YouTube):
+		// a year's list in peak order, or an all-years shuffle. All entries are
+		// yt-kind — resolved + played via YouTube (popout iframe by default; in-app
+		// hidden engine in Test Audio mode).
+		q.BackURL = "/music/playlists"
+		q.Tracks, q.Title, err = h.top100QueueTracks(r)
 	case "journey":
 		// The owned charting albums/singles of a year, in chronological release
 		// order — the "Rediscover a Year" playthrough.
