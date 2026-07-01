@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"hespera/internal/opensubtitles"
-	"hespera/internal/video"
 )
 
 // langPattern validates an ISO-ish language code used in cache file names and
@@ -217,21 +216,25 @@ func (h *Handler) cacheConvertedSubtitle(r *http.Request, link, cachePath string
 	}
 	rawFile.Close()
 
-	// Convert to WebVTT into a temp file, then atomically rename into place.
+	// Convert to WebVTT (overlap-clamped via extractVTT), then write to a temp
+	// file and atomically rename into place.
+	// Note: non-UTF-8 source encodings (latin1/cp1251) may render garbled; a
+	// future enhancement is charset detection via -sub_charenc (see pending.md).
+	args := []string{"-hide_banner", "-loglevel", "error", "-i", rawPath, "-f", "webvtt", "pipe:1"}
+	vtt, err := extractVTT(r.Context(), args)
+	if err != nil {
+		return err
+	}
 	tmpVTT, err := os.CreateTemp(filepath.Dir(cachePath), "sub-*.vtt")
 	if err != nil {
 		return err
 	}
 	tmpPath := tmpVTT.Name()
-	// ffmpeg writes its converted output to this file handle (pipe:1 → w).
-	// Note: non-UTF-8 source encodings (latin1/cp1251) may render garbled; a
-	// future enhancement is charset detection via -sub_charenc (see pending.md).
-	args := []string{"-hide_banner", "-loglevel", "error", "-i", rawPath, "-f", "webvtt", "pipe:1"}
-	convErr := video.StreamFFmpeg(r.Context(), tmpVTT, args)
+	_, werr := tmpVTT.Write(vtt)
 	tmpVTT.Close()
-	if convErr != nil {
+	if werr != nil {
 		os.Remove(tmpPath)
-		return convErr
+		return werr
 	}
 	if err := os.Rename(tmpPath, cachePath); err != nil {
 		os.Remove(tmpPath)

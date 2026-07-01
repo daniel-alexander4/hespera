@@ -99,20 +99,67 @@ function initMediaPlayer() {
     video.play().catch(() => {}); // autoplay may be blocked; user can press play
   }
 
+  // --- subtitle rendering ---
+  // We paint subtitles ourselves rather than relying on the browser's native cue
+  // rendering: under MSE/hls.js the UA leaves orphaned cue boxes across track
+  // add/remove (toggling subtitles off/on/off/on stacks stale lines) and on
+  // switch-off (the last line sticks). The sidecar <track> is kept mode='hidden'
+  // — cues are still parsed and activeCues/cuechange still fire, but the UA paints
+  // nothing — and we render the active cue(s) into one overlay div we fully own,
+  // so stacking and stranding are structurally impossible.
+  const captions = (() => {
+    const w = video.closest('.tv-player-video-wrap');
+    if (!w) return null;
+    let el = w.querySelector('.media-captions');
+    if (!el) { el = document.createElement('div'); el.className = 'media-captions'; el.hidden = true; w.appendChild(el); }
+    return el;
+  })();
+  let captionTrack = null; // the sidecar TextTrack we're painting, if any
+  let lastCueKey = '';     // change-detection so we only touch the DOM on a real change
+
+  function renderActiveCues() {
+    if (!captions) return;
+    const cues = (captionTrack && captionTrack.activeCues) ? captionTrack.activeCues : null;
+    let key = '';
+    if (cues) for (let i = 0; i < cues.length; i++) key += cues[i].startTime + '|' + cues[i].text + '\n';
+    if (key === lastCueKey) return;
+    lastCueKey = key;
+    captions.textContent = '';
+    if (!cues || cues.length === 0) { captions.hidden = true; return; }
+    for (let i = 0; i < cues.length; i++) {
+      const line = document.createElement('div');
+      line.className = 'media-caption-line';
+      line.appendChild(cues[i].getCueAsHTML()); // preserves <i>/<b> markup + multi-line
+      captions.appendChild(line);
+    }
+    captions.hidden = false;
+  }
+
+  function clearCaptionTrack() {
+    if (captionTrack) { captionTrack.removeEventListener('cuechange', renderActiveCues); captionTrack = null; }
+    lastCueKey = '';
+    if (captions) { captions.textContent = ''; captions.hidden = true; }
+  }
+
+  function addCaptionTrack(url) {
+    const track = document.createElement('track');
+    track.kind = 'subtitles';
+    track.src = url;
+    track.default = true;
+    track.label = 'Subtitles';
+    video.appendChild(track);
+    const tt = video.textTracks[video.textTracks.length - 1];
+    if (!tt) return;
+    tt.mode = 'hidden'; // parsed but unpainted; renderActiveCues does the painting
+    captionTrack = tt;
+    tt.addEventListener('cuechange', renderActiveCues);
+    renderActiveCues();
+  }
+
   function attachSubtitle(session) {
     for (const t of [...video.querySelectorAll('track')]) t.remove();
-    if (session.subtitle_url) {
-      const track = document.createElement('track');
-      track.kind = 'subtitles';
-      track.src = session.subtitle_url;
-      track.default = true;
-      track.label = 'Subtitles';
-      video.appendChild(track);
-      // A dynamically-added <track default> doesn't reliably auto-show across
-      // browsers; force the cue track on explicitly.
-      const tt = video.textTracks[video.textTracks.length - 1];
-      if (tt) tt.mode = 'showing';
-    }
+    clearCaptionTrack();
+    if (session.subtitle_url) addCaptionTrack(session.subtitle_url);
   }
 
   function buildSelects(session) {
@@ -161,14 +208,8 @@ function initMediaPlayer() {
   // OpenSubtitles search) as the active subtitle track.
   function attachExternalSubtitle(url) {
     for (const t of [...video.querySelectorAll('track')]) t.remove();
-    const track = document.createElement('track');
-    track.kind = 'subtitles';
-    track.src = url;
-    track.default = true;
-    track.label = 'Subtitles';
-    video.appendChild(track);
-    const tt = video.textTracks[video.textTracks.length - 1];
-    if (tt) tt.mode = 'showing';
+    clearCaptionTrack();
+    addCaptionTrack(url);
   }
 
   async function loadFromSession(aud, sub, seekTo) {
@@ -194,8 +235,10 @@ function initMediaPlayer() {
     attachSubtitle(session);
   }
 
-  if (audioSelect) audioSelect.addEventListener('change', () => loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()));
-  if (subSelect) subSelect.addEventListener('change', () => loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, currentAbsTime()));
+  // blur() after a pick so the <select> (which lives inside the auto-hiding
+  // .media-overlay) doesn't keep :focus-visible and pin the controls open.
+  if (audioSelect) audioSelect.addEventListener('change', () => { loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()); audioSelect.blur(); });
+  if (subSelect) subSelect.addEventListener('change', () => { loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, currentAbsTime()); subSelect.blur(); });
 
   // --- transport controls (focusable, so a TV remote in couch mode can seek;
   //     the native <video controls> scrubber isn't remote-reachable) ---
@@ -265,6 +308,9 @@ function initMediaPlayer() {
     renderScrub(dur > 0 ? currentAbsTime() / dur : 0, currentAbsTime());
   }
   video.addEventListener('timeupdate', updateScrubFromPlayback);
+  // Backstop the cuechange-driven caption render in case an event is missed during
+  // an MSE rebuffer/seek; renderActiveCues no-ops when the active set is unchanged.
+  video.addEventListener('timeupdate', renderActiveCues);
   video.addEventListener('loadedmetadata', updateScrubFromPlayback);
 
   function fracFromEvent(e) {
