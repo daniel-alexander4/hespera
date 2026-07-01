@@ -8,20 +8,29 @@ package singleton
 
 import (
 	"os"
-	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
 // ReplaceOthers sends SIGTERM to every other process running this same
-// executable, leaving the current process. It returns the number signalled.
+// executable (matched by install path), leaving the current process. It returns
+// the number signalled.
+//
+// Identity is the exe link path of /proc/<pid>/exe, not an EvalSymlinks-resolved
+// inode: when the binary is replaced while the app is running — an upgrade or a
+// reinstall, then a relaunch — an old instance's /proc/<pid>/exe becomes
+// "/usr/bin/hespera (deleted)", which EvalSymlinks can't resolve (the path
+// doesn't exist). Resolving would therefore error and silently skip every
+// pre-upgrade instance, so they'd never be replaced and would pile up. Comparing
+// the (deleted)-stripped link path instead treats every instance at the same
+// install location as the same app, regardless of which inode it's running.
+// (/proc/<pid>/exe is already the kernel-resolved real binary, so no symlink
+// resolution is lost.)
 func ReplaceOthers() int {
-	self, err := os.Executable()
-	if err != nil {
+	self := procExePath("self")
+	if self == "" {
 		return 0
-	}
-	if resolved, err := filepath.EvalSymlinks(self); err == nil {
-		self = resolved
 	}
 	me := os.Getpid()
 
@@ -35,8 +44,7 @@ func ReplaceOthers() int {
 		if err != nil || pid == me {
 			continue
 		}
-		exe, err := filepath.EvalSymlinks("/proc/" + e.Name() + "/exe")
-		if err != nil || exe != self {
+		if procExePath(e.Name()) != self {
 			continue
 		}
 		if syscall.Kill(pid, syscall.SIGTERM) == nil {
@@ -44,4 +52,22 @@ func ReplaceOthers() int {
 		}
 	}
 	return killed
+}
+
+// procExePath reads /proc/<pid>/exe and returns its install path with the
+// kernel's " (deleted)" suffix (present when the backing binary was unlinked)
+// stripped. Returns "" on error, e.g. EACCES for another user's process.
+func procExePath(pid string) string {
+	target, err := os.Readlink("/proc/" + pid + "/exe")
+	if err != nil {
+		return ""
+	}
+	return cleanDeleted(target)
+}
+
+// cleanDeleted strips the kernel's trailing " (deleted)" marker from an exe link
+// target, so a process whose binary has since been replaced still matches the
+// live one by install path.
+func cleanDeleted(target string) string {
+	return strings.TrimSuffix(target, " (deleted)")
 }
