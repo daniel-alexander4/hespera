@@ -173,6 +173,35 @@ func TestYouTubeCombinedForm(t *testing.T) {
 	}
 }
 
+// TestLastfmKeyForm covers saving + clearing the Last.fm key via its own form
+// (the shared fanart/audiodb/lastfm POST loop) and effectiveLastfmKey resolution.
+func TestLastfmKeyForm(t *testing.T) {
+	h, _ := newTestHandler(t)
+	router := h.Router()
+	ctx := context.Background()
+	post := func(vals url.Values) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/settings/api-keys", strings.NewReader(vals.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rec.Code)
+		}
+	}
+	if h.effectiveLastfmKey(ctx) != "" {
+		t.Fatal("expected no Last.fm key initially")
+	}
+	post(url.Values{"lastfm_api_key": {"lfm-key"}})
+	if got := h.effectiveLastfmKey(ctx); got != "lfm-key" {
+		t.Fatalf("after save, effectiveLastfmKey = %q, want lfm-key", got)
+	}
+	post(url.Values{"lastfm_api_key": {""}}) // blank clears
+	if got := h.effectiveLastfmKey(ctx); got != "" {
+		t.Fatalf("after clear, effectiveLastfmKey = %q, want empty", got)
+	}
+}
+
 // TestBillboardCheckboxDisable covers the checkbox-only Billboard form: an
 // unchecked box (sentinel present, checkbox absent) disables the feature. (The
 // enable path is exercised via the DB-seeding helper elsewhere; enabling enqueues

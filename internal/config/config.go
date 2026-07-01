@@ -22,6 +22,7 @@ type Config struct {
 	OpenSubtitlesAPIKey    string
 	OpenSubtitlesUserAgent string
 	YouTubeAPIKey          string
+	LastfmAPIKey           string
 
 	AuthEnabled       bool
 	AuthSessionSecret string
@@ -52,6 +53,7 @@ func FromEnv() Config {
 		OpenSubtitlesAPIKey:    getenv("HESPERA_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUserAgent: getenv("HESPERA_OPENSUBTITLES_USER_AGENT", ""),
 		YouTubeAPIKey:          getenv("HESPERA_YOUTUBE_API_KEY", ""),
+		LastfmAPIKey:           getenv("HESPERA_LASTFM_API_KEY", ""),
 		AuthEnabled: parseBoolDefaultFalse(
 			os.Getenv("AUTH_ENABLED"),
 		),
