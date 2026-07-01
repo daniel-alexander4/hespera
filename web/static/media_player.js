@@ -361,9 +361,19 @@ function initMediaPlayer() {
     video.currentTime = t;
   };
 
+  const togglePlay = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
   if (rewindBtn) rewindBtn.addEventListener('click', () => seekBy(-10));
   if (forwardBtn) forwardBtn.addEventListener('click', () => seekBy(10));
-  if (toggleBtn) toggleBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause(); });
+  if (toggleBtn) toggleBtn.addEventListener('click', togglePlay);
+  // Click the video frame to play/pause (standard player UX). The listener is on
+  // the <video> itself, so it fires only on direct video clicks — the overlay
+  // controls and the floating skip button are separate elements that never reach
+  // it (and .media-captions is pointer-events:none, so a click through a caption
+  // still toggles). When the controls are auto-hidden the overlay is
+  // pointer-events:none, so the whole frame toggles; while visible its bottom strip
+  // intercepts (the play button is right there). A click also bumps the controls
+  // visible via the wrap's pointerdown listener.
+  video.addEventListener('click', togglePlay);
   video.addEventListener('play', () => { if (transport) transport.classList.add('playing'); });
   video.addEventListener('pause', () => { if (transport) transport.classList.remove('playing'); });
 
