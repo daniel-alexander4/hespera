@@ -40,6 +40,10 @@ type tvSeriesRow struct {
 	// season of the most-recently-watched episode), so the card can deep-link
 	// straight to that season's episode list. Zero/unused for other rows.
 	SeasonNumber int
+	// RecencyUnix is the row's sort timestamp (unix seconds): last-watched for the
+	// watched query, file mtime for the added query. Lets the home "Continue
+	// Watching" row interleave TV with movies by recency; unused in the TV views.
+	RecencyUnix int64
 }
 
 type tvSeasonRow struct {
@@ -133,16 +137,18 @@ SELECT w.sid,
           WHERE i2.series_id = w.sid AND i2.status = 'matched'
             AND i2.season_number >= w.nr
             AND COALESCE(p2.completed, 0) = 0),
-         w.nr) AS target_season
+         w.nr) AS target_season,
+       CAST(strftime('%s', w.last_watched) AS INTEGER) AS recency
 FROM watched w
 ORDER BY w.last_watched DESC
 LIMIT ?`
 
 // tvRecentlyAddedQuery returns the newest-on-disk matched series. season_number
-// is selected to match the two-column shape recentTVSeries scans, but the
-// Recently-Added card links to the series page, so the value is unused.
+// is selected to match the three-column shape recentTVSeries scans, but the
+// Recently-Added card links to the series page, so the value is unused; the
+// recency column surfaces the existing mtime sort key for the shared scanner.
 const tvRecentlyAddedQuery = `
-SELECT i.series_id, i.season_number
+SELECT i.series_id, i.season_number, MAX(f.mtime_unix) AS recency
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
@@ -160,13 +166,14 @@ func (h *Handler) recentTVSeries(ctx context.Context, query string, limit int) (
 	}
 	defer rows.Close()
 	type idSeason struct {
-		id     string
-		season int
+		id      string
+		season  int
+		recency int64
 	}
 	var items []idSeason
 	for rows.Next() {
 		var it idSeason
-		if err := rows.Scan(&it.id, &it.season); err != nil {
+		if err := rows.Scan(&it.id, &it.season, &it.recency); err != nil {
 			return nil, err
 		}
 		items = append(items, it)
@@ -194,6 +201,7 @@ func (h *Handler) recentTVSeries(ctx context.Context, query string, limit int) (
 			Year:         meta.year,
 			PosterPath:   meta.posterPath,
 			SeasonNumber: it.season,
+			RecencyUnix:  it.recency,
 			IsMatched:    true,
 		})
 	}

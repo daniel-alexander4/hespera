@@ -31,6 +31,10 @@ type movieRow struct {
 	Year        string
 	ProgressPct int
 	Completed   bool
+	// RecencyUnix is the row's sort timestamp (unix seconds): last-watched for the
+	// continue-watching query, file mtime for the recently-added query. Lets the
+	// home "Continue Watching" row interleave movies with TV by recency.
+	RecencyUnix int64
 }
 
 // moviesHome renders the movies browse page: a paginated grid of matched films
@@ -182,7 +186,8 @@ func movieYear(releaseDate string) string {
 func (h *Handler) loadMovieContinueWatching(ctx context.Context, limit int) ([]movieRow, error) {
 	rows, err := h.db.QueryContext(ctx, `
 SELECT f.id, f.tmdb_id,
-       CASE WHEN p.duration_seconds > 0 THEN CAST(p.position_seconds*100/p.duration_seconds AS INTEGER) ELSE 0 END
+       CASE WHEN p.duration_seconds > 0 THEN CAST(p.position_seconds*100/p.duration_seconds AS INTEGER) ELSE 0 END,
+       CAST(strftime('%s', p.updated_at) AS INTEGER)
 FROM movie_playback_progress p
 JOIN movie_files f ON f.id = p.file_id
 WHERE f.match_status='matched' AND f.tmdb_id != 0 AND COALESCE(p.completed,0)=0
@@ -199,7 +204,7 @@ LIMIT ?
 // created_at on movie_files; mtime tracks when a download landed).
 func (h *Handler) loadMovieRecentlyAdded(ctx context.Context, limit int) ([]movieRow, error) {
 	rows, err := h.db.QueryContext(ctx, `
-SELECT MIN(f.id), f.tmdb_id, 0
+SELECT MIN(f.id), f.tmdb_id, 0, MAX(f.mtime_unix)
 FROM movie_files f
 WHERE f.match_status='matched' AND f.tmdb_id != 0
 GROUP BY f.tmdb_id
@@ -212,15 +217,15 @@ LIMIT ?
 	return h.scanMovieCards(ctx, rows)
 }
 
-// scanMovieCards reads (file_id, tmdb_id, progress_pct) rows and fills titles
-// from the metadata cache.
+// scanMovieCards reads (file_id, tmdb_id, progress_pct, recency_unix) rows and
+// fills titles from the metadata cache.
 func (h *Handler) scanMovieCards(ctx context.Context, rows *sql.Rows) ([]movieRow, error) {
 	defer rows.Close()
 	var out []movieRow
 	var ids []int
 	for rows.Next() {
 		var m movieRow
-		if err := rows.Scan(&m.FileID, &m.TMDBID, &m.ProgressPct); err != nil {
+		if err := rows.Scan(&m.FileID, &m.TMDBID, &m.ProgressPct, &m.RecencyUnix); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
