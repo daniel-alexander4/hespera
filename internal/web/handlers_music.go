@@ -1635,21 +1635,6 @@ ORDER BY t.popularity DESC, t.id`, libraryID, popularIncludeAllMaxTracks, popula
 		// hidden engine in Test Audio mode).
 		q.BackURL = "/music/playlists"
 		q.Tracks, q.Title, err = h.top100QueueTracks(r)
-	case "journey":
-		// The owned charting albums/singles of a year, in chronological release
-		// order — the "Rediscover a Year" playthrough.
-		year, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("y")))
-		if year <= 0 {
-			return q, true, nil
-		}
-		topFirst := r.URL.Query().Get("dir") == "top"
-		// Emit YouTube tracks only when the in-app engine is opted in (key + toggle);
-		// otherwise the journey queue is owned-only and un-owned songs link out.
-		ytInApp := h.effectiveYouTubeInApp(r.Context())
-		libraryID := h.resolveMusicLibraryID(r)
-		q.Tracks, err = h.journeyQueueTracks(r.Context(), libraryID, year, topFirst, ytInApp)
-		q.Title = fmt.Sprintf("Rediscover %d", year)
-		q.BackURL = fmt.Sprintf("/music/year?y=%d", year)
 	default: // single album
 		albumID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("album")), 10, 64)
 		if perr != nil || albumID <= 0 {

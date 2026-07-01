@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Top 100 — Hespera</title>
+  <!-- Match the app theme (same-origin localStorage) before paint. -->
+  <script>
+    try {
+      var m = localStorage.getItem('iso_theme_mode');
+      if (!m) m = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-mode', m === 'light' ? 'light' : 'dark');
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    body { margin: 0; background: var(--base, #1e1e2e); color: var(--text, #cdd6f4); font-family: system-ui, sans-serif; }
+    .popout { display: flex; gap: 1rem; height: 100vh; box-sizing: border-box; padding: 1rem; }
+    .popout-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+    #player-wrap { background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 9; }
+    #yt-player { width: 100%; height: 100%; }
+    .popout-now { min-height: 2.4em; }
+    #now-title { font-size: 1.15rem; font-weight: 600; }
+    #now-artist { color: var(--text-muted, #a6adc8); }
+    .popout-controls { display: flex; align-items: center; gap: 0.5rem; }
+    .popout-controls button { font-size: 1.1rem; min-width: 2.6rem; padding: 0.35rem 0.6rem; cursor: pointer;
+      background: var(--surface-card, #313244); color: var(--text, #cdd6f4); border: 1px solid var(--surface-panel, #181825); border-radius: 6px; }
+    .popout-controls button:hover { filter: brightness(1.15); }
+    #status { color: var(--text-muted, #a6adc8); font-size: 0.9rem; }
+    .popout-list { flex: 0 0 300px; overflow-y: auto; background: var(--surface-panel, #181825); border-radius: 8px; padding: 0.5rem; }
+    .popout-list ol { list-style: none; margin: 0; padding: 0; }
+    .popout-list li { display: flex; gap: 0.5rem; padding: 0.4rem 0.5rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .popout-list li:hover { background: var(--surface-card, #313244); }
+    .popout-list li.current { background: var(--accent, #cba6f7); color: var(--text-on-accent, #1e1e2e); font-weight: 600; }
+    .popout-list .pos { color: var(--text-soft, #9399b2); min-width: 2.2em; text-align: right; }
+    .popout-list li.current .pos { color: inherit; }
+    .popout-list .ta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @media (max-width: 720px) { .popout { flex-direction: column; height: auto; } .popout-list { flex-basis: auto; } }
+  </style>
+</head>
+<body>
+  <div class="popout">
+    <div class="popout-main">
+      <div id="player-wrap"><div id="yt-player"></div></div>
+      <div class="popout-now">
+        <div id="now-title">Loading…</div>
+        <div id="now-artist"></div>
+      </div>
+      <div class="popout-controls">
+        <button id="prev" title="Previous">⏮</button>
+        <button id="playpause" title="Play / pause">⏯</button>
+        <button id="next" title="Next">⏭</button>
+        <span id="status"></span>
+      </div>
+    </div>
+    <aside class="popout-list"><ol id="list"></ol></aside>
+  </div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+  (function () {
+    var TRACKS = [], idx = 0, player = null, ready = false, started = false;
+    var listEl = document.getElementById('list');
+    var titleEl = document.getElementById('now-title');
+    var artistEl = document.getElementById('now-artist');
+    var statusEl = document.getElementById('status');
+
+    function setStatus(s) { statusEl.textContent = s || ''; }
+    function setNow(t) { titleEl.textContent = t ? t.title : ''; artistEl.textContent = t ? (t.artist || '') : ''; }
+
+    function shuffle(a) {
+      for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var x = a[i]; a[i] = a[j]; a[j] = x; }
+    }
+
+    function renderList() {
+      listEl.innerHTML = '';
+      TRACKS.forEach(function (t, i) {
+        var li = document.createElement('li');
+        li.dataset.i = i;
+        var pos = document.createElement('span'); pos.className = 'pos'; pos.textContent = (i + 1) + '.';
+        var ta = document.createElement('span'); ta.className = 'ta'; ta.textContent = t.title + (t.artist ? ' — ' + t.artist : '');
+        li.appendChild(pos); li.appendChild(ta);
+        li.addEventListener('click', function () { idx = i; play(); });
+        listEl.appendChild(li);
+      });
+    }
+
+    function highlight() {
+      var lis = listEl.children;
+      for (var i = 0; i < lis.length; i++) lis[i].classList.toggle('current', i === idx);
+      if (lis[idx]) lis[idx].scrollIntoView({ block: 'nearest' });
+    }
+
+    function load() {
+      var params = new URLSearchParams(location.search);
+      fetch('/music/queue?' + params.toString(), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          TRACKS = (data.tracks || []).filter(function (t) { return t && t.title; });
+          if (params.get('shuffle') === '1') shuffle(TRACKS);
+          document.title = (data.title || 'Top 100') + ' — Hespera';
+          renderList();
+          if (!TRACKS.length) { setNow(null); titleEl.textContent = 'No songs to play.'; return; }
+          if (ready && !started) start();
+        })
+        .catch(function () { titleEl.textContent = 'Could not load the playlist.'; });
+    }
+
+    function start() { started = true; idx = 0; play(); }
+
+    function play() {
+      if (idx < 0 || idx >= TRACKS.length) { setStatus('End of playlist.'); return; }
+      var t = TRACKS[idx];
+      highlight();
+      setNow(t);
+      setStatus('Resolving…');
+      fetch('/music/youtube/resolve?artist=' + encodeURIComponent(t.artist || '') + '&song=' + encodeURIComponent(t.title || ''), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (idx >= TRACKS.length || TRACKS[idx] !== t) return; // user jumped while resolving
+          if (res.videoId) { setStatus(''); player.loadVideoById(res.videoId); }
+          else { setStatus('No video for this song — skipping…'); nextSoon(); }
+        })
+        .catch(function () { setStatus('Resolve failed — skipping…'); nextSoon(); });
+    }
+
+    function nextSoon() { setTimeout(next, 900); }
+    function next() { idx++; if (idx >= TRACKS.length) { setStatus('Done.'); return; } play(); }
+    function prev() { if (idx > 0) { idx--; play(); } }
+
+    document.getElementById('next').addEventListener('click', next);
+    document.getElementById('prev').addEventListener('click', prev);
+    document.getElementById('playpause').addEventListener('click', function () {
+      if (!player || !player.getPlayerState) return;
+      var s = player.getPlayerState();
+      if (s === 1) player.pauseVideo(); else player.playVideo();
+    });
+
+    window.onYouTubeIframeAPIReady = function () {
+      player = new YT.Player('yt-player', {
+        playerVars: { autoplay: 1, playsinline: 1, rel: 0 },
+        events: {
+          onReady: function () { ready = true; if (TRACKS.length && !started) start(); },
+          onStateChange: function (e) { if (e.data === YT.PlayerState.ENDED) next(); },
+          onError: function () { setStatus('Playback error — skipping…'); nextSoon(); }
+        }
+      });
+    };
+
+    load();
+  })();
+  </script>
+</body>
+</html>

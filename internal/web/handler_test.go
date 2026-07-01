@@ -35,7 +35,7 @@ var stubPages = []string{
 	"home.html", "login.html", "libraries.html", "libraries_new.html",
 	"settings.html", "settings_jobs.html", "music_home.html", "music_artist.html",
 	"music_artist_external.html", "music_artist_disambiguate.html", "music_artist_art.html",
-	"music_album.html", "music_albums.html", "music_compilations.html", "music_year.html", "player.html",
+	"music_album.html", "music_albums.html", "music_compilations.html", "music_playlists.html", "player.html",
 	"music_match_review.html", "music_album_edit.html", "music_track_edit.html", "music_duplicates.html",
 	"settings_tags.html", "settings_apikeys.html", "settings_about.html", "tv_home.html", "tv_series.html",
 	"tv_season.html", "tv_match_review.html", "tv_player.html", "person.html",
@@ -83,10 +83,10 @@ func stubAssetsFS() fs.FS {
 		"templates/music_albums.html": `{{define "content"}}{{range .Albums}}<a class="album" href="/music/album/{{.ID}}"></a>{{end}}` +
 			`<span id="pg">{{.Page.Page}}/{{.Page.TotalPages}}</span><span id="q">{{.Page.Query}}</span>` +
 			`{{if .Page.HasPrev}}<a class="prev"></a>{{end}}{{if .Page.HasNext}}<a class="next"></a>{{end}}{{end}}`,
-		"templates/music_year.html": `{{define "content"}}<p id="counts">{{.OwnedSongs}}/{{.TotalSongs}}</p>` +
-			`<a id="play" href="/music/player?source=journey&y={{.Year}}{{if .TopFirst}}&dir=top{{end}}" data-play>Play</a>` +
-			`<a id="dir" href="/music/year?y={{.Year}}{{if not .TopFirst}}&dir=top{{end}}">dir</a>` +
-			`{{range .Weeks}}<section class="wk" data-date="{{.Date}}">{{range .Cards}}<div class="row" data-pos="{{.Pos}}" data-debut="{{.IsDebut}}" data-owned="{{.Owned}}">{{.Title}}</div>{{end}}</section>{{end}}{{end}}`,
+		"templates/music_playlists.html": `{{define "content"}}` +
+			`<div id="mymusic" data-lib="{{.LibraryID}}"></div>` +
+			`<div id="top100" data-ready="{{.BillboardReady}}" data-bbenabled="{{.BillboardOn}}" data-haskey="{{.HasYouTubeKey}}" data-test="{{.TestAudio}}">` +
+			`{{if .Years}}<select id="year">{{range .Years}}<option value="{{.}}">{{.}}</option>{{end}}</select>{{end}}</div>{{end}}`,
 	}
 	for path, content := range overrides {
 		m[path] = &fstest.MapFile{Data: []byte(content)}
