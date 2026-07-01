@@ -30,6 +30,7 @@ type Config struct {
 
 	FFmpegConcurrentLimit int
 	FFmpegAcquireTimeout  time.Duration
+	HLSSegmentConcurrency int
 	TVHLSCacheMaxBytes    int64
 	TVCacheMaxAge         time.Duration
 }
@@ -63,6 +64,9 @@ func FromEnv() Config {
 		FFmpegAcquireTimeout: parseDurationDefault(
 			os.Getenv("HESPERA_FFMPEG_ACQUIRE_TIMEOUT"), 2*time.Second,
 		),
+		HLSSegmentConcurrency: parsePositiveIntDefault(
+			os.Getenv("HESPERA_HLS_SEGMENT_CONCURRENCY"), 1,
+		),
 		TVHLSCacheMaxBytes: parsePositiveInt64Default(
 			os.Getenv("HESPERA_TV_HLS_CACHE_MAX_BYTES"), 20<<30,
 		),
@@ -93,6 +97,9 @@ func (c Config) Validate() error {
 	}
 	if c.FFmpegConcurrentLimit < 0 {
 		return errors.New("HESPERA_FFMPEG_CONCURRENCY must be >= 0")
+	}
+	if c.HLSSegmentConcurrency < 0 {
+		return errors.New("HESPERA_HLS_SEGMENT_CONCURRENCY must be >= 0")
 	}
 	if c.FFmpegAcquireTimeout < 0 {
 		return errors.New("HESPERA_FFMPEG_ACQUIRE_TIMEOUT must be >= 0")

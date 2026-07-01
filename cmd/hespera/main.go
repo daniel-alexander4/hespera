@@ -54,6 +54,7 @@ func main() {
 	}
 
 	video.SetConcurrency(cfg.FFmpegConcurrentLimit, cfg.FFmpegAcquireTimeout)
+	video.SetSegmentConcurrency(cfg.HLSSegmentConcurrency)
 
 	// Create the data dir on first run — the binary runs as the invoking user
 	// (no container pre-creating /var/lib/hespera), so the default per-user dir

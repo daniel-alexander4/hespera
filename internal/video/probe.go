@@ -15,6 +15,7 @@ import (
 var (
 	ffmpegSem     chan struct{}
 	ffmpegTimeout time.Duration
+	segmentSem    chan struct{} // sub-cap on concurrent HLS segment transcodes
 )
 
 // SetConcurrency configures the global ffprobe/ffmpeg concurrency cap. A limit
@@ -29,20 +30,49 @@ func SetConcurrency(limit int, acquireTimeout time.Duration) {
 	ffmpegTimeout = acquireTimeout
 }
 
-// acquire blocks for a concurrency slot and returns a release func. A nil
-// semaphore (the default) means unlimited and never blocks.
-func acquire(ctx context.Context) (func(), error) {
-	if ffmpegSem == nil {
+// SetSegmentConcurrency caps how many on-demand HLS segment transcodes run at
+// once — a sub-limit beneath the general gate. hls.js prefetches several segments
+// to fill its forward buffer; without this, a prefetch burst spawns a transcode
+// per segment and they collectively saturate the CPU (the per-segment spike).
+// Serialising them (cap 1) keeps the peak to a single encode while still filling
+// the buffer faster than realtime. <= 0 means unlimited (general gate only).
+func SetSegmentConcurrency(limit int) {
+	if limit <= 0 {
+		segmentSem = nil
+	} else {
+		segmentSem = make(chan struct{}, limit)
+	}
+}
+
+// acquire blocks for a general ffmpeg concurrency slot and returns a release
+// func. A nil semaphore (the default) means unlimited and never blocks. It
+// honours ffmpegTimeout so foreground work (remux/burn-in/probe) fails fast when
+// every slot is busy rather than hanging the request.
+func acquire(ctx context.Context) (func(), error) { return acquireOn(ctx, ffmpegSem, true) }
+
+// acquireSegment blocks for an HLS-segment-transcode slot (the sub-cap set by
+// SetSegmentConcurrency); nil means unlimited. Unlike acquire it does NOT apply
+// the short ffmpegTimeout: serialised prefetch bursts legitimately wait their
+// turn (one builds in ~1.7s, so a few queue for a handful of seconds), and the
+// caller's buildCtx (segBuildTimeout) is the real ceiling — a 2s fail-fast here
+// would 500 the later segments in a burst.
+func acquireSegment(ctx context.Context) (func(), error) { return acquireOn(ctx, segmentSem, false) }
+
+// acquireOn blocks for a slot on sem and returns a release func. withTimeout
+// wraps the wait in ffmpegTimeout (fail-fast); without it the wait is bounded
+// only by ctx. A nil sem means unlimited and never blocks.
+func acquireOn(ctx context.Context, sem chan struct{}, withTimeout bool) (func(), error) {
+	if sem == nil {
 		return func() {}, nil
 	}
-	if ffmpegTimeout > 0 {
+	if withTimeout && ffmpegTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, ffmpegTimeout)
 		defer cancel()
 	}
 	select {
-	case ffmpegSem <- struct{}{}:
-		return func() { <-ffmpegSem }, nil
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

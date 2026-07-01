@@ -391,6 +391,16 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 
 	buildCtx, cancel := context.WithTimeout(context.Background(), segBuildTimeout)
 	defer cancel()
+	// Take the segment sub-cap first, then the general gate (consistent order, so
+	// nesting can't deadlock). The sub-cap serialises prefetch bursts — without it
+	// hls.js's burst of segment requests each spawns a transcode and they saturate
+	// the CPU; the general gate is still the overall ffmpeg ceiling.
+	releaseSeg, err := acquireSegment(buildCtx)
+	if err != nil {
+		finish(err)
+		return
+	}
+	defer releaseSeg()
 	release, err := acquire(buildCtx)
 	if err != nil {
 		finish(err)
