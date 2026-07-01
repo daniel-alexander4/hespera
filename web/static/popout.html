@@ -22,6 +22,8 @@
     .popout-now { min-height: 2.4em; }
     #now-title { font-size: 1.15rem; font-weight: 600; }
     #now-artist { color: var(--text-muted, #a6adc8); }
+    .now-link { display: inline-block; margin-top: 0.35rem; color: var(--accent, #cba6f7); text-decoration: none; font-weight: 600; }
+    .now-link:hover { text-decoration: underline; }
     .popout-controls { display: flex; align-items: center; gap: 0.5rem; }
     .popout-controls button { font-size: 1.1rem; min-width: 2.6rem; padding: 0.35rem 0.6rem; cursor: pointer;
       background: var(--surface-card, #313244); color: var(--text, #cdd6f4); border: 1px solid var(--surface-panel, #181825); border-radius: 6px; }
@@ -45,6 +47,7 @@
       <div class="popout-now">
         <div id="now-title">Loading…</div>
         <div id="now-artist"></div>
+        <a id="now-link" class="now-link" target="_blank" rel="noopener" hidden>▶ Play on YouTube ↗</a>
       </div>
       <div class="popout-controls">
         <button id="prev" title="Previous">⏮</button>
@@ -59,14 +62,27 @@
   <script src="https://www.youtube.com/iframe_api"></script>
   <script>
   (function () {
-    var TRACKS = [], idx = 0, player = null, ready = false, started = false;
+    var TRACKS = [], idx = 0, player = null, ready = false, started = false, curWatchUrl = '';
     var listEl = document.getElementById('list');
     var titleEl = document.getElementById('now-title');
     var artistEl = document.getElementById('now-artist');
     var statusEl = document.getElementById('status');
+    var linkEl = document.getElementById('now-link');
 
     function setStatus(s) { statusEl.textContent = s || ''; }
-    function setNow(t) { titleEl.textContent = t ? t.title : ''; artistEl.textContent = t ? (t.artist || '') : ''; }
+    function setNow(t) {
+      titleEl.textContent = t ? t.title : '';
+      artistEl.textContent = t ? (t.artist || '') : '';
+      hideLink();
+    }
+    function hideLink() { linkEl.hidden = true; linkEl.removeAttribute('href'); }
+    // A song that can't play in-window (IFrame onError, or no resolved video) isn't
+    // silently skipped — we stop auto-advancing and surface the YouTube watch link
+    // so it's still reachable. Prev/Next remain available to move on manually.
+    function failPlay(msg, watchUrl) {
+      setStatus(msg);
+      if (watchUrl) { linkEl.href = watchUrl; linkEl.hidden = false; }
+    }
 
     function shuffle(a) {
       for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var x = a[i]; a[i] = a[j]; a[j] = x; }
@@ -111,6 +127,7 @@
     function play() {
       if (idx < 0 || idx >= TRACKS.length) { setStatus('End of playlist.'); return; }
       var t = TRACKS[idx];
+      curWatchUrl = '';
       highlight();
       setNow(t);
       setStatus('Resolving…');
@@ -118,13 +135,13 @@
         .then(function (r) { return r.json(); })
         .then(function (res) {
           if (idx >= TRACKS.length || TRACKS[idx] !== t) return; // user jumped while resolving
+          curWatchUrl = res.watchUrl || res.searchUrl || '';
           if (res.videoId) { setStatus(''); player.loadVideoById(res.videoId); }
-          else { setStatus('No video for this song — skipping…'); nextSoon(); }
+          else { failPlay('No video found — open on YouTube:', curWatchUrl); }
         })
-        .catch(function () { setStatus('Resolve failed — skipping…'); nextSoon(); });
+        .catch(function () { failPlay('Resolve failed.', ''); });
     }
 
-    function nextSoon() { setTimeout(next, 900); }
     function next() { idx++; if (idx >= TRACKS.length) { setStatus('Done.'); return; } play(); }
     function prev() { if (idx > 0) { idx--; play(); } }
 
@@ -142,7 +159,14 @@
         events: {
           onReady: function () { ready = true; if (TRACKS.length && !started) start(); },
           onStateChange: function (e) { if (e.data === YT.PlayerState.ENDED) next(); },
-          onError: function () { setStatus('Playback error — skipping…'); nextSoon(); }
+          // Log the YT error code (2/5/100/101/150) so the popup-window playback
+          // failure has a breadcrumb, and fall back to the watch link instead of
+          // silently skipping the song (which loses a whole playlist when the failure
+          // is systematic). Codes 101/150 = embedding disallowed; 100 = removed/private.
+          onError: function (e) {
+            console.warn('[popout] YT onError', e && e.data, 'video=' + (player.getVideoUrl ? player.getVideoUrl() : ''));
+            failPlay("Can't play in-window (YouTube error " + (e && e.data) + ') — open it on YouTube:', curWatchUrl);
+          }
         }
       });
     };

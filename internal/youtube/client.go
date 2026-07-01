@@ -16,7 +16,16 @@ import (
 	"time"
 )
 
-const apiBaseURL = "https://www.googleapis.com/youtube/v3"
+// apiBaseURL is a var (not const) only so tests can point New() at a stub server
+// via SetAPIBaseForTest — production never changes it.
+var apiBaseURL = "https://www.googleapis.com/youtube/v3"
+
+// SetAPIBaseForTest overrides the API base URL and returns a restore func. Test-only.
+func SetAPIBaseForTest(u string) func() {
+	old := apiBaseURL
+	apiBaseURL = u
+	return func() { apiBaseURL = old }
+}
 
 // videoIDPattern is the exact YouTube video-id shape (11 url-safe chars). The
 // resolved id is validated against it before it is ever embedded, so a bad API

@@ -58,13 +58,18 @@ func (h *Handler) musicYouTubeResolve(w http.ResponseWriter, r *http.Request) {
 
 	if resolve {
 		if client := youtube.New(h.effectiveYouTubeKey(ctx)); client != nil {
+			// Cache only a SUCCESSFUL search (a real hit OR a genuine no-match) so we
+			// don't re-spend quota on it. An API ERROR (quota 403, network blip) must
+			// NOT be cached — a cached empty row is authoritative forever, so caching
+			// an error would permanently mark a song that IS on YouTube as "no video"
+			// until the row is cleared. On error we leave videoID="" and fall through
+			// to the link-out; the next request retries.
 			if vid, err := client.Search(ctx, artist, song); err == nil {
 				videoID = vid
+				_, _ = h.db.ExecContext(ctx,
+					"INSERT INTO youtube_lookups (query_key, video_id) VALUES (?, ?) ON CONFLICT(query_key) DO UPDATE SET video_id=excluded.video_id",
+					key, videoID)
 			}
-			// Cache the outcome (hit or miss) so we don't re-spend quota on this song.
-			_, _ = h.db.ExecContext(ctx,
-				"INSERT INTO youtube_lookups (query_key, video_id) VALUES (?, ?) ON CONFLICT(query_key) DO UPDATE SET video_id=excluded.video_id",
-				key, videoID)
 		}
 	}
 
