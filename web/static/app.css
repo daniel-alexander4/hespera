@@ -1484,6 +1484,34 @@ body::before {
   max-height: 80vh;
 }
 
+/* Subtitles are painted by media_player.js into this overlay (the sidecar track is
+   kept mode='hidden' so the browser never paints — and never strands — cue boxes).
+   Sits above the controls bar; drops lower when the controls auto-hide. */
+.media-captions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6rem;
+  padding: 0 5%;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+  transition: bottom 0.25s ease;
+}
+.tv-player-video-wrap.controls-hidden .media-captions { bottom: 1.5rem; }
+.media-caption-line {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 0.1em 0.45em;
+  border-radius: 4px;
+  font-size: clamp(1rem, 2.6vw, 1.9rem);
+  line-height: 1.35;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: pre-wrap;
+}
+.media-caption-line + .media-caption-line { margin-top: 0.2em; }
+
 /* Controls overlay the video's lower edge and auto-hide on inactivity (driven by
    media_player.js's .controls-hidden toggle), so they're reachable in fullscreen
    without exiting. The gradient backdrop keeps them readable over any frame. */

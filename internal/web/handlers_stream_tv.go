@@ -431,16 +431,20 @@ func (h *Handler) streamTVSubtitles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "file path is outside media root", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	args := []string{
 		"-hide_banner", "-loglevel", "error",
 		"-i", clean,
 		"-map", fmt.Sprintf("0:s:%d", track-1),
 		"-f", "webvtt", "pipe:1",
 	}
-	if err := video.StreamFFmpeg(r.Context(), w, args); err != nil {
+	vtt, err := extractVTT(r.Context(), args)
+	if err != nil {
 		slog.Warn("tv subtitle extract", "file_id", fileID, "track", track, "err", err)
+		http.Error(w, "subtitle extract failed", http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Write(vtt)
 }
 
 func audioTracks(p *video.ProbeResult) []sessionTrack {
