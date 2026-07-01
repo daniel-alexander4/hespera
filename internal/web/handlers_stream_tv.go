@@ -167,6 +167,7 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp.SkipSegments = skipSegmentsFor(&probe, "")
 	}
+	resp.SkipSegments = append(resp.SkipSegments, h.dbTVSkipSegments(r.Context(), fileID)...)
 	if out.SubtitleSidecar && sub > 0 {
 		resp.SubtitleURL = fmt.Sprintf("/stream/tv-subtitles/%d?track=%d", fileID, sub)
 	}

@@ -180,6 +180,19 @@ CREATE TABLE IF NOT EXISTS tv_playback_progress (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Detected skip ranges (intro/credits) per file, currently from cross-episode audio
+-- fingerprinting. Merged with chapter/EDL markers when building a playback session.
+CREATE TABLE IF NOT EXISTS tv_skip_segments (
+  file_id INTEGER NOT NULL REFERENCES tv_series_files(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  start_sec REAL NOT NULL,
+  end_sec REAL NOT NULL,
+  source TEXT NOT NULL DEFAULT 'fingerprint',
+  detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (file_id, kind, source)
+);
+CREATE INDEX IF NOT EXISTS idx_tv_skip_segments_file ON tv_skip_segments(file_id);
+
 CREATE TABLE IF NOT EXISTS movie_files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,

@@ -15,6 +15,10 @@
     <input type="hidden" name="series_id" value="{{.ShowID}}" />
     <button type="submit" class="btn btn-sm">{{template "icon-rotate-cw"}}Scan for new episodes</button>
   </form>
+  <form method="post" action="/tv/series/detect-intros" class="inline-form" data-live-job data-status-target="{{.LibraryID}}" title="Detect each episode's intro by audio-fingerprint matching across the season, so it can be skipped">
+    <input type="hidden" name="series_id" value="{{.ShowID}}" />
+    <button type="submit" class="btn btn-sm">{{template "icon-skip-forward"}}Detect intros</button>
+  </form>
   <span class="lib-job-status" data-lib-status="{{.LibraryID}}" hidden></span>
 </div>
 {{end}}

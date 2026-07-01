@@ -2,6 +2,7 @@ package web
 
 import (
 	"bufio"
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -61,6 +62,25 @@ func skipSegmentsFor(probe *video.ProbeResult, cleanPath string) []skipSegment {
 	if cleanPath != "" {
 		if ext := filepath.Ext(cleanPath); ext != "" {
 			segs = append(segs, readEDLSegments(strings.TrimSuffix(cleanPath, ext)+".edl")...)
+		}
+	}
+	return segs
+}
+
+// dbTVSkipSegments returns skip segments detected by audio-fingerprinting (stored
+// in tv_skip_segments) for a TV file, merged into the session alongside the
+// chapter/EDL markers. Best-effort: a query error yields none.
+func (h *Handler) dbTVSkipSegments(ctx context.Context, fileID int64) []skipSegment {
+	rows, err := h.db.QueryContext(ctx, `SELECT kind, start_sec, end_sec FROM tv_skip_segments WHERE file_id = ?`, fileID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var segs []skipSegment
+	for rows.Next() {
+		var s skipSegment
+		if err := rows.Scan(&s.Kind, &s.StartSec, &s.EndSec); err == nil && s.EndSec > s.StartSec {
+			segs = append(segs, s)
 		}
 	}
 	return segs
