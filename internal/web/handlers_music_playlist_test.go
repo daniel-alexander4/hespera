@@ -104,25 +104,41 @@ func TestMusicPlayerSources(t *testing.T) {
 		}
 	})
 
-	t.Run("source=popular: cold is empty, then ranks by popularity", func(t *testing.T) {
-		// No popularity set yet → empty queue (200 with no tracks; the client just
-		// has nothing to play rather than a broken page).
-		rec := get("/music/queue?source=popular&library=" + lib)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("cold popular = %d, want 200", rec.Code)
-		}
-		if ids := queueIDs(rec); len(ids) != 0 {
-			t.Fatalf("cold popular returned %d tracks, want 0", len(ids))
-		}
-		// Popularity is the global listen count filled by the match phase; t2 stays 0.
+	t.Run("source=popular: <=4-track artist includes all songs regardless of popularity", func(t *testing.T) {
+		// Artist A has 3 tracks (<= popularIncludeAllMaxTracks), so all three are
+		// pooled even though t2 has popularity=0 — a curated artist's whole catalog
+		// rides along. Set popularity on two of the three; t2 stays 0.
 		mustExec(`UPDATE music_tracks SET popularity=900000 WHERE id=?`, t3)
 		mustExec(`UPDATE music_tracks SET popularity=5000 WHERE id=?`, t1)
 		ids := queueIDs(get("/music/queue?source=popular&library=" + lib))
-		if !has(ids, t3) || !has(ids, t1) {
-			t.Fatalf("popular missing the tracks with popularity")
+		for _, id := range []int64{t1, t2, t3} {
+			if !has(ids, id) {
+				t.Fatalf("popular dropped track %d from a <=4-track artist", id)
+			}
 		}
-		if has(ids, t2) {
-			t.Fatalf("popular included a popularity=0 track")
+	})
+
+	t.Run("source=popular: many-track artist excludes its popularity=0 songs", func(t *testing.T) {
+		// A second artist with > popularIncludeAllMaxTracks tracks: only its
+		// popularity>0 songs (up to the per-artist cap) pool; the unmatched ones drop.
+		bID, _ := mustExec(`INSERT INTO music_artists (library_id,name,bio,bio_source_url) VALUES (?, 'B', '', '')`, libID).LastInsertId()
+		albB, _ := mustExec(`INSERT INTO music_albums (library_id,artist_id,album_artist_id,title,year,is_compilation) VALUES (?,?,?,'BAlb',1990,0)`, libID, bID, bID).LastInsertId()
+		mkB := func(title, path string, pop int) int64 {
+			id, _ := mustExec(`INSERT INTO music_tracks (library_id,artist_id,album_id,title,track_no,disc_no,abs_path,mime_type,popularity) VALUES (?,?,?,?,1,1,?,'audio/mpeg',?)`,
+				libID, bID, albB, title, path, pop).LastInsertId()
+			return id
+		}
+		bHit := mkB("BHit", "/m/b1.mp3", 800000)
+		mkB("BFiller2", "/m/b2.mp3", 10)
+		mkB("BFiller3", "/m/b3.mp3", 10)
+		mkB("BFiller4", "/m/b4.mp3", 10)
+		bZero := mkB("BZero", "/m/b5.mp3", 0) // popularity=0, artist has 5 tracks (>4)
+		ids := queueIDs(get("/music/queue?source=popular&library=" + lib))
+		if !has(ids, bHit) {
+			t.Fatalf("popular dropped a popularity>0 track from a many-track artist")
+		}
+		if has(ids, bZero) {
+			t.Fatalf("popular included a popularity=0 track from a >4-track artist")
 		}
 	})
 
