@@ -92,3 +92,25 @@ func TestParseProbeJSONInvalid(t *testing.T) {
 		t.Fatalf("expected error for invalid json")
 	}
 }
+
+func TestParseProbeJSONChapters(t *testing.T) {
+	data := `{"format":{},"streams":[],"chapters":[
+		{"start_time":"0.000000","end_time":"8.000000","tags":{"title":"Intro"}},
+		{"start_time":"8.000000","end_time":"8.000000","tags":{"title":"ZeroLen"}},
+		{"start_time":"40.000000","end_time":"48.000000","tags":{"title":"Advertisement"}}
+	]}`
+	result, err := parseProbeJSON([]byte(data))
+	if err != nil {
+		t.Fatalf("parseProbeJSON: %v", err)
+	}
+	// The zero-length chapter (end <= start) is dropped.
+	if len(result.Chapters) != 2 {
+		t.Fatalf("got %d chapters, want 2: %+v", len(result.Chapters), result.Chapters)
+	}
+	if result.Chapters[0] != (ProbeChapter{StartSec: 0, EndSec: 8, Title: "Intro"}) {
+		t.Errorf("chapter 0 = %+v", result.Chapters[0])
+	}
+	if result.Chapters[1] != (ProbeChapter{StartSec: 40, EndSec: 48, Title: "Advertisement"}) {
+		t.Errorf("chapter 1 = %+v", result.Chapters[1])
+	}
+}

@@ -90,6 +90,7 @@ type playbackSessionResponse struct {
 	Completed      bool              `json:"completed"`
 	AudioTracks    []sessionTrack    `json:"audio_tracks,omitempty"`
 	SubtitleTracks []sessionTrack    `json:"subtitle_tracks,omitempty"`
+	SkipSegments   []skipSegment     `json:"skip_segments,omitempty"`
 }
 
 // tvPlaybackSession resolves how a given client should play a TV file: the
@@ -160,6 +161,11 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 		DurationSecs:   durationSeconds(probe.Format.Duration),
 		AudioTracks:    audioTracks(&probe),
 		SubtitleTracks: subtitleTracks(&probe),
+	}
+	if clean, perr := h.resolveTVPath(src.absPath); perr == nil {
+		resp.SkipSegments = skipSegmentsFor(&probe, clean)
+	} else {
+		resp.SkipSegments = skipSegmentsFor(&probe, "")
 	}
 	if out.SubtitleSidecar && sub > 0 {
 		resp.SubtitleURL = fmt.Sprintf("/stream/tv-subtitles/%d?track=%d", fileID, sub)

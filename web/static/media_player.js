@@ -53,6 +53,7 @@ function initMediaPlayer() {
   let sessionDuration = 0;   // full source duration (progressive streams don't expose it via video.duration)
   let isProgressive = false; // current stream is remux/burn-in (linear, seeks via ?start= reload)
   let reloading = false;     // a ?start= reload is in flight (re-entrancy guard for seeks)
+  let skipSegments = [];     // intro/recap/commercial ranges (absolute timeline) from the session
 
   const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
 
@@ -226,6 +227,8 @@ function initMediaPlayer() {
 
     if (!selectsBuilt) buildSelects(session);
     sessionDuration = session.duration_seconds || sessionDuration;
+    skipSegments = session.skip_segments || [];
+    resetSkip();
     modeLabel.textContent = session.decision.replace('_', ' ');
     if (session.protocol === 'hls' && !nativeHLS && !(window.Hls && Hls.isSupported())) {
       modeLabel.textContent = 'This browser cannot play the transcoded stream';
@@ -274,6 +277,49 @@ function initMediaPlayer() {
   if (toggleBtn) toggleBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause(); });
   video.addEventListener('play', () => { if (transport) transport.classList.add('playing'); });
   video.addEventListener('pause', () => { if (transport) transport.classList.remove('playing'); });
+
+  // --- skip segments (intro / recap / commercial) --- ranges come from the
+  //     playback session (embedded chapters + an EDL sidecar). A "Skip …" button
+  //     shows while inside a segment; the #skipAutoBtn toggle (localStorage,
+  //     per-device) makes it automatic — auto-skipping each segment once, so a
+  //     deliberate manual rewind back into it isn't fought. Skipping reuses the
+  //     seekable/progressive seek and runs on the absolute episode timeline.
+  const skipBtn = (() => {
+    const w = video.closest('.tv-player-video-wrap');
+    if (!w) return null;
+    let el = w.querySelector('.media-skip-btn');
+    if (!el) { el = document.createElement('button'); el.type = 'button'; el.className = 'media-skip-btn'; el.hidden = true; w.appendChild(el); }
+    return el;
+  })();
+  const skipAutoBtn = document.getElementById('skipAutoBtn');
+  const skippedAuto = new Set(); // segment ids already auto-skipped this session
+  let activeSkip = null;
+  let skipAuto = false;
+  try { skipAuto = localStorage.getItem('skip_auto') === '1'; } catch (e) {}
+
+  const seekToAbs = (target) => { if (isProgressive) { seekProgressiveTo(target); return; } try { video.currentTime = Math.max(0, target); } catch (e) {} };
+  const segId = (s) => s.start + ':' + s.end;
+  const skipLabel = (k) => (k === 'commercial' ? 'Skip commercial' : k === 'recap' ? 'Skip recap' : 'Skip intro');
+  function segmentAt(t) { for (const s of skipSegments) { if (t >= s.start && t < s.end) return s; } return null; }
+  function reflectSkipAuto() { if (skipAutoBtn) { skipAutoBtn.classList.toggle('is-on', skipAuto); skipAutoBtn.setAttribute('aria-pressed', skipAuto ? 'true' : 'false'); } }
+  function resetSkip() {
+    skippedAuto.clear();
+    activeSkip = null;
+    if (skipBtn) skipBtn.hidden = true;
+    if (skipAutoBtn) skipAutoBtn.hidden = skipSegments.length === 0;
+  }
+  function doSkip(seg) { seekToAbs(seg.end); if (skipBtn) skipBtn.hidden = true; activeSkip = null; }
+  function updateSkip() {
+    if (!skipBtn) return;
+    const seg = segmentAt(currentAbsTime());
+    if (!seg) { if (!skipBtn.hidden) skipBtn.hidden = true; activeSkip = null; return; }
+    if (skipAuto && !skippedAuto.has(segId(seg))) { skippedAuto.add(segId(seg)); doSkip(seg); return; }
+    if (activeSkip !== seg) { activeSkip = seg; skipBtn.textContent = skipLabel(seg.kind); skipBtn.hidden = false; }
+  }
+  if (skipBtn) skipBtn.addEventListener('click', () => { const seg = segmentAt(currentAbsTime()); if (seg) doSkip(seg); });
+  if (skipAutoBtn) skipAutoBtn.addEventListener('click', () => { skipAuto = !skipAuto; try { localStorage.setItem('skip_auto', skipAuto ? '1' : '0'); } catch (e) {} reflectSkipAuto(); updateSkip(); });
+  reflectSkipAuto();
+  video.addEventListener('timeupdate', updateSkip);
 
   // --- custom seek bar (B2) --- native <video controls> is dropped (its scrubber
   //     can't seek the progressive remux/burn-in streams — video.seekable==[0,0]),
