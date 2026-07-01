@@ -13,7 +13,7 @@ build:
 dist:
 	./build.sh
 
-# Build, package, and install Hespera on this machine (Debian/Ubuntu).
+# Install the prebuilt .deb for this machine (Debian/Ubuntu) — run `make dist` first.
 install:
 	./install.sh
 
