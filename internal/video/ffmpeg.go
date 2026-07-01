@@ -200,7 +200,9 @@ func buildSegment(ctx context.Context, src, tmp string, start, dur float64, maxH
 	if start <= 0 {
 		return runFFmpegSegment(ctx, SegmentArgs(src, tmp, start, dur, maxHeight, audioOrdinal, srcChannels), index)
 	}
-	atmp := tmp + ".aud.ts"
+	// Name the audio temp so PruneCache's ".seg*.tmp" sweep reaps it if a hard kill
+	// skips the defer (the defer covers normal completion, ctx timeout, and errors).
+	atmp := tmp + ".aud.tmp"
 	defer os.Remove(atmp)
 	if err := runFFmpegSegment(ctx, audioWarmArgs(src, atmp, start, dur, audioOrdinal, srcChannels), index); err != nil {
 		return err
@@ -251,6 +253,7 @@ func segmentMuxArgs(src, audioTmp, out string, start, dur float64, maxHeight int
 		"-fps_mode", "cfr",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
 		"-bf", "0",
+		"-threads", "3", // match SegmentArgs: cap the per-segment encode CPU spike
 		"-force_key_frames", "expr:eq(n,0)",
 		"-avoid_negative_ts", "disabled",
 		"-output_ts_offset", ss, "-muxdelay", "0", "-muxpreload", "0",
@@ -438,7 +441,9 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 // its boundary (the mpegts priming up-shift); fixes 50fps episodes not playing.
 // v3: capped encoder to -threads 3 to flatten the per-segment CPU spike (changes
 // the encoded bytes, so old all-cores segments must not mix with new ones).
-const segEncodeVersion = 3
+// v4: interior segments now use a two-pass audio warm-up (buildSegment) so joins
+// carry real audio instead of AAC priming — changes the audio bytes at every join.
+const segEncodeVersion = 4
 
 func hlsKey(src string, modTime time.Time, size int64, maxHeight, audioOrdinal int) string {
 	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d|v%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal, segEncodeVersion)))

@@ -48,6 +48,33 @@ func TestSegmentArgs(t *testing.T) {
 	}
 }
 
+func TestSegmentWarmupArgs(t *testing.T) {
+	// Pass 1: audio encoded from segWarmupLead (0.5s) before the boundary, for
+	// dur+lead, so the AAC encoder primes on the discarded lead-in.
+	warm := strings.Join(audioWarmArgs("/m/ep.mkv", "/cache/x/.seg00010.ts.tmp.aud.tmp", 60, 6, 0, 2), " ")
+	for _, want := range []string{"-ss 59.5", "-i /m/ep.mkv", "-t 6.5", "-c:a aac", "-ac 2", "-f mpegts", ".aud.tmp"} {
+		if !strings.Contains(warm, want) {
+			t.Fatalf("audioWarmArgs missing %q in: %s", want, warm)
+		}
+	}
+	if strings.Contains(warm, "libx264") {
+		t.Fatalf("audioWarmArgs must not encode video: %s", warm)
+	}
+	// Pass 2: stream-copy the warm audio (input -ss drops the lead-in + its priming),
+	// encode the video, place at the boundary.
+	mux := strings.Join(segmentMuxArgs("/m/ep.mkv", "/cache/x/aud.tmp", "/cache/x/seg00010.ts.tmp", 60, 6, 720), " ")
+	for _, want := range []string{
+		"-ss 0.5 -i /cache/x/aud.tmp", "-ss 60 -i /m/ep.mkv", "-t 6",
+		"-map 0:a:0", "-map 1:v:0", "-c:a copy", "-c:v libx264", "-bf 0", "-threads 3",
+		"-force_key_frames expr:eq(n,0)", "-avoid_negative_ts disabled", "-output_ts_offset 60",
+		"scale=-2:'min(ih,720)'",
+	} {
+		if !strings.Contains(mux, want) {
+			t.Fatalf("segmentMuxArgs missing %q in: %s", want, mux)
+		}
+	}
+}
+
 func TestSegmentArgsDialogueDownmix(t *testing.T) {
 	// 5.1 source (6ch): dialogue-forward pan replaces -ac 2 so centre-channel
 	// dialogue isn't buried 3 dB under the music when folded to stereo.
