@@ -83,3 +83,31 @@ func TestAbsentDataset(t *testing.T) {
 		t.Fatalf("WeeklyCharts on absent dataset = %v, want nil", got)
 	}
 }
+
+// TestYearChart derives the per-year "everything that charted" list from the
+// weekly grid: distinct songs, peak position (best weekly position seen), weeks
+// on chart, ordered by peak then weeks then title.
+func TestYearChart(t *testing.T) {
+	dir := buildFixture(t)
+	songs := YearChart(dir, 1968)
+	if len(songs) != 3 {
+		t.Fatalf("YearChart(1968) has %d songs, want 3 distinct", len(songs))
+	}
+	// Hey Jude charted both weeks at #1 → peak 1, weeks 2, and leads the list.
+	if songs[0].Title != "Hey Jude" || songs[0].Peak != 1 || songs[0].Weeks != 2 {
+		t.Fatalf("first = %+v, want Hey Jude peak=1 weeks=2", songs[0])
+	}
+	// Remaining two both peak at #2 for one week → tie broken by title (Fire < Harper).
+	if songs[1].Title != "Fire" || songs[1].Peak != 2 {
+		t.Fatalf("second = %+v, want Fire peak=2", songs[1])
+	}
+	if songs[2].Title != "Harper Valley P.T.A." || songs[2].Peak != 2 {
+		t.Fatalf("third = %+v, want Harper Valley P.T.A. peak=2", songs[2])
+	}
+}
+
+func TestYearChartAbsent(t *testing.T) {
+	if got := YearChart(t.TempDir(), 1968); got != nil {
+		t.Fatalf("YearChart on absent dataset = %v, want nil", got)
+	}
+}

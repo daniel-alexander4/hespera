@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -130,6 +131,59 @@ func WeeklyCharts(dataDir string, y int) []WeeklyChart {
 		return nil
 	}
 	return c.byYear[y]
+}
+
+// YearSong is one distinct song that appeared on the Hot 100 during a given
+// year, with the best position it reached and how many weekly charts it appeared
+// on that year.
+type YearSong struct {
+	Title  string `json:"t"`
+	Artist string `json:"a"`
+	Peak   int    `json:"p"` // best (lowest-numbered) weekly position that year
+	Weeks  int    `json:"w"` // distinct weekly charts it appeared on that year
+}
+
+// YearChart returns every distinct song that charted on the Hot 100 during year
+// y — the "everything that charted this year" list — ordered by peak position
+// (best first), ties broken by more weeks-on-chart then title. It is derived
+// entirely from the weekly grid (no extra data or licensing surface). Returns
+// nil when the year (or the dataset) is absent.
+func YearChart(dataDir string, y int) []YearSong {
+	weeks := WeeklyCharts(dataDir, y)
+	if len(weeks) == 0 {
+		return nil
+	}
+	idx := make(map[string]*YearSong, 1024)
+	order := make([]*YearSong, 0, 1024)
+	for _, wk := range weeks {
+		for _, e := range wk.Entries {
+			k := strings.ToLower(strings.TrimSpace(e.Title)) + "\x1f" + strings.ToLower(strings.TrimSpace(e.Artist))
+			s := idx[k]
+			if s == nil {
+				s = &YearSong{Title: e.Title, Artist: e.Artist, Peak: e.Pos}
+				idx[k] = s
+				order = append(order, s)
+			}
+			if e.Pos < s.Peak {
+				s.Peak = e.Pos
+			}
+			s.Weeks++
+		}
+	}
+	out := make([]YearSong, len(order))
+	for i, s := range order {
+		out[i] = *s
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Peak != out[j].Peak {
+			return out[i].Peak < out[j].Peak
+		}
+		if out[i].Weeks != out[j].Weeks {
+			return out[i].Weeks > out[j].Weeks
+		}
+		return out[i].Title < out[j].Title
+	})
+	return out
 }
 
 // Years returns the inclusive [min, max] year range covered by the dataset. ok
