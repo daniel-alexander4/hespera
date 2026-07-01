@@ -1556,6 +1556,12 @@ func (h *Handler) musicCompilations(w http.ResponseWriter, r *http.Request) {
 // whole library, and isn't skewed entirely toward the most-famous artists.
 const popularPerArtistLimit = 10
 
+// popularIncludeAllMaxTracks: an artist represented by this few tracks (or
+// fewer) in the library is one the user deliberately curated — every one of
+// their songs is included in the Most Popular shuffle regardless of popularity,
+// rather than dropping their popularity=0 (unmatched/obscure) tracks.
+const popularIncludeAllMaxTracks = 4
+
 // playerTrackSelect is the shared column list + joins for building a player
 // queue; callers append their own WHERE/ORDER/LIMIT. Column order matches
 // queryPlayerTracks' scan.
@@ -1597,14 +1603,20 @@ func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound boo
 	case "popular":
 		// Each artist's most popular songs (global ListenBrainz listen counts,
 		// filled by the match popularity phase), pooled: the top per-artist tracks
-		// across the library. Excludes popularity=0 (unknown/unmatched).
+		// across the library. A many-track artist contributes their top
+		// popularPerArtistLimit songs with popularity>0; an artist represented by
+		// <= popularIncludeAllMaxTracks songs is one the user curated, so ALL their
+		// tracks are pooled regardless of popularity.
 		libraryID := h.resolveMusicLibraryID(r)
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` JOIN (
-  SELECT id, ROW_NUMBER() OVER (PARTITION BY artist_id ORDER BY popularity DESC, id) AS rn
-  FROM music_tracks WHERE library_id=? AND popularity>0
+  SELECT id,
+    ROW_NUMBER() OVER (PARTITION BY artist_id ORDER BY popularity DESC, id) AS rn,
+    COUNT(*) OVER (PARTITION BY artist_id) AS artist_total
+  FROM music_tracks WHERE library_id=?
 ) pop ON pop.id=t.id
-WHERE pop.rn<=? ORDER BY t.popularity DESC, t.id`, libraryID, popularPerArtistLimit)
+WHERE pop.artist_total<=? OR (t.popularity>0 AND pop.rn<=?)
+ORDER BY t.popularity DESC, t.id`, libraryID, popularIncludeAllMaxTracks, popularPerArtistLimit)
 		q.Title = "Most Popular"
 	case "era":
 		libraryID := h.resolveMusicLibraryID(r)
