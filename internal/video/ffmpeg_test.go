@@ -201,6 +201,34 @@ func TestSetConcurrency(t *testing.T) {
 	}
 }
 
+func TestSetSegmentConcurrency(t *testing.T) {
+	defer SetSegmentConcurrency(0) // restore unlimited for other tests
+	SetSegmentConcurrency(1)
+	if cap(segmentSem) != 1 {
+		t.Fatalf("segment cap = %d, want 1", cap(segmentSem))
+	}
+	// The sub-cap serialises: a second acquire blocks until the first releases.
+	rel, err := acquireSegment(context.Background())
+	if err != nil {
+		t.Fatalf("first acquire: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := acquireSegment(ctx); err == nil {
+		t.Fatal("second acquire should block (cap 1) and time out while the first is held")
+	}
+	rel() // release → a slot is free again
+	if rel2, err := acquireSegment(context.Background()); err != nil {
+		t.Fatalf("acquire after release: %v", err)
+	} else {
+		rel2()
+	}
+	SetSegmentConcurrency(0)
+	if segmentSem != nil {
+		t.Fatal("limit 0 should disable the segment semaphore")
+	}
+}
+
 func TestPruneCache(t *testing.T) {
 	root := t.TempDir()
 	mk := func(name string, age time.Duration, size int) string {
