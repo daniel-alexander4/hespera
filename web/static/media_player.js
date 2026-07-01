@@ -54,6 +54,8 @@ function initMediaPlayer() {
   let isProgressive = false; // current stream is remux/burn-in (linear, seeks via ?start= reload)
   let reloading = false;     // a ?start= reload is in flight (re-entrancy guard for seeks)
   let skipSegments = [];     // intro/recap/commercial ranges (absolute timeline) from the session
+  const subBurnIn = new Set(); // subtitle ordinals the server burns in (bitmap subs) — these change the video stream
+  let recoverMediaDate = 0, recoverSwapDate = 0; // hls.js fatal-media-error recovery guards (anti-loop)
 
   const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
 
@@ -91,6 +93,36 @@ function initMediaPlayer() {
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, onReady);
+      // A fatal hls.js error (e.g. a transient MSE append/parse failure on a seek —
+      // CHUNK_DEMUXER_ERROR_APPEND_FAILED) otherwise leaves the pipeline idle and the
+      // screen black until a manual reload. Run the documented recovery: re-init the
+      // media on a media error, restart loading on a network error. Guard the media
+      // path against an infinite recover loop on a genuinely unplayable segment —
+      // recover once, then swap-audio-codec + recover, then give up with a message.
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (!data || !data.fatal) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          const now = Date.now();
+          if (now - recoverMediaDate > 3000) {
+            recoverMediaDate = now;
+            hls.recoverMediaError();
+          } else if (now - recoverSwapDate > 3000) {
+            recoverSwapDate = now;
+            hls.swapAudioCodec();
+            hls.recoverMediaError();
+          } else {
+            teardownHLS();
+            modeLabel.textContent = 'Playback error — reload to continue';
+          }
+          return;
+        }
+        teardownHLS();
+        modeLabel.textContent = 'Playback error — reload to continue';
+      });
     } else {
       // Direct play, remux, burn-in, native-HLS (Safari): the element loads the URL directly.
       video.src = url;
@@ -234,6 +266,7 @@ function initMediaPlayer() {
         const label = [s.language, s.title].filter(Boolean).join(' · ') || ('Subtitle ' + s.ordinal);
         o.textContent = s.text ? label : (label + ' · burn-in');
         subSelect.appendChild(o);
+        if (!s.text) subBurnIn.add(Number(s.ordinal)); // bitmap → burned into the video stream
       });
       document.getElementById('subPick').hidden = false;
     }
@@ -254,7 +287,7 @@ function initMediaPlayer() {
     addCaptionTrack(url);
   }
 
-  async function loadFromSession(aud, sub, seekTo) {
+  async function loadFromSession(aud, sub, seekTo, subtitleOnly) {
     currentAud = aud; currentSub = sub;
     let session;
     try {
@@ -267,6 +300,14 @@ function initMediaPlayer() {
     if (!session || !session.ok) { modeLabel.textContent = 'Unable to start playback'; return; }
 
     if (!selectsBuilt) buildSelects(session);
+    // A text-subtitle change is a sidecar swap — the video stream is byte-identical
+    // (the server only varies the URL for a burned-in bitmap sub). Reloading the
+    // whole pipeline here is pointless and, worse, the fresh-pipeline + immediate
+    // re-seek intermittently throws a fatal MSE append error → black screen. So
+    // swap only the <track> and leave playback untouched (mirrors the external-
+    // subtitle path). attachSource is still used for audio changes, burn-in subs,
+    // progressive seeks, and the initial load (all pass subtitleOnly falsy).
+    if (subtitleOnly) { attachSubtitle(session); return; }
     sessionDuration = session.duration_seconds || sessionDuration;
     skipSegments = session.skip_segments || [];
     resetSkip();
@@ -282,7 +323,14 @@ function initMediaPlayer() {
   // blur() after a pick so the <select> (which lives inside the auto-hiding
   // .media-overlay) doesn't keep :focus-visible and pin the controls open.
   if (audioSelect) audioSelect.addEventListener('change', () => { loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()); audioSelect.blur(); });
-  if (subSelect) subSelect.addEventListener('change', () => { loadFromSession(currentAud, parseInt(subSelect.value, 10) || 0, currentAbsTime()); subSelect.blur(); });
+  if (subSelect) subSelect.addEventListener('change', () => {
+    const newSub = parseInt(subSelect.value, 10) || 0;
+    // Reload the video stream only when burn-in is involved (entering or leaving a
+    // bitmap sub changes the stream); a text/off↔text/off change is a sidecar swap.
+    const reload = subBurnIn.has(newSub) || subBurnIn.has(currentSub);
+    loadFromSession(currentAud, newSub, currentAbsTime(), !reload);
+    subSelect.blur();
+  });
 
   // --- transport controls (focusable, so a TV remote in couch mode can seek;
   //     the native <video controls> scrubber isn't remote-reachable) ---
