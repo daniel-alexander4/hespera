@@ -1071,7 +1071,7 @@ func (h *Handler) musicArtistArtGET(w http.ResponseWriter, r *http.Request) {
 
 	var candidates []match.ArtistImageCandidate
 	if mbid != "" {
-		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
 		// Bound the fanart.tv/TheAudioDB lookups so this interactive GET can't hang
 		// on a slow provider; an empty result just renders the upload-only picker.
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
@@ -1131,7 +1131,7 @@ func (h *Handler) musicArtistArtPOST(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "artist has no MusicBrainz id", http.StatusBadRequest)
 			return
 		}
-		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
 		allowed := false
 		for _, c := range matcher.ArtistImageCandidates(r.Context(), mbid) {
 			if c.URL == artURL {
@@ -1326,7 +1326,7 @@ func (h *Handler) musicAlbumReassign(w http.ResponseWriter, r *http.Request) {
 	// Synchronously pull the cover for the new RG so it shows immediately.
 	// Non-fatal: the identity is corrected regardless, and the next Match's
 	// refetch-missing-art phase fills the cover if this network call fails.
-	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
 	if err := matcher.RefetchAlbumArt(r.Context(), albumID); err != nil {
 		slog.Warn("refetch album art after reassign failed", "album_id", albumID, "rg", rgMBID, "err", err)
 	}

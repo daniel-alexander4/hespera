@@ -21,11 +21,14 @@ type Matcher struct {
 	fanart  *FanartClient  // optional artist-image backfill; nil when no key
 	audiodb *AudioDBClient // optional artist bio/image backfill; nil when no key
 	lb      *LBClient      // ListenBrainz popularity (no key; shared MB limiter)
+	lastfm  *LastfmClient  // optional secondary popularity source; nil when no key
 }
 
-// New builds a matcher. fanartKey/audiodbKey are optional, user-supplied API
-// keys for the artist backfill providers — empty disables that provider.
-func New(db *sql.DB, dataDir, fanartKey, audiodbKey string) *Matcher {
+// New builds a matcher. fanartKey/audiodbKey/lastfmKey are optional,
+// user-supplied API keys — empty disables that provider. lastfmKey adds Last.fm
+// play counts as a secondary popularity source (filling tracks ListenBrainz
+// missed).
+func New(db *sql.DB, dataDir, fanartKey, audiodbKey, lastfmKey string) *Matcher {
 	// One shared limiter so MusicBrainz and Cover Art Archive requests stay
 	// within a single 1 req/sec MetaBrainz-family budget. The backfill providers
 	// are separate hosts with their own limiters (built inside their clients).
@@ -38,6 +41,7 @@ func New(db *sql.DB, dataDir, fanartKey, audiodbKey string) *Matcher {
 		fanart:  NewFanartClient(fanartKey),
 		audiodb: NewAudioDBClient(audiodbKey),
 		lb:      NewLBClient(limiter),
+		lastfm:  NewLastfmClient(lastfmKey),
 	}
 }
 
@@ -430,17 +434,19 @@ func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) err
 	return nil
 }
 
-// fetchPopularity fills music_tracks.popularity from ListenBrainz global listen
-// counts. For each artist with a resolved MBID it fetches the artist's
-// top-recordings (ranked by listen count), then credits each local track of
-// that artist whose normalized title exactly matches a recording name with that
-// recording's listen count. Tracks with no match keep popularity 0 (excluded
-// from the Most Popular playlist). Best-effort and idempotent — re-runs each
-// Match, overwriting with the latest counts. Mirrors enrichArtists' shape:
-// drain artists before the network loop, ctx-cancellable, 500ms inter-artist gap.
+// fetchPopularity fills music_tracks.popularity. The primary source is
+// ListenBrainz global listen counts: for each artist with a resolved MBID it
+// fetches the artist's top-recordings (ranked by listen count) and credits each
+// local track whose normalized title matches. When a Last.fm key is configured
+// (m.lastfm != nil), Last.fm play counts are a secondary source that fills only
+// the tracks ListenBrainz left at 0 (ListenBrainz stays primary). Tracks with no
+// match from either keep popularity 0 (excluded from the Most Popular playlist,
+// unless their artist is in the <=4-track curated set). Best-effort and
+// idempotent — re-runs each Match. Mirrors enrichArtists' shape: drain artists
+// before the network loop, ctx-cancellable, 500ms inter-artist gap.
 func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) error {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT id, musicbrainz_id
+		SELECT id, musicbrainz_id, name
 		FROM music_artists
 		WHERE library_id = ?
 		  AND musicbrainz_id != ''
@@ -453,11 +459,12 @@ func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) e
 	type artistRow struct {
 		id   int64
 		mbid string
+		name string
 	}
 	var artists []artistRow
 	for rows.Next() {
 		var a artistRow
-		if err := rows.Scan(&a.id, &a.mbid); err != nil {
+		if err := rows.Scan(&a.id, &a.mbid, &a.name); err != nil {
 			rows.Close()
 			return err
 		}
@@ -478,39 +485,63 @@ func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) e
 		default:
 		}
 
-		recs, ok := m.lb.TopRecordings(ctx, a.mbid)
-		if ok && len(recs) > 0 {
-			// Normalized recording name → highest listen count for that name.
-			byName := make(map[string]int, len(recs))
-			for _, r := range recs {
-				key := NormalizeForDedup(r.Name)
-				if key == "" {
-					continue
-				}
-				if r.ListenCount > byName[key] {
-					byName[key] = r.ListenCount
+		// Load this artist's local tracks once — both popularity sources credit
+		// them. norm = normalized title for matching; pop = current stored value.
+		trackRows, terr := m.db.QueryContext(ctx,
+			"SELECT id, title, popularity FROM music_tracks WHERE library_id=? AND artist_id=?", libraryID, a.id)
+		if terr == nil {
+			type lt struct {
+				id   int64
+				norm string
+				pop  int
+			}
+			var locals []lt
+			for trackRows.Next() {
+				var t lt
+				var title string
+				if err := trackRows.Scan(&t.id, &title, &t.pop); err == nil {
+					t.norm = NormalizeForDedup(title)
+					locals = append(locals, t)
 				}
 			}
-			// Credit each of this artist's local tracks whose title matches.
-			trackRows, terr := m.db.QueryContext(ctx,
-				"SELECT id, title FROM music_tracks WHERE library_id=? AND artist_id=?", libraryID, a.id)
-			if terr == nil {
-				type lt struct {
-					id    int64
-					title string
-				}
-				var locals []lt
-				for trackRows.Next() {
-					var t lt
-					if err := trackRows.Scan(&t.id, &t.title); err == nil {
-						locals = append(locals, t)
+			trackRows.Close()
+
+			credited := make(map[int64]bool, len(locals))
+
+			// Primary: ListenBrainz global listen counts (by artist MBID).
+			if recs, ok := m.lb.TopRecordings(ctx, a.mbid); ok && len(recs) > 0 {
+				byName := make(map[string]int, len(recs))
+				for _, r := range recs {
+					key := NormalizeForDedup(r.Name)
+					if key == "" {
+						continue
+					}
+					if r.ListenCount > byName[key] {
+						byName[key] = r.ListenCount
 					}
 				}
-				trackRows.Close()
 				for _, t := range locals {
-					if c, hit := byName[NormalizeForDedup(t.title)]; hit {
+					if c, hit := byName[t.norm]; hit {
 						_, _ = m.db.ExecContext(ctx,
 							"UPDATE music_tracks SET popularity=? WHERE id=?", c, t.id)
+						credited[t.id] = true
+					}
+				}
+			}
+
+			// Secondary (optional): Last.fm play counts fill tracks ListenBrainz
+			// left at 0 — ListenBrainz stays primary (a track it credited, or that
+			// already carries a count from a prior run, is left alone).
+			if m.lastfm != nil {
+				if byName, ok := m.lastfm.TopTracks(ctx, a.name); ok {
+					for _, t := range locals {
+						if credited[t.id] || t.pop > 0 {
+							continue
+						}
+						if c, hit := byName[t.norm]; hit && c > 0 {
+							_, _ = m.db.ExecContext(ctx,
+								"UPDATE music_tracks SET popularity=? WHERE id=?", c, t.id)
+						}
 					}
 				}
 			}

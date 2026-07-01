@@ -50,7 +50,7 @@ func (h *Handler) musicArtistDisambiguateGET(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
 	// Bound the MusicBrainz round-trip so this interactive GET can't hang the page
 	// on a slow/unreachable provider (it already degrades to a retry on error).
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
@@ -136,7 +136,7 @@ func (h *Handler) musicArtistDisambiguatePOST(w http.ResponseWriter, r *http.Req
 	// immediately. Non-fatal on error — the identity is already corrected, and the
 	// next Match run's enrichment fills the gaps (it re-enriches any artist whose
 	// bio/art is empty without re-resolving the now-set MBID).
-	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()))
+	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
 	if meta, err := matcher.ReEnrichArtist(r.Context(), mbid); err != nil {
 		slog.Warn("re-enrich artist failed", "artist_id", artistID, "mbid", mbid, "err", err)
 	} else {

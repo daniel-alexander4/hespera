@@ -161,6 +161,6 @@ func writebackAlbumTracks(ctx context.Context, db *sql.DB, albumID int64) error 
 // RunTagWritebackForLibrary creates a Matcher and runs tag writeback.
 // This is a convenience for use as a job executor.
 func RunTagWritebackForLibrary(db *sql.DB, dataDir string) func(ctx context.Context, jobID, libraryID int64) error {
-	m := New(db, dataDir, "", "") // writeback doesn't enrich artists; no backfill keys needed
+	m := New(db, dataDir, "", "", "") // writeback doesn't enrich artists; no backfill keys needed
 	return m.RunTagWriteback
 }

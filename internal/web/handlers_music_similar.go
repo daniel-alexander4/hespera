@@ -20,7 +20,7 @@ func (h *Handler) enqueueMusicFetch(ctx context.Context, dedupeKey, jobType stri
 	if _, busy := h.metaFetch.LoadOrStore(dedupeKey, true); busy {
 		return
 	}
-	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx))
+	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
 	_, err := h.jobs.Enqueue(jobType, 0, "system", func(jctx context.Context, jobID, libID int64) error {
 		defer h.metaFetch.Delete(dedupeKey)
 		return run(jctx, matcher)

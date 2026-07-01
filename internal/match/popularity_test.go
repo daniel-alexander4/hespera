@@ -74,3 +74,60 @@ func TestFetchPopularity(t *testing.T) {
 		t.Errorf("no-MBID artist's track popularity = %d, want 0 (never fetched)", got)
 	}
 }
+
+// TestFetchPopularityLastfmBlend verifies the optional Last.fm layer fills only
+// the tracks ListenBrainz left at 0, and never overrides an LB-credited count.
+func TestFetchPopularityLastfmBlend(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	lbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"recording_name":"Smoke on the Water","total_listen_count":900000}]`))
+	}))
+	defer lbSrv.Close()
+	lfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Last.fm knows the deep cut LB missed, and also Smoke (lower count) —
+		// which must NOT overwrite LB's value.
+		_, _ = w.Write([]byte(`{"toptracks":{"track":[
+			{"name":"Maybe I'm a Leo","playcount":"7777"},
+			{"name":"Smoke on the Water","playcount":"3"}
+		]}}`))
+	}))
+	defer lfSrv.Close()
+
+	m := &Matcher{
+		db:     db,
+		lb:     &LBClient{client: lbSrv.Client(), baseURL: lbSrv.URL, limiter: newRateLimiter(0)},
+		lastfm: &LastfmClient{client: lfSrv.Client(), apiKey: "k", baseURL: lfSrv.URL, limiter: newRateLimiter(0)},
+	}
+
+	libRes, _ := db.Exec(`INSERT INTO libraries (name,type,root_path) VALUES ('M','music','/m')`)
+	libID, _ := libRes.LastInsertId()
+	arRes, _ := db.Exec(`INSERT INTO music_artists (library_id,name,musicbrainz_id) VALUES (?,'Deep Purple','mbid-dp')`, libID)
+	arID, _ := arRes.LastInsertId()
+	albRes, _ := db.Exec(`INSERT INTO music_albums (library_id,artist_id,album_artist_id,title,year) VALUES (?,?,?,'Machine Head',1972)`, libID, arID, arID)
+	albID, _ := albRes.LastInsertId()
+	track := func(title, path string) int64 {
+		res, _ := db.Exec(`INSERT INTO music_tracks (library_id,artist_id,album_id,title,abs_path) VALUES (?,?,?,?,?)`,
+			libID, arID, albID, title, path)
+		id, _ := res.LastInsertId()
+		return id
+	}
+	smoke := track("Smoke On The Water", "/m/1.mp3")
+	deepCut := track("Maybe I'm a Leo", "/m/2.mp3") // LB misses it; Last.fm fills it
+
+	if err := m.fetchPopularity(ctx, 0, libID); err != nil {
+		t.Fatalf("fetchPopularity: %v", err)
+	}
+	pop := func(id int64) int {
+		var p int
+		_ = db.QueryRow(`SELECT popularity FROM music_tracks WHERE id=?`, id).Scan(&p)
+		return p
+	}
+	if got := pop(smoke); got != 900000 {
+		t.Errorf("Smoke popularity = %d, want 900000 (LB stays primary, Last.fm must not override)", got)
+	}
+	if got := pop(deepCut); got != 7777 {
+		t.Errorf("deep cut popularity = %d, want 7777 (filled by Last.fm)", got)
+	}
+}

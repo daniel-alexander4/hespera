@@ -79,6 +79,18 @@ func (h *Handler) effectiveAudioDBKey(ctx context.Context) string {
 	return h.cfg.TheAudioDBAPIKey
 }
 
+// effectiveLastfmKey resolves the optional Last.fm API key the same way: the
+// app_settings (UI) value wins, else the env default. Empty disables the Last.fm
+// popularity blend (ListenBrainz alone fills Most Popular).
+func (h *Handler) effectiveLastfmKey(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='lastfm_api_key'").Scan(&v)
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	return h.cfg.LastfmAPIKey
+}
+
 // effectiveOpenSubtitlesKey resolves the optional OpenSubtitles API key the same
 // way: the app_settings (UI) value wins, else the env default. Empty disables
 // the on-demand TV subtitle search.
@@ -189,6 +201,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		tmdbCfg, tmdbSrc, tmdbMask := h.keyStatus(ctx, "tmdb_api_key", h.cfg.TMDBAPIKey, h.effectiveTMDBKey(ctx))
 		fanCfg, fanSrc, fanMask := h.keyStatus(ctx, "fanarttv_api_key", h.cfg.FanartTVAPIKey, h.effectiveFanartKey(ctx))
 		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
+		lfmCfg, lfmSrc, lfmMask := h.keyStatus(ctx, "lastfm_api_key", h.cfg.LastfmAPIKey, h.effectiveLastfmKey(ctx))
 		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
 		ytCfg, ytSrc, ytMask := h.keyStatus(ctx, "youtube_api_key", h.cfg.YouTubeAPIKey, h.effectiveYouTubeKey(ctx))
 		h.render(w, "settings_apikeys.html", map[string]any{
@@ -202,6 +215,9 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"AudioDBConfigured":       adbCfg,
 			"AudioDBSource":           adbSrc,
 			"AudioDBMasked":           adbMask,
+			"LastfmConfigured":        lfmCfg,
+			"LastfmSource":            lfmSrc,
+			"LastfmMasked":            lfmMask,
 			"OpenSubtitlesConfigured": osCfg,
 			"OpenSubtitlesSource":     osSrc,
 			"OpenSubtitlesMasked":     osMask,
@@ -247,7 +263,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
 			return
 		}
-		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key"} {
+		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "lastfm_api_key"} {
 			if _, ok := r.Form[field]; ok {
 				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
 					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
@@ -638,7 +654,7 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			// Chain a music_match job after scan completes.
-			matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx))
+			matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
 			_, _ = h.jobs.Enqueue("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 				return matcher.RunMusicMatch(ctx, mJID, mLibID)
 			})
