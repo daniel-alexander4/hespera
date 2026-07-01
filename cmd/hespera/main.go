@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -26,6 +27,14 @@ import (
 var version = "dev"
 
 func main() {
+	// --version reports the build and exits, before any startup. Without this the
+	// flag is ignored and the app boots (window + random-port server) — a footgun
+	// for anyone running `hespera --version` to check the install.
+	if hasFlag("--version") || hasFlag("-version") {
+		fmt.Println("hespera", version)
+		return
+	}
+
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.Info("starting", "version", version)
 
