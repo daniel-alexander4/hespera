@@ -391,6 +391,7 @@ func (h *Handler) streamMovieSubtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(vtt)
 }
 
