@@ -141,20 +141,17 @@ they only parse filenames/tags and probe streams. Matchers
   misses.
 
 ### Discovery caches (NOT a source of truth)
-The "Rediscover a Year" feature reconciles *onto* the library and owns no media
-data:
-- **No tables.** The year's week-by-week Hot 100 comes entirely from the
-  embedded `internal/billboard` weekly grid (factual chart data, read-only), and
-  the page is built at view time — ownership by reconciling each charting song
-  against `music_tracks` (normalized title+artist), debut/order from the grid.
-  Nothing is persisted. (The former `year_journeys`/`year_journey_items` build
-  cache was retired and is dropped by a migration.)
+The **Top 100** card on the Playlists page (`/music/playlists`) owns no media
+data — it surfaces chart facts and plays them from YouTube:
+- **No tables.** The per-year "everything that charted that year" list is
+  derived at view time from the runtime-fetched `internal/billboard` weekly grid
+  (factual chart data, read-only) via `billboard.YearChart`. Nothing is
+  persisted. (The retired week-by-week "Rediscover a Year" page and its
+  `year_journeys`/`year_journey_items` build cache were dropped by a migration;
+  the old `itunes_art` cover cache and `internal/itunes` package were removed
+  with it — the orphaned `itunes_art` table is harmless leftover schema.)
 - `youtube_lookups` (`query_key` PK) — caches song→YouTube videoId resolutions
-  (hits and misses) for in-app playback of un-owned songs; also supplies a
-  fallback un-owned chart-row thumbnail. Pure cache.
-- `itunes_art` (`query_key` PK) — caches song→iTunes cover-art URL (hits and
-  misses, keyed by the same normalized title+artist) for the un-owned chart-row
-  cover, filled by a keyless background backfill. Pure cache.
+  (hits and misses) for Top-100 playback (popout iframe + in-app). Pure cache.
 
 These reconcile *onto* the library; the library never reads from or depends on
 them.
