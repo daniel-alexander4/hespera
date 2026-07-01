@@ -118,15 +118,36 @@ function initMediaPlayer() {
   let captionTrack = null; // the sidecar TextTrack we're painting, if any
   let lastCueKey = '';     // change-detection so we only touch the DOM on a real change
 
+  // The active cue(s) are computed from video.currentTime against the parsed cue
+  // list — NOT read from captionTrack.activeCues. currentTime is the media
+  // presentation clock the audio/video ride (the HLS segments are stamped at true
+  // episode time via -output_ts_offset), so anchoring display to it keeps
+  // subtitles locked to the dialogue. The browser's own TextTrack cue scheduler
+  // (activeCues/cuechange) can drift ahead of that clock over a long MSE/HLS
+  // session — subtitles creeping earlier and earlier until you toggle them — and
+  // computing the active set ourselves sidesteps it entirely. A linear scan of a
+  // whole episode's cues a few times a second is trivial.
+  function computeActiveCues() {
+    const all = captionTrack && captionTrack.cues;
+    if (!all || !all.length) return [];
+    const t = video.currentTime;
+    const out = [];
+    for (let i = 0; i < all.length; i++) {
+      const c = all[i];
+      if (c.startTime <= t && t < c.endTime) out.push(c);
+    }
+    return out;
+  }
+
   function renderActiveCues() {
     if (!captions) return;
-    const cues = (captionTrack && captionTrack.activeCues) ? captionTrack.activeCues : null;
+    const cues = computeActiveCues();
     let key = '';
-    if (cues) for (let i = 0; i < cues.length; i++) key += cues[i].startTime + '|' + cues[i].text + '\n';
+    for (let i = 0; i < cues.length; i++) key += cues[i].startTime + '|' + cues[i].text + '\n';
     if (key === lastCueKey) return;
     lastCueKey = key;
     captions.textContent = '';
-    if (!cues || cues.length === 0) { captions.hidden = true; return; }
+    if (cues.length === 0) { captions.hidden = true; return; }
     for (let i = 0; i < cues.length; i++) {
       const line = document.createElement('div');
       line.className = 'media-caption-line';
@@ -354,10 +375,33 @@ function initMediaPlayer() {
     renderScrub(dur > 0 ? currentAbsTime() / dur : 0, currentAbsTime());
   }
   video.addEventListener('timeupdate', updateScrubFromPlayback);
-  // Backstop the cuechange-driven caption render in case an event is missed during
-  // an MSE rebuffer/seek; renderActiveCues no-ops when the active set is unchanged.
+  // Drive the caption render from the media clock. renderActiveCues recomputes the
+  // active cue from video.currentTime, so timeupdate (~4×/s) keeps it locked to the
+  // dialogue; cuechange (in addCaptionTrack) is kept only as an extra, boundary-
+  // precise trigger — even a drifted cuechange just recomputes against currentTime.
+  // renderActiveCues no-ops when the active set is unchanged.
   video.addEventListener('timeupdate', renderActiveCues);
   video.addEventListener('loadedmetadata', updateScrubFromPlayback);
+
+  // --- ?subdebug=1: opt-in subtitle-sync diagnostics (off by default, no overhead
+  //     when absent). Logs, once a second, the media clock vs our currentTime-
+  //     computed active cue vs the browser's own activeCues — so `drift` (browser −
+  //     ours) reveals the TextTrack scheduler creeping ahead over a long session.
+  let subDebugTimer = null;
+  if (new URLSearchParams(location.search).get('subdebug') === '1') {
+    subDebugTimer = setInterval(() => {
+      const comp = computeActiveCues();
+      const compStart = comp.length ? +comp[0].startTime.toFixed(3) : null;
+      const ac = captionTrack && captionTrack.activeCues;
+      const browserStart = (ac && ac.length) ? +ac[0].startTime.toFixed(3) : null;
+      const bufEnd = video.buffered.length ? +video.buffered.end(video.buffered.length - 1).toFixed(2) : null;
+      console.log('[subdebug] ' + JSON.stringify({
+        t: +video.currentTime.toFixed(3), computedCueStart: compStart, browserCueStart: browserStart,
+        drift: (compStart != null && browserStart != null) ? +(browserStart - compStart).toFixed(3) : null,
+        bufEnd: bufEnd, paused: video.paused,
+      }));
+    }, 1000);
+  }
 
   function fracFromEvent(e) {
     if (!scrubber) return 0;
@@ -638,6 +682,7 @@ function initMediaPlayer() {
     video.pause();
     teardownHLS();
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
+    if (subDebugTimer) clearInterval(subDebugTimer);
     window.removeEventListener('beforeunload', onBeforeUnload);
     video.removeAttribute('src');
     try { video.load(); } catch (e) {}
