@@ -23,5 +23,3 @@ sudo apt-get install -y -qq -o APT::Sandbox::User=root "./$DEB"
 # Refresh the desktop + icon caches so the menu entry and icon appear now.
 sudo update-desktop-database >/dev/null 2>&1 || true
 sudo gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1 || true
-
-echo "installed — launch 'Hespera' from the app menu or run 'hespera'."
