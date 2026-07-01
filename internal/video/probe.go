@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -48,8 +49,17 @@ func acquire(ctx context.Context) (func(), error) {
 }
 
 type ProbeResult struct {
-	Format  ProbeFormat   `json:"format"`
-	Streams []ProbeStream `json:"streams"`
+	Format   ProbeFormat    `json:"format"`
+	Streams  []ProbeStream  `json:"streams"`
+	Chapters []ProbeChapter `json:"chapters,omitempty"`
+}
+
+// ProbeChapter is an embedded chapter marker (start/end in seconds + its title).
+// Powers marker-based intro/recap/commercial skipping (skipsegments.go).
+type ProbeChapter struct {
+	StartSec float64 `json:"start_sec"`
+	EndSec   float64 `json:"end_sec"`
+	Title    string  `json:"title"`
 }
 
 type ProbeFormat struct {
@@ -87,9 +97,18 @@ type rawProbeStream struct {
 	} `json:"disposition"`
 }
 
+type rawProbeChapter struct {
+	StartTime string `json:"start_time"`
+	EndTime   string `json:"end_time"`
+	Tags      struct {
+		Title string `json:"title"`
+	} `json:"tags"`
+}
+
 type rawProbeResult struct {
-	Format  ProbeFormat      `json:"format"`
-	Streams []rawProbeStream `json:"streams"`
+	Format   ProbeFormat       `json:"format"`
+	Streams  []rawProbeStream  `json:"streams"`
+	Chapters []rawProbeChapter `json:"chapters"`
 }
 
 func Probe(ctx context.Context, filePath string) (*ProbeResult, error) {
@@ -107,6 +126,7 @@ func Probe(ctx context.Context, filePath string) (*ProbeResult, error) {
 		"-print_format", "json",
 		"-show_format",
 		"-show_streams",
+		"-show_chapters",
 		filePath,
 	)
 	out, err := cmd.Output()
@@ -138,6 +158,14 @@ func parseProbeJSON(data []byte) (*ProbeResult, error) {
 			Title:     s.Tags.Title,
 			IsDefault: s.Disposition.Default == 1,
 		}
+	}
+	for _, c := range raw.Chapters {
+		start, err1 := strconv.ParseFloat(c.StartTime, 64)
+		end, err2 := strconv.ParseFloat(c.EndTime, 64)
+		if err1 != nil || err2 != nil || end <= start {
+			continue
+		}
+		result.Chapters = append(result.Chapters, ProbeChapter{StartSec: start, EndSec: end, Title: c.Tags.Title})
 	}
 	return result, nil
 }

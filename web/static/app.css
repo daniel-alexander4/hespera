@@ -474,6 +474,18 @@ body::before {
   border-color: var(--accent-hover);
   color: var(--text-on-accent);
 }
+/* Auto-skip toggle shares the boost button's solid-accent "on" treatment. */
+#skipAutoBtn.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+#skipAutoBtn.is-on:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--text-on-accent);
+}
 
 /* Forms */
 .form-card {
@@ -1511,6 +1523,28 @@ body::before {
   white-space: pre-wrap;
 }
 .media-caption-line + .media-caption-line { margin-top: 0.2em; }
+
+/* "Skip intro/recap/commercial" button — floats over the lower-right of the video
+   (above the controls bar; drops with it when the controls auto-hide) and stays
+   visible whether or not the controls are showing, like Netflix's Skip Intro. */
+.media-skip-btn {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 6rem;
+  z-index: 3;
+  padding: 0.55rem 1.1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: bottom 0.25s ease, background 0.15s ease;
+}
+.media-skip-btn:hover,
+.media-skip-btn:focus-visible { background: rgba(0, 0, 0, 0.92); border-color: #fff; }
+.tv-player-video-wrap.controls-hidden .media-skip-btn { bottom: 1.5rem; }
 
 /* Controls overlay the video's lower edge and auto-hide on inactivity (driven by
    media_player.js's .controls-hidden toggle), so they're reachable in fullscreen
