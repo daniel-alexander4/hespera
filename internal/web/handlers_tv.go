@@ -864,52 +864,40 @@ WHERE i.series_id = ? AND i.status = 'matched'
 // ~19s to ~398s into the episode (verified against the real season).
 const introDetectWindowSec = 600.0
 
-// tvSeriesDetectIntros fingerprints a series' episodes per season and stores the
-// cross-episode-matched intro range for each (the marker-less detection source behind
-// skip-intro, via internal/introskip). On-demand, background, reuses the live-job badge.
-func (h *Handler) tvSeriesDetectIntros(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		httpError(w, 400, "bad request", "parse form failed", "handler", "tvSeriesDetectIntros", "err", err)
-		return
-	}
-	seriesID := strings.TrimSpace(r.FormValue("series_id"))
-	if _, e := strconv.Atoi(seriesID); e != nil {
-		http.Error(w, "invalid series_id", 400)
-		return
-	}
-	if !video.ChromaprintAvailable() {
-		http.Error(w, "intro detection needs an ffmpeg built with chromaprint", http.StatusServiceUnavailable)
-		return
-	}
+// introEpisode is one matched episode considered for intro fingerprinting.
+type introEpisode struct {
+	fileID  int64
+	absPath string
+	season  int
+}
 
-	type epRow struct {
-		fileID  int64
-		absPath string
-		season  int
-	}
-	rows, err := h.db.QueryContext(r.Context(), `
+// gatherIntroSeasons groups a series' matched episodes by season (limited to one
+// season when seasonFilter > 0), returning the library id and the number of
+// episodes that will actually be fingerprinted — only seasons with >= 2 episodes,
+// since cross-episode matching needs at least a pair. total == 0 = nothing to detect.
+func (h *Handler) gatherIntroSeasons(ctx context.Context, seriesID string, seasonFilter int) (map[int][]introEpisode, int64, int, error) {
+	q := `
 SELECT f.id, f.abs_path, f.library_id, i.season_number
 FROM tv_series_files f
 JOIN tv_series_identities i ON i.file_id = f.id
-WHERE i.series_id = ? AND i.status = 'matched'
-`, seriesID)
+WHERE i.series_id = ? AND i.status = 'matched'`
+	args := []any{seriesID}
+	if seasonFilter > 0 {
+		q += ` AND i.season_number = ?`
+		args = append(args, seasonFilter)
+	}
+	rows, err := h.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		httpError(w, 500, "internal server error", "db query failed", "handler", "tvSeriesDetectIntros", "err", err)
-		return
+		return nil, 0, 0, err
 	}
 	defer rows.Close()
 	var libraryID int64
-	bySeason := map[int][]epRow{}
+	bySeason := map[int][]introEpisode{}
 	for rows.Next() {
-		var e epRow
+		var e introEpisode
 		var lib int64
 		if err := rows.Scan(&e.fileID, &e.absPath, &lib, &e.season); err != nil {
-			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeriesDetectIntros", "err", err)
-			return
+			return nil, 0, 0, err
 		}
 		if libraryID == 0 {
 			libraryID = lib
@@ -919,25 +907,46 @@ WHERE i.series_id = ? AND i.status = 'matched'
 		}
 	}
 	if err := rows.Err(); err != nil {
-		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvSeriesDetectIntros", "err", err)
-		return
+		return nil, 0, 0, err
 	}
-	// Detection needs at least two episodes in a season to cross-match.
 	total := 0
 	for _, eps := range bySeason {
 		if len(eps) >= 2 {
 			total += len(eps)
 		}
 	}
-	if libraryID == 0 || total == 0 {
-		http.Error(w, "need at least two matched episodes in a season to detect intros", 404)
-		return
-	}
+	return bySeason, libraryID, total, nil
+}
 
-	jobID, err := h.jobs.Enqueue("intro_detect", libraryID, "user", func(ctx context.Context, jID, libID int64) error {
+// introMarkerKey is the once-per-(series,season) marker that gates lazy auto intro
+// detection — a row in tv_series_metadata_cache, like the cast/backdrop markers.
+// Written when the job finishes a season, so detection never re-runs it; an
+// interrupted job leaves no marker and is retried on the next play.
+func introMarkerKey(seriesID string, season int) string {
+	return fmt.Sprintf("show:%s:introskip:s%d", seriesID, season)
+}
+
+// enqueueIntroDetect background-enqueues the cross-episode intro-detection job for
+// a whole series, or one season when seasonFilter > 0 (the lazy on-play path). It
+// returns the job id, the number of episodes to fingerprint (0 = nothing to detect,
+// no job enqueued), and the library id. dedupeKey, when set, is the in-memory
+// metaFetch key cleared when the job ends. Fingerprint rides the shared ffmpeg
+// concurrency gate, so detection yields to live transcode/probe work.
+func (h *Handler) enqueueIntroDetect(ctx context.Context, seriesID string, seasonFilter int, createdBy, dedupeKey string) (int64, int, int64, error) {
+	bySeason, libraryID, total, err := h.gatherIntroSeasons(ctx, seriesID, seasonFilter)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if libraryID == 0 || total == 0 {
+		return 0, 0, libraryID, nil
+	}
+	jobID, err := h.jobs.Enqueue("intro_detect", libraryID, createdBy, func(ctx context.Context, jID, libID int64) error {
+		if dedupeKey != "" {
+			defer h.metaFetch.Delete(dedupeKey)
+		}
 		_, _ = h.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", total, jID)
 		done := 0
-		for _, eps := range bySeason {
+		for season, eps := range bySeason {
 			if len(eps) < 2 {
 				continue
 			}
@@ -968,15 +977,79 @@ ON CONFLICT(file_id, kind, source) DO UPDATE SET start_sec=excluded.start_sec, e
 					slog.Warn("intro segment upsert", "file_id", fid, "err", derr)
 				}
 			}
+			// Mark this season detected so the lazy on-play path never re-runs it.
+			_, _ = h.db.ExecContext(ctx, `
+INSERT INTO tv_series_metadata_cache (entity_key, lang, payload_json, fetched_at)
+VALUES (?, 'en', '{}', datetime('now'))
+ON CONFLICT(entity_key, lang) DO UPDATE SET fetched_at=excluded.fetched_at`,
+				introMarkerKey(seriesID, season))
 		}
 		return nil
 	})
+	return jobID, total, libraryID, err
+}
+
+// maybeAutoDetectIntros lazily kicks off intro detection for the season of the
+// episode being played — once, in the background — so skip segments populate
+// without the manual "Detect intros" button. It's gentle on I/O: gated by a
+// persistent per-season marker (plus an in-memory dedupe for the in-flight
+// window), scoped to the played season only, and a no-op without chromaprint, so
+// only the seasons you actually watch get fingerprinted, and only once.
+func (h *Handler) maybeAutoDetectIntros(ctx context.Context, fileID int64) {
+	if !video.ChromaprintAvailable() {
+		return
+	}
+	var seriesID string
+	var season int
+	if err := h.db.QueryRowContext(ctx,
+		`SELECT series_id, season_number FROM tv_series_identities WHERE file_id = ? AND status = 'matched'`,
+		fileID).Scan(&seriesID, &season); err != nil || seriesID == "" {
+		return
+	}
+	if h.metaMarkerExists(ctx, introMarkerKey(seriesID, season)) {
+		return
+	}
+	dedupe := "introdetect:" + introMarkerKey(seriesID, season)
+	if _, busy := h.metaFetch.LoadOrStore(dedupe, true); busy {
+		return
+	}
+	if _, total, _, err := h.enqueueIntroDetect(ctx, seriesID, season, "system", dedupe); err != nil || total == 0 {
+		h.metaFetch.Delete(dedupe) // nothing enqueued — release the dedupe key
+	}
+}
+
+// tvSeriesDetectIntros is the manual "Detect intros" button: fingerprints the
+// whole series now (the lazy per-season path runs the same job automatically on
+// play). On-demand, background, reuses the live-job badge.
+func (h *Handler) tvSeriesDetectIntros(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvSeriesDetectIntros", "err", err)
+		return
+	}
+	seriesID := strings.TrimSpace(r.FormValue("series_id"))
+	if _, e := strconv.Atoi(seriesID); e != nil {
+		http.Error(w, "invalid series_id", 400)
+		return
+	}
+	if !video.ChromaprintAvailable() {
+		http.Error(w, "intro detection needs an ffmpeg built with chromaprint", http.StatusServiceUnavailable)
+		return
+	}
+	jobID, total, libraryID, err := h.enqueueIntroDetect(r.Context(), seriesID, 0, "user", "")
 	if err != nil {
 		if errors.Is(err, jobs.ErrQueueFull) {
 			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "tvSeriesDetectIntros", "err", err)
 			return
 		}
 		httpError(w, 500, "internal server error", "enqueue intro detect failed", "handler", "tvSeriesDetectIntros", "err", err)
+		return
+	}
+	if total == 0 {
+		http.Error(w, "need at least two matched episodes in a season to detect intros", 404)
 		return
 	}
 	if requestWantsJSON(r) {

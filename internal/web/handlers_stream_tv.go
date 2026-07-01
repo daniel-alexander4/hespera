@@ -168,6 +168,10 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 		resp.SkipSegments = skipSegmentsFor(&probe, "")
 	}
 	resp.SkipSegments = append(resp.SkipSegments, h.dbTVSkipSegments(r.Context(), fileID)...)
+	// Lazily fingerprint this episode's season for intros, once, in the background
+	// (gentle on I/O — only seasons you play, gated by a per-season marker). Its
+	// segments land on a later session for the season; this play isn't blocked.
+	h.maybeAutoDetectIntros(r.Context(), fileID)
 	if out.SubtitleSidecar && sub > 0 {
 		resp.SubtitleURL = fmt.Sprintf("/stream/tv-subtitles/%d?track=%d", fileID, sub)
 	}
