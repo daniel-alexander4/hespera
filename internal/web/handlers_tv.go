@@ -15,10 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/introskip"
 	"hespera/internal/jobs"
 	"hespera/internal/pathguard"
 	"hespera/internal/tmdb"
 	"hespera/internal/tvscan"
+	"hespera/internal/video"
 )
 
 // maxSeriesScanDirs caps how many distinct show folders a per-series scan walks
@@ -841,6 +843,139 @@ WHERE i.series_id = ? AND i.status = 'matched'
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok":      true,
 			"message": "series scan queued",
+			"data":    map[string]any{"library_id": libraryID, "job_id": jobID},
+		})
+		return
+	}
+	http.Redirect(w, r, "/tv/series/"+seriesID, http.StatusSeeOther)
+}
+
+// introDetectWindowSec is how much of each episode's audio (from the start) is
+// fingerprinted for intro detection. 600s covers shows with long, variable cold-opens
+// before the title theme — e.g. Doctor Who (2023), where the theme lands anywhere from
+// ~19s to ~398s into the episode (verified against the real season).
+const introDetectWindowSec = 600.0
+
+// tvSeriesDetectIntros fingerprints a series' episodes per season and stores the
+// cross-episode-matched intro range for each (the marker-less detection source behind
+// skip-intro, via internal/introskip). On-demand, background, reuses the live-job badge.
+func (h *Handler) tvSeriesDetectIntros(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvSeriesDetectIntros", "err", err)
+		return
+	}
+	seriesID := strings.TrimSpace(r.FormValue("series_id"))
+	if _, e := strconv.Atoi(seriesID); e != nil {
+		http.Error(w, "invalid series_id", 400)
+		return
+	}
+	if !video.ChromaprintAvailable() {
+		http.Error(w, "intro detection needs an ffmpeg built with chromaprint", http.StatusServiceUnavailable)
+		return
+	}
+
+	type epRow struct {
+		fileID  int64
+		absPath string
+		season  int
+	}
+	rows, err := h.db.QueryContext(r.Context(), `
+SELECT f.id, f.abs_path, f.library_id, i.season_number
+FROM tv_series_files f
+JOIN tv_series_identities i ON i.file_id = f.id
+WHERE i.series_id = ? AND i.status = 'matched'
+`, seriesID)
+	if err != nil {
+		httpError(w, 500, "internal server error", "db query failed", "handler", "tvSeriesDetectIntros", "err", err)
+		return
+	}
+	defer rows.Close()
+	var libraryID int64
+	bySeason := map[int][]epRow{}
+	for rows.Next() {
+		var e epRow
+		var lib int64
+		if err := rows.Scan(&e.fileID, &e.absPath, &lib, &e.season); err != nil {
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeriesDetectIntros", "err", err)
+			return
+		}
+		if libraryID == 0 {
+			libraryID = lib
+		}
+		if lib == libraryID {
+			bySeason[e.season] = append(bySeason[e.season], e)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvSeriesDetectIntros", "err", err)
+		return
+	}
+	// Detection needs at least two episodes in a season to cross-match.
+	total := 0
+	for _, eps := range bySeason {
+		if len(eps) >= 2 {
+			total += len(eps)
+		}
+	}
+	if libraryID == 0 || total == 0 {
+		http.Error(w, "need at least two matched episodes in a season to detect intros", 404)
+		return
+	}
+
+	jobID, err := h.jobs.Enqueue("intro_detect", libraryID, "user", func(ctx context.Context, jID, libID int64) error {
+		_, _ = h.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", total, jID)
+		done := 0
+		for _, eps := range bySeason {
+			if len(eps) < 2 {
+				continue
+			}
+			var fps []introskip.Episode
+			for _, ep := range eps {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				clean, perr := h.resolveTVPath(ep.absPath)
+				if perr != nil {
+					done++
+					continue
+				}
+				pts, rate, ferr := video.Fingerprint(ctx, clean, 0, introDetectWindowSec)
+				done++
+				_, _ = h.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", done, jID)
+				if ferr != nil {
+					slog.Warn("intro fingerprint", "file_id", ep.fileID, "err", ferr)
+					continue
+				}
+				fps = append(fps, introskip.Episode{FileID: ep.fileID, Points: pts, Rate: rate})
+			}
+			for fid, s := range introskip.DetectIntros(fps) {
+				if _, derr := h.db.ExecContext(ctx, `
+INSERT INTO tv_skip_segments(file_id, kind, start_sec, end_sec, source) VALUES(?, 'intro', ?, ?, 'fingerprint')
+ON CONFLICT(file_id, kind, source) DO UPDATE SET start_sec=excluded.start_sec, end_sec=excluded.end_sec, detected_at=datetime('now')`,
+					fid, s.StartSec, s.EndSec); derr != nil {
+					slog.Warn("intro segment upsert", "file_id", fid, "err", derr)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, jobs.ErrQueueFull) {
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "tvSeriesDetectIntros", "err", err)
+			return
+		}
+		httpError(w, 500, "internal server error", "enqueue intro detect failed", "handler", "tvSeriesDetectIntros", "err", err)
+		return
+	}
+	if requestWantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"message": "intro detection queued",
 			"data":    map[string]any{"library_id": libraryID, "job_id": jobID},
 		})
 		return

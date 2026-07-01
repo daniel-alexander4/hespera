@@ -71,6 +71,7 @@ func (h *Handler) Router() http.Handler {
 	// TV browse
 	mux.HandleFunc("/tv", h.tvSeriesList)
 	mux.HandleFunc("/tv/series/scan", h.tvSeriesScan)
+	mux.HandleFunc("/tv/series/detect-intros", h.tvSeriesDetectIntros)
 	mux.HandleFunc("/tv/series/", h.tvSeriesDetail)
 	mux.HandleFunc("/tv/season/", h.tvSeasonDetail)
 	mux.HandleFunc("/tv/match", h.tvMatch)
