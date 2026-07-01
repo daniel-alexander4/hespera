@@ -14,7 +14,7 @@ make build                  # same, via the Makefile
 
 # Cross-compile + package for release (mirrors ~/repos/nib: bash + nfpm, no goreleaser)
 ./build.sh                  # 6 binaries (Linux/macOS/Windows × amd64/arm64) + 2 .deb → dist/
-./install.sh                # build + .deb + `apt install` on this Debian/Ubuntu box
+./install.sh                # `apt install` the prebuilt dist/ .deb on this Debian/Ubuntu box (run build.sh first)
 make dist / make install    # Makefile wrappers
 # build.sh stamps the version via -ldflags "-X main.version=$VERSION" from the VERSION file;
 # the .deb (build/nfpm.yaml) ships hespera+hescli to /usr/bin and declares ffmpeg/openssh-client.
