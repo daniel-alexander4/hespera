@@ -374,23 +374,25 @@ function initMediaPlayer() {
 
   // --- controls overlay auto-hide --- the controls overlay the video and fade
   //     out after a few seconds of inactivity, so they stay reachable in
-  //     fullscreen without exiting. Reveal on pointer/keyboard activity over the
-  //     player; never hide while paused, while a control is focused (couch/
-  //     keyboard), while the pointer is over the overlay, or mid scrubber-drag.
+  //     fullscreen without exiting. Hiding keys off pointer *movement* going
+  //     idle, not pointer presence/position — so a mouse/trackpad resting over
+  //     the controls (or jittering in place, common on a couch/TV setup) still
+  //     fades, matching how YouTube/Netflix/VLC behave. Real movement re-shows.
+  //     Never hide while paused, while a control is keyboard-focused (couch/
+  //     remote arrow-nav, via :focus-visible), or mid scrubber-drag.
   const wrap = video.closest('.tv-player-video-wrap');
   const overlay = document.getElementById('mediaOverlay');
   if (wrap && overlay) {
     const HIDE_MS = 2500;
-    let hideTimer = null, overlayHover = false;
+    const JITTER_PX = 6; // sub-threshold pointermove = sensor noise, not activity
+    let hideTimer = null, lastX = null, lastY = null;
     const showControls = () => wrap.classList.remove('controls-hidden');
     const hideControls = () => {
-      // The focus guard is for keyboard/remote (couch) nav — don't yank controls
-      // out from under the control being arrowed through. A mouse click also leaves
-      // a control focused, but with nothing to blur it, so gate on :focus-visible
-      // (set by keyboard focus, not mouse-click focus — matching the couch
-      // focus-visible system in tv.css) or the overlay would never hide after a click.
+      // Keyboard/remote focus (couch arrow-nav) sets :focus-visible — don't yank
+      // controls out from under the control being arrowed through. Mouse-click
+      // focus is :focus only (not :focus-visible), so it doesn't pin here.
       const ae = document.activeElement;
-      if (video.paused || dragging || overlayHover || (overlay.contains(ae) && ae.matches(':focus-visible'))) return;
+      if (video.paused || dragging || (overlay.contains(ae) && ae.matches(':focus-visible'))) return;
       wrap.classList.add('controls-hidden');
     };
     const bump = () => {
@@ -398,9 +400,15 @@ function initMediaPlayer() {
       clearTimeout(hideTimer);
       hideTimer = setTimeout(hideControls, HIDE_MS);
     };
-    ['pointermove', 'pointerdown', 'keydown'].forEach((ev) => wrap.addEventListener(ev, bump));
-    overlay.addEventListener('pointerenter', () => { overlayHover = true; showControls(); });
-    overlay.addEventListener('pointerleave', () => { overlayHover = false; bump(); });
+    wrap.addEventListener('pointermove', (e) => {
+      // Only count real movement past the jitter threshold so a resting/noisy
+      // pointer doesn't keep re-arming the timer. Compare to the last committed
+      // position (not the previous event) so steady noise never accumulates.
+      if (lastX !== null && Math.abs(e.clientX - lastX) <= JITTER_PX && Math.abs(e.clientY - lastY) <= JITTER_PX) return;
+      lastX = e.clientX; lastY = e.clientY;
+      bump();
+    });
+    ['pointerdown', 'keydown'].forEach((ev) => wrap.addEventListener(ev, bump));
     overlay.addEventListener('focusin', showControls);
     overlay.addEventListener('focusout', bump);
     video.addEventListener('pause', showControls);  // paused → pin controls up
