@@ -100,6 +100,7 @@
     <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
     <div class="topbar-controls">
     <button type="button" class="topbar-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
+    <button type="button" class="topbar-btn" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
     <button type="button" class="topbar-btn topbar-btn--power" data-app-quit aria-label="Quit Hespera" title="Quit Hespera">{{template "icon-power"}}</button>
     <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle light and dark theme">
       <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -208,6 +209,57 @@
         document.body.innerHTML =
           '<div style="display:flex;align-items:center;justify-content:center;min-height:90vh;color:#a6adc8;font:1.1rem system-ui,sans-serif;">Hespera has shut down — you can close this window.</div>';
         window.close(); // closes the chromeless app window; the message remains if the browser blocks it
+      });
+    })();
+
+    // App-wide full screen (topbar button) + an auto-hiding topbar overlay while
+    // in it. Window-guarded so the document-level listeners bind ONCE (the inline
+    // script re-runs on every Turbo render); delegated so the re-rendered button
+    // stays wired. Only the app root going full screen (not the per-video full
+    // screen) drives the overlay — gated on fullscreenElement === documentElement.
+    (() => {
+      if (window.__hesperaFullscreen) return;
+      window.__hesperaFullscreen = true;
+      const root = document.documentElement;
+      const HIDE_MS = 2500;
+      const JITTER = 6; // sub-threshold pointermove = sensor noise, not activity
+      let hideTimer = null, lastX = null, lastY = null, hover = false;
+      const appFs = () => document.fullscreenElement === root;
+      const overTopbar = () => {
+        const tb = document.querySelector('.topbar');
+        return !!tb && tb.contains(document.activeElement);
+      };
+      const show = () => root.classList.remove('topbar-hidden');
+      const hide = () => { if (!hover && !overTopbar()) root.classList.add('topbar-hidden'); };
+      const bump = () => { show(); clearTimeout(hideTimer); hideTimer = setTimeout(hide, HIDE_MS); };
+
+      document.addEventListener('click', (e) => {
+        if (!(e.target.closest && e.target.closest('[data-app-fullscreen]'))) return;
+        if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen().catch(() => {}); }
+        else if (root.requestFullscreen) root.requestFullscreen().catch(() => {});
+      });
+      document.addEventListener('fullscreenchange', () => {
+        if (appFs()) { root.classList.add('is-fullscreen'); bump(); }
+        else { root.classList.remove('is-fullscreen', 'topbar-hidden'); clearTimeout(hideTimer); }
+        const btn = document.querySelector('[data-app-fullscreen]');
+        if (btn) {
+          const on = !!document.fullscreenElement;
+          btn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+          btn.setAttribute('title', on ? 'Exit full screen' : 'Full screen');
+        }
+      });
+      document.addEventListener('pointermove', (e) => {
+        if (!root.classList.contains('is-fullscreen')) return;
+        if (lastX !== null && Math.abs(e.clientX - lastX) < JITTER && Math.abs(e.clientY - lastY) < JITTER) return;
+        lastX = e.clientX; lastY = e.clientY; bump();
+      });
+      document.addEventListener('keydown', () => { if (root.classList.contains('is-fullscreen')) bump(); });
+      document.addEventListener('pointerover', (e) => {
+        if (e.target.closest && e.target.closest('.topbar')) { hover = true; show(); }
+      });
+      document.addEventListener('pointerout', (e) => {
+        const tb = e.target.closest && e.target.closest('.topbar');
+        if (tb && !tb.contains(e.relatedTarget)) { hover = false; bump(); }
       });
     })();
   </script>
