@@ -1,0 +1,12 @@
+{
+  "name": "hespera-js-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dev-only test harness for Hespera's browser JS (web/static). Not shipped — the Go binary embeds web/ and never runs Node. jsdom simulates the DOM so the real player controllers are exercised through their effects.",
+  "scripts": {
+    "test": "node --test --test-force-exit test/js/"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}

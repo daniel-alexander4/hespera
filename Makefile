@@ -2,7 +2,7 @@
 # install.sh remain the source of truth; this just gives the usual `make`
 # entry points.
 
-.PHONY: dist install build test clean bump-patch bump-minor bump-major
+.PHONY: dist install build test test-js clean bump-patch bump-minor bump-major
 
 # Build the local server + admin binaries into ./bin (quick dev build).
 build:
@@ -19,6 +19,11 @@ install:
 
 test:
 	go test ./...
+
+# Browser-JS tests (dev-only; needs `npm install` once for jsdom). Not part of
+# the Go build — the binary embeds web/ and never runs Node.
+test-js:
+	npm test
 
 clean:
 	rm -rf dist bin
