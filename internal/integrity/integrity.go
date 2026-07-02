@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"hespera/internal/pathguard"
 	"hespera/internal/video"
@@ -147,21 +148,39 @@ WHERE id=?`, string(b), fi.Size(), fi.ModTime().Unix(), out.Status, out.Detail, 
 	return out.Status
 }
 
-// flagDeep fully decodes one file and flags it when bitstream corruption is
-// found; it never modifies the file and never un-flags (only the cheap tier /
-// a file change clears a status). Returns "flagged" or "ok".
+// audioGapFlagThreshold is the smallest audio hole (seconds) worth flagging —
+// below it a discontinuity is inaudible jitter, not real data loss.
+const audioGapFlagThreshold = 0.5
+
+// flagDeep examines one file's BOTH streams — a full decode for video bitstream
+// corruption plus an audio packet-gap scan for missing audio — and flags it when
+// either is damaged. It never modifies the file and never un-flags (only the
+// cheap tier / a file change clears a status). Returns "flagged" or "ok".
 func flagDeep(ctx context.Context, db *sql.DB, table string, id int64, path string) string {
-	n, err := video.CheckIntegrity(ctx, path, true)
+	videoErrs, err := video.CheckIntegrity(ctx, path, true)
 	if err != nil {
 		slog.Warn("integrity deep check", "file_id", id, "path", path, "err", err)
 		return ""
 	}
-	if n > 0 {
-		detail := fmt.Sprintf("bitstream corruption (%d decode errors) — data loss, not auto-repairable", n)
+	_, largestGap, gapErr := video.AudioGaps(ctx, path)
+	if gapErr != nil {
+		slog.Warn("integrity audio gap scan", "file_id", id, "path", path, "err", gapErr)
+		largestGap = 0 // non-fatal — still act on the decode result
+	}
+
+	var problems []string
+	if videoErrs > 0 {
+		problems = append(problems, fmt.Sprintf("video bitstream corruption (%d decode errors)", videoErrs))
+	}
+	if largestGap >= audioGapFlagThreshold {
+		problems = append(problems, fmt.Sprintf("audio gap %.1fs (missing audio)", largestGap))
+	}
+	if len(problems) > 0 {
+		detail := strings.Join(problems, "; ") + " — data loss, not auto-repairable"
 		_, _ = db.ExecContext(ctx,
 			"UPDATE "+table+" SET integrity_status='flagged', integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?",
 			detail, id)
-		slog.Warn("integrity flagged", "file_id", id, "path", path, "decode_errors", n)
+		slog.Warn("integrity flagged", "file_id", id, "path", path, "video_decode_errors", videoErrs, "audio_gap_sec", largestGap)
 		return "flagged"
 	}
 	_, _ = db.ExecContext(ctx,

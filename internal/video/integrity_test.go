@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,6 +144,27 @@ func TestRemuxVerified(t *testing.T) {
 		if got := remuxVerified(c.orig, c.next); got != c.want {
 			t.Errorf("%s: remuxVerified=%v want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestParseAudioGaps(t *testing.T) {
+	// Contiguous ~32ms ac3 frames, then a 2s hole, then contiguous again.
+	var b strings.Builder
+	for i := 0; i < 5; i++ {
+		fmt.Fprintf(&b, "%.3f,0.032\n", float64(i)*0.032)
+	}
+	b.WriteString("2.128,0.032\n") // jumps from 0.160 → 2.128: a ~1.968s gap
+	b.WriteString("2.160,0.032\n") // contiguous after
+	total, largest := parseAudioGaps(b.String())
+	if largest < 1.9 || largest > 2.0 {
+		t.Fatalf("largest gap = %.3f, want ~1.968", largest)
+	}
+	if total < 1.9 || total > 2.0 {
+		t.Fatalf("total gap = %.3f, want ~1.968 (jitter under epsilon ignored)", total)
+	}
+	// A clean stream has no gaps.
+	if tot, lg := parseAudioGaps("0.000,0.032\n0.032,0.032\n0.064,0.032\n"); tot != 0 || lg != 0 {
+		t.Fatalf("clean stream: total=%.3f largest=%.3f, want 0/0", tot, lg)
 	}
 }
 

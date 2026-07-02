@@ -111,7 +111,7 @@ func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int, startSec fl
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "160k",
 	)
-	args = append(args, downmixArgs(srcChannels)...)
+	args = append(args, audioFilterArgs(srcChannels)...)
 	if startSec > 0 {
 		args = append(args, "-avoid_negative_ts", "make_zero")
 	}
@@ -161,7 +161,7 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 		"-force_key_frames", "expr:eq(n,0)",
 		"-c:a", "aac", "-b:a", "160k",
 	}
-	args = append(args, downmixArgs(srcChannels)...)
+	args = append(args, audioFilterArgs(srcChannels)...)
 	return append(args,
 		// -avoid_negative_ts disabled is load-bearing, NOT cosmetic. mpegts's
 		// default avoid_negative_ts shifts a whole segment *up* by the AAC encoder
@@ -233,7 +233,7 @@ func audioWarmArgs(src, out string, start, dur float64, audioOrdinal, srcChannel
 		"-map", audioMap(audioOrdinal),
 		"-c:a", "aac", "-b:a", "160k",
 	}
-	args = append(args, downmixArgs(srcChannels)...)
+	args = append(args, audioFilterArgs(srcChannels)...)
 	return append(args, "-muxdelay", "0", "-muxpreload", "0", "-f", "mpegts", out)
 }
 
@@ -303,22 +303,33 @@ func audioMap(ordinal int) string {
 	return "0:a:0?"
 }
 
-// downmixArgs picks how a transcode folds the source audio to stereo. A naive
-// `-ac 2` downmix of a 5.1 source puts the centre channel (where dialogue lives)
-// ~3 dB *below* the front L/R (music/effects), which is why TV dialogue sounds
-// buried once a browser that can't decode Dolby transcodes it to stereo. For a
-// source with a centre channel (>=6 channels: 5.1/6.1/7.1) we instead fold with
-// a dialogue-forward `pan` — centre weighted above the fronts, surrounds/LFE
-// dropped — which is clip-safe (coefficients <1) and layout-agnostic (it names
-// only FC/FL/FR, present in every >=6-channel layout, so it never references a
-// back-vs-side channel that may be absent). The gate is >=6, not >2, because a
-// `pan` naming FC would *error* on a 3-5-channel layout that lacks a centre.
-// Sources with <6 channels keep the standard `-ac 2` fold unchanged.
-func downmixArgs(srcChannels int) []string {
+// audioFilterArgs builds the audio filter chain every transcode path shares
+// (segment build, warm-up, burn-in): a gap-fill front-half + a downmix.
+//
+// GAP-FILL (`aresample=async=1`): silence-fills gaps in the source audio and
+// keeps the output locked to its PTS, so each segment emits exactly its window
+// of audio. Without it, a source with damaged/missing audio packets (a corrupt
+// region, a bad rip) yields a segment whose audio is short of its declared
+// duration — an audio-buffer *hole* the browser's MSE renderer resyncs by
+// slowing (pitching down) the audio, which sticks until a reload rebuilds the
+// pipeline (the "deep voices" bug). Filling the hole with silence keeps A/V in
+// sync; a damaged region degrades to a brief silence instead. Near-transparent
+// on gap-free audio (only acts on real gaps/drift).
+//
+// DOWNMIX: a naive `-ac 2` fold of a 5.1 source puts the centre channel (where
+// dialogue lives) ~3 dB *below* the front L/R (music/effects) — buried dialogue
+// once a browser that can't decode Dolby transcodes to stereo. For a source with
+// a centre channel (>=6ch: 5.1/6.1/7.1) we fold with a dialogue-forward `pan`
+// (centre weighted above the fronts, surrounds/LFE dropped) — clip-safe (coeffs
+// <1) and layout-agnostic (names only FC/FL/FR, present in every >=6ch layout).
+// The gate is >=6 not >2 because a `pan` naming FC would *error* on a centre-less
+// 3-5ch layout. <6ch keeps the standard `-ac 2` fold.
+func audioFilterArgs(srcChannels int) []string {
+	const sync = "aresample=async=1"
 	if srcChannels >= 6 {
-		return []string{"-af", "pan=stereo|FL=0.7*FC+0.5*FL|FR=0.7*FC+0.5*FR"}
+		return []string{"-af", sync + ",pan=stereo|FL=0.7*FC+0.5*FL|FR=0.7*FC+0.5*FR"}
 	}
-	return []string{"-ac", "2"}
+	return []string{"-af", sync, "-ac", "2"}
 }
 
 // segBuild tracks one in-flight segment transcode so concurrent callers for the
@@ -443,7 +454,9 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 // the encoded bytes, so old all-cores segments must not mix with new ones).
 // v4: interior segments now use a two-pass audio warm-up (buildSegment) so joins
 // carry real audio instead of AAC priming — changes the audio bytes at every join.
-const segEncodeVersion = 4
+// v5: audio filter gained aresample=async=1 (audioFilterArgs) to silence-fill
+// source audio gaps so a segment always emits its full window — changes audio bytes.
+const segEncodeVersion = 5
 
 func hlsKey(src string, modTime time.Time, size int64, maxHeight, audioOrdinal int) string {
 	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d|v%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal, segEncodeVersion)))
