@@ -78,6 +78,74 @@ func CheckIntegrity(ctx context.Context, path string, deep bool) (int, error) {
 	return n, nil
 }
 
+// AudioGaps scans the default audio stream's packet timestamps for holes —
+// stretches where audio is missing (a corrupt region, a bad rip), which a full
+// decode won't necessarily report as an error. Returns the total and largest gap
+// in seconds. Demux-only (no decode), gated. Used by the deep integrity tier to
+// flag audio data loss (unrepairable — the transcode silence-fills it for
+// playback, but the file is still damaged).
+func AudioGaps(ctx context.Context, path string) (total, largest float64, err error) {
+	ctx, cancel := context.WithTimeout(ctx, integrityCheapTimeout)
+	defer cancel()
+
+	release, err := acquire(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("ffprobe acquire slot: %w", err)
+	}
+	defer release()
+
+	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error",
+		"-select_streams", "a:0",
+		"-show_entries", "packet=pts_time,duration_time",
+		"-of", "csv=p=0", path)
+	out, runErr := cmd.Output()
+	if ctx.Err() != nil {
+		return 0, 0, ctx.Err()
+	}
+	if runErr != nil {
+		return 0, 0, fmt.Errorf("ffprobe audio packets %s: %w", path, runErr)
+	}
+	total, largest = parseAudioGaps(string(out))
+	return total, largest, nil
+}
+
+// parseAudioGaps sums the holes in an ffprobe "pts_time,duration_time" CSV of
+// audio packets. A gap is where the next packet's pts jumps past the prior
+// packet's end by more than audioGapEpsilon. Pure so it's unit-testable.
+func parseAudioGaps(csv string) (total, largest float64) {
+	var prevEnd float64
+	var have bool
+	for _, line := range strings.Split(csv, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		pts, ok := parseSeconds(parts[0])
+		if !ok {
+			continue
+		}
+		if have {
+			if gap := pts - prevEnd; gap > audioGapEpsilon {
+				total += gap
+				if gap > largest {
+					largest = gap
+				}
+			}
+		}
+		dur := 0.0
+		if len(parts) > 1 {
+			dur, _ = parseSeconds(parts[1])
+		}
+		prevEnd = pts + dur
+		have = true
+	}
+	return total, largest
+}
+
+// audioGapEpsilon ignores sub-100ms spacing (normal inter-frame jitter / a
+// missing duration_time); real audio holes are far larger.
+const audioGapEpsilon = 0.1
+
 // RemuxCopy losslessly rewrites src's container into dst (all streams, stream
 // copy — no re-encode), dropping the bad framing bytes that make a container
 // corrupt. dst must be on the same filesystem as the eventual target so the

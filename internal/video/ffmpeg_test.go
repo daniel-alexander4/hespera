@@ -87,17 +87,22 @@ func TestSegmentArgsDialogueDownmix(t *testing.T) {
 	}
 }
 
-func TestDownmixArgsGate(t *testing.T) {
-	// The pan names FC, which is absent from 3-5ch layouts and would error; gate
-	// on >=6 so only layouts that have a centre channel get the pan.
+func TestAudioFilterArgsGate(t *testing.T) {
+	// Every layout gets the aresample=async=1 gap-fill; the pan (which names FC,
+	// absent from 3-5ch layouts and would error) is gated on >=6ch, others use -ac 2.
 	for ch := 0; ch <= 5; ch++ {
-		if got := strings.Join(downmixArgs(ch), " "); got != "-ac 2" {
-			t.Fatalf("downmixArgs(%d) = %q, want \"-ac 2\"", ch, got)
+		got := strings.Join(audioFilterArgs(ch), " ")
+		if !strings.Contains(got, "aresample=async=1") {
+			t.Fatalf("audioFilterArgs(%d) = %q, want the aresample gap-fill", ch, got)
+		}
+		if got != "-af aresample=async=1 -ac 2" {
+			t.Fatalf("audioFilterArgs(%d) = %q, want the -ac 2 fold", ch, got)
 		}
 	}
 	for _, ch := range []int{6, 8} {
-		if !strings.Contains(strings.Join(downmixArgs(ch), " "), "pan=stereo") {
-			t.Fatalf("downmixArgs(%d) should use a pan downmix", ch)
+		got := strings.Join(audioFilterArgs(ch), " ")
+		if !strings.Contains(got, "aresample=async=1") || !strings.Contains(got, "pan=stereo") {
+			t.Fatalf("audioFilterArgs(%d) = %q, want aresample + pan downmix", ch, got)
 		}
 	}
 }

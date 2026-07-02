@@ -303,8 +303,11 @@ repairs corrupt **video** files in place:
 - **Detection is a separate job, never in the scanner.** Scanners stay
   read-only (§0). A cheap **container** check (`integrity_check`, `-c copy -f
   null`, no decode) is *chained after* a tv/movie scan and only visits files
-  whose `integrity_status=''`. A deep **bitstream** check (`integrity_deep`, full
-  decode) is opt-in (the Libraries "Check integrity" button).
+  whose `integrity_status=''`. A deep check (`integrity_deep`, opt-in
+  "Check integrity" button) examines **both streams** — a full decode for
+  **video bitstream** corruption plus an **audio packet-gap scan** for **missing
+  audio** — and flags either (data loss is unrepairable; the transcode
+  silence-fills audio gaps for playback but the file stays damaged).
 - **Repair = remux → verify → atomic replace.** A container-corrupt file is
   stream-copy remuxed (`ffmpeg -c copy`, lossless) to a same-directory hidden
   temp, verified (same stream count + duration within ±2s + a clean re-check),
