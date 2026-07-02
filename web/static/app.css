@@ -2042,3 +2042,31 @@ code {
 .playlist-check { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; color: var(--text-muted); cursor: pointer; }
 .playlist-test { margin-top: 0.2rem; }
 .playlist-note, .playlist-hint { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
+
+/* Shuffle-era range picker (era_slider.js): a slide + resize window over a year
+   timeline. Remote-navigable — the .era-track is focusable and the JS captures
+   arrows (◀▶ slide, ▲▼ span) so couch.js doesn't steal them. */
+.era-picker { display: flex; flex-direction: column; gap: 0.35rem; max-width: 460px; }
+.era-readout { font-weight: 600; font-variant-numeric: tabular-nums; }
+.era-track {
+  position: relative; height: 30px; background: var(--surface-panel);
+  border-radius: 6px; cursor: pointer; touch-action: none;
+}
+.era-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.era-window {
+  position: absolute; top: 0; bottom: 0; min-width: 6px;
+  background: var(--accent); opacity: 0.55; border-radius: 6px; cursor: grab;
+}
+.era-handle {
+  position: absolute; top: 0; bottom: 0; width: 12px;
+  background: var(--accent); cursor: ew-resize; touch-action: none;
+}
+.era-handle-l { left: -1px; border-radius: 6px 0 0 6px; }
+.era-handle-r { right: -1px; border-radius: 0 6px 6px 0; }
+.era-axis { position: relative; height: 1.1em; }
+.era-axis-tick {
+  position: absolute; transform: translateX(-50%);
+  font-size: 0.7rem; color: var(--text-soft); font-variant-numeric: tabular-nums;
+}
+.era-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.era-hint { font-size: 0.78rem; color: var(--text-soft); }
