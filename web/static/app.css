@@ -247,6 +247,14 @@ html.is-fullscreen.topbar-hidden .topbar {
   opacity: 0;
   pointer-events: none;
 }
+/* On a page with its own play controls (the music now-playing transport, or a
+   TV/movie video), keep the full-screen topbar overlay hidden entirely — the play
+   controls are the only chrome. Windowed (no .is-fullscreen) is unaffected. */
+html.is-fullscreen.has-play-controls .topbar {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
 
 /* Settings dropdown */
 .nav-settings {

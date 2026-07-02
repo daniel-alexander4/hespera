@@ -219,6 +219,16 @@
         const tb = e.target.closest && e.target.closest('.topbar');
         if (tb && !tb.contains(e.relatedTarget)) { hover = false; bump(); }
       });
+
+      // Mark pages that have their own play controls (the music now-playing
+      // transport, or a TV/movie video). CSS then suppresses the full-screen
+      // topbar overlay on them so only the play controls show. Windowed unaffected.
+      const syncPlayControls = () => {
+        const has = !!(document.getElementById('player-transport') || document.querySelector('[data-media-kind]'));
+        root.classList.toggle('has-play-controls', has);
+      };
+      document.addEventListener('turbo:load', syncPlayControls);
+      syncPlayControls();
     })();
   </script>
 </body>
