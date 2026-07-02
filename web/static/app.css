@@ -276,6 +276,34 @@ html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
   background: var(--danger-bg, var(--surface-card));
 }
 
+/* App full-screen toggle: swap enter/exit glyphs by state (the JS sets
+   html.is-fullscreen when the app root is the fullscreen element). */
+[data-app-fullscreen] .fs-enter,
+[data-app-fullscreen] .fs-exit { display: flex; }
+[data-app-fullscreen] .fs-exit { display: none; }
+html.is-fullscreen [data-app-fullscreen] .fs-enter { display: none; }
+html.is-fullscreen [data-app-fullscreen] .fs-exit { display: flex; }
+
+/* In app full screen the sticky topbar becomes a fixed overlay (content reclaims
+   its 3rem and fills the screen) that auto-hides — the JS toggles .topbar-hidden
+   on the root after ~2.5s of inactivity, revealed on mouse/keyboard activity.
+   Windowed (no .is-fullscreen) is unaffected; couch mode's `.topbar{display:none}`
+   in tv.css loads later and still wins, so there's no overlay there. */
+html.is-fullscreen .topbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 400;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+html.is-fullscreen.topbar-hidden .topbar {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Settings dropdown */
 .nav-settings {
   position: relative;
