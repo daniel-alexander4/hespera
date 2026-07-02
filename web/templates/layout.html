@@ -49,7 +49,6 @@
   <script src="{{staticv "/static/player.js"}}" defer></script>
   <script src="{{staticv "/static/tv_resume.js"}}" defer></script>
   <script src="{{staticv "/static/job_status.js"}}" defer></script>
-  <script src="{{staticv "/static/playlists.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -98,11 +97,6 @@
       <button id="np-close" type="button" class="np-toggle np-close" aria-label="Stop playback" title="Stop">{{template "icon-x"}}</button>
     </div>
     <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
-    <!-- Hidden YouTube IFrame host for in-app playback of un-owned year-journey
-         songs. The permanent wrapper is what Turbo carries across navigations
-         (the API replaces the inner #yt-player div with an iframe, so the iframe
-         itself isn't data-turbo-permanent — the wrapper keeps it alive). -->
-    <div id="yt-host" data-turbo-permanent class="hidden"><div id="yt-player"></div></div>
     <div class="topbar-controls">
     <button type="button" class="topbar-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
     <button type="button" class="topbar-btn topbar-btn--power" data-app-quit aria-label="Quit Hespera" title="Quit Hespera">{{template "icon-power"}}</button>

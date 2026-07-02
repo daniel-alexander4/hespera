@@ -84,9 +84,7 @@ func stubAssetsFS() fs.FS {
 			`<span id="pg">{{.Page.Page}}/{{.Page.TotalPages}}</span><span id="q">{{.Page.Query}}</span>` +
 			`{{if .Page.HasPrev}}<a class="prev"></a>{{end}}{{if .Page.HasNext}}<a class="next"></a>{{end}}{{end}}`,
 		"templates/music_playlists.html": `{{define "content"}}` +
-			`<div id="mymusic" data-lib="{{.LibraryID}}"></div>` +
-			`<div id="top100" data-ready="{{.BillboardReady}}" data-bbenabled="{{.BillboardOn}}" data-haskey="{{.HasYouTubeKey}}" data-test="{{.TestAudio}}">` +
-			`{{if .Years}}<select id="year">{{range .Years}}<option value="{{.}}">{{.}}</option>{{end}}</select>{{end}}</div>{{end}}`,
+			`<div id="mymusic" data-lib="{{.LibraryID}}"></div>{{end}}`,
 	}
 	for path, content := range overrides {
 		m[path] = &fstest.MapFile{Data: []byte(content)}

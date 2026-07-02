@@ -100,36 +100,6 @@
 </form>
 
 <form method="post" action="/settings/api-keys" class="form-card">
-  <div class="form-group">
-    <label for="youtube_api_key">YouTube Data API Key <small class="form-help">(optional)</small></label>
-    {{if .YouTubeConfigured}}
-    <small class="form-help">Currently set ({{.YouTubeSource}}): <code>{{.YouTubeMasked}}</code></small>
-    {{else}}
-    <small class="form-help">Not configured. Needed to resolve a song to a YouTube video for in-app playback.</small>
-    {{end}}
-    <input type="password" id="youtube_api_key" name="youtube_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to keep the current one" />
-    <small class="form-help">Overrides <code>HESPERA_YOUTUBE_API_KEY</code>. Free key from the Google Cloud console (YouTube Data API v3; ~100 lookups/day). Leave blank to keep the current key.</small>
-  </div>
-  <div class="form-group">
-    <label class="form-check">
-      <input type="checkbox" name="youtube_inapp_enabled" value="1"{{if .YouTubeInappEnabled}} checked{{end}} />
-      Play un-owned songs in-app from YouTube
-    </label>
-    <small class="form-help">Off (default): un-owned <em>Rediscover a Year</em> songs open in a YouTube tab. On: they play as audio in the Hespera player (requires a key). In-app playback uses a hidden YouTube player, which may not comply with YouTube's terms — opt in for personal use.</small>
-  </div>
-  <div class="form-group">
-    <label class="form-check">
-      <input type="checkbox" name="youtube_ytdlp_enabled" value="1"{{if .YouTubeYtdlpEnabled}} checked{{end}} />
-      Resolve songs with yt-dlp (no daily quota)
-    </label>
-    <small class="form-help">Off (default): resolve songs with the YouTube Data API (~100 songs/day quota — a large playlist quickly hits the wall). On: use the <code>yt-dlp</code> tool to resolve songs with no quota limit; it scrapes YouTube and may not comply with YouTube's terms, so opt in for personal use only. Your API key, if set, is still used for a cheap embeddability check.{{if not .YtDlpAvailable}} <strong>yt-dlp is not installed on this machine — install it to use this option.</strong>{{end}}</small>
-  </div>
-  <div class="form-actions">
-    <button type="submit" class="btn btn-primary">Save</button>
-  </div>
-</form>
-
-<form method="post" action="/settings/api-keys" class="form-card">
   <input type="hidden" name="auth_present" value="1" />
   <div class="form-group">
     <label class="form-check">
@@ -146,25 +116,6 @@
   </div>
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save</button>
-  </div>
-</form>
-
-<form method="post" action="/settings/api-keys" class="form-card">
-  <input type="hidden" name="billboard_present" value="1" />
-  <div class="form-group">
-    <label class="form-check">
-      <input type="checkbox" name="billboard_enabled" value="1"{{if .BillboardEnabled}} checked{{end}} />
-      Chart data — Rediscover a Year
-    </label>
-    <small class="form-help">
-      The <em>Rediscover a Year</em> feature plays the week-by-week <strong>Billboard Hot&nbsp;100</strong> of any year.
-      That chart data is a third party's intellectual property and is <strong>not shipped with Hespera</strong> —
-      enabling fetches it at runtime from a public archive into your data directory. Enable for personal use only.{{if .BillboardEnabled}} Currently enabled — the chart index is fetched once in the background.{{end}}
-    </small>
-  </div>
-  <div class="form-actions">
-    <button type="submit" class="btn btn-primary">Save</button>
-    <a href="/settings" class="btn">Back</a>
   </div>
 </form>
 

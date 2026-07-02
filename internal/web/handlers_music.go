@@ -73,7 +73,6 @@ type albumDetailRow struct {
 }
 
 type trackRow struct {
-	Kind          string // "" = local library track; "yt" = un-owned, played via YouTube
 	ID            int64
 	AlbumID       int64
 	AlbumTitle    string
@@ -1590,6 +1589,19 @@ type playerQueue struct {
 // server error. It is the one owner of player queue-building; both the HTML
 // now-playing view and the /music/queue JSON endpoint route through it so the
 // queue never grows a second, drifting copy.
+// musicPlaylists renders the Playlists hub: a "My Music" card with Shuffle All /
+// Shuffle Most Popular, played in-app from the local library.
+func (h *Handler) musicPlaylists(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	h.render(w, "music_playlists.html", map[string]any{
+		"Title":     "Playlists",
+		"LibraryID": h.resolveMusicLibraryID(r),
+	})
+}
+
 func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound bool, err error) {
 	source := strings.TrimSpace(r.URL.Query().Get("source"))
 	q.BackURL = "/music"
@@ -1628,13 +1640,6 @@ ORDER BY t.popularity DESC, t.id`, libraryID, popularIncludeAllMaxTracks, popula
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.library_id=? AND al.year BETWEEN ? AND ? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, libraryID, from, to)
 		q.Title = fmt.Sprintf("%d–%d", from, to)
-	case "top100":
-		// Billboard Hot 100 charts (every song that charted, sourced from YouTube):
-		// a year's list in peak order, or an all-years shuffle. All entries are
-		// yt-kind — resolved + played via YouTube (popout iframe by default; in-app
-		// hidden engine in Test Audio mode).
-		q.BackURL = "/music/playlists"
-		q.Tracks, q.Title, err = h.top100QueueTracks(r)
 	default: // single album
 		albumID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("album")), 10, 64)
 		if perr != nil || albumID <= 0 {
@@ -1689,7 +1694,6 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type queueTrackJSON struct {
-		Kind    string `json:"kind,omitempty"` // "yt" = resolve+play via YouTube; "" = local
 		ID      int64  `json:"id"`
 		AlbumID int64  `json:"albumId"`
 		Album   string `json:"album"`
@@ -1702,7 +1706,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		Tracks  []queueTrackJSON `json:"tracks"`
 	}{Title: q.Title, BackURL: q.BackURL, Tracks: make([]queueTrackJSON, 0, len(q.Tracks))}
 	for _, t := range q.Tracks {
-		out.Tracks = append(out.Tracks, queueTrackJSON{Kind: t.Kind, ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist})
+		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
