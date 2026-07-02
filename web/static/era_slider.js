@@ -131,8 +131,12 @@
       if (!drag) return;
       const y = yearAt(clientX);
       if (drag.mode === 'edge') {
-        if (drag.edge === 'l') from = clamp(y, min, to);
-        else to = clamp(y, from, max);
+        // The handles flank the window (inner edge = boundary), so the grabbed
+        // year is offset from the handle centre; carry that offset so the edge
+        // tracks the finger without a jump, and a single year is reachable.
+        const b = y + drag.offset;
+        if (drag.edge === 'l') from = clamp(b, min, to);
+        else to = clamp(b, from, max);
       } else {
         const width = drag.width;
         from = clamp(drag.from + (y - drag.grab), min, max - width);
@@ -143,12 +147,13 @@
     track.addEventListener('pointerdown', (e) => {
       const edge = e.target.getAttribute && e.target.getAttribute('data-edge');
       if (edge === 'l' || edge === 'r') {
-        drag = { mode: 'edge', edge };
+        drag = { mode: 'edge', edge, offset: (edge === 'l' ? from : to) - yearAt(e.clientX) };
       } else if (e.target === win || win.contains(e.target)) {
         drag = { mode: 'slide', grab: yearAt(e.clientX), from, width: to - from };
       } else {
+        // Bare-track click: jump the nearest edge straight to the click (no offset).
         const y = yearAt(e.clientX);
-        drag = { mode: 'edge', edge: Math.abs(y - from) <= Math.abs(y - to) ? 'l' : 'r' };
+        drag = { mode: 'edge', edge: Math.abs(y - from) <= Math.abs(y - to) ? 'l' : 'r', offset: 0 };
         applyDrag(e.clientX);
       }
       if (track.setPointerCapture) track.setPointerCapture(e.pointerId);
