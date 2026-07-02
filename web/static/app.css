@@ -2071,4 +2071,3 @@ code {
 .era-handle-l { left: 0; border-radius: 5px 0 0 5px; }
 .era-handle-r { right: 0; border-radius: 0 5px 5px 0; }
 .era-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.era-hint { font-size: 0.78rem; color: var(--text-soft); }

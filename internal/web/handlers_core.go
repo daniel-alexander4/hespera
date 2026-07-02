@@ -65,6 +65,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		"Title":               "Home",
 		"MusicLibraryID":      musicLib,
 		"HasMusic":            musicLib > 0,
+		"EraPicker":           h.eraPicker(ctx, musicLib),
 		"ContinueWatching":    continueWatching,
 		"RecentlyPlayed":      recentlyPlayed,
 		"RecentlyAddedAlbums": recentlyAddedAlbums,
@@ -162,7 +163,6 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "message": msg})
 }
-
 
 func httpError(w http.ResponseWriter, code int, msg string, logMsg string, attrs ...any) {
 	if code >= 500 {

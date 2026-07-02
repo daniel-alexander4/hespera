@@ -33,6 +33,7 @@
   <a class="btn btn-primary" href="/music/player?source=all&amp;shuffle=1&amp;library={{.MusicLibraryID}}" data-play>Shuffle All</a>
   <a class="btn btn-primary" href="/music/player?source=popular&amp;shuffle=1&amp;library={{.MusicLibraryID}}" data-play>Shuffle Most Popular</a>
 </div>
+{{with .EraPicker}}{{template "era-picker" .}}{{end}}
 {{end}}
 
 {{if .ContinueWatching}}
