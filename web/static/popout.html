@@ -137,6 +137,7 @@
           if (idx >= TRACKS.length || TRACKS[idx] !== t) return; // user jumped while resolving
           curWatchUrl = res.watchUrl || res.searchUrl || '';
           if (res.videoId) { setStatus(''); player.loadVideoById(res.videoId); }
+          else if (res.unavailable) { failPlay('YouTube temporarily unavailable (daily limit or network) — open on YouTube:', curWatchUrl); }
           else { failPlay('No video found — open on YouTube:', curWatchUrl); }
         })
         .catch(function () { failPlay('Resolve failed.', ''); });

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -10,7 +11,14 @@ import (
 
 	"hespera/internal/match"
 	"hespera/internal/youtube"
+	"hespera/internal/ytdlp"
 )
+
+// ytdlpCandidates is how many search hits the yt-dlp resolver fetches so the
+// embeddability verify has fallbacks if the top result isn't playable. One
+// videos.list call covers the whole batch (1 quota unit), so a larger set is
+// effectively free.
+const ytdlpCandidates = 5
 
 // ytSearchURL is the always-available link-out: a YouTube search for the song,
 // used when no key is set, the lookup missed, or the API erred.
@@ -42,6 +50,7 @@ func (h *Handler) musicYouTubeResolve(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	videoID := ""
+	unavailable := false
 	resolve := true
 	key := ytLookupKey(artist, song)
 
@@ -57,19 +66,17 @@ func (h *Handler) musicYouTubeResolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if resolve {
-		if client := youtube.New(h.effectiveYouTubeKey(ctx)); client != nil {
-			// Cache only a SUCCESSFUL search (a real hit OR a genuine no-match) so we
-			// don't re-spend quota on it. An API ERROR (quota 403, network blip) must
-			// NOT be cached — a cached empty row is authoritative forever, so caching
-			// an error would permanently mark a song that IS on YouTube as "no video"
-			// until the row is cleared. On error we leave videoID="" and fall through
-			// to the link-out; the next request retries.
-			if vid, err := client.Search(ctx, artist, song); err == nil {
-				videoID = vid
-				_, _ = h.db.ExecContext(ctx,
-					"INSERT INTO youtube_lookups (query_key, video_id) VALUES (?, ?) ON CONFLICT(query_key) DO UPDATE SET video_id=excluded.video_id",
-					key, videoID)
-			}
+		var cacheable bool
+		videoID, unavailable, cacheable = h.resolveYouTube(ctx, artist, song)
+		// Cache only a real hit OR a genuine no-match. Never cache an UNAVAILABLE
+		// error (quota / network / tool failure): a cached empty row is
+		// authoritative forever, so caching a bad day would permanently mark a
+		// song that IS on YouTube as "no video". On unavailable we fall through to
+		// the link-out and the next request retries.
+		if cacheable {
+			_, _ = h.db.ExecContext(ctx,
+				"INSERT INTO youtube_lookups (query_key, video_id) VALUES (?, ?) ON CONFLICT(query_key) DO UPDATE SET video_id=excluded.video_id",
+				key, videoID)
 		}
 	}
 
@@ -79,7 +86,54 @@ func (h *Handler) musicYouTubeResolve(w http.ResponseWriter, r *http.Request) {
 		// The YouTube watch page (autoplays on open); the play button opens it in
 		// a new tab. searchUrl remains the no-key / no-match fallback.
 		out["watchUrl"] = "https://www.youtube.com/watch?v=" + videoID
+	} else if unavailable {
+		// Distinguish "couldn't reach YouTube (daily limit or network)" from a
+		// genuine "not on YouTube" so the client can say so honestly instead of
+		// mislabeling a quota wall as "no video found".
+		out["unavailable"] = "1"
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// resolveYouTube resolves artist+song to an embeddable video id. It returns the
+// id ("" if none), whether the lookup was UNAVAILABLE (a transient quota / network
+// / tool error, as opposed to a genuine no-match), and whether the result is safe
+// to CACHE (a real hit or a genuine miss — never an unavailable error).
+//
+// With the yt-dlp opt-in on and the binary present, it resolves quota-free via
+// yt-dlp and verifies embeddability with a cheap 1-unit videos.list call; if
+// yt-dlp itself fails it falls through to the Data API search. Otherwise it uses
+// the Data API search directly (the default path).
+func (h *Handler) resolveYouTube(ctx context.Context, artist, song string) (videoID string, unavailable, cacheable bool) {
+	key := h.effectiveYouTubeKey(ctx)
+	if h.youtubeYtdlpEnabled(ctx) && ytdlp.Available() {
+		if ids, err := ytdlp.Search(ctx, artist, song, ytdlpCandidates); err == nil {
+			if len(ids) == 0 {
+				return "", false, true // genuine no result → cache the miss
+			}
+			client := youtube.New(key)
+			if client == nil {
+				// No key to verify with: return the top candidate unverified, but
+				// DON'T cache it — an unverified dud would poison the cache as a
+				// permanent link-out. onError on the client link-outs a dud.
+				return ids[0], false, false
+			}
+			vid, verr := client.FirstEmbeddable(ctx, ids)
+			if verr != nil {
+				return "", true, false // verify API failed → unavailable
+			}
+			return vid, false, true // hit, or a genuine "none embeddable" miss
+		}
+		// yt-dlp errored (missing / rot / network) — fall through to the Data API.
+	}
+	client := youtube.New(key)
+	if client == nil {
+		return "", false, false // no key → link-out; nothing to cache
+	}
+	vid, err := client.Search(ctx, artist, song)
+	if err != nil {
+		return "", true, false // quota / network → unavailable, don't cache
+	}
+	return vid, false, true // hit or genuine miss → cacheable
 }

@@ -381,7 +381,8 @@
           renderView();
           ytPlay(d.videoId);
         } else {
-          playNext(); // no embeddable video (no key / no match) — skip
+          if (d.unavailable) console.warn('[player] YouTube resolve unavailable (daily limit or network):', t.artist, '-', t.title);
+          playNext(); // no embeddable video (no key / no match / unavailable) — skip
         }
       })
       .catch(() => {

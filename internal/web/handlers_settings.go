@@ -19,6 +19,7 @@ import (
 	"hespera/internal/scan"
 	"hespera/internal/tmdb"
 	"hespera/internal/tvscan"
+	"hespera/internal/ytdlp"
 )
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +143,17 @@ func (h *Handler) youtubeInappEnabled(ctx context.Context) bool {
 	return strings.TrimSpace(v) == "1"
 }
 
+// youtubeYtdlpEnabled reports whether the user opted into the yt-dlp resolver —
+// an off-by-default alternative to the quota-limited Data API search. It resolves
+// a song by invoking the yt-dlp binary (scraping YouTube, a ToS gray area, hence
+// opt-in), escaping the ~100-lookups/day search quota. Off → the Data API search
+// path is used.
+func (h *Handler) youtubeYtdlpEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='youtube_ytdlp_enabled'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
 // effectiveYouTubeInApp gates the in-app YouTube audio engine: it needs both a
 // configured key (to resolve videos) and the opt-in toggle on. The single source
 // of truth for whether the per-song button and the journey queue use the hidden
@@ -238,6 +250,8 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"YouTubeSource":           ytSrc,
 			"YouTubeMasked":           ytMask,
 			"YouTubeInappEnabled":     h.youtubeInappEnabled(ctx),
+			"YouTubeYtdlpEnabled":     h.youtubeYtdlpEnabled(ctx),
+			"YtDlpAvailable":          ytdlp.Available(),
 			"BillboardEnabled":        h.billboardEnabled(ctx),
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
 			"AuthEnabledSetting":      h.authEnabledSetting(ctx),
@@ -290,11 +304,19 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		// checkbox always saves (absent = unchecked = off); the key only when
 		// non-blank, so toggling the checkbox never wipes a stored key.
 		if _, ok := r.Form["youtube_api_key"]; ok {
-			val := ""
+			inapp := ""
 			if r.FormValue("youtube_inapp_enabled") == "1" {
-				val = "1"
+				inapp = "1"
 			}
-			if err := h.saveAPIKey(ctx, "youtube_inapp_enabled", val); err != nil {
+			if err := h.saveAPIKey(ctx, "youtube_inapp_enabled", inapp); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			ytdlpVal := ""
+			if r.FormValue("youtube_ytdlp_enabled") == "1" {
+				ytdlpVal = "1"
+			}
+			if err := h.saveAPIKey(ctx, "youtube_ytdlp_enabled", ytdlpVal); err != nil {
 				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 				return
 			}

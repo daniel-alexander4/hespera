@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -105,4 +106,99 @@ func (c *Client) Search(ctx context.Context, artist, song string) (string, error
 		}
 	}
 	return "", nil
+}
+
+// viewerRegion is the country the embeddability check is evaluated for. Hespera
+// is a single-user local app, so a fixed region is sufficient; a video blocked
+// here (or not in an allow-list that includes it) is treated as unplayable.
+const viewerRegion = "US"
+
+// FirstEmbeddable returns the first id in ids that a viewer here can actually play
+// in an embed — embeddable, upload-processed, and not region-restricted — or ""
+// if none qualify. It is one videos.list call (1 quota unit for the whole batch,
+// vs 100 for a search), so it's the cheap verification behind the quota-free
+// yt-dlp resolver: yt-dlp finds candidates for free, this confirms one is
+// playable before it's cached and embedded. Candidate order (relevance) is
+// preserved. A nil Client (no key) returns "" so the caller can fall back.
+func (c *Client) FirstEmbeddable(ctx context.Context, ids []string) (string, error) {
+	if c == nil || len(ids) == 0 {
+		return "", nil
+	}
+	params := url.Values{
+		"part": {"status,contentDetails"},
+		"id":   {strings.Join(ids, ",")},
+		"key":  {c.key},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL+"/videos?"+params.Encode(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "hespera/1.0")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("youtube videos HTTP %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Items []struct {
+			ID     string `json:"id"`
+			Status struct {
+				Embeddable   bool   `json:"embeddable"`
+				UploadStatus string `json:"uploadStatus"`
+			} `json:"status"`
+			ContentDetails struct {
+				RegionRestriction struct {
+					Allowed []string `json:"allowed"`
+					Blocked []string `json:"blocked"`
+				} `json:"regionRestriction"`
+			} `json:"contentDetails"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("parse youtube videos: %w", err)
+	}
+
+	playable := make(map[string]bool, len(result.Items))
+	for _, it := range result.Items {
+		s := it.Status
+		if !s.Embeddable {
+			continue
+		}
+		if s.UploadStatus != "" && s.UploadStatus != "processed" {
+			continue
+		}
+		rr := it.ContentDetails.RegionRestriction
+		if contains(rr.Blocked, viewerRegion) {
+			continue
+		}
+		if len(rr.Allowed) > 0 && !contains(rr.Allowed, viewerRegion) {
+			continue
+		}
+		playable[it.ID] = true
+	}
+	// Preserve candidate order — ids not returned by the API are deleted/private.
+	for _, id := range ids {
+		if playable[id] {
+			return id, nil
+		}
+	}
+	return "", nil
+}
+
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
