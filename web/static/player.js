@@ -144,21 +144,27 @@
     view.karaokeNext.textContent = idx + 1 < karaokeLines.length ? karaokeLines[idx + 1].text : '';
   };
 
+  // setNoLyrics toggles the layout state: when on, the lyrics card is hidden and
+  // the cover/info expand into the freed space (see .player-now.no-lyrics in app.css).
+  const setNoLyrics = (on) => {
+    if (view && view.main) view.main.classList.toggle('no-lyrics', on);
+  };
+
   const loadKaraokeForTrack = (t) => {
     karaokeLines = [];
     const token = ++karaokeToken;
-    if (view) {
-      view.karaokeCurrent.textContent = 'Loading lyrics…';
-      view.karaokeNext.textContent = '';
-    }
-    if (!t.id) {
-      // defensive: a track with no local id has nothing in lyrics_cache.
-      if (view) {
-        view.karaokeCurrent.textContent = '';
-        view.karaokeNext.textContent = '';
-      }
+    if (!view) return;
+    // Lyrics disabled globally (default off), or a track with no local id (nothing
+    // cached) → hide the card so the cover/info expand.
+    if (!view.lyricsEnabled || !t.id) {
+      setNoLyrics(true);
       return;
     }
+    // Keep the card visible during the fetch so the common (has-lyrics) case doesn't
+    // flash expand→shrink; hide only after a confirmed no-synced result.
+    setNoLyrics(false);
+    view.karaokeCurrent.textContent = 'Loading lyrics…';
+    view.karaokeNext.textContent = '';
     fetch('/music/lyrics/fetch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -167,20 +173,17 @@
       .then((r) => r.json())
       .then((payload) => {
         if (token !== karaokeToken) return; // a newer track took over
-        const d = (payload && payload.data) || {};
-        const synced = (d.synced_lyrics || '').trim();
+        const synced = ((((payload && payload.data) || {}).synced_lyrics) || '').trim();
         if (synced) {
           karaokeLines = parseSyncedLyrics(synced);
+          setNoLyrics(false);
           renderKaraokeAt(audio.currentTime || 0);
-        } else if (view) {
-          view.karaokeCurrent.textContent = (d.lyrics || '').trim() ? 'Synced lyrics unavailable' : 'Lyrics unavailable';
-          view.karaokeNext.textContent = '';
+        } else {
+          setNoLyrics(true); // no synced lyrics to scroll → hide the card, cover expands
         }
       })
       .catch(() => {
-        if (token !== karaokeToken || !view) return;
-        view.karaokeCurrent.textContent = 'Lyrics unavailable';
-        view.karaokeNext.textContent = '';
+        if (token === karaokeToken) setNoLyrics(true);
       });
   };
 
@@ -449,8 +452,10 @@
       seek: $('player-seek'),
       timeLabel: $('player-time'),
       seeking: false,
+      karaoke: $('player-karaoke'),
       karaokeCurrent: $('player-karaoke-current'),
       karaokeNext: $('player-karaoke-next'),
+      lyricsEnabled: page.dataset.lyricsEnabled === '1',
       playlistOpenBtn: $('playlist-open-btn'),
       playlistCloseBtn: $('playlist-close-btn'),
       playlistDrawer: $('playlist-drawer'),
@@ -458,6 +463,10 @@
       playlistList: $('playlist-list'),
       transport: $('player-transport'),
     };
+
+    // Lyrics off (default) → hide the card from the start so the cover expands;
+    // when on, keep the space until a track's fetch resolves (setNoLyrics).
+    if (view.main) view.main.classList.toggle('no-lyrics', !view.lyricsEnabled);
 
     $('player-prev-btn').addEventListener('click', playPrev);
     $('player-rewind-btn').addEventListener('click', () => {

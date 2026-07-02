@@ -109,8 +109,39 @@ func postLyrics(t *testing.T, h *Handler, trackID int64) (int, map[string]any) {
 	return rr.Code, out.Data
 }
 
+func enableLyrics(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec("INSERT INTO app_settings(key,value) VALUES('lyrics_enabled','1') ON CONFLICT(key) DO UPDATE SET value='1'"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Lyrics default OFF: the endpoint returns immediately without touching LRCLIB.
+func TestMusicLyricsFetchDisabledByDefault(t *testing.T) {
+	h, db := newTestHandler(t)
+	id := insertMusicTrack(t, db, "My Song", "The Band", "The Album")
+
+	var hits int64
+	srv := fakeLRCLIB(t, &hits, `{"syncedLyrics":"[00:01.00] hi"}`, "[]")
+	orig := lrcLibBaseURL
+	lrcLibBaseURL = srv.URL
+	defer func() { lrcLibBaseURL = orig }()
+
+	code, data := postLyrics(t, h, id)
+	if code != http.StatusOK {
+		t.Fatalf("disabled fetch: code=%d data=%v", code, data)
+	}
+	if s, _ := data["synced_lyrics"].(string); s != "" {
+		t.Fatalf("disabled lyrics should return nothing, got %q", s)
+	}
+	if atomic.LoadInt64(&hits) != 0 {
+		t.Fatalf("disabled lyrics must not query the provider (hits=%d)", atomic.LoadInt64(&hits))
+	}
+}
+
 func TestMusicLyricsFetchSyncedHitThenCache(t *testing.T) {
 	h, db := newTestHandler(t)
+	enableLyrics(t, db)
 	id := insertMusicTrack(t, db, "My Song", "The Band", "The Album")
 
 	var hits int64
@@ -147,6 +178,7 @@ func TestMusicLyricsFetchSyncedHitThenCache(t *testing.T) {
 
 func TestMusicLyricsFetchMissIsCached(t *testing.T) {
 	h, db := newTestHandler(t)
+	enableLyrics(t, db)
 	id := insertMusicTrack(t, db, "Obscure", "Nobody", "")
 
 	var hits int64
@@ -172,7 +204,8 @@ func TestMusicLyricsFetchMissIsCached(t *testing.T) {
 }
 
 func TestMusicLyricsFetchBadRequest(t *testing.T) {
-	h, _ := newTestHandler(t)
+	h, db := newTestHandler(t)
+	enableLyrics(t, db)
 	req := httptest.NewRequest(http.MethodPost, "/music/lyrics/fetch", strings.NewReader("track_id=0"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr := httptest.NewRecorder()

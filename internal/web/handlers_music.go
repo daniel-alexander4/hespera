@@ -1674,6 +1674,7 @@ func (h *Handler) musicPlayer(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "player.html", map[string]any{
 		"Title":         "Player",
 		"AutoloadQuery": autoload,
+		"LyricsEnabled": h.effectiveLyricsEnabled(r.Context()),
 	})
 }
 
