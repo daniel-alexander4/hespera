@@ -44,7 +44,6 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/music/album/reassign", h.musicAlbumReassign)
 	mux.HandleFunc("/music/album/rescan", h.musicAlbumRescan)
 	mux.HandleFunc("/music/compilations", h.musicCompilations)
-	mux.HandleFunc("/music/playlists", h.musicPlaylists)
 	mux.HandleFunc("/music/player", h.musicPlayer)
 	mux.HandleFunc("/music/queue", h.musicQueue)
 	mux.HandleFunc("/music/play-event", h.musicPlayEvent)
