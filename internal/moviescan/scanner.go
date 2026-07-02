@@ -177,6 +177,9 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
   stream_info_json=excluded.stream_info_json,
   guessed_title=excluded.guessed_title,
   year=excluded.year,
+  -- a changed file (new size or mtime) invalidates its integrity status so the
+  -- next integrity_check re-examines (and re-repairs) it.
+  integrity_status=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE integrity_status END,
   updated_at=datetime('now')
 `, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, title, year)
 	if err != nil {

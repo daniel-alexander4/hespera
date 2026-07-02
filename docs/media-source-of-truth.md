@@ -294,6 +294,35 @@ relink transfers them; `movie_art` is the thumbgc reference set for `thumbs/movi
 
 ---
 
+## 6a. Media integrity / auto-repair (the one writer into MEDIA_ROOT)
+
+`internal/integrity` is the **single exception** to "Hespera reconciles *toward*
+disk, it does not mutate it." It detects and (for the losslessly-fixable kind)
+repairs corrupt **video** files in place:
+
+- **Detection is a separate job, never in the scanner.** Scanners stay
+  read-only (§0). A cheap **container** check (`integrity_check`, `-c copy -f
+  null`, no decode) is *chained after* a tv/movie scan and only visits files
+  whose `integrity_status=''`. A deep **bitstream** check (`integrity_deep`, full
+  decode) is opt-in (the Libraries "Check integrity" button).
+- **Repair = remux → verify → atomic replace.** A container-corrupt file is
+  stream-copy remuxed (`ffmpeg -c copy`, lossless) to a same-directory hidden
+  temp, verified (same stream count + duration within ±2s + a clean re-check),
+  then **atomically renamed over the original**. A good original is never lost:
+  the overwrite only happens for a verified-strictly-better remux; any failure
+  discards the temp. Gated by the `integrity_autorepair` app-setting
+  (default on) — off = detect/flag only, zero media writes.
+- **After a repair, the file's `(size, mtime, stream_info_json)` are updated on
+  the row** in the same step, so the scanner's change-detection fast-path (§2)
+  doesn't see a spurious change and the DB stays consistent with disk. The path
+  is unchanged, so identity (`UNIQUE(library_id, abs_path)`) and all `file_id`-
+  keyed state survive — no move-relink involved.
+- **Per-file status** lives on `{tv_series_files, movie_files}.integrity_status`
+  (`''` unchecked / `ok` / `repaired` / `flagged`), reset to `''` by the scanner
+  upsert when size or mtime change (so a changed file is re-examined).
+  `flagged` = unrepairable **bitstream** damage (data loss) or a remux that
+  couldn't be safely applied.
+
 ## 7. Rules for anyone touching media data
 
 - **Never treat the DB as authoritative for existence.** If you need "what media

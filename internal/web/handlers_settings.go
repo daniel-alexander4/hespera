@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/integrity"
 	"hespera/internal/jobs"
 	"hespera/internal/match"
 	"hespera/internal/moviescan"
@@ -149,6 +150,17 @@ func (h *Handler) effectiveYouTubeInApp(ctx context.Context) bool {
 	return h.effectiveYouTubeKey(ctx) != "" && h.youtubeInappEnabled(ctx)
 }
 
+// effectiveIntegrityAutoRepair reports whether Hespera may auto-repair
+// container-corrupt media in place (remux → verify → atomic replace). Default
+// ON — corruption detection always runs, but this is the kill-switch for the one
+// operation that writes back into MEDIA_ROOT. Stored explicitly as '0' to persist
+// an off; absent (or anything else) reads as on.
+func (h *Handler) effectiveIntegrityAutoRepair(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='integrity_autorepair'").Scan(&v)
+	return strings.TrimSpace(v) != "0"
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -227,6 +239,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"YouTubeMasked":           ytMask,
 			"YouTubeInappEnabled":     h.youtubeInappEnabled(ctx),
 			"BillboardEnabled":        h.billboardEnabled(ctx),
+			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
 			"AuthEnabledSetting":      h.authEnabledSetting(ctx),
 			"AuthActive":              h.auth.Enabled(),
 			"Saved":                   r.URL.Query().Get("saved"),
@@ -347,6 +360,20 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			}
 			if on {
 				h.enqueueBillboardFetch(ctx) // kick the one-time runtime fetch
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["integrity_present"]; ok {
+			// Default-ON kill-switch: store an explicit '0' to persist an off;
+			// clear the row (→ absent → on) when checked, keeping the DB clean.
+			val := "0"
+			if r.FormValue("integrity_autorepair") == "1" {
+				val = ""
+			}
+			if err := h.saveAPIKey(ctx, "integrity_autorepair", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
 			}
 			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
 			return
@@ -547,7 +574,31 @@ func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
 		"MediaRoot":        h.cfg.MediaRoot,
 		"Saved":            r.URL.Query().Get("saved"),
 		"MediaRootInvalid": r.URL.Query().Get("mediaroot") == "invalid",
+		"Flagged":          h.integrityFlaggedCounts(r.Context()),
 	})
+}
+
+// integrityFlaggedCounts returns per-library counts of video files flagged with
+// unrepairable corruption, so the libraries page can surface a warning. Keyed by
+// library_id; libraries with no flags are absent. Best-effort (nil on error).
+func (h *Handler) integrityFlaggedCounts(ctx context.Context) map[int64]int {
+	out := map[int64]int{}
+	for _, tbl := range []string{"tv_series_files", "movie_files"} {
+		rows, err := h.db.QueryContext(ctx,
+			"SELECT library_id, COUNT(*) FROM "+tbl+" WHERE integrity_status='flagged' GROUP BY library_id")
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var lib int64
+			var n int
+			if rows.Scan(&lib, &n) == nil {
+				out[lib] += n
+			}
+		}
+		rows.Close()
+	}
+	return out
 }
 
 // librariesMediaRoot persists the media folder (the pathguard containment root)
@@ -673,6 +724,11 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 					return tvMatcher.RunTVMatch(ctx, mJID, mLibID)
 				})
 			}
+			// Chain the cheap container integrity check (auto-repairs new/changed files).
+			repair := h.effectiveIntegrityAutoRepair(ctx)
+			_, _ = h.jobs.Enqueue("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
+				return integrity.CheckLibrary(ctx, h.db, h.cfg.MediaRoot, "tv_series_files", iJID, iLibID, repair)
+			})
 			return nil
 		})
 	case "movies":
@@ -688,6 +744,11 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 					return movieMatcher.RunMovieMatch(ctx, mJID, mLibID)
 				})
 			}
+			// Chain the cheap container integrity check (auto-repairs new/changed files).
+			repair := h.effectiveIntegrityAutoRepair(ctx)
+			_, _ = h.jobs.Enqueue("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
+				return integrity.CheckLibrary(ctx, h.db, h.cfg.MediaRoot, "movie_files", iJID, iLibID, repair)
+			})
 			return nil
 		})
 	default:
@@ -773,6 +834,70 @@ func (h *Handler) librariesReprobe(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"ok":      true,
 			"message": "reprobe queued",
+			"data":    map[string]any{"library_id": id, "job_id": jobID},
+		})
+		return
+	}
+	http.Redirect(w, r, "/libraries", http.StatusSeeOther)
+}
+
+// librariesIntegrityDeep enqueues an integrity_deep job that fully decodes a
+// video library's files to detect bitstream corruption the cheap container check
+// can't see. Flags only (that damage is unrecoverable); never modifies a file.
+// Expensive, so it's an explicit button. TV + movie libraries.
+func (h *Handler) librariesIntegrityDeep(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "librariesIntegrityDeep", "err", err)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid id", 400)
+		return
+	}
+
+	var libType string
+	if err := h.db.QueryRowContext(r.Context(), "SELECT type FROM libraries WHERE id=?", id).Scan(&libType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		httpError(w, 500, "internal server error", "db query failed", "handler", "librariesIntegrityDeep", "err", err)
+		return
+	}
+	table := ""
+	switch libType {
+	case "tv":
+		table = "tv_series_files"
+	case "movies":
+		table = "movie_files"
+	default:
+		http.Error(w, "integrity check is only supported for tv and movie libraries", 400)
+		return
+	}
+
+	mediaRoot := h.cfg.MediaRoot
+	jobID, err := h.jobs.Enqueue("integrity_deep", id, "user", func(ctx context.Context, jID, libID int64) error {
+		return integrity.DeepCheckLibrary(ctx, h.db, mediaRoot, table, jID, libID)
+	})
+	if err != nil {
+		if errors.Is(err, jobs.ErrQueueFull) {
+			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "librariesIntegrityDeep", "err", err)
+			return
+		}
+		httpError(w, 500, "internal server error", "enqueue integrity check failed", "handler", "librariesIntegrityDeep", "err", err)
+		return
+	}
+
+	if requestWantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"message": "integrity check queued",
 			"data":    map[string]any{"library_id": id, "job_id": jobID},
 		})
 		return
