@@ -301,9 +301,12 @@ disk, it does not mutate it." It detects and (for the losslessly-fixable kind)
 repairs corrupt **video** files in place:
 
 - **Detection is a separate job, never in the scanner.** Scanners stay
-  read-only (§0). A cheap **container** check (`integrity_check`, `-c copy -f
-  null`, no decode) is *chained after* a tv/movie scan and only visits files
-  whose `integrity_status=''`. A deep check (`integrity_deep`, opt-in
+  read-only (§0). A cheap check (`integrity_check`) is *chained after* a
+  tv/movie scan and only visits files whose `integrity_status=''`; it examines
+  **container** integrity (`-c copy -f null`, no decode → auto-repaired) **and
+  audio** integrity (an `AudioGaps` packet scan → missing audio flagged). So new
+  media is examined for both automatically on scan; only the expensive video
+  full-decode is left to the opt-in deep tier. A deep check (`integrity_deep`, opt-in
   "Check integrity" button) examines **both streams** — a full decode for
   **video bitstream** corruption plus an **audio packet-gap scan** for **missing
   audio** — and flags either (data loss is unrepairable; the transcode

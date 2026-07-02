@@ -121,13 +121,27 @@ func run(ctx context.Context, db *sql.DB, mediaRoot, table string, jobID, librar
 	return nil
 }
 
-// repairOne runs the cheap container check + optional repair on one file and
-// writes the outcome. Returns the outcome status, or "" on a hard error.
+// repairOne runs the cheap tier on one file: the container check + optional
+// repair, PLUS a cheap audio packet-gap scan (both demux-level, no full decode).
+// Container corruption is losslessly repaired in place; an audio gap is missing
+// data that can't be repaired, so it flags. Returns the final status, or "" on a
+// hard error.
 func repairOne(ctx context.Context, db *sql.DB, table string, id int64, path string, repair bool) string {
 	out, err := video.RepairFile(ctx, path, repair)
 	if err != nil {
 		slog.Warn("integrity check", "file_id", id, "path", path, "err", err)
 		return ""
+	}
+	// Also examine audio (a gap the container check won't see). An audio hole is
+	// unrepairable data loss, so it flags even when the container was clean/repaired.
+	status, detail := out.Status, out.Detail
+	if ad := auditAudio(ctx, id, path); ad != "" {
+		status = "flagged"
+		if detail != "" {
+			detail += "; " + ad
+		} else {
+			detail = ad
+		}
 	}
 	if out.Replaced && out.Probe != nil {
 		// The file was rewritten: refresh the derived facts so the scanner's
@@ -137,15 +151,30 @@ func repairOne(ctx context.Context, db *sql.DB, table string, id int64, path str
 			_, _ = db.ExecContext(ctx, "UPDATE "+table+` SET
   stream_info_json=?, file_size_bytes=?, mtime_unix=?,
   integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now'), updated_at=datetime('now')
-WHERE id=?`, string(b), fi.Size(), fi.ModTime().Unix(), out.Status, out.Detail, id)
-			slog.Info("integrity repaired", "file_id", id, "path", path, "detail", out.Detail)
-			return out.Status
+WHERE id=?`, string(b), fi.Size(), fi.ModTime().Unix(), status, detail, id)
+			slog.Info("integrity repaired", "file_id", id, "path", path, "detail", detail)
+			return status
 		}
 	}
 	_, _ = db.ExecContext(ctx,
 		"UPDATE "+table+" SET integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?",
-		out.Status, out.Detail, id)
-	return out.Status
+		status, detail, id)
+	return status
+}
+
+// auditAudio scans one file's audio for a significant gap (missing audio) and
+// returns a flag detail if found, else "". Demux-only (cheap) — shared by the
+// cheap tier (repairOne) and the deep tier (flagDeep) so they never drift.
+func auditAudio(ctx context.Context, id int64, path string) string {
+	_, largest, err := video.AudioGaps(ctx, path)
+	if err != nil {
+		slog.Warn("integrity audio gap scan", "file_id", id, "path", path, "err", err)
+		return ""
+	}
+	if largest >= audioGapFlagThreshold {
+		return fmt.Sprintf("audio gap %.1fs (missing audio)", largest)
+	}
+	return ""
 }
 
 // audioGapFlagThreshold is the smallest audio hole (seconds) worth flagging —
@@ -162,25 +191,19 @@ func flagDeep(ctx context.Context, db *sql.DB, table string, id int64, path stri
 		slog.Warn("integrity deep check", "file_id", id, "path", path, "err", err)
 		return ""
 	}
-	_, largestGap, gapErr := video.AudioGaps(ctx, path)
-	if gapErr != nil {
-		slog.Warn("integrity audio gap scan", "file_id", id, "path", path, "err", gapErr)
-		largestGap = 0 // non-fatal — still act on the decode result
-	}
-
 	var problems []string
 	if videoErrs > 0 {
 		problems = append(problems, fmt.Sprintf("video bitstream corruption (%d decode errors)", videoErrs))
 	}
-	if largestGap >= audioGapFlagThreshold {
-		problems = append(problems, fmt.Sprintf("audio gap %.1fs (missing audio)", largestGap))
+	if ad := auditAudio(ctx, id, path); ad != "" {
+		problems = append(problems, ad)
 	}
 	if len(problems) > 0 {
 		detail := strings.Join(problems, "; ") + " — data loss, not auto-repairable"
 		_, _ = db.ExecContext(ctx,
 			"UPDATE "+table+" SET integrity_status='flagged', integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?",
 			detail, id)
-		slog.Warn("integrity flagged", "file_id", id, "path", path, "video_decode_errors", videoErrs, "audio_gap_sec", largestGap)
+		slog.Warn("integrity flagged", "file_id", id, "path", path, "detail", detail)
 		return "flagged"
 	}
 	_, _ = db.ExecContext(ctx,
