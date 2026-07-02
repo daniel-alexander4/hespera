@@ -236,10 +236,7 @@ func (m *Matcher) refetchMissingArt(ctx context.Context, jobID, libraryID int64)
 
 	// Extend the job's progress to cover this phase too (so it doesn't sit at
 	// 100% while this churns through rate-limited lookups).
-	var base, total int
-	_ = m.db.QueryRowContext(ctx, "SELECT progress_current, progress_total FROM scan_jobs WHERE id=?", jobID).
-		Scan(&base, &total)
-	_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", total+len(albums), jobID)
+	base := m.progressAddTotal(ctx, jobID, len(albums))
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i, a := range albums {
@@ -270,7 +267,7 @@ func (m *Matcher) refetchMissingArt(ctx context.Context, jobID, libraryID int64)
 			"UPDATE music_albums SET art_checked_at=? WHERE id=? AND match_status='matched' AND musicbrainz_id=?",
 			now, a.id, a.rgID)
 
-		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", base+i+1, jobID)
+		m.progressSet(ctx, jobID, base+i+1)
 
 		if i < len(albums)-1 {
 			select {
@@ -327,6 +324,28 @@ func (m *Matcher) RefetchAlbumArt(ctx context.Context, albumID int64) error {
 	return nil
 }
 
+// progressAddTotal grows the job's progress_total by n and returns the current
+// progress_current as this phase's base, so RunMusicMatch's phases accumulate
+// into one monotonic bar (enrich → popularity → match → art) instead of each
+// resetting it. Best-effort — progress is cosmetic, so a failed update never
+// fails the match. No-op (returns 0) when n <= 0.
+func (m *Matcher) progressAddTotal(ctx context.Context, jobID int64, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	var base, total int
+	_ = m.db.QueryRowContext(ctx,
+		"SELECT progress_current, progress_total FROM scan_jobs WHERE id=?", jobID).Scan(&base, &total)
+	_, _ = m.db.ExecContext(ctx,
+		"UPDATE scan_jobs SET progress_total=? WHERE id=?", total+n, jobID)
+	return base
+}
+
+// progressSet records progress_current for the job (best-effort).
+func (m *Matcher) progressSet(ctx context.Context, jobID int64, current int) {
+	_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", current, jobID)
+}
+
 // enrichArtists finds all artists in the library that are missing MBID, bio, or
 // image, resolves their MusicBrainz ID, and fetches bio + image.
 func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) error {
@@ -365,12 +384,14 @@ func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) err
 		return err
 	}
 
-	for _, a := range artists {
+	base := m.progressAddTotal(ctx, jobID, len(artists))
+	for i, a := range artists {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
+		m.progressSet(ctx, jobID, base+i+1)
 
 		hasMBID := a.mbid != ""
 		hasBio := a.bio != ""
@@ -478,12 +499,14 @@ func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) e
 		return nil
 	}
 
+	base := m.progressAddTotal(ctx, jobID, len(artists))
 	for i, a := range artists {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
+		m.progressSet(ctx, jobID, base+i+1)
 
 		// Load this artist's local tracks once — both popularity sources credit
 		// them. norm = normalized title for matching; pop = current stored value.
@@ -595,8 +618,9 @@ func (m *Matcher) matchAlbums(ctx context.Context, jobID, libraryID int64) error
 		return nil
 	}
 
-	// Set progress total.
-	_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", len(albums), jobID)
+	// Extend the job's progress to cover this phase (accumulating onto the enrich +
+	// popularity phases that already ran, so the bar doesn't reset here).
+	base := m.progressAddTotal(ctx, jobID, len(albums))
 
 	for i, a := range albums {
 		select {
@@ -612,8 +636,7 @@ func (m *Matcher) matchAlbums(ctx context.Context, jobID, libraryID int64) error
 				"UPDATE music_albums SET match_status='unmatched' WHERE id=?", a.id)
 		}
 
-		// Update progress.
-		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i+1, jobID)
+		m.progressSet(ctx, jobID, base+i+1)
 
 		// 500ms gap between albums to stay well under rate limits.
 		if i < len(albums)-1 {
