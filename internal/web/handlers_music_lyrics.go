@@ -15,8 +15,9 @@ import (
 // Lyrics are fetched lazily, per track, from LRCLIB (https://lrclib.net) — a
 // free, key-less provider returning both plain and synced (LRC) lyrics. Results
 // (hits and misses) are cached in lyrics_cache so a track is fetched at most
-// once. Consistent with Hespera already auto-fetching external metadata
-// (MusicBrainz / Cover Art Archive / Wikipedia) — no opt-in gate.
+// once. Gated by the `lyrics_enabled` app-setting (default OFF, opt-in via
+// Settings → API Keys): when off this endpoint returns immediately and the
+// now-playing page hides the lyrics card so the cover expands into the space.
 
 const (
 	lyricsProviderKey = "lrclib"
@@ -54,6 +55,12 @@ type lyricsCacheRow struct {
 func (h *Handler) musicLyricsFetch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// Global opt-in gate (default off): the single source of truth — even if the
+	// client calls this directly, no LRCLIB fetch happens when lyrics are disabled.
+	if !h.effectiveLyricsEnabled(r.Context()) {
+		writeLyricsJSON(w, http.StatusOK, true, "lyrics disabled", nil)
 		return
 	}
 	if err := r.ParseForm(); err != nil {

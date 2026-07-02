@@ -131,6 +131,16 @@ func (h *Handler) effectiveIntegrityAutoRepair(ctx context.Context) bool {
 	return strings.TrimSpace(v) != "0"
 }
 
+// effectiveLyricsEnabled reports whether synced-lyrics fetching + the
+// now-playing lyrics card are on. Default OFF (opt-in) — stored as '1' when
+// enabled, absent = off. The single source of truth for both the client (skips
+// the LRCLIB fetch when off) and the /music/lyrics/fetch endpoint.
+func (h *Handler) effectiveLyricsEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='lyrics_enabled'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -204,6 +214,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesMasked":     osMask,
 			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
+			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
 			"AuthEnabledSetting":      h.authEnabledSetting(ctx),
 			"AuthActive":              h.auth.Enabled(),
 			"Saved":                   r.URL.Query().Get("saved"),
@@ -296,6 +307,19 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				val = ""
 			}
 			if err := h.saveAPIKey(ctx, "integrity_autorepair", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["lyrics_present"]; ok {
+			// Default-OFF opt-in: store '1' when enabled, clear the row (→ off) otherwise.
+			val := ""
+			if r.FormValue("lyrics_enabled") == "1" {
+				val = "1"
+			}
+			if err := h.saveAPIKey(ctx, "lyrics_enabled", val); err != nil {
 				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 				return
 			}

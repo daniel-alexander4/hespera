@@ -1134,6 +1134,21 @@ body::before {
   flex-direction: column;
   gap: 0.75rem;
 }
+/* No-lyrics state (lyrics disabled globally, or the track has no synced lyrics):
+   hide the lyrics card and enlarge the cover so the now-playing view fills the
+   freed space instead of leaving a gap. */
+.player-now.no-lyrics #player-karaoke {
+  display: none;
+}
+.player-now.no-lyrics .player-main-grid {
+  grid-template-columns: 440px 1fr;
+  max-width: 920px;
+}
+.player-now.no-lyrics .player-cover img,
+.player-now.no-lyrics .album-art-ph.big {
+  width: 440px;
+  max-width: 100%;
+}
 .player-audio {
   width: 100%;
   margin: 0.5rem 0;
@@ -1681,6 +1696,15 @@ body::before {
     width: 100%;
     max-width: 300px;
     margin: 0 auto;
+  }
+  /* Keep the no-lyrics layout single-column on mobile (just a slightly bigger cover). */
+  .player-now.no-lyrics .player-main-grid {
+    grid-template-columns: 1fr;
+  }
+  .player-now.no-lyrics .player-cover img,
+  .player-now.no-lyrics .album-art-ph.big {
+    width: 100%;
+    max-width: 380px;
   }
   .artist-header {
     flex-direction: column;
