@@ -298,7 +298,7 @@ relink transfers them; `movie_art` is the thumbgc reference set for `thumbs/movi
 
 `internal/integrity` is the **single exception** to "Hespera reconciles *toward*
 disk, it does not mutate it." It detects and (for the losslessly-fixable kind)
-repairs corrupt **video** files in place:
+repairs corrupt **video (TV + movies) and music** files in place:
 
 - **Detection is a separate job, never in the scanner.** Scanners stay
   read-only (§0). A cheap check (`integrity_check`) is *chained after* a
@@ -318,9 +318,15 @@ repairs corrupt **video** files in place:
   the overwrite only happens for a verified-strictly-better remux; any failure
   discards the temp. Gated by the `integrity_autorepair` app-setting
   (default on) — off = detect/flag only, zero media writes.
-- **After a repair, the file's `(size, mtime, stream_info_json)` are updated on
-  the row** in the same step, so the scanner's change-detection fast-path (§2)
-  doesn't see a spurious change and the DB stays consistent with disk. The path
+- **After a repair, the file's derived facts are updated on the row** in the
+  same step (`refreshAfterReplace`), so the scanner's change-detection fast-path
+  (§2) doesn't see a spurious change and the DB stays consistent with disk —
+  **table-aware**: video updates `(size, mtime, stream_info_json)`; **music
+  recomputes `checksum_sha256`** (+ size, mtime), since the remux changed the
+  bytes and a stale checksum would break a later move's relink (§5). Music also
+  runs the full **decode** in the cheap scan-time tier (cheap for small audio
+  files), so MP3 bitstream corruption — which never shows in the container — is
+  flagged automatically on scan. The path
   is unchanged, so identity (`UNIQUE(library_id, abs_path)`) and all `file_id`-
   keyed state survive — no move-relink involved.
 - **Per-file status** lives on `{tv_series_files, movie_files}.integrity_status`
