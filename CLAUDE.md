@@ -17,7 +17,7 @@ make build                  # same, via the Makefile
 ./install.sh                # `apt install` the prebuilt dist/ .deb on this Debian/Ubuntu box (run build.sh first)
 make dist / make install    # Makefile wrappers
 # build.sh stamps the version via -ldflags "-X main.version=$VERSION" from the VERSION file;
-# the .deb (build/nfpm.yaml) ships hespera+hescli to /usr/bin and declares ffmpeg/openssh-client.
+# the .deb (build/nfpm.yaml) ships hespera+hescli to /usr/bin and declares ffmpeg.
 # There is no service: the binary runs on demand as the invoking user (see the daemon note below).
 
 # Build and run with Docker (still supported; bundles ffmpeg)
@@ -82,8 +82,8 @@ make bump-patch / bump-minor / bump-major   # Makefile wrappers
 
 ### Entry Points
 
-- `cmd/hespera/main.go` — Web server: config → SQLite (WAL) → migrations → Handler → HTTP server, graceful shutdown (10s timeout).
-- `cmd/hescli/main.go` — CLI stub for future user/key management.
+- `cmd/hespera/main.go` — Web server: config → SQLite (WAL) → migrations → Handler → HTTP server, graceful shutdown (10s timeout). Also starts the **hescli management socket** (Linux only, best-effort): a unix socket at `DataDir/hescli.sock` serving `web.Handler.ManagementRouter()`, gated by a `peerCredListener` (`SO_PEERCRED` via stdlib `syscall.GetsockoptUcred` — **no new dep**) that admits only **root or the server's own uid** (`authorizedUID`); the socket is 0600, stale-removed on start, unlinked on shutdown. Build-tagged (`management_linux.go` + a no-op `management_other.go`) since peer-cred is Linux-only. A long `DataDir` can exceed the ~108-char unix `sun_path` limit → bind fails, logged as a WARN, app keeps serving (pending.md).
+- `cmd/hescli/main.go` — **management CLI** (headless configuration over SSH). An HTTP client over the management unix socket (`--socket`/`$HESPERA_SOCKET`/default `DataDir/hescli.sock`, resolved via `config.FromEnv()`); always sends `Accept: application/json`. Verbs: `library list|add|rm`, `scan`, `match`, `integrity`, `config list|get|set`, `jobs`, `status` — **no playback**. Reuses the web handlers that already JSON-branch on `requestWantsJSON` (scan/delete/integrity/jobs); the rest are thin JSON handlers in `internal/web/management.go`. `config set` drives a small `managedSettings` registry (secret/string/toggle/path kinds) over `saveAPIKey`/`validateMediaFolder` — `media_root` prints "applies on restart".
 
 ### Core Packages
 

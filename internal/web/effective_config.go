@@ -12,18 +12,17 @@ import (
 	"hespera/internal/config"
 )
 
-// resolveEffectiveConfig overlays user-set runtime overrides from app_settings
-// onto the env/default config, once at construction time. Two values are
-// configurable from the Settings UI instead of env vars — the media folder and
-// whether auth is on — so the single-machine app is fully configurable without
-// touching the CLI.
+// resolveEffectiveConfig overlays the user-set media-folder override from
+// app_settings onto the env/default config, once at construction time. The media
+// folder is configurable from the Settings UI (and the hescli CLI) instead of an
+// env var, so the single-machine app is configurable without a restart flag.
 //
-// Both apply at startup (the next launch picks up a change), which keeps the
-// security-critical containment root (MediaRoot, the pathguard root) and the
-// auth boundary resolved once, not mutated per request. Every MediaRoot reader
-// (scanners + stream handlers, all built from h.cfg) and the auth Manager are
-// constructed from this returned config, so overriding here is the single source
-// of truth — no individual call site reads app_settings for these.
+// It applies at startup (the next launch picks up a change), which keeps the
+// security-critical containment root (MediaRoot, the pathguard root) resolved
+// once, not mutated per request. Every MediaRoot reader (scanners + stream
+// handlers, all built from h.cfg) is constructed from this returned config, so
+// overriding here is the single source of truth — no individual call site reads
+// app_settings for it.
 func resolveEffectiveConfig(cfg config.Config, db *sql.DB) config.Config {
 	if db == nil {
 		return cfg
@@ -63,4 +62,3 @@ func validateMediaFolder(path string) error {
 	}
 	return nil
 }
-

@@ -94,6 +94,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Local management socket for hescli (Linux only; root/owner-gated by
+	// peer-cred). Best-effort — a failure here never blocks the app from serving.
+	mgmt, err := serveManagementSocket(h, cfg.DataDir)
+	if err != nil {
+		slog.Warn("management socket unavailable", "err", err)
+	} else if mgmt != nil {
+		slog.Info("management socket listening", "path", filepath.Join(cfg.DataDir, "hescli.sock"))
+	}
+
 	// App mode (the default) opens a chromeless browser window and binds a random
 	// loopback port — Hespera runs as a single-machine app. HESPERA_NO_BROWSER
 	// opts out (server/headless/Docker), keeping the env-configured listen
@@ -165,6 +174,11 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Warn("http shutdown", "err", err)
+	}
+	if mgmt != nil {
+		if err := mgmt.Close(); err != nil {
+			slog.Warn("management socket shutdown", "err", err)
+		}
 	}
 	h.Shutdown()
 	slog.Info("shutdown complete")

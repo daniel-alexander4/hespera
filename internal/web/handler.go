@@ -40,6 +40,7 @@ type Deps struct {
 type Handler struct {
 	cfg       config.Config
 	db        *sql.DB
+	version   string
 	tpls      map[string]*template.Template
 	staticFS  fs.FS
 	jobs      *jobs.Service
@@ -57,10 +58,10 @@ type Handler struct {
 }
 
 func New(d Deps) (*Handler, error) {
-	// Overlay user-set runtime overrides (media folder, auth toggle) from
-	// app_settings onto the env/default config, once here at construction. Every
-	// MediaRoot reader and the auth Manager are built from this config, so this is
-	// the single override point — no call site reads those from app_settings.
+	// Overlay the user-set media-folder override from app_settings onto the
+	// env/default config, once here at construction. Every MediaRoot reader
+	// (scanners + stream handlers) is built from this config, so this is the single
+	// override point — no call site reads it from app_settings.
 	d.Cfg = resolveEffectiveConfig(d.Cfg, d.DB)
 
 	// Assets are embedded (see ../../embed.go), so the binary is self-contained
@@ -167,6 +168,7 @@ func New(d Deps) (*Handler, error) {
 	h := &Handler{
 		cfg:       d.Cfg,
 		db:        d.DB,
+		version:   assetVersion,
 		tpls:      tpls,
 		staticFS:  staticFS,
 		jobs:      jobs.New(d.DB),
