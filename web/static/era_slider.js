@@ -26,6 +26,10 @@
     const lib = picker.dataset.lib || '';
     if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) return;
     const span = max - min;
+    // Years are bands, not points: the track is divided into (span + 1) equal
+    // year-bands, so a single-year selection (from==to) is one band wide — a
+    // visible gap — rather than a zero-width collapse.
+    const denom = span + 1;
 
     const track = picker.querySelector('.era-track');
     const win = picker.querySelector('.era-window');
@@ -40,12 +44,15 @@
     let to = max;
     let from = clamp(max - 9, min, max);
 
-    const pct = (year) => (span === 0 ? 0 : ((year - min) / span) * 100);
+    // pct(y) is the LEFT edge of year y's band. A from..to range covers whole
+    // bands, so its right edge is pct(to + 1) — that trailing band is what makes
+    // a single year visible.
+    const pct = (year) => ((year - min) / denom) * 100;
 
     function render() {
       const l = pct(from);
       win.style.left = l + '%';
-      win.style.width = pct(to) - l + '%';
+      win.style.width = pct(to + 1) - l + '%';
       if (fromEl) fromEl.textContent = String(from);
       if (toEl) toEl.textContent = String(to);
       track.setAttribute('aria-valuetext', from + ' to ' + to);
@@ -125,7 +132,8 @@
     const yearAt = (clientX) => {
       const r = track.getBoundingClientRect();
       if (r.width === 0) return from;
-      return Math.round(min + clamp((clientX - r.left) / r.width, 0, 1) * span);
+      // Which year-band is the pointer over? floor into [min, max].
+      return clamp(min + Math.floor(clamp((clientX - r.left) / r.width, 0, 1) * denom), min, max);
     };
     const applyDrag = (clientX) => {
       if (!drag) return;
