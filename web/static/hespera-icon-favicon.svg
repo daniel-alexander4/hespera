@@ -1,41 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Hespera">
   <defs>
     <linearGradient id="hf-sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#312e81"/><stop offset=".5" stop-color="#c026d3"/>
-      <stop offset=".66" stop-color="#fbbf24"/><stop offset="1" stop-color="#f59e0b"/>
+      <stop offset="0" stop-color="#312e81"/><stop offset=".46" stop-color="#c026d3"/>
+      <stop offset=".62" stop-color="#fbbf24"/><stop offset="1" stop-color="#f59e0b"/>
     </linearGradient>
     <linearGradient id="hf-sea" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#b45309"/><stop offset="1" stop-color="#312e81"/>
+      <stop offset="0" stop-color="#c2620a"/><stop offset="1" stop-color="#312e81"/>
     </linearGradient>
-    <radialGradient id="hf-sun" gradientUnits="userSpaceOnUse" cx="120" cy="138" r="70">
+    <radialGradient id="hf-sun" gradientUnits="userSpaceOnUse" cx="120" cy="132" r="74">
       <stop offset="0" stop-color="#fff7d6"/><stop offset=".55" stop-color="#fcd34d"/>
-      <stop offset="1" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#f7a80d"/>
     </radialGradient>
-    <radialGradient id="hf-glow" gradientUnits="userSpaceOnUse" cx="120" cy="130" r="64">
-      <stop offset="0" stop-color="#fff3c4" stop-opacity=".7"/><stop offset="1" stop-color="#fcd34d" stop-opacity="0"/>
+    <radialGradient id="hf-glow" gradientUnits="userSpaceOnUse" cx="120" cy="128" r="86">
+      <stop offset="0" stop-color="#fff3c4" stop-opacity=".85"/>
+      <stop offset=".55" stop-color="#fcd34d" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#fcd34d" stop-opacity="0"/>
     </radialGradient>
     <clipPath id="hf-frame"><rect width="240" height="240" rx="48"/></clipPath>
   </defs>
   <g clip-path="url(#hf-frame)">
     <rect width="240" height="240" fill="url(#hf-sky)"/>
-    <circle cx="120" cy="132" r="62" fill="url(#hf-glow)"/>
+    <circle cx="120" cy="126" r="80" fill="url(#hf-glow)"/>
     <g fill="url(#hf-sun)">
-      <rect x="68" y="114" width="16" height="36" rx="6"/>
-      <rect x="90" y="95" width="16" height="55" rx="6"/>
-      <rect x="112" y="92" width="16" height="58" rx="6"/>
-      <rect x="134" y="98" width="16" height="52" rx="6"/>
-      <rect x="156" y="110" width="16" height="40" rx="6"/>
+      <rect x="60"  y="112" width="18" height="46" rx="7"/>
+      <rect x="84"  y="90"  width="18" height="68" rx="7"/>
+      <rect x="108" y="80"  width="18" height="78" rx="7"/>
+      <rect x="132" y="92"  width="18" height="66" rx="7"/>
+      <rect x="156" y="114" width="18" height="44" rx="7"/>
     </g>
-    <polygon points="8,150 30,134 50,146 70,140 120,149 170,140 190,146 210,134 232,150" fill="#5a2a96" opacity=".9"/>
-    <polygon points="8,150 26,128 44,144 60,135 82,147 120,148 158,147 180,135 196,144 214,128 232,150" fill="#1c1140"/>
-    <rect x="0" y="150" width="240" height="90" fill="url(#hf-sea)"/>
-    <rect x="0" y="148" width="240" height="3" fill="#fff7d6" opacity=".5"/>
-    <g fill="url(#hf-sun)" opacity=".34">
-      <rect x="68" y="150" width="16" height="16" rx="6"/>
-      <rect x="90" y="150" width="16" height="25" rx="6"/>
-      <rect x="112" y="150" width="16" height="26" rx="6"/>
-      <rect x="134" y="150" width="16" height="23" rx="6"/>
-      <rect x="156" y="150" width="16" height="18" rx="6"/>
+    <polygon points="8,152 24,150 44,132 62,148 78,138 120,152 168,138 182,148 200,130 220,150 232,152 232,158 8,158" fill="#5a2a96" opacity=".9"/>
+    <polygon points="8,158 30,158 52,140 72,153 120,158 172,151 192,140 214,158 232,158 232,166 8,166" fill="#180f36"/>
+    <rect x="0" y="156" width="240" height="84" fill="url(#hf-sea)"/>
+    <rect x="0" y="154" width="240" height="3" fill="#fff7d6" opacity=".55"/>
+    <g fill="url(#hf-sun)" opacity=".32">
+      <rect x="84"  y="157" width="18" height="26" rx="7"/>
+      <rect x="108" y="157" width="18" height="30" rx="7"/>
+      <rect x="132" y="157" width="18" height="25" rx="7"/>
     </g>
   </g>
 </svg>
