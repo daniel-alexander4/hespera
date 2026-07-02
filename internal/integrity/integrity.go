@@ -9,9 +9,12 @@ package integrity
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,9 +24,12 @@ import (
 	"hespera/internal/video"
 )
 
-// videoTables are the file tables this package may scan+update. Restricting to a
-// known set keeps the table name — interpolated into SQL — a trusted constant.
-var videoTables = map[string]bool{"tv_series_files": true, "movie_files": true}
+// integrityTables are the file tables this package may scan+update. Restricting
+// to a known set keeps the table name — interpolated into SQL — a trusted
+// constant. Music (`music_tracks`) differs from the video tables: it has no
+// stream_info_json but has checksum_sha256, so the post-repair refresh is
+// table-aware (see refreshAfterReplace).
+var integrityTables = map[string]bool{"tv_series_files": true, "movie_files": true, "music_tracks": true}
 
 // CheckLibrary is the cheap tier-1 pass, chained after a scan: it demuxes each
 // not-yet-checked video file (no decode, a few seconds each) to find CONTAINER
@@ -46,7 +52,7 @@ func DeepCheckLibrary(ctx context.Context, db *sql.DB, mediaRoot, table string, 
 }
 
 func run(ctx context.Context, db *sql.DB, mediaRoot, table string, jobID, libraryID int64, deep, repair bool) error {
-	if !videoTables[table] {
+	if !integrityTables[table] {
 		return fmt.Errorf("integrity: unsupported table %q", table)
 	}
 	mediaRoot = filepath.Clean(mediaRoot)
@@ -135,31 +141,85 @@ func repairOne(ctx context.Context, db *sql.DB, table string, id int64, path str
 	// Also examine audio (a gap the container check won't see). An audio hole is
 	// unrepairable data loss, so it flags even when the container was clean/repaired.
 	status, detail := out.Status, out.Detail
+	var extra []string
 	if ad := auditAudio(ctx, id, path); ad != "" {
-		status = "flagged"
-		if detail != "" {
-			detail += "; " + ad
-		} else {
-			detail = ad
+		extra = append(extra, ad)
+	}
+	// Music files are small, so a full decode is cheap — fold the bitstream check
+	// into the scan-time tier for MUSIC (MP3 corruption surfaces only on decode,
+	// not in the container). Video keeps the full decode in the opt-in deep tier
+	// (minutes/file). Only new/changed files reach here, so the cost is bounded.
+	if table == "music_tracks" {
+		if dd, hardErr := auditDecode(ctx, id, path); !hardErr && dd != "" {
+			extra = append(extra, dd)
 		}
 	}
-	if out.Replaced && out.Probe != nil {
-		// The file was rewritten: refresh the derived facts so the scanner's
-		// (size,mtime) fast-path doesn't re-trigger and playback has fresh info.
-		b, _ := json.Marshal(out.Probe)
-		if fi, statErr := os.Stat(path); statErr == nil {
-			_, _ = db.ExecContext(ctx, "UPDATE "+table+` SET
-  stream_info_json=?, file_size_bytes=?, mtime_unix=?,
-  integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now'), updated_at=datetime('now')
-WHERE id=?`, string(b), fi.Size(), fi.ModTime().Unix(), status, detail, id)
-			slog.Info("integrity repaired", "file_id", id, "path", path, "detail", detail)
-			return status
+	for _, e := range extra {
+		status = "flagged"
+		if detail != "" {
+			detail += "; " + e
+		} else {
+			detail = e
 		}
+	}
+	if out.Replaced {
+		refreshAfterReplace(ctx, db, table, id, path, out, status, detail)
+		slog.Info("integrity repaired", "file_id", id, "path", path, "detail", detail)
+		return status
 	}
 	_, _ = db.ExecContext(ctx,
 		"UPDATE "+table+" SET integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?",
 		status, detail, id)
 	return status
+}
+
+// refreshAfterReplace updates a row's derived facts after a repair rewrote the
+// file, so the scanner's (size,mtime) fast-path doesn't re-trigger and later
+// lookups stay consistent. Table-aware: the video tables carry stream_info_json
+// (from the fresh probe) + updated_at; music_tracks carries checksum_sha256 — the
+// move-relink content signature, which MUST be recomputed since the bytes changed
+// (a stale one would break a later move's relink, losing play_history/lyrics) —
+// and has no updated_at. On a stat/hash failure it leaves size/mtime/derived
+// facts stale so the next scan re-derives them, and only records the status.
+func refreshAfterReplace(ctx context.Context, db *sql.DB, table string, id int64, path string, out video.RepairOutcome, status, detail string) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		_, _ = db.ExecContext(ctx, "UPDATE "+table+" SET integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?", status, detail, id)
+		return
+	}
+	if table == "music_tracks" {
+		sum, hErr := sha256File(path)
+		if hErr != nil {
+			slog.Warn("integrity checksum refresh", "file_id", id, "path", path, "err", hErr)
+			_, _ = db.ExecContext(ctx, "UPDATE music_tracks SET integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?", status, detail, id)
+			return
+		}
+		_, _ = db.ExecContext(ctx, `UPDATE music_tracks SET
+  checksum_sha256=?, file_size_bytes=?, mtime_unix=?,
+  integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now')
+WHERE id=?`, sum, fi.Size(), fi.ModTime().Unix(), status, detail, id)
+		return
+	}
+	b, _ := json.Marshal(out.Probe)
+	_, _ = db.ExecContext(ctx, "UPDATE "+table+` SET
+  stream_info_json=?, file_size_bytes=?, mtime_unix=?,
+  integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now'), updated_at=datetime('now')
+WHERE id=?`, string(b), fi.Size(), fi.ModTime().Unix(), status, detail, id)
+}
+
+// sha256File computes a file's SHA-256 as lowercase hex — matching the music
+// scanner's checksumSHA256 so a repaired track's stored signature stays valid.
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // auditAudio scans one file's audio for a significant gap (missing audio) and
@@ -177,6 +237,23 @@ func auditAudio(ctx context.Context, id int64, path string) string {
 	return ""
 }
 
+// auditDecode fully decodes a file and returns a flag detail if bitstream
+// corruption (damaged frames the container check can't see) is found, else "".
+// The bool is true on a hard failure (couldn't decode at all) so the caller can
+// skip rather than mark the file clean. Expensive for video (minutes), cheap for
+// small audio files — which is why music runs it at scan time and video doesn't.
+func auditDecode(ctx context.Context, id int64, path string) (detail string, hardErr bool) {
+	n, err := video.CheckIntegrity(ctx, path, true)
+	if err != nil {
+		slog.Warn("integrity decode check", "file_id", id, "path", path, "err", err)
+		return "", true
+	}
+	if n > 0 {
+		return fmt.Sprintf("bitstream corruption (%d decode errors)", n), false
+	}
+	return "", false
+}
+
 // audioGapFlagThreshold is the smallest audio hole (seconds) worth flagging —
 // below it a discontinuity is inaudible jitter, not real data loss.
 const audioGapFlagThreshold = 0.5
@@ -186,14 +263,13 @@ const audioGapFlagThreshold = 0.5
 // either is damaged. It never modifies the file and never un-flags (only the
 // cheap tier / a file change clears a status). Returns "flagged" or "ok".
 func flagDeep(ctx context.Context, db *sql.DB, table string, id int64, path string) string {
-	videoErrs, err := video.CheckIntegrity(ctx, path, true)
-	if err != nil {
-		slog.Warn("integrity deep check", "file_id", id, "path", path, "err", err)
-		return ""
+	decodeDetail, hardErr := auditDecode(ctx, id, path)
+	if hardErr {
+		return "" // couldn't decode the file at all — skip, don't mark it ok
 	}
 	var problems []string
-	if videoErrs > 0 {
-		problems = append(problems, fmt.Sprintf("video bitstream corruption (%d decode errors)", videoErrs))
+	if decodeDetail != "" {
+		problems = append(problems, decodeDetail)
 	}
 	if ad := auditAudio(ctx, id, path); ad != "" {
 		problems = append(problems, ad)

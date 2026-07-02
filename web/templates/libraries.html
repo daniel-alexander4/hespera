@@ -62,7 +62,7 @@
           <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
         </form>
         {{end}}
-        {{if or (eq .Type "tv") (eq .Type "movies")}}
+        {{if or (or (eq .Type "tv") (eq .Type "movies")) (eq .Type "music")}}
         <form method="post" action="/libraries/integrity-deep" class="inline-form" data-live-job title="Deep-scan every file for corruption (full decode) and flag any that are damaged. Container corruption is auto-repaired on scan; this also catches unrepairable bitstream damage.">
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">{{template "icon-play"}}Check integrity</button>

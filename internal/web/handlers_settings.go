@@ -605,7 +605,7 @@ func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
 // library_id; libraries with no flags are absent. Best-effort (nil on error).
 func (h *Handler) integrityFlaggedCounts(ctx context.Context) map[int64]int {
 	out := map[int64]int{}
-	for _, tbl := range []string{"tv_series_files", "movie_files"} {
+	for _, tbl := range []string{"tv_series_files", "movie_files", "music_tracks"} {
 		rows, err := h.db.QueryContext(ctx,
 			"SELECT library_id, COUNT(*) FROM "+tbl+" WHERE integrity_status='flagged' GROUP BY library_id")
 		if err != nil {
@@ -730,6 +730,11 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 			matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
 			_, _ = h.jobs.Enqueue("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 				return matcher.RunMusicMatch(ctx, mJID, mLibID)
+			})
+			// Chain the cheap container/audio integrity check (auto-repairs new/changed files).
+			repair := h.effectiveIntegrityAutoRepair(ctx)
+			_, _ = h.jobs.Enqueue("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
+				return integrity.CheckLibrary(ctx, h.db, h.cfg.MediaRoot, "music_tracks", iJID, iLibID, repair)
 			})
 			return nil
 		})
@@ -897,8 +902,10 @@ func (h *Handler) librariesIntegrityDeep(w http.ResponseWriter, r *http.Request)
 		table = "tv_series_files"
 	case "movies":
 		table = "movie_files"
+	case "music":
+		table = "music_tracks"
 	default:
-		http.Error(w, "integrity check is only supported for tv and movie libraries", 400)
+		http.Error(w, "integrity check is only supported for tv, movie, and music libraries", 400)
 		return
 	}
 

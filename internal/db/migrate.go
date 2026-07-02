@@ -410,7 +410,7 @@ func Migrate(db *sql.DB) error {
 	// (reset to '' by the scanner when size/mtime change); 'ok' = container-clean;
 	// 'repaired' = container losslessly remuxed in place; 'flagged' = unrepairable
 	// (bitstream corruption or a remux that couldn't be safely applied).
-	for _, tbl := range []string{"tv_series_files", "movie_files"} {
+	for _, tbl := range []string{"tv_series_files", "movie_files", "music_tracks"} {
 		if err := ensureColumn(db, tbl, "integrity_status", "TEXT NOT NULL DEFAULT ''"); err != nil {
 			return err
 		}
