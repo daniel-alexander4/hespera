@@ -70,28 +70,34 @@
   <p class="form-help"><a href="/tv/match/review" class="btn btn-sm">{{.UnmatchedCount}} show{{if ne .UnmatchedCount 1}}s{{end}} need matching →</a></p>
   {{end}}
   {{if .Series}}
-  <div class="band-albums-grid">
-    {{range .Series}}
-    <a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
-      <div class="band-album-art">
-        {{if .PosterPath}}
-        <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
-        {{else}}
-        <div class="album-art-ph">{{template "icon-tv"}}</div>
-        {{end}}
-      </div>
-      <div class="band-album-meta">
-        <div class="artist-card-name">{{.Name}}</div>
-        <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}{{.EpisodeCount}} episodes</div>
-      </div>
-    </a>
-    {{end}}
+  <div class="band-albums-grid" data-grid-pager data-page="{{.SeriesPage.Page}}" data-total-pages="{{.SeriesPage.TotalPages}}" data-q="{{.SeriesSearch.Q}}">
+    {{template "tv-cards" .Series}}
   </div>
-  {{template "pagination" .SeriesPage}}
+  {{template "grid-pager" .SeriesPage}}
   {{else if and .SeriesSearch .SeriesSearch.Q}}
   <p class="empty-state">No shows match “{{.SeriesSearch.Q}}”. <a href="/tv" class="btn btn-sm">Clear search</a></p>
   {{end}}
 </div>
 
+{{end}}
+{{end}}
+
+{{/* TV series cards, factored out so the full page and the ?grid=1 fragment
+     render identical markup. `.` is the series slice. */}}
+{{define "tv-cards"}}
+{{range .}}
+<a href="/tv/series/{{.SeriesID}}" class="band-album-card band-album-card--poster">
+  <div class="band-album-art">
+    {{if .PosterPath}}
+    <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Name}}" loading="lazy" />
+    {{else}}
+    <div class="album-art-ph">{{template "icon-tv"}}</div>
+    {{end}}
+  </div>
+  <div class="band-album-meta">
+    <div class="artist-card-name">{{.Name}}</div>
+    <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}{{.EpisodeCount}} episodes</div>
+  </div>
+</a>
 {{end}}
 {{end}}

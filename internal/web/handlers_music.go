@@ -262,6 +262,12 @@ LIMIT ?
 		return
 	}
 
+	// In-place paging (grid_pager.js) fetches just the artist card grid.
+	if r.URL.Query().Get("grid") == "1" {
+		h.renderFragment(w, "music_home.html", "artist-cards", artists)
+		return
+	}
+
 	h.render(w, "music_home.html", map[string]any{
 		"Breadcrumb":          []crumb{bcHome},
 		"Title":               "Music",

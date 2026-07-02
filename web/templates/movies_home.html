@@ -60,21 +60,27 @@
   {{if gt .UnmatchedCount 0}}
   <p class="form-help"><a href="/movies/match/review" class="btn btn-sm">{{.UnmatchedCount}} movie{{if ne .UnmatchedCount 1}}s{{end}} need matching →</a></p>
   {{end}}
-  <div class="band-albums-grid">
-    {{range .Movies}}
-    <a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
-      <div class="band-album-art">
-        <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
-      </div>
-      <div class="band-album-meta">
-        <div class="artist-card-name">{{.Title}}</div>
-        {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
-      </div>
-    </a>
-    {{end}}
+  <div class="band-albums-grid" data-grid-pager data-page="{{.MoviesPage.Page}}" data-total-pages="{{.MoviesPage.TotalPages}}">
+    {{template "movie-cards" .Movies}}
   </div>
-  {{template "pagination" .MoviesPage}}
+  {{template "grid-pager" .MoviesPage}}
 </div>
 
+{{end}}
+{{end}}
+
+{{/* Movie cards, factored out so the full page and the ?grid=1 fragment render
+     identical markup. `.` is the movies slice. */}}
+{{define "movie-cards"}}
+{{range .}}
+<a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
+  <div class="band-album-art">
+    <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
+  </div>
+  <div class="band-album-meta">
+    <div class="artist-card-name">{{.Title}}</div>
+    {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+  </div>
+</a>
 {{end}}
 {{end}}
