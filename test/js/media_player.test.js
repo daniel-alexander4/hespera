@@ -12,20 +12,23 @@ const { loadController, makeMockHls, makeFetch, flush } = require('./harness');
 
 // The player DOM the controller queries. Mirrors the ids/classes in
 // tv_player.html / movie_player.html that media_player.js reaches for.
-function fixture({ kind = 'tv', fileId = 7, nextFile = 0, osEnabled = '0' } = {}) {
+function fixture({ kind = 'tv', fileId = 7, prevFile = 0, nextFile = 0, osEnabled = '0' } = {}) {
   return `<!DOCTYPE html><html><body>
     <div class="tv-player-video-wrap">
-      <video id="tvVideo" data-media-kind="${kind}" data-file-id="${fileId}" data-next-file="${nextFile}" data-os-enabled="${osEnabled}"></video>
+      <video id="tvVideo" data-media-kind="${kind}" data-file-id="${fileId}" data-prev-file="${prevFile}" data-next-file="${nextFile}" data-os-enabled="${osEnabled}"></video>
       <div id="mediaOverlay">
         <div id="audioPick" hidden><select id="audioSelect"></select></div>
         <div id="subPick" hidden><select id="subSelect"></select></div>
         <div id="tvTransport">
+          <button id="tvPrevEpBtn" hidden></button>
           <button id="tvRewindBtn"></button>
           <button id="tvToggleBtn"></button>
           <button id="tvForwardBtn"></button>
+          <button id="tvNextEpBtn" hidden></button>
           <button id="tvBoostBtn"><span class="tv-glyph-vol"></span><span class="tv-glyph-mute"></span></button>
           <button id="tvMuteBtn"><span class="tv-glyph-vol"></span><span class="tv-glyph-mute"></span></button>
           <input id="tvVolume" type="range" min="0" max="1" step="0.01" />
+          <button id="tvReloadBtn"></button>
           <button id="tvFullscreenBtn"></button>
           <button id="skipAutoBtn" hidden></button>
         </div>
@@ -226,4 +229,27 @@ test('a movie fixture drives the /movie endpoints', async () => {
   video.currentTime = 42;
   video.dispatchEvent(new env.window.Event('timeupdate'));
   assert.ok(env.beacons.some((b) => b.url.indexOf('/movie/playback-progress') >= 0), 'movie kind → /movie endpoints');
+});
+
+test('prev/next episode buttons appear only with adjacent files (TV), hidden on movies', async () => {
+  const tv = await boot({ fixtureOpts: { prevFile: 5, nextFile: 9 } });
+  assert.strictEqual(tv.document.getElementById('tvPrevEpBtn').hidden, false, 'prev shown with a prior episode');
+  assert.strictEqual(tv.document.getElementById('tvNextEpBtn').hidden, false, 'next shown with a following episode');
+
+  const boundary = await boot({ fixtureOpts: { prevFile: 5, nextFile: 0 } });
+  assert.strictEqual(boundary.document.getElementById('tvNextEpBtn').hidden, true, 'no next episode → hidden');
+
+  const movie = await boot({ fixtureOpts: { kind: 'movie', prevFile: 0, nextFile: 0 } });
+  assert.strictEqual(movie.document.getElementById('tvPrevEpBtn').hidden, true, 'hidden on movies');
+  assert.strictEqual(movie.document.getElementById('tvNextEpBtn').hidden, true, 'hidden on movies');
+});
+
+test('the reload button re-loads the stream at the current position', async () => {
+  const env = await boot({ sessionData: session({ protocol: 'file', url: '/stream/tv-remux/7' }) });
+  const video = env.document.getElementById('tvVideo');
+  video.currentTime = 42; // progressive stream → reload re-anchors via ?start=
+  env.document.getElementById('tvReloadBtn').dispatchEvent(new env.window.Event('click'));
+  await flush();
+  const src = video.getAttribute('src') || '';
+  assert.ok(/[?&]start=42\b/.test(src), `reload re-anchors at the current position: got ${src}`);
 });
