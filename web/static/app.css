@@ -1083,10 +1083,11 @@ body::before {
 }
 .player-main-grid {
   display: grid;
-  grid-template-columns: 21.4286rem 1fr; /* 300px @14 — rem so the cover column scales with the root */
-  gap: 1.5rem;
+  grid-template-columns: 26rem 1fr; /* rem so the cover column scales with the root */
+  gap: 2rem;
+  align-items: center; /* vertically centre the info against the cover */
   width: 100%;
-  max-width: 54.2857rem; /* 760px @14 */
+  max-width: 62rem; /* wider so the cover + info fill the row (less empty space) */
 }
 .player-seek-row {
   display: flex;
@@ -1104,14 +1105,33 @@ body::before {
   white-space: nowrap;
 }
 .player-cover img {
-  width: 21.4286rem; /* 300px @14 */
+  width: 26rem; /* bigger cover; rem so it scales with the root */
   border-radius: 8px;
   display: block;
 }
+/* Now-playing info hierarchy: song title (hero) → artist → album. */
 .player-info {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  justify-content: center; /* centre the block against the cover */
+  gap: 0.3rem;
+  min-width: 0;
+}
+.player-title {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--page-fg);
+  overflow-wrap: anywhere;
+}
+.player-artist {
+  font-size: 1.4rem;
+  color: var(--page-fg);
+}
+.player-album {
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
 }
 /* No-lyrics state (lyrics disabled globally, or the track has no synced lyrics):
    hide the lyrics card and enlarge the cover so the now-playing view fills the
@@ -2027,10 +2047,13 @@ code {
    behind it, visible through the glass). Remote-navigable — the .era-track is
    focusable and the JS captures arrows (◀▶ slide, ▲▼ span) so couch.js doesn't
    steal them. */
-.era-picker { display: flex; flex-direction: column; gap: 0.45rem; max-width: 480px; }
-.era-readout { font-weight: 700; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+/* Readout on its own top row (flex:100%), then the track and the Play/Shuffle
+   controls share the next line — the track grows, the buttons sit to its right.
+   On a narrow container the controls wrap below the track (flex-wrap). */
+.era-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.9rem; max-width: 640px; }
+.era-readout { flex: 1 1 100%; font-weight: 700; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
 .era-track {
-  position: relative; height: 46px; background: var(--surface-panel);
+  position: relative; height: 46px; flex: 1 1 240px; background: var(--surface-panel);
   border: 1px solid var(--surface-card); border-radius: 8px; cursor: pointer; touch-action: none;
 }
 .era-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -2070,4 +2093,4 @@ code {
 }
 .era-handle-l { left: 0; border-radius: 5px 0 0 5px; }
 .era-handle-r { right: 0; border-radius: 0 5px 5px 0; }
-.era-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.era-controls { flex: 0 0 auto; display: flex; align-items: center; gap: 0.6rem; }
