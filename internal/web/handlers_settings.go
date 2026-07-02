@@ -479,10 +479,44 @@ func (h *Handler) loadScanJobs(ctx context.Context, status, jobType string, jobI
 // Library management handlers
 
 type libraryRow struct {
-	ID       int64
-	Name     string
-	Type     string
-	RootPath string
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	RootPath string `json:"root_path"`
+}
+
+// badRequestError marks a client-side (400) validation failure so callers can
+// map it to the right status/response shape (HTML 400 for the web form, JSON 400
+// for the CLI) without string-matching.
+type badRequestError string
+
+func (e badRequestError) Error() string { return string(e) }
+
+// createLibrary validates and inserts a library row, returning the new id. It is
+// the single source of truth for library-creation rules (required fields, valid
+// type, and the pathguard containment check that root_path sits under MediaRoot),
+// shared by the web form (librariesNew) and the CLI (mgmtLibraryAdd). A
+// validation failure is returned as badRequestError; a DB failure as a plain
+// wrapped error.
+func (h *Handler) createLibrary(ctx context.Context, name, libType, root string) (int64, error) {
+	name = strings.TrimSpace(name)
+	libType = strings.TrimSpace(libType)
+	root = strings.TrimSpace(root)
+	if name == "" || libType == "" || root == "" {
+		return 0, badRequestError("name, type, root_path are required")
+	}
+	if !validLibraryType(libType) {
+		return 0, badRequestError("invalid type")
+	}
+	if !strings.HasPrefix(root, h.cfg.MediaRoot+"/") && root != h.cfg.MediaRoot {
+		return 0, badRequestError("root_path must be under the configured media root")
+	}
+	res, err := h.db.ExecContext(ctx,
+		"INSERT INTO libraries (name, type, root_path) VALUES (?, ?, ?)", name, libType, root)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
 }
 
 func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
@@ -567,27 +601,13 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 			httpError(w, 400, "bad request", "parse form failed", "handler", "librariesNew", "err", err)
 			return
 		}
-		name := strings.TrimSpace(r.FormValue("name"))
-		libType := strings.TrimSpace(r.FormValue("type"))
-		root := strings.TrimSpace(r.FormValue("root_path"))
-
-		if name == "" || libType == "" || root == "" {
-			http.Error(w, "name, type, root_path are required", 400)
-			return
-		}
-		if !validLibraryType(libType) {
-			http.Error(w, "invalid type", 400)
-			return
-		}
-		if !strings.HasPrefix(root, h.cfg.MediaRoot+"/") && root != h.cfg.MediaRoot {
-			http.Error(w, "root_path must be under the configured media root", 400)
-			return
-		}
-		_, err := h.db.ExecContext(r.Context(),
-			"INSERT INTO libraries (name, type, root_path) VALUES (?, ?, ?)",
-			name, libType, root,
-		)
+		_, err := h.createLibrary(r.Context(), r.FormValue("name"), r.FormValue("type"), r.FormValue("root_path"))
 		if err != nil {
+			var bre badRequestError
+			if errors.As(err, &bre) {
+				http.Error(w, bre.Error(), 400)
+				return
+			}
 			httpError(w, 500, "internal server error", "db insert failed", "handler", "librariesNew", "err", err)
 			return
 		}
