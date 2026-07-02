@@ -15,12 +15,12 @@ function fixture() {
     <div class="era-picker" data-min="${MIN}" data-max="${MAX}" data-lib="3">
       <div class="era-readout"><span class="era-from"></span> – <span class="era-to"></span></div>
       <div class="era-track" tabindex="0" role="slider" aria-valuemin="${MIN}" aria-valuemax="${MAX}">
+        <div class="era-tape"></div>
         <div class="era-window">
           <span class="era-handle era-handle-l" data-edge="l"></span>
           <span class="era-handle era-handle-r" data-edge="r"></span>
         </div>
       </div>
-      <div class="era-axis"></div>
       <div class="era-controls">
         <span class="era-hint"></span>
         <a class="era-shuffle" data-play href="#">Shuffle Era</a>

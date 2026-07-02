@@ -31,7 +31,7 @@
     const fromEl = picker.querySelector('.era-from');
     const toEl = picker.querySelector('.era-to');
     const shuffle = picker.querySelector('.era-shuffle');
-    const axis = picker.querySelector('.era-axis');
+    const tape = picker.querySelector('.era-tape');
     if (!track || !win || !shuffle) return;
 
     // Default to the most recent decade.
@@ -53,16 +53,24 @@
       );
     }
 
-    // Decade tick labels along the axis ('70, '80, …), always visible so the
+    // Measuring-tape ticks behind the (transparent) window: a mark per year,
+    // taller every 5, tallest + a decade number every 10 — always visible so the
     // range is targetable even when the window covers only a few years.
-    if (axis) {
-      axis.textContent = '';
-      for (let y = Math.ceil(min / 10) * 10; y <= max; y += 10) {
+    if (tape) {
+      tape.textContent = '';
+      for (let y = min; y <= max; y += 1) {
         const tick = document.createElement('span');
-        tick.className = 'era-axis-tick';
+        const kind = y % 10 === 0 ? 'major' : y % 5 === 0 ? 'mid' : 'minor';
+        tick.className = 'era-tick era-tick--' + kind;
         tick.style.left = pct(y) + '%';
-        tick.textContent = "'" + String(y).slice(-2);
-        axis.appendChild(tick);
+        tape.appendChild(tick);
+        if (kind === 'major') {
+          const label = document.createElement('span');
+          label.className = 'era-tick-label';
+          label.style.left = pct(y) + '%';
+          label.textContent = "'" + String(y).slice(-2);
+          tape.appendChild(label);
+        }
       }
     }
 
