@@ -9,20 +9,22 @@ const assert = require('node:assert');
 const { loadController, makeFetch, flush } = require('./harness');
 
 // The persistent-player DOM: the layout-shell permanents (audio, #np-cluster)
-// plus the now-playing .player-page view that bindView wires.
-function fixture({ autoload = '' } = {}) {
+// plus the now-playing .player-page view that bindView wires. `lyrics` sets
+// data-lyrics-enabled so the synced-lyrics card path is exercised.
+function fixture({ autoload = '', lyrics = false } = {}) {
   const autoAttr = autoload ? ` data-autoload="${autoload}"` : '';
+  const lyricsAttr = ` data-lyrics-enabled="${lyrics ? '1' : '0'}"`;
   return `<!DOCTYPE html><html><body>
     <audio id="hespera-audio"></audio>
     <div id="np-cluster"><button id="np-toggle"></button><a id="np-title"></a><button id="np-close"></button></div>
 
-    <div class="player-page"${autoAttr}>
+    <div class="player-page"${autoAttr}${lyricsAttr}>
       <div id="player-empty"></div>
       <div id="player-main">
         <img id="player-cover-img" /><div id="player-cover-ph"></div>
         <div id="player-album-title"></div><a id="player-track-title"></a>
         <input id="player-seek" type="range" min="0" max="1000" /><span id="player-time"></span>
-        <div id="player-karaoke-current"></div><div id="player-karaoke-next"></div>
+        <div id="player-karaoke"><div id="player-karaoke-current"></div><div id="player-karaoke-next"></div></div>
         <div id="player-transport">
           <button id="player-prev-btn"></button><button id="player-rewind-btn"></button>
           <button id="player-toggle-btn"></button><button id="player-forward-btn"></button>
@@ -36,15 +38,17 @@ function fixture({ autoload = '' } = {}) {
 }
 
 // Boot player.js with a fetch router, then settle async chains.
-function boot({ autoload, routes } = {}) {
+function boot({ autoload, routes, lyrics } = {}) {
   const env = loadController('player.js', {
-    html: fixture({ autoload }),
+    html: fixture({ autoload, lyrics }),
     url: 'http://localhost/music/player',
     stubs: { fetch: makeFetch(routes || {}) },
   });
   env.window.document.dispatchEvent(new env.window.Event('turbo:load'));
   return env;
 }
+
+const hasNoLyrics = (env) => env.document.getElementById('player-main').classList.contains('no-lyrics');
 
 test('a params-bearing player page autoloads its queue exactly once and starts the local track', async () => {
   const routes = {
@@ -80,4 +84,35 @@ test('an album-less track shows the placeholder, never /art/album/0', async () =
   assert.strictEqual(img.classList.contains('hidden'), true, 'cover img hidden for an album-less track');
   assert.strictEqual(ph.classList.contains('hidden'), false, 'placeholder shown');
   assert.ok(!/\/art\/album\/0\b/.test(img.getAttribute('src') || ''), 'never requests /art/album/0');
+});
+
+// --- Lyrics card: verify lyrics exist before showing it ---
+
+test('with lyrics enabled but no track yet, the card starts hidden (cover expanded)', async () => {
+  const env = boot({ lyrics: true }); // no autoload → no track
+  await flush();
+  assert.strictEqual(hasNoLyrics(env), true, 'card hidden until a track confirms lyrics');
+});
+
+test('a track with synced lyrics reveals the card', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 11, albumId: 4, album: 'Believe', title: 'Believe', artist: 'Cher' }] },
+    '/music/lyrics/fetch': { ok: true, data: { synced_lyrics: '[00:01.00]Do you believe\n[00:03.50]in life after love' } },
+  };
+  const env = boot({ autoload: 'source=all&library=1', lyrics: true, routes });
+  await flush();
+  // setNoLyrics(false) runs only in the confirmed-synced branch, so a shown card
+  // proves the lyrics were parsed (not shown optimistically during the fetch).
+  assert.strictEqual(hasNoLyrics(env), false, 'confirmed synced lyrics → card shown');
+});
+
+test('a track with no synced lyrics keeps the card hidden and never shows "Loading…"', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 12, albumId: 5, album: 'X', title: 'Instrumental', artist: 'Nobody' }] },
+    '/music/lyrics/fetch': { ok: true, data: { synced_lyrics: '' } }, // a confirmed no-synced result
+  };
+  const env = boot({ autoload: 'source=all&library=1', lyrics: true, routes });
+  await flush();
+  assert.strictEqual(hasNoLyrics(env), true, 'no synced lyrics → card stays hidden');
+  assert.strictEqual(env.document.getElementById('player-karaoke-current').textContent, '', 'never flashed a Loading placeholder');
 });
