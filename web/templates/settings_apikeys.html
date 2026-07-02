@@ -5,8 +5,6 @@
 
 {{if eq .Saved "cleared"}}
 <p class="form-help">Key cleared — now using the environment value (if any).</p>
-{{else if eq .Saved "auth"}}
-<p class="form-help">Authentication setting saved — restart Hespera to apply.</p>
 {{else if eq .Saved "1"}}
   {{if eq .Valid "1"}}<p class="form-help">Saved. TMDB accepted the key.</p>
   {{else if eq .Valid "0"}}<p class="form-help">Saved, but TMDB rejected this key (401) — double-check it.</p>
@@ -99,25 +97,6 @@
   </div>
 </form>
 
-<form method="post" action="/settings/api-keys" class="form-card">
-  <input type="hidden" name="auth_present" value="1" />
-  <div class="form-group">
-    <label class="form-check">
-      <input type="checkbox" name="auth_enabled" value="1"{{if .AuthEnabledSetting}} checked{{end}} />
-      Require sign-in (SSH key authentication)
-    </label>
-    <small class="form-help">
-      Off (default): Hespera runs as a single-machine app on your computer only (loopback), so no sign-in is needed.
-      Turn this on if you expose Hespera beyond <code>localhost</code> — it requires an SSH public key to sign in.
-      Enabling generates a session secret automatically. Overrides <code>AUTH_ENABLED</code>.
-      <strong>Applies after you restart Hespera.</strong>
-      {{if .AuthActive}} Currently active.{{else}} Currently off.{{end}}
-    </small>
-  </div>
-  <div class="form-actions">
-    <button type="submit" class="btn btn-primary">Save</button>
-  </div>
-</form>
 
 <form method="post" action="/settings/api-keys" class="form-card">
   <input type="hidden" name="integrity_present" value="1" />

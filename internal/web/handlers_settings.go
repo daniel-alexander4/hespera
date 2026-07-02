@@ -215,8 +215,6 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
-			"AuthEnabledSetting":      h.authEnabledSetting(ctx),
-			"AuthActive":              h.auth.Enabled(),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -278,25 +276,6 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
-			return
-		}
-		if _, ok := r.Form["auth_present"]; ok {
-			// Auth on/off toggle. Enabling first ensures a session secret exists
-			// (generated if none), so the next launch boots with auth on instead of
-			// a "secret required" config error. Applies at restart — the active
-			// middleware is wired at construction, not per request.
-			on := r.FormValue("auth_enabled") == "1"
-			if on {
-				if err := h.ensureAuthSecret(ctx); err != nil {
-					httpError(w, 500, "internal server error", "generate session secret failed", "handler", "settingsAPIKeys", "err", err)
-					return
-				}
-			}
-			if err := h.saveAuthEnabled(ctx, on); err != nil {
-				httpError(w, 500, "internal server error", "save auth toggle failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			http.Redirect(w, r, "/settings/api-keys?saved=auth", http.StatusSeeOther)
 			return
 		}
 		if _, ok := r.Form["integrity_present"]; ok {

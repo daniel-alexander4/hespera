@@ -14,7 +14,6 @@ services:
       HESPERA_LISTEN: ":8080"
       HESPERA_DATA_DIR: "/var/lib/hespera"
       HESPERA_MEDIA_ROOT: "/media/hespera"
-      AUTH_ENABLED: "false"
       # Values supplied via the gitignored .env file
       HESPERA_TMDB_API_KEY: "${HESPERA_TMDB_API_KEY:-}"
       HESPERA_OPENSUBTITLES_API_KEY: "${HESPERA_OPENSUBTITLES_API_KEY:-}"

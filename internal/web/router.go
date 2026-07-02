@@ -13,10 +13,6 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, h.staticFS, "hespera-favicon.ico")
 	})
-	mux.HandleFunc("/login", h.login)
-	mux.HandleFunc("/auth/challenge", h.authChallenge)
-	mux.HandleFunc("/auth/verify", h.authVerify)
-	mux.HandleFunc("/auth/logout", h.authLogout)
 
 	// Libraries
 	mux.HandleFunc("/libraries", h.libraries)
@@ -140,9 +136,9 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/settings/api-keys", h.settingsAPIKeys)
 	mux.HandleFunc("/settings/about", h.settingsAbout)
 
-	var handler http.Handler = mux
-	if h.auth != nil {
-		handler = h.auth.Middleware(handler)
-	}
+	// Hespera has no authentication (a single-user media app). The CSRF guard —
+	// which used to live in the auth middleware — wraps the mux unconditionally so
+	// a cross-site page can't forge POSTs to the loopback/LAN port.
+	handler := csrfGuard(mux)
 	return withLogging(handler)
 }
