@@ -1,10 +1,34 @@
 #!/usr/bin/env bash
-# Install the Hespera .deb for this machine. Build the package first with
-# ./build.sh (which produces the per-arch .debs in dist/).
-# Usage: ./install.sh [version]   (version defaults to the VERSION file)
+# Install the Hespera .deb. Build the package(s) first with ./build.sh (which
+# produces the per-arch .debs in dist/).
+#
+# Usage:
+#   ./install.sh [version]        install locally (this machine's architecture)
+#   ./install.sh remote [host]    copy the amd64 .deb to host (default: plex) and
+#                                 install it there with sudo over ssh
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# --- Remote deploy: push the amd64 .deb to a server and apt-install it ---------
+if [ "${1:-}" = "remote" ]; then
+  HOST="${2:-plex}"
+  VERSION="$(cat VERSION 2>/dev/null || echo 0.0.0)"
+  DEB="dist/hespera_${VERSION}_amd64.deb" # servers are amd64
+  if [ ! -f "$DEB" ]; then
+    echo "$DEB not found — run ./build.sh first" >&2
+    exit 1
+  fi
+  REMOTE_DEB="/tmp/$(basename "$DEB")"
+  echo "deploying hespera $VERSION (amd64) to $HOST…"
+  scp "$DEB" "$HOST:$REMOTE_DEB"
+  # -t: allocate a tty so sudo can prompt for a password if it needs one.
+  # apt-get (not dpkg -i) resolves the ffmpeg dependency; the file is removed after.
+  ssh -t "$HOST" "sudo apt-get install -y -qq -o APT::Sandbox::User=root '$REMOTE_DEB'; rm -f '$REMOTE_DEB'"
+  echo "installed on $HOST — restart the running hespera there to pick up the new binary."
+  exit 0
+fi
+
+# --- Local install ------------------------------------------------------------
 VERSION="${1:-$(cat VERSION 2>/dev/null || echo 0.0.0)}"
 ARCH="$(dpkg --print-architecture)" # amd64 or arm64
 DEB="dist/hespera_${VERSION}_${ARCH}.deb"
@@ -15,9 +39,9 @@ if [ ! -f "$DEB" ]; then
 fi
 
 echo "installing hespera $VERSION ($ARCH)…"
-# apt-get (not dpkg -i) so the ffmpeg/openssh-client deps resolve; -qq keeps it
-# quiet; APT::Sandbox::User=root lets apt read the .deb from your home dir without
-# the "_apt couldn't access" permission warning.
+# apt-get (not dpkg -i) so the ffmpeg dep resolves; -qq keeps it quiet;
+# APT::Sandbox::User=root lets apt read the .deb from your home dir without the
+# "_apt couldn't access" permission warning.
 sudo apt-get install -y -qq -o APT::Sandbox::User=root "./$DEB"
 
 # Refresh the desktop + icon caches so the menu entry and icon appear now.
