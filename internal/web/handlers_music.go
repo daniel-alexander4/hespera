@@ -1589,19 +1589,6 @@ type playerQueue struct {
 // server error. It is the one owner of player queue-building; both the HTML
 // now-playing view and the /music/queue JSON endpoint route through it so the
 // queue never grows a second, drifting copy.
-// musicPlaylists renders the Playlists hub: a "My Music" card with Shuffle All /
-// Shuffle Most Popular, played in-app from the local library.
-func (h *Handler) musicPlaylists(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	h.render(w, "music_playlists.html", map[string]any{
-		"Title":     "Playlists",
-		"LibraryID": h.resolveMusicLibraryID(r),
-	})
-}
-
 func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound bool, err error) {
 	source := strings.TrimSpace(r.URL.Query().Get("source"))
 	q.BackURL = "/music"
