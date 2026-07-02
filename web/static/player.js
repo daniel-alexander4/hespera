@@ -160,10 +160,11 @@
       setNoLyrics(true);
       return;
     }
-    // Keep the card visible during the fetch so the common (has-lyrics) case doesn't
-    // flash expand→shrink; hide only after a confirmed no-synced result.
-    setNoLyrics(false);
-    view.karaokeCurrent.textContent = 'Loading lyrics…';
+    // Keep the card hidden until synced lyrics are confirmed to exist — reveal it
+    // only when the fetch returns some (setNoLyrics(false) below). This avoids
+    // flashing an empty "Loading…" card for the many tracks with no synced lyrics.
+    setNoLyrics(true);
+    view.karaokeCurrent.textContent = '';
     view.karaokeNext.textContent = '';
     fetch('/music/lyrics/fetch', {
       method: 'POST',
@@ -464,9 +465,10 @@
       transport: $('player-transport'),
     };
 
-    // Lyrics off (default) → hide the card from the start so the cover expands;
-    // when on, keep the space until a track's fetch resolves (setNoLyrics).
-    if (view.main) view.main.classList.toggle('no-lyrics', !view.lyricsEnabled);
+    // Start with the card hidden (cover expanded) always — loadKaraokeForTrack
+    // reveals it only once a track's synced lyrics are confirmed to exist, so it
+    // never appears empty (whether lyrics are off, or on but the track has none).
+    if (view.main) view.main.classList.add('no-lyrics');
 
     $('player-prev-btn').addEventListener('click', playPrev);
     $('player-rewind-btn').addEventListener('click', () => {
