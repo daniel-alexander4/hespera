@@ -117,6 +117,13 @@
     </label>
     <small class="form-help">Off (default): un-owned <em>Rediscover a Year</em> songs open in a YouTube tab. On: they play as audio in the Hespera player (requires a key). In-app playback uses a hidden YouTube player, which may not comply with YouTube's terms — opt in for personal use.</small>
   </div>
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="youtube_ytdlp_enabled" value="1"{{if .YouTubeYtdlpEnabled}} checked{{end}} />
+      Resolve songs with yt-dlp (no daily quota)
+    </label>
+    <small class="form-help">Off (default): resolve songs with the YouTube Data API (~100 songs/day quota — a large playlist quickly hits the wall). On: use the <code>yt-dlp</code> tool to resolve songs with no quota limit; it scrapes YouTube and may not comply with YouTube's terms, so opt in for personal use only. Your API key, if set, is still used for a cheap embeddability check.{{if not .YtDlpAvailable}} <strong>yt-dlp is not installed on this machine — install it to use this option.</strong>{{end}}</small>
+  </div>
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save</button>
   </div>

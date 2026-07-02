@@ -124,6 +124,33 @@ func TestYouTubeResolveHitIsCached(t *testing.T) {
 	}
 }
 
+// A YouTube API error (quota/network) is surfaced to the client as
+// "unavailable":"1" — distinct from a genuine no-match — so the player can say
+// "daily limit reached" instead of mislabeling a quota wall as "no video found".
+func TestYouTubeResolveUnavailableFlag(t *testing.T) {
+	h, _ := newTestHandler(t)
+	if _, err := h.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('youtube_api_key', 'k')`); err != nil {
+		t.Fatalf("seed key: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden) // quota exceeded
+	}))
+	defer srv.Close()
+	defer youtube.SetAPIBaseForTest(srv.URL)()
+
+	req := httptest.NewRequest(http.MethodGet, "/music/youtube/resolve?artist=Real+Artist&song=Real+Song", nil)
+	rec := httptest.NewRecorder()
+	h.Router().ServeHTTP(rec, req)
+	var out map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["unavailable"] != "1" {
+		t.Fatalf("expected unavailable flag on a quota error: %v", out)
+	}
+	if _, ok := out["videoId"]; ok {
+		t.Fatalf("unavailable must carry no videoId: %v", out)
+	}
+}
+
 func TestYouTubeResolveMissingSong(t *testing.T) {
 	h, _ := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/music/youtube/resolve?artist=x", nil)

@@ -18,6 +18,11 @@ description: |
 depends:
   - ffmpeg
   - openssh-client
+# yt-dlp powers the OPTIONAL, off-by-default "Resolve songs with yt-dlp" YouTube
+# setting (quota-free song lookup). Recommended so apt installs it by default, but
+# not required — without it the feature falls back to the YouTube Data API.
+recommends:
+  - yt-dlp
 contents:
   - src: dist/hespera
     dst: /usr/bin/hespera
