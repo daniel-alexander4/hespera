@@ -1,5 +1,5 @@
 {{define "content"}}
-<div class="tv-player-page">
+<div class="tv-player-page" data-couch-parent="/movie/{{.TMDBID}}">
   <div class="tv-player-header">
     <h1><a href="/movie/{{.TMDBID}}" class="btn btn-head">{{.MovieTitle}}</a></h1>
     {{if .Year}}<h2>{{.Year}}</h2>{{end}}
