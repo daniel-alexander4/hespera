@@ -1,15 +1,16 @@
-// era_slider.js — the "Shuffle Era" range control on the music home page.
+// era_slider.js — the shuffle-era range control (music home + Home Quick-Play,
+// rendered from partials_era_picker.html).
 //
 // A draggable, resizable window over a year timeline: drag the body to slide the
 // range, drag an edge to resize it (a wider window spans a decade+, a narrow one
 // a few years). Remote/keyboard friendly: with the track focused, ◀▶ slide the
-// window and ▲▼ grow/shrink its span from the centre, Enter shuffles. The keydown
+// window and ▲▼ grow/shrink its span from the centre, Enter plays. The keydown
 // handler stops propagation so couch.js (which moves the focus ring on arrows via
 // a document-level listener) doesn't hijack the arrows while the track is focused.
 //
-// The control is pure client-side: it just keeps a `[data-play]` link's href in
-// sync with the chosen range (/music/player?source=era&from=&to=&shuffle=1). The
-// backend era-shuffle (buildPlayerQueue) is unchanged.
+// Pure client-side: it keeps the Play and Shuffle `[data-play]` links' hrefs in
+// sync with the chosen range (/music/player?source=era&from=&to=, Shuffle adding
+// &shuffle=1). The backend era query (buildPlayerQueue) is unchanged.
 (function () {
   'use strict';
 
@@ -30,6 +31,7 @@
     const win = picker.querySelector('.era-window');
     const fromEl = picker.querySelector('.era-from');
     const toEl = picker.querySelector('.era-to');
+    const play = picker.querySelector('.era-play');
     const shuffle = picker.querySelector('.era-shuffle');
     const tape = picker.querySelector('.era-tape');
     if (!track || !win || !shuffle) return;
@@ -47,10 +49,12 @@
       if (fromEl) fromEl.textContent = String(from);
       if (toEl) toEl.textContent = String(to);
       track.setAttribute('aria-valuetext', from + ' to ' + to);
-      shuffle.setAttribute(
-        'href',
-        '/music/player?source=era&from=' + from + '&to=' + to + '&shuffle=1' + (lib ? '&library=' + encodeURIComponent(lib) : ''),
-      );
+      // Play plays the era in order; Shuffle is the same queue with the
+      // client-side shuffle param. Both keep the chosen from/to range.
+      const base = '/music/player?source=era&from=' + from + '&to=' + to +
+        (lib ? '&library=' + encodeURIComponent(lib) : '');
+      if (play) play.setAttribute('href', base);
+      shuffle.setAttribute('href', base + '&shuffle=1');
     }
 
     // Measuring-tape ticks behind the (transparent) window: a mark per year,
@@ -107,7 +111,7 @@
         case 'ArrowUp': resize(1); break; // widen
         case 'ArrowDown': resize(-1); break; // narrow
         case 'Enter':
-        case ' ': shuffle.click(); break;
+        case ' ': (play || shuffle).click(); break;
         default: return; // let every other key (Tab, Back, …) through
       }
       e.preventDefault();

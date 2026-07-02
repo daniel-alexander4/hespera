@@ -261,22 +261,6 @@ LIMIT ?
 		return
 	}
 
-	// Distinct album years (ascending) for the era playlist picker; maxYear is
-	// the latest, used as the "to" default.
-	var years []int
-	maxYear := 0
-	if yrows, yerr := h.db.QueryContext(r.Context(),
-		"SELECT DISTINCT year FROM music_albums WHERE library_id=? AND year>0 ORDER BY year", libraryID); yerr == nil {
-		for yrows.Next() {
-			var y int
-			if yrows.Scan(&y) == nil {
-				years = append(years, y)
-				maxYear = y
-			}
-		}
-		_ = yrows.Close()
-	}
-
 	h.render(w, "music_home.html", map[string]any{
 		"Title":               "Music",
 		"LibraryID":           libraryID,
@@ -287,9 +271,32 @@ LIMIT ?
 		"ArtistsSearch":       searchBox{Action: "/music", Q: q},
 		"Compilations":        compilations,
 		"MoreCompilations":    moreCompilations,
-		"Years":               years,
-		"MaxYear":             maxYear,
+		"EraPicker":           h.eraPicker(r.Context(), libraryID),
 	})
+}
+
+// eraPickerData is the context for the shuffle-era range picker partial
+// (partials_era_picker.html): the year span of a music library's albums plus the
+// library id the Play/Shuffle links target.
+type eraPickerData struct {
+	MinYear   int
+	MaxYear   int
+	LibraryID int64
+}
+
+// eraPicker returns the era-picker context for a music library, or nil if the
+// library has no year-tagged albums (nothing to shuffle by era → the `with
+// .EraPicker` block renders nothing). The single source for the picker's range,
+// shared by musicHome and the Home Quick-Play card.
+func (h *Handler) eraPicker(ctx context.Context, libraryID int64) *eraPickerData {
+	var minY, maxY int
+	err := h.db.QueryRowContext(ctx,
+		"SELECT COALESCE(MIN(year), 0), COALESCE(MAX(year), 0) FROM music_albums WHERE library_id=? AND year>0",
+		libraryID).Scan(&minY, &maxY)
+	if err != nil || minY <= 0 || maxY <= 0 {
+		return nil
+	}
+	return &eraPickerData{MinYear: minY, MaxYear: maxY, LibraryID: libraryID}
 }
 
 func (h *Handler) loadRecentlyAddedAlbums(ctx context.Context, libraryID int64, limit int) ([]musicHomeAlbumRow, error) {
