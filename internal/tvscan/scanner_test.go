@@ -302,7 +302,7 @@ func TestUpsertIdentityRefreshesUnchangedUnmatched(t *testing.T) {
 
 	// A re-scan of the unchanged file re-runs IdentifyFile and refreshes the
 	// derived identity — this is the cheap path taken for unchanged files.
-	if err := s.upsertIdentity(ctx, fileID, IdentifyFile(path)); err != nil {
+	if err := s.upsertIdentity(ctx, s.DB, fileID, IdentifyFile(path)); err != nil {
 		t.Fatalf("refresh upsertIdentity: %v", err)
 	}
 

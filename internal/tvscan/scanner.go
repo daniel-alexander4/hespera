@@ -192,7 +192,8 @@ func (s *Scanner) ingestTVFile(ctx context.Context, libraryID int64, p string, d
 		"SELECT id, file_size_bytes, mtime_unix FROM tv_series_files WHERE library_id=? AND abs_path=?",
 		libraryID, resolvedPath,
 	).Scan(&existingID, &existingSize, &existingMtime); qErr == nil && existingSize == fileSize && existingMtime == mtimeUnix {
-		return true, s.upsertIdentity(ctx, existingID, ident)
+		// Unchanged file: a single identity refresh — no transaction needed.
+		return true, s.upsertIdentity(ctx, s.DB, existingID, ident)
 	}
 
 	container := strings.TrimPrefix(strings.ToLower(filepath.Ext(resolvedPath)), ".")
@@ -256,10 +257,27 @@ func dropNestedRoots(roots []string) []string {
 	return out
 }
 
-// upsertTVFile inserts or updates tv_series_files and tv_series_identities for a single file.
-// Returns an error if any DB operation fails; the caller logs and continues scanning.
+// dbtx is the subset of *sql.DB / *sql.Tx the per-file upsert needs, so the same
+// code runs either standalone or inside a transaction.
+type dbtx interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// upsertTVFile inserts or updates tv_series_files and tv_series_identities for a
+// single file. Its two-to-three statements (the file upsert, an id lookup on the
+// conflict path, and the identity upsert) run in one transaction so a scan commits
+// once per file instead of per statement — the fsync savings dominate a re-scan,
+// which skips the probe but still upserts every file. Returns an error if any DB
+// operation fails; the caller logs and continues scanning (the tx rolls back).
 func (s *Scanner) upsertTVFile(ctx context.Context, libraryID int64, resolvedPath, container string, fileSize, mtimeUnix int64, streamInfoJSON string, ident *EpisodeIdentity) error {
-	res, err := s.DB.ExecContext(ctx, `
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
 INSERT INTO tv_series_files (library_id, abs_path, container, file_size_bytes, mtime_unix, stream_info_json)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(library_id, abs_path) DO UPDATE SET
@@ -281,7 +299,7 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
 	fileID, err = res.LastInsertId()
 	if err != nil || fileID == 0 {
 		// On conflict update, LastInsertId may be 0; query directly.
-		if err := s.DB.QueryRowContext(ctx,
+		if err := tx.QueryRowContext(ctx,
 			"SELECT id FROM tv_series_files WHERE library_id=? AND abs_path=?",
 			libraryID, resolvedPath,
 		).Scan(&fileID); err != nil {
@@ -289,17 +307,20 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
 		}
 	}
 
-	return s.upsertIdentity(ctx, fileID, ident)
+	if err := s.upsertIdentity(ctx, tx, fileID, ident); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // upsertIdentity inserts or refreshes the tv_series_identities row for a file.
 // The status guard means a re-scan only overwrites 'unmatched' rows — matched
 // and user-skipped rows keep their data. A nil identity never clobbers an
 // existing row. Safe to call on every scan, including for unchanged files.
-func (s *Scanner) upsertIdentity(ctx context.Context, fileID int64, ident *EpisodeIdentity) error {
+func (s *Scanner) upsertIdentity(ctx context.Context, exec dbtx, fileID int64, ident *EpisodeIdentity) error {
 	if ident != nil {
 		epCSV := episodeNumbersCSV(ident.EpisodeNumbers)
-		_, err := s.DB.ExecContext(ctx, `
+		_, err := exec.ExecContext(ctx, `
 INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method, air_date, year)
 VALUES (?, 'unmatched', ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(file_id) DO UPDATE SET
@@ -317,7 +338,7 @@ WHERE status NOT IN ('matched', 'skipped')
 		}
 		return nil
 	}
-	_, err := s.DB.ExecContext(ctx, `
+	_, err := exec.ExecContext(ctx, `
 INSERT INTO tv_series_identities (file_id, status, guessed_title, season_number, episode_numbers_csv, match_confidence, match_method)
 VALUES (?, 'unmatched', '', -1, '', 0.0, '')
 ON CONFLICT(file_id) DO NOTHING
@@ -483,10 +504,21 @@ func (s *Scanner) pruneMissingFiles(ctx context.Context, libraryID int64, root s
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	if len(staleIDs) == 0 {
+		return nil
+	}
+	// One transaction for the whole prune: N autocommit DELETEs are N fsyncs on
+	// WAL; a single commit is one — the difference matters when a large move/delete
+	// orphans thousands of rows.
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	for _, id := range staleIDs {
-		if _, err := s.DB.ExecContext(ctx, `DELETE FROM tv_series_files WHERE id=?`, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tv_series_files WHERE id=?`, id); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
