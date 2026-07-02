@@ -2078,7 +2078,9 @@ code {
 /* The glass selection lens: a light accent tint + border so it reads clearly in
    both themes while the tape shows through; the edge bars (with a grip line) resize. */
 .era-window {
-  position: absolute; top: 0; bottom: 0; min-width: 16px; box-sizing: border-box; z-index: 1;
+  /* min-width:0 so the range collapses to a single year (from==to) — the two
+     handles then meet back-to-back at that year. */
+  position: absolute; top: 0; bottom: 0; min-width: 0; box-sizing: border-box; z-index: 1;
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   border: 2px solid var(--accent); border-radius: 7px; cursor: grab;
   box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
@@ -2091,6 +2093,9 @@ code {
   content: ""; width: 2px; height: 16px; border-radius: 1px;
   background: var(--text-on-accent); opacity: 0.8;
 }
-.era-handle-l { left: 0; border-radius: 5px 0 0 5px; }
-.era-handle-r { right: 0; border-radius: 0 5px 5px 0; }
+/* Handles flank the window (they extend outward), so each handle's INNER edge is
+   the year boundary and the selected glass sits exactly between them — the two
+   never overlap, even at a single-year range. */
+.era-handle-l { right: 100%; border-radius: 5px 0 0 5px; }
+.era-handle-r { left: 100%; border-radius: 0 5px 5px 0; }
 .era-controls { flex: 0 0 auto; display: flex; align-items: center; gap: 0.6rem; }
