@@ -369,11 +369,14 @@ func TestRunMusicMatchIntegrationHappyPath(t *testing.T) {
 			"SELECT progress_total, progress_current FROM scan_jobs WHERE id=?", jobID).Scan(&total, &current); err != nil {
 			t.Fatalf("query job: %v", err)
 		}
-		if total != 1 {
-			t.Fatalf("expected progress_total=1, got %d", total)
+		// The match reports one accumulating bar across all phases (enrich →
+		// popularity → match → art), so the total is the sum of every phase's
+		// items and the bar ends full (current == total > 0).
+		if total < 1 {
+			t.Fatalf("expected a non-zero progress_total, got %d", total)
 		}
-		if current != 1 {
-			t.Fatalf("expected progress_current=1, got %d", current)
+		if current != total {
+			t.Fatalf("expected the bar to finish full (current==total), got %d/%d", current, total)
 		}
 	})
 
