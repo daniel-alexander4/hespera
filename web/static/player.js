@@ -36,156 +36,17 @@
   // stop so the same queue can be started again afterwards.
   let loadedAutoload = null;
 
-  // --- Playback engine: 'local' (the <audio>) or 'yt' (a hidden YouTube IFrame
-  // player, for un-owned year-journey songs). The transport reads/writes through
-  // the cur*/do*/seekTo accessors so the same controls drive either engine; the
-  // local code paths are unchanged when engine === 'local'.
-  let engine = 'local';
-  let yt = null; // YT.Player once created (reused across songs)
-  let ytPlaying = false;
-  let ytPoll = null; // drives timeupdate (YT has no timeupdate event)
-  let ytPendingVideoId = '';
-  let ytApiLoading = false;
-  let ytReadyCbs = [];
-  // Position (seconds) to resume the pending YT video at. A Turbo body swap
-  // reparents the data-turbo-permanent #yt-host iframe, and an <iframe> reloads
-  // its document when detached+reattached (a <video>/<audio> does not), which
-  // re-fires onReady → loadVideoById from 0. Captured on turbo:before-render
-  // while a YT track is live, then consumed once in onReady so the track resumes
-  // where it was instead of restarting on every navigation.
-  let ytResumeSeconds = 0;
-
-  const curTime = () => (engine === 'yt' ? (yt && yt.getCurrentTime ? yt.getCurrentTime() : 0) : (audio.currentTime || 0));
-  const curDur = () => (engine === 'yt' ? (yt && yt.getDuration ? yt.getDuration() : 0) : audio.duration);
-  const curPaused = () => (engine === 'yt' ? !ytPlaying : audio.paused);
+  const curTime = () => audio.currentTime || 0;
+  const curDur = () => audio.duration;
+  const curPaused = () => audio.paused;
   const seekTo = (s) => {
-    if (engine === 'yt') {
-      if (yt && yt.seekTo) yt.seekTo(s, true);
-    } else audio.currentTime = s;
+    audio.currentTime = s;
   };
   const doPlay = () => {
-    if (engine === 'yt') {
-      if (yt && yt.playVideo) yt.playVideo();
-    } else audio.play().catch(() => {});
+    audio.play().catch(() => {});
   };
   const doPause = () => {
-    if (engine === 'yt') {
-      if (yt && yt.pauseVideo) yt.pauseVideo();
-    } else audio.pause();
-  };
-
-  // Load the YouTube IFrame API once, then run cb when YT.Player is available.
-  const ensureYTApi = (cb) => {
-    if (window.YT && window.YT.Player) {
-      cb();
-      return;
-    }
-    ytReadyCbs.push(cb);
-    if (ytApiLoading) return;
-    ytApiLoading = true;
-    const prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      if (typeof prev === 'function') prev();
-      const cbs = ytReadyCbs;
-      ytReadyCbs = [];
-      cbs.forEach((f) => f());
-    };
-    const s = document.createElement('script');
-    s.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(s);
-  };
-
-  const ytStartPoll = () => {
-    if (ytPoll) return;
-    ytPoll = setInterval(() => {
-      if (engine !== 'yt') return;
-      renderKaraokeAt(curTime());
-      updateSeek();
-    }, 250);
-  };
-  const ytStopPoll = () => {
-    if (ytPoll) {
-      clearInterval(ytPoll);
-      ytPoll = null;
-    }
-  };
-
-  const onYTState = (e) => {
-    if (engine !== 'yt' || !window.YT) return;
-    const S = window.YT.PlayerState;
-    if (e.data === S.PLAYING) {
-      ytPlaying = true;
-      updateHeader();
-      ytStartPoll();
-      if (hasMediaSession) navigator.mediaSession.playbackState = 'playing';
-    } else if (e.data === S.PAUSED) {
-      ytPlaying = false;
-      updateHeader();
-      if (hasMediaSession) navigator.mediaSession.playbackState = 'paused';
-    } else if (e.data === S.ENDED) {
-      ytPlaying = false;
-      ytStopPoll();
-      updateHeader();
-      reportCurrentTrack(true);
-      playNext();
-    }
-  };
-  // Most music videos are embeddable; a 101/150 (embedding disabled) or other
-  // error just leaves the song idle (no gesture to recover to a tab with).
-  const onYTError = () => {
-    ytStopPoll();
-    playNext(); // a non-embeddable video (101/150) shouldn't stall the journey queue
-  };
-
-  // Load+play a videoId on the hidden player, creating it on first use.
-  const ytPlay = (videoId) => {
-    ytPendingVideoId = videoId;
-    ytResumeSeconds = 0; // a genuine (re)start begins at 0 — never inherit a nav resume offset
-
-    ensureYTApi(() => {
-      if (yt) {
-        yt.loadVideoById(videoId);
-        ytStartPoll();
-        return;
-      }
-      yt = new window.YT.Player('yt-player', {
-        height: '0',
-        width: '0',
-        playerVars: { autoplay: 1, controls: 0, disablekb: 1, playsinline: 1, rel: 0 },
-        events: {
-          onReady: () => {
-            if (ytPendingVideoId) {
-              // Resume where a nav-triggered iframe reload left off (see
-              // ytResumeSeconds); a genuine new track loads via ytPlay (below),
-              // not this path, so the offset only applies on reconnect.
-              yt.loadVideoById(ytResumeSeconds > 0
-                ? { videoId: ytPendingVideoId, startSeconds: ytResumeSeconds }
-                : ytPendingVideoId);
-              ytResumeSeconds = 0;
-            }
-            ytStartPoll();
-          },
-          onStateChange: onYTState,
-          onError: onYTError,
-        },
-      });
-    });
-  };
-  const ytStop = () => {
-    ytStopPoll();
-    ytPlaying = false;
-    try {
-      if (yt && yt.pauseVideo) yt.pauseVideo();
-    } catch (_) {}
-  };
-
-  // Start an un-owned song as YouTube audio — a one-off takeover of the queue.
-  const playYouTubeSong = (videoId, artist, song, coverUrl) => {
-    reportCurrentTrack(false);
-    tracks = [{ kind: 'yt', videoId, title: song, artist, album: '', albumId: 0, coverUrl: coverUrl || '' }];
-    queue = [0];
-    currentPos = -1;
-    playAt(0);
+    audio.pause();
   };
 
   const currentTrack = () =>
@@ -220,7 +81,7 @@
     if (currentTrackReported) return;
     const t = currentTrack();
     if (!t) return;
-    if (!t.id) { // YouTube tracks have no local id — nothing to log
+    if (!t.id) { // defensive: a track with no local id has nothing to log
       currentTrackReported = true;
       return;
     }
@@ -291,7 +152,7 @@
       view.karaokeNext.textContent = '';
     }
     if (!t.id) {
-      // A YouTube (no-local-id) track has no lyrics in lyrics_cache.
+      // defensive: a track with no local id has nothing in lyrics_cache.
       if (view) {
         view.karaokeCurrent.textContent = '';
         view.karaokeNext.textContent = '';
@@ -339,13 +200,9 @@
   // Stop playback entirely and dismiss the now-playing cluster (the X control).
   const stopPlayback = () => {
     reportCurrentTrack(false);
-    if (engine === 'yt') {
-      ytStop();
-    } else {
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load(); // detach the source so it can't resume
-    }
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load(); // detach the source so it can't resume
     tracks = [];
     queue = [];
     currentPos = -1;
@@ -361,35 +218,6 @@
     renderView(); // empty state if the now-playing page is open
   };
 
-  // Resolve a queued un-owned (yt-kind) track to a YouTube videoId on demand,
-  // then play it. A miss / no key skips to the next track so the journey keeps
-  // moving instead of stalling on a song with no playable video. Quota is spent
-  // only on songs actually reached (one cached API call per song, ever).
-  const resolveAndPlayYT = (t) => {
-    fetch(
-      '/music/youtube/resolve?artist=' + encodeURIComponent(t.artist || '') + '&song=' + encodeURIComponent(t.title || ''),
-      { headers: { Accept: 'application/json' } },
-    )
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('resolve'))))
-      .then((d) => {
-        if (currentTrack() !== t) return; // user advanced while resolving
-        if (d.videoId) {
-          t.videoId = d.videoId;
-          if (!t.coverUrl) t.coverUrl = 'https://i.ytimg.com/vi/' + d.videoId + '/mqdefault.jpg';
-          setMediaMetadata(t);
-          updateHeader();
-          renderView();
-          ytPlay(d.videoId);
-        } else {
-          if (d.unavailable) console.warn('[player] YouTube resolve unavailable (daily limit or network):', t.artist, '-', t.title);
-          playNext(); // no embeddable video (no key / no match / unavailable) — skip
-        }
-      })
-      .catch(() => {
-        if (currentTrack() === t) playNext();
-      });
-  };
-
   // --- Core transport ---
   const playAt = (pos) => {
     if (pos < 0 || pos >= queue.length) return;
@@ -397,21 +225,8 @@
     currentPos = pos;
     currentTrackReported = false;
     const t = tracks[queue[currentPos]];
-    if (t.kind === 'yt') {
-      engine = 'yt';
-      audio.pause(); // gated local listeners ignore this; just silences local
-      if (t.videoId) {
-        ytPlay(t.videoId);
-      } else {
-        resolveAndPlayYT(t); // queued un-owned song: resolve a videoId, then play
-      }
-    } else {
-      const wasYT = engine === 'yt';
-      engine = 'local';
-      if (wasYT) ytStop();
-      audio.src = '/stream/track/' + t.id;
-      audio.play().catch(() => {});
-    }
+    audio.src = '/stream/track/' + t.id;
+    audio.play().catch(() => {});
     setMediaMetadata(t);
     updateHeader();
     loadKaraokeForTrack(t);
@@ -457,8 +272,7 @@
         tracks = next;
         queue = tracks.map((_, i) => i);
         if (o.shuffle) queue = shuffleArray(queue);
-        // Resolve a start position: by track id (owned) or by title+artist (for
-        // mixed owned/YouTube journey queues, whose yt entries have no id).
+        // Resolve a start position: by track id, else by title+artist.
         let at = -1;
         if (o.startTrackId > 0) {
           at = queue.findIndex((idx) => tracks[idx].id === o.startTrackId);
@@ -472,7 +286,7 @@
           );
         }
         if (at >= 0 && o.keepPrev) {
-          // Start at the song but keep earlier ones queued as "previous" (journey).
+          // Start at the song but keep earlier ones queued as "previous".
           playAt(at);
           return;
         }
@@ -569,9 +383,8 @@
     const artist = (t.artist || '').trim();
     view.trackTitle.textContent = artist ? t.title + ' — ' + artist : t.title;
     delete view.coverImg.dataset.fallbackApplied;
-    // YT tracks are album-less (albumId 0) — never build /art/album/0; use the
-    // resolved YouTube thumbnail (coverUrl) if present, else the placeholder.
-    const coverSrc = t.coverUrl || (t.albumId ? '/art/album/' + t.albumId : '');
+    // Guard an album-less track (albumId 0) — never build /art/album/0.
+    const coverSrc = t.albumId ? '/art/album/' + t.albumId : '';
     if (coverSrc) {
       view.coverImg.src = coverSrc;
       view.coverImg.classList.remove('hidden');
@@ -712,29 +525,22 @@
   };
 
   // --- One-time wiring on the permanent audio + header + document ---
-  // These fire on the <audio> element, so they're only meaningful while the local
-  // engine is active; the YouTube engine drives the same handlers from onYTState.
   audio.addEventListener('ended', () => {
-    if (engine !== 'local') return;
     reportCurrentTrack(true);
     playNext();
   });
   audio.addEventListener('timeupdate', () => {
-    if (engine !== 'local') return;
     renderKaraokeAt(audio.currentTime || 0);
     updateSeek();
   });
   audio.addEventListener('durationchange', () => {
-    if (engine !== 'local') return;
     updateSeek();
   });
   audio.addEventListener('play', () => {
-    if (engine !== 'local') return;
     updateHeader();
     if (hasMediaSession) navigator.mediaSession.playbackState = 'playing';
   });
   audio.addEventListener('pause', () => {
-    if (engine !== 'local') return;
     updateHeader();
     if (hasMediaSession) navigator.mediaSession.playbackState = 'paused';
   });
@@ -782,32 +588,6 @@
     true,
   );
 
-  // [data-yt] (un-owned year-journey song): with a key, resolve to a videoId and
-  // play it as audio through this player; without a key, open a YouTube search
-  // tab synchronously in the gesture (popup-safe). Bound once, document-level.
-  document.addEventListener('click', (e) => {
-    const el = e.target.closest && e.target.closest('.js-yt');
-    if (!el) return;
-    e.preventDefault();
-    const artist = el.getAttribute('data-artist') || '';
-    const song = el.getAttribute('data-song') || '';
-    const artUrl = el.getAttribute('data-art') || '';
-    if (el.getAttribute('data-haskey') === '1') {
-      fetch('/music/youtube/resolve?artist=' + encodeURIComponent(artist) + '&song=' + encodeURIComponent(song), {
-        headers: { Accept: 'application/json' },
-      })
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('resolve failed'))))
-        .then((d) => {
-          if (d.videoId) playYouTubeSong(d.videoId, artist, song, artUrl);
-          else if (d.searchUrl) window.open(d.searchUrl, '_blank');
-        })
-        .catch(() => {});
-    } else {
-      const q = encodeURIComponent((artist ? artist + ' ' : '') + song);
-      window.open('https://www.youtube.com/results?search_query=' + q, '_blank');
-    }
-  });
-
   // The era "play a year range" GET form → go to the player page with that
   // range's queue (in place if already there), matching every other play control.
   document.addEventListener(
@@ -837,7 +617,6 @@
       const el = e.target;
       if (el !== audio && (el.tagName === 'VIDEO' || el.tagName === 'AUDIO')) {
         if (!audio.paused) audio.pause();
-        if (engine === 'yt' && ytPlaying) ytStop();
       }
     },
     true,
@@ -858,13 +637,4 @@
     updateHeader();
   });
 
-  // Before Turbo swaps the body (which reparents the permanent #yt-host iframe
-  // and forces it to reload), remember the live YT position so onReady can
-  // resume there instead of restarting the track. Only capture an actively
-  // playing/paused YT track — an ended/idle one should not resume near its end.
-  document.addEventListener('turbo:before-render', () => {
-    if (engine !== 'yt' || !yt || !yt.getPlayerState) return;
-    const st = yt.getPlayerState(); // 1 = playing, 2 = paused
-    ytResumeSeconds = (st === 1 || st === 2) ? (yt.getCurrentTime() || 0) : 0;
-  });
 })();

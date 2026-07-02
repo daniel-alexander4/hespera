@@ -19,7 +19,6 @@ import (
 	"hespera/internal/scan"
 	"hespera/internal/tmdb"
 	"hespera/internal/tvscan"
-	"hespera/internal/ytdlp"
 )
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
@@ -121,47 +120,6 @@ func (h *Handler) effectiveOpenSubtitlesUserAgent(ctx context.Context) string {
 	return "Hespera v1.0"
 }
 
-// effectiveYouTubeKey resolves the optional YouTube Data API key the same way:
-// the app_settings (UI) value wins, else the env default. Empty disables in-app
-// YouTube playback on the year-journey page (it falls back to a link-out).
-func (h *Handler) effectiveYouTubeKey(ctx context.Context) string {
-	var v string
-	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='youtube_api_key'").Scan(&v)
-	if v = strings.TrimSpace(v); v != "" {
-		return v
-	}
-	return h.cfg.YouTubeAPIKey
-}
-
-// youtubeInappEnabled reports whether the user opted into in-app YouTube audio
-// playback (off by default — the engine plays YouTube as hidden background
-// audio, a YouTube-ToS gray area, so it's opt-in; off links out to a YouTube tab
-// instead).
-func (h *Handler) youtubeInappEnabled(ctx context.Context) bool {
-	var v string
-	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='youtube_inapp_enabled'").Scan(&v)
-	return strings.TrimSpace(v) == "1"
-}
-
-// youtubeYtdlpEnabled reports whether the user opted into the yt-dlp resolver —
-// an off-by-default alternative to the quota-limited Data API search. It resolves
-// a song by invoking the yt-dlp binary (scraping YouTube, a ToS gray area, hence
-// opt-in), escaping the ~100-lookups/day search quota. Off → the Data API search
-// path is used.
-func (h *Handler) youtubeYtdlpEnabled(ctx context.Context) bool {
-	var v string
-	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='youtube_ytdlp_enabled'").Scan(&v)
-	return strings.TrimSpace(v) == "1"
-}
-
-// effectiveYouTubeInApp gates the in-app YouTube audio engine: it needs both a
-// configured key (to resolve videos) and the opt-in toggle on. The single source
-// of truth for whether the per-song button and the journey queue use the hidden
-// engine vs. link out.
-func (h *Handler) effectiveYouTubeInApp(ctx context.Context) bool {
-	return h.effectiveYouTubeKey(ctx) != "" && h.youtubeInappEnabled(ctx)
-}
-
 // effectiveIntegrityAutoRepair reports whether Hespera may auto-repair
 // container-corrupt media in place (remux → verify → atomic replace). Default
 // ON — corruption detection always runs, but this is the kill-switch for the one
@@ -227,7 +185,6 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
 		lfmCfg, lfmSrc, lfmMask := h.keyStatus(ctx, "lastfm_api_key", h.cfg.LastfmAPIKey, h.effectiveLastfmKey(ctx))
 		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
-		ytCfg, ytSrc, ytMask := h.keyStatus(ctx, "youtube_api_key", h.cfg.YouTubeAPIKey, h.effectiveYouTubeKey(ctx))
 		h.render(w, "settings_apikeys.html", map[string]any{
 			"Title":                   "API Keys",
 			"TMDBConfigured":          tmdbCfg,
@@ -246,13 +203,6 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesSource":     osSrc,
 			"OpenSubtitlesMasked":     osMask,
 			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
-			"YouTubeConfigured":       ytCfg,
-			"YouTubeSource":           ytSrc,
-			"YouTubeMasked":           ytMask,
-			"YouTubeInappEnabled":     h.youtubeInappEnabled(ctx),
-			"YouTubeYtdlpEnabled":     h.youtubeYtdlpEnabled(ctx),
-			"YtDlpAvailable":          ytdlp.Available(),
-			"BillboardEnabled":        h.billboardEnabled(ctx),
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
 			"AuthEnabledSetting":      h.authEnabledSetting(ctx),
 			"AuthActive":              h.auth.Enabled(),
@@ -300,35 +250,6 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		// YouTube key + the in-app-playback opt-in checkbox share one form. The
-		// checkbox always saves (absent = unchecked = off); the key only when
-		// non-blank, so toggling the checkbox never wipes a stored key.
-		if _, ok := r.Form["youtube_api_key"]; ok {
-			inapp := ""
-			if r.FormValue("youtube_inapp_enabled") == "1" {
-				inapp = "1"
-			}
-			if err := h.saveAPIKey(ctx, "youtube_inapp_enabled", inapp); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			ytdlpVal := ""
-			if r.FormValue("youtube_ytdlp_enabled") == "1" {
-				ytdlpVal = "1"
-			}
-			if err := h.saveAPIKey(ctx, "youtube_ytdlp_enabled", ytdlpVal); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			if key := strings.TrimSpace(r.FormValue("youtube_api_key")); key != "" {
-				if err := h.saveAPIKey(ctx, "youtube_api_key", key); err != nil {
-					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
-					return
-				}
-			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
-			return
-		}
 		// OpenSubtitles key + User-Agent share one form, so save both together.
 		// The UA (not a secret) always takes its submitted value (blank → default);
 		// the key is saved only when non-blank, so editing the UA never wipes a
@@ -365,25 +286,6 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			http.Redirect(w, r, "/settings/api-keys?saved=auth", http.StatusSeeOther)
-			return
-		}
-		if _, ok := r.Form["billboard_present"]; ok {
-			// Checkbox-only form: an unchecked box submits nothing, so the
-			// always-present sentinel triggers the branch and the checkbox's
-			// absence reads as off.
-			on := r.FormValue("billboard_enabled") == "1"
-			val := ""
-			if on {
-				val = "1"
-			}
-			if err := h.saveAPIKey(ctx, "billboard_enabled", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			if on {
-				h.enqueueBillboardFetch(ctx) // kick the one-time runtime fetch
-			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
 			return
 		}
 		if _, ok := r.Form["integrity_present"]; ok {

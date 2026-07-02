@@ -320,28 +320,6 @@ CREATE TABLE IF NOT EXISTS external_artists (
   fetched_at TEXT NOT NULL DEFAULT ''
 );
 
--- Year-journey ("Rediscover a Year"): a walled-off discovery list of the
--- Cache of song → YouTube video-id lookups (YouTube Data API search), so a
--- charting song the user doesn't own is resolved at most once. Keyed by a
--- normalized "artist|title". video_id '' is a cached miss (no embeddable hit /
--- quota error) → the UI link-outs instead. Powers in-app YouTube playback on
--- the year-journey page.
-CREATE TABLE IF NOT EXISTS youtube_lookups (
-  query_key TEXT PRIMARY KEY,
-  video_id TEXT NOT NULL DEFAULT '',
-  fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Cache of song → iTunes cover-art URL (keyless iTunes Search API), so an
--- un-owned charting song on the year-journey page shows a real cover instead of
--- a placeholder, resolved at most once. Keyed by the same normalized
--- "title|artist" the library reconcile uses (taKey). art_url '' is a cached
--- miss (no iTunes match) → the card stays a placeholder without re-querying.
-CREATE TABLE IF NOT EXISTS itunes_art (
-  query_key TEXT PRIMARY KEY,
-  art_url TEXT NOT NULL DEFAULT '',
-  fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
 `
 
 func Migrate(db *sql.DB) error {
@@ -430,11 +408,12 @@ func Migrate(db *sql.DB) error {
 	if err := migrateIdentitiesMatchedUnmatched(db); err != nil {
 		return err
 	}
-	// year_journey_* retired: "Rediscover a Year" is now built entirely from the
-	// embedded Billboard weekly grid + view-time library joins, so the old per-act
-	// build cache is dead weight. It was a walled-off, non-authoritative cache —
-	// dropping it loses nothing the page can't re-derive.
-	if _, err := db.Exec(`DROP TABLE IF EXISTS year_journey_items; DROP TABLE IF EXISTS year_journeys;`); err != nil {
+	// Retired feature tables — drop on existing DBs (the CREATEs are gone from the
+	// schema). year_journey_*: the old "Rediscover a Year" build cache.
+	// youtube_lookups/itunes_art: the removed Top-100 YouTube playback + its
+	// cover-art cache. All were walled-off, non-authoritative caches.
+	if _, err := db.Exec(`DROP TABLE IF EXISTS year_journey_items; DROP TABLE IF EXISTS year_journeys;
+		DROP TABLE IF EXISTS youtube_lookups; DROP TABLE IF EXISTS itunes_art;`); err != nil {
 		return err
 	}
 	return nil
