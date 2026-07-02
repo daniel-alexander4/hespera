@@ -4,7 +4,6 @@
 </div>
 
 <div class="artist-actions" style="margin-bottom: 1.25rem;">
-  <a href="/music/artist/{{.ArtistID}}" class="btn">Back to artist</a>
   {{if .HasArt}}
   <form method="post" action="/music/artist/art" style="display:inline;">
     <input type="hidden" name="artist_id" value="{{.ArtistID}}" />

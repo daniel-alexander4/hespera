@@ -152,7 +152,8 @@ func (h *Handler) musicHome(w http.ResponseWriter, r *http.Request) {
 	libraryID := h.resolveMusicLibraryID(r)
 	if libraryID == 0 {
 		h.render(w, "music_home.html", map[string]any{
-			"Title": "Music",
+			"Breadcrumb": []crumb{bcHome},
+			"Title":      "Music",
 		})
 		return
 	}
@@ -262,6 +263,7 @@ LIMIT ?
 	}
 
 	h.render(w, "music_home.html", map[string]any{
+		"Breadcrumb":          []crumb{bcHome},
 		"Title":               "Music",
 		"LibraryID":           libraryID,
 		"RecentlyPlayed":      recentlyPlayed,
@@ -499,6 +501,7 @@ ORDER BY al.year, lower(al.title), t.disc_no, t.track_no, lower(t.title)
 	}
 
 	h.render(w, "music_artist.html", map[string]any{
+		"Breadcrumb":   []crumb{bcHome, bcMusic},
 		"Title":        artistName,
 		"ArtistID":     artistID,
 		"ArtistName":   artistName,
@@ -595,6 +598,7 @@ ORDER BY disc_no, track_no, lower(title)
 	}
 
 	h.render(w, "music_album.html", map[string]any{
+		"Breadcrumb":    []crumb{bcHome, bcMusic, bcArtist(artistID, artistName)},
 		"Title":         albumTitle,
 		"ArtistID":      artistID,
 		"ArtistName":    artistName,
@@ -657,6 +661,7 @@ func (h *Handler) musicAlbumEditGET(w http.ResponseWriter, r *http.Request, albu
 	}
 
 	h.render(w, "music_album_edit.html", map[string]any{
+		"Breadcrumb":    []crumb{bcHome, bcMusic, bcAlbum(albumID, albumTitle)},
 		"Title":         "Edit Album",
 		"AlbumID":       albumID,
 		"AlbumTitle":    albumTitle,
@@ -836,6 +841,7 @@ func (h *Handler) musicTrackEditGET(w http.ResponseWriter, r *http.Request, trac
 	}
 
 	h.render(w, "music_track_edit.html", map[string]any{
+		"Breadcrumb":  []crumb{bcHome, bcMusic, bcAlbum(albumID, album)},
 		"Title":       "Edit Track",
 		"TrackID":     trackID,
 		"AlbumID":     albumID,
@@ -1086,6 +1092,7 @@ func (h *Handler) musicArtistArtGET(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "music_artist_art.html", map[string]any{
+		"Breadcrumb": []crumb{bcHome, bcMusic, bcArtist(artistID, name)},
 		"Title":      "Artist image — " + name,
 		"ArtistID":   artistID,
 		"ArtistName": name,
@@ -1414,7 +1421,7 @@ func (h *Handler) musicAlbums(w http.ResponseWriter, r *http.Request) {
 	}
 	libraryID := h.resolveMusicLibraryID(r)
 	if libraryID == 0 {
-		h.render(w, "music_albums.html", map[string]any{"Title": "Albums"})
+		h.render(w, "music_albums.html", map[string]any{"Breadcrumb": []crumb{bcHome, bcMusic}, "Title": "Albums"})
 		return
 	}
 
@@ -1483,11 +1490,12 @@ WHERE al.library_id=?`
 	}
 
 	h.render(w, "music_albums.html", map[string]any{
-		"Title":     "Albums",
-		"Albums":    albums,
-		"LibraryID": libraryID,
-		"Page":      nav,
-		"Search":    searchBox{Action: "/music/albums", Q: q},
+		"Breadcrumb": []crumb{bcHome, bcMusic},
+		"Title":      "Albums",
+		"Albums":     albums,
+		"LibraryID":  libraryID,
+		"Page":       nav,
+		"Search":     searchBox{Action: "/music/albums", Q: q},
 	})
 }
 
@@ -1500,7 +1508,7 @@ func (h *Handler) musicCompilations(w http.ResponseWriter, r *http.Request) {
 	}
 	libraryID := h.resolveMusicLibraryID(r)
 	if libraryID == 0 {
-		h.render(w, "music_compilations.html", map[string]any{"Title": "Compilations"})
+		h.render(w, "music_compilations.html", map[string]any{"Breadcrumb": []crumb{bcHome, bcMusic}, "Title": "Compilations"})
 		return
 	}
 	q := searchParam(r)
@@ -1547,6 +1555,7 @@ func (h *Handler) musicCompilations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "music_compilations.html", map[string]any{
+		"Breadcrumb":   []crumb{bcHome, bcMusic},
 		"Title":        "Compilations",
 		"LibraryID":    libraryID,
 		"Compilations": compilations,
@@ -1861,7 +1870,8 @@ func (h *Handler) musicDuplicates(w http.ResponseWriter, r *http.Request) {
 	libraryID := h.resolveMusicLibraryID(r)
 	if libraryID == 0 {
 		h.render(w, "music_duplicates.html", map[string]any{
-			"Title": "Duplicate Albums",
+			"Breadcrumb": []crumb{bcHome, bcMusic},
+			"Title":      "Duplicate Albums",
 		})
 		return
 	}
@@ -1873,8 +1883,9 @@ func (h *Handler) musicDuplicates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "music_duplicates.html", map[string]any{
-		"Title":  "Duplicate Albums",
-		"Groups": groups,
+		"Breadcrumb": []crumb{bcHome, bcMusic},
+		"Title":      "Duplicate Albums",
+		"Groups":     groups,
 	})
 }
 

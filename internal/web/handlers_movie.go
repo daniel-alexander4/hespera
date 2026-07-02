@@ -58,6 +58,7 @@ func (h *Handler) moviesHome(w http.ResponseWriter, r *http.Request) {
 	recentlyAdded, _ := h.loadMovieRecentlyAdded(r.Context(), 18)
 
 	h.render(w, "movies_home.html", map[string]any{
+		"Breadcrumb":       []crumb{bcHome},
 		"Title":            "Movies",
 		"Movies":           movies,
 		"MoviesPage":       nav,
@@ -327,6 +328,7 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "movie_detail.html", map[string]any{
+		"Breadcrumb":  []crumb{bcHome, bcMovies},
 		"Title":       movie.Title,
 		"TMDBID":      tmdbID,
 		"MovieTitle":  movie.Title,
@@ -523,6 +525,7 @@ LIMIT ?
 	}
 
 	h.render(w, "movie_match_review.html", map[string]any{
+		"Breadcrumb": []crumb{bcHome, bcMovies},
 		"Title":      "Movie Match Review",
 		"Groups":     groups,
 		"TotalCount": total,

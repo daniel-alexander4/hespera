@@ -27,7 +27,8 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "settings.html", map[string]any{
-		"Title": "Settings",
+		"Breadcrumb": []crumb{bcHome},
+		"Title":      "Settings",
 	})
 }
 
@@ -41,7 +42,8 @@ func (h *Handler) settingsAbout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "settings_about.html", map[string]any{
-		"Title": "About & Attributions",
+		"Breadcrumb": []crumb{bcHome, bcSettings},
+		"Title":      "About & Attributions",
 	})
 }
 
@@ -196,6 +198,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		lfmCfg, lfmSrc, lfmMask := h.keyStatus(ctx, "lastfm_api_key", h.cfg.LastfmAPIKey, h.effectiveLastfmKey(ctx))
 		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
 		h.render(w, "settings_apikeys.html", map[string]any{
+			"Breadcrumb":              []crumb{bcHome, bcSettings},
 			"Title":                   "API Keys",
 			"TMDBConfigured":          tmdbCfg,
 			"TMDBSource":              tmdbSrc,
@@ -322,8 +325,9 @@ func (h *Handler) settingsJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "settings_jobs.html", map[string]any{
-		"Title": "Jobs",
-		"Jobs":  jobList,
+		"Breadcrumb": []crumb{bcHome, bcSettings},
+		"Title":      "Jobs",
+		"Jobs":       jobList,
 	})
 }
 
@@ -530,6 +534,7 @@ func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "libraries.html", map[string]any{
+		"Breadcrumb":       []crumb{bcHome, bcSettings},
 		"Title":            "Libraries",
 		"Libraries":        libs,
 		"MediaRoot":        h.cfg.MediaRoot,
@@ -593,8 +598,9 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		h.render(w, "libraries_new.html", map[string]any{
-			"Title":     "New Library",
-			"MediaRoot": h.cfg.MediaRoot,
+			"Breadcrumb": []crumb{bcHome, bcSettings, {Label: "Libraries", Href: "/libraries"}},
+			"Title":      "New Library",
+			"MediaRoot":  h.cfg.MediaRoot,
 		})
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
@@ -1018,9 +1024,10 @@ func (h *Handler) settingsTagEditor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "settings_tags.html", map[string]any{
-		"Title":   "Tag Editor",
-		"Query":   q,
-		"Results": results,
+		"Breadcrumb": []crumb{bcHome, bcSettings},
+		"Title":      "Tag Editor",
+		"Query":      q,
+		"Results":    results,
 	})
 }
 

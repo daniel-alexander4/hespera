@@ -101,8 +101,13 @@
   // visit; the keydown listener above is added once and queries the live DOM, so
   // it keeps working across visits without re-binding.
   const focusFirst = () => {
-    const first = candidates()[0];
-    if (first) first.focus();
+    const all = candidates();
+    if (!all.length) return;
+    // Prefer the first in-content control over the breadcrumb, so a page doesn't
+    // land the ring on its "up to parent" link every load (the breadcrumb is
+    // still reachable by pressing Up). Fall back to it if it's the only thing.
+    const first = all.find((el) => !el.closest('.breadcrumb')) || all[0];
+    first.focus();
   };
   document.addEventListener('turbo:load', focusFirst);
 })();

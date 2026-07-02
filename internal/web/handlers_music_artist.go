@@ -62,6 +62,7 @@ func (h *Handler) musicArtistDisambiguateGET(w http.ResponseWriter, r *http.Requ
 		slog.Warn("musicbrainz artist search failed",
 			"handler", "musicArtistDisambiguate", "artist_id", artistID, "err", err)
 		h.render(w, "music_artist_disambiguate.html", map[string]any{
+			"Breadcrumb": []crumb{bcHome, bcMusic, bcArtist(artistID, name)},
 			"Title":      "Fix artist — " + name,
 			"ArtistID":   artistID,
 			"ArtistName": name,
@@ -83,6 +84,7 @@ func (h *Handler) musicArtistDisambiguateGET(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.render(w, "music_artist_disambiguate.html", map[string]any{
+		"Breadcrumb":  []crumb{bcHome, bcMusic, bcArtist(artistID, name)},
 		"Title":       "Fix artist — " + name,
 		"ArtistID":    artistID,
 		"ArtistName":  name,
