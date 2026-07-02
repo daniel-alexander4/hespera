@@ -1231,8 +1231,18 @@ body::before {
 }
 .player-controls {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.9rem;
   align-items: center;
+}
+/* Enlarged transport controls (~2×) — scoped to the music + video player button
+   rows (both use .player-controls), so the shared .btn-sm elsewhere is untouched.
+   font-size also scales the icons (.icon is 1.1em). */
+.player-controls .btn {
+  padding: 0.5rem 1.2rem;
+  font-size: 1.6rem;
+}
+.player-controls .tv-volume {
+  width: 8rem;
 }
 /* TV transport row: centered, and the play/pause button shows the glyph for the
    action the press will perform (pause while playing, play while paused). */

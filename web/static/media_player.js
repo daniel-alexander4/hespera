@@ -39,6 +39,7 @@ function initMediaPlayer() {
   const cfg = mediaPlayerConfig(video.dataset.mediaKind);
 
   const fileID = parseInt(video.dataset.fileId, 10);
+  const prevFile = parseInt(video.dataset.prevFile, 10) || 0;
   const nextFile = parseInt(video.dataset.nextFile, 10) || 0;
   const audioSelect = document.getElementById('audioSelect');
   const subSelect = document.getElementById('subSelect');
@@ -376,6 +377,20 @@ function initMediaPlayer() {
   if (rewindBtn) rewindBtn.addEventListener('click', () => seekBy(-10));
   if (forwardBtn) forwardBtn.addEventListener('click', () => seekBy(10));
   if (toggleBtn) toggleBtn.addEventListener('click', togglePlay);
+
+  // Reload: re-fetch the session and replay at the current position — recovers a
+  // wedged/desynced stream in place (same path a progressive seek uses).
+  const reloadBtn = document.getElementById('tvReloadBtn');
+  if (reloadBtn) reloadBtn.addEventListener('click', () => loadFromSession(currentAud, currentSub, currentAbsTime()));
+
+  // Prev/next EPISODE (TV only): shown when the page supplied an adjacent file id
+  // (hidden on movies and at season boundaries), navigating to that episode.
+  const gotoFile = (id) => { window.location.href = '/' + video.dataset.mediaKind + '/player?file=' + id; };
+  const prevEpBtn = document.getElementById('tvPrevEpBtn');
+  const nextEpBtn = document.getElementById('tvNextEpBtn');
+  if (prevEpBtn && prevFile > 0) { prevEpBtn.hidden = false; prevEpBtn.addEventListener('click', () => gotoFile(prevFile)); }
+  if (nextEpBtn && nextFile > 0) { nextEpBtn.hidden = false; nextEpBtn.addEventListener('click', () => gotoFile(nextFile)); }
+
   // Click the video frame to play/pause (standard player UX). The listener is on
   // the <video> itself, so it fires only on direct video clicks — the overlay
   // controls and the floating skip button are separate elements that never reach
