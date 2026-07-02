@@ -37,5 +37,9 @@ full.docker.reset.sh
 # Playwright MCP
 .playwright-mcp/
 
+# JS test harness (dev-only; jsdom is never compiled into the Go binary)
+node_modules/
+package-lock.json
+
 # Billboard chart data is fetched at runtime into DataDir, never committed
 internal/billboard/data.json.gz

@@ -174,6 +174,7 @@ make bump-patch / bump-minor / bump-major   # Makefile wrappers
 - `openTestDB(t)` helper creates temp SQLite in `t.TempDir()`
 - Direct conditionals with `t.Fatalf()`, no assertion libraries
 - HTTP tests use `httptest.NewRequest` / `httptest.NewRecorder`
+- **Browser-JS tests** (`test/js/`, `make test-js` / `npm test`): a **dev-only** harness — the Go binary embeds `web/` and never runs Node, so `package.json`/`node_modules` ship nothing and are `.gitignore`d; `jsdom` is the one devDependency (`npm install` once). `harness.js` loads a real `web/static/*.js` controller into a jsdom window (`vm.runInContext`) with the media engine stubbed (`HTMLMediaElement.play/load/canPlayType`, a mock `Hls`, `fetch`, `sendBeacon`, a mock `YT` IFrame player) and exercises it **through its DOM effects** (dispatch `turbo:load`, click, change selects, fire `timeupdate`) — so the tests run the shipped code, not a copy. Runs with `--test-force-exit` (player.js's 250ms YT poll keeps the loop alive). Covers `media_player.js` (config, selects, fmtTime, skip segments, HLS `startPosition`/error recovery, progressive `?start=`, volume/boost, progress) and `player.js` (the dual-engine YT resume-across-nav + album-less cover guard + autoload guard). **Ceiling:** jsdom models the DOM, not the media engine — real MSE/DTS ordering, iframe reparent-reload, WebVTT cue parsing, and video decode stay in the Playwright smoke.
 
 ### Configuration (Environment Variables)
 
