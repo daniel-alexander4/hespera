@@ -1,5 +1,4 @@
-/* Catppuccin theme. Dark = Mocha (default), light = Latte (html[data-mode="light"]).
-   Set pre-paint by the bootstrap in layout.html; toggled by the sun/moon button. */
+/* Catppuccin Mocha — the app is dark-only (no light mode, no theme toggle). */
 :root {
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "Consolas", "Lucida Console", monospace;
@@ -31,35 +30,6 @@
   --badge-success-bg: #1e3326; --badge-success-fg: #a6e3a1;
   --badge-error-bg: #3a1f28;   --badge-error-fg: #f38ba8;
   --badge-warn-bg: #3a3320;    --badge-warn-fg: #f9e2af;
-}
-
-html[data-mode="light"] {
-  /* Catppuccin Latte */
-  --page-bg: #eff1f5;        /* base */
-  --page-fg: #4c4f69;        /* text */
-  --surface-topbar: #e6e9ef; /* mantle */
-  --surface-card: #ffffff;   /* raised card */
-  --surface-panel: #e6e9ef;  /* mantle */
-  --border-default: #ccd0da; /* surface0 */
-  --text-muted: #6c6f85;     /* subtext0 */
-  --text-soft: #8c8fa1;      /* overlay1 */
-  --link-color: #1e66f5;     /* blue */
-  --link-hover-color: #7287fd;/* lavender */
-  --accent: #8839ef;         /* mauve */
-  --accent-bg: #f0e6fb;      /* light mauve surface */
-  --accent-hover: #9a4ff5;
-  --text-on-accent: #eff1f5; /* light text on the dark accent */
-  --danger: #d20f39;         /* red */
-  --danger-hover: #b00c30;
-  --field-bg: #ffffff;
-  --field-border: rgba(136, 57, 239, 0.4);
-  --media-bg: #11111b;       /* video letterbox stays dark */
-
-  --badge-neutral-bg: #dce0e8; --badge-neutral-fg: #5c5f77;
-  --badge-info-bg: #dce6fb;    --badge-info-fg: #1e66f5;
-  --badge-success-bg: #dcf0d6; --badge-success-fg: #40a02b;
-  --badge-error-bg: #fbdce3;   --badge-error-fg: #d20f39;
-  --badge-warn-bg: #fbeed0;    --badge-warn-fg: #b5790f;
 }
 
 html {
@@ -217,34 +187,8 @@ a:hover {
   line-height: 1;
 }
 
-/* Light/dark toggle — sits at the top-right of the topbar */
-.theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  background: var(--surface-card);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.theme-toggle:hover {
-  color: var(--page-fg);
-  border-color: var(--accent);
-}
-.theme-toggle svg { width: 1.05rem; height: 1.05rem; display: block; }
-/* Show the icon for the current mode (sun = light, moon = dark). */
-.theme-toggle .icon-sun { display: none; }
-.theme-toggle .icon-moon { display: block; }
-html[data-mode="light"] .theme-toggle .icon-sun { display: block; }
-html[data-mode="light"] .theme-toggle .icon-moon { display: none; }
-
-/* Topbar control cluster — reload + power sit next to the theme toggle, grouped
-   tightly (the topbar's own 1.5rem gap would scatter them). */
+/* Topbar control cluster — reload + full-screen + power grouped tightly (the
+   topbar's own 1.5rem gap would scatter them). */
 .topbar-controls {
   display: inline-flex;
   align-items: center;
@@ -488,9 +432,8 @@ body::before {
 }
 
 /* Dialogue-boost toggle "on" state — a solid accent fill so it's unmistakably
-   active in BOTH themes (the default .btn-primary tint is near-invisible against
-   the player overlay in light mode). The accent ring keeps it readable over the
-   dark overlay gradient too. */
+   active (the default .btn-primary tint is near-invisible against the player
+   overlay). The accent ring keeps it readable over the dark overlay gradient. */
 #tvBoostBtn.is-on {
   background: var(--accent);
   border-color: var(--accent);
@@ -1608,7 +1551,7 @@ body::before {
 .media-overlay .media-seek { margin: 0; }
 .media-overlay .tv-transport { margin: 0; }
 .media-overlay .tv-player-controls { margin-top: 0.25rem; }
-/* Bare label/time text rides on the dark gradient regardless of light/dark theme. */
+/* Bare label/time text rides on the dark gradient. */
 .media-overlay .media-time,
 .media-overlay .tv-playback-mode,
 .media-overlay .tv-track-pick { color: rgba(255, 255, 255, 0.9); }
