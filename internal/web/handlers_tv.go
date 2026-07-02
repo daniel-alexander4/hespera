@@ -98,6 +98,7 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "tv_home.html", map[string]any{
+		"Breadcrumb":      []crumb{bcHome},
 		"Title":           "TV Shows",
 		"Series":          series,
 		"SeriesPage":      nav,
@@ -494,6 +495,7 @@ WHERE i.series_id = ? AND i.status = 'matched' LIMIT 1`, seriesID).Scan(&library
 	}
 
 	h.render(w, "tv_series.html", map[string]any{
+		"Breadcrumb":     []crumb{bcHome, bcTV},
 		"Title":          show.Name,
 		"ShowID":         seriesID,
 		"ShowName":       show.Name,
@@ -667,6 +669,7 @@ ORDER BY i.episode_numbers_csv
 	})
 
 	h.render(w, "tv_season.html", map[string]any{
+		"Breadcrumb":      []crumb{bcHome, bcTV, bcSeries(seriesID, showName)},
 		"Title":           fmt.Sprintf("%s — %s", showName, seasonName),
 		"ShowID":          seriesID,
 		"ShowName":        showName,
@@ -1206,6 +1209,7 @@ LIMIT ?
 	}
 
 	h.render(w, "tv_match_review.html", map[string]any{
+		"Breadcrumb": []crumb{bcHome, bcTV},
 		"Title":      "TV Match Review",
 		"Groups":     groups,
 		"TotalCount": total,

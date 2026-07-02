@@ -137,6 +137,7 @@ func (h *Handler) musicMatchReview(w http.ResponseWriter, r *http.Request) {
 	libraryID := h.resolveMusicLibraryID(r)
 
 	h.render(w, "music_match_review.html", map[string]any{
+		"Breadcrumb": []crumb{bcHome, bcMusic},
 		"Title":      "Match Review",
 		"Albums":     albums,
 		"LibraryID":  libraryID,

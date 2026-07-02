@@ -147,6 +147,7 @@ func (h *Handler) musicArtistExternal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "music_artist_external.html", map[string]any{
+		"Breadcrumb":   []crumb{bcHome, bcMusic},
 		"Title":        nonEmpty(name, "Artist"),
 		"Name":         name,
 		"Comment":      comment,
