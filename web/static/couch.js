@@ -72,6 +72,26 @@
   };
 
   const DIRS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+  // A remote's "Back"/parent button can arrive as any of these key values
+  // depending on the dongle/OS (Flirc, BT, CEC, webOS/Android TV), so catch them
+  // all — otherwise the behaviour depends on which code the remote happens to send.
+  const BACK_KEYS = new Set(['Backspace', 'Escape', 'BrowserBack', 'GoBack']);
+
+  // The current page's semantic parent, so Back climbs the hierarchy like a TV
+  // remote's up button (Album → Artist → Music → Home) rather than retracing
+  // browsing history. The breadcrumb already encodes the parent chain, so its
+  // LAST crumb IS the immediate parent; the breadcrumb-less immersive players
+  // carry the same target in [data-couch-parent]. Null → no known parent.
+  const parentHref = () => {
+    const crumbs = document.querySelectorAll('.breadcrumb a[href]');
+    if (crumbs.length) return crumbs[crumbs.length - 1].getAttribute('href');
+    const hint = document.querySelector('[data-couch-parent]');
+    return hint ? hint.getAttribute('data-couch-parent') : null;
+  };
+  const navigateUp = (href) => {
+    if (window.Turbo && typeof window.Turbo.visit === 'function') window.Turbo.visit(href);
+    else window.location.href = href;
+  };
 
   document.addEventListener('keydown', (e) => {
     const target = e.target;
@@ -83,7 +103,7 @@
       move(DIRS[e.key]);
       return;
     }
-    if ((e.key === 'Backspace' || e.key === 'Escape' || e.key === 'BrowserBack') && !typing) {
+    if (BACK_KEYS.has(e.key) && !typing) {
       e.preventDefault();
       const overlay = openOverlay();
       if (overlay) {
@@ -91,7 +111,9 @@
         if (dismiss) dismiss.click();
         return; // dismiss the overlay instead of leaving the page
       }
-      history.back();
+      const parent = parentHref();
+      if (parent) { navigateUp(parent); return; } // climb to the semantic parent
+      history.back(); // root/unknown-parent pages: retrace history
     }
     // Enter / OK is left to native behavior (activates links and buttons).
   });

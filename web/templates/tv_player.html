@@ -1,5 +1,5 @@
 {{define "content"}}
-<div class="tv-player-page">
+<div class="tv-player-page" data-couch-parent="/tv/series/{{.SeriesID}}">
   <div class="tv-player-header">
     <h1><a href="/tv/series/{{.SeriesID}}" class="btn btn-head">{{.ShowName}}</a></h1>
     <h2>S{{.SeasonNum}} — {{.EpName}}</h2>
