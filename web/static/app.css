@@ -851,8 +851,8 @@ body::before {
   font-size: 2rem;
 }
 .album-art-ph.big {
-  width: 280px;
-  height: 280px;
+  width: 20rem; /* 280px @14 — rem so it scales with the root (font-size prefs + couch 24px) */
+  height: 20rem;
   font-size: 4rem;
   border-radius: 8px;
 }
@@ -1104,10 +1104,10 @@ body::before {
 }
 .player-main-grid {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 21.4286rem 1fr; /* 300px @14 — rem so the cover column scales with the root */
   gap: 1.5rem;
   width: 100%;
-  max-width: 760px;
+  max-width: 54.2857rem; /* 760px @14 */
 }
 .player-seek-row {
   display: flex;
@@ -1125,7 +1125,7 @@ body::before {
   white-space: nowrap;
 }
 .player-cover img {
-  width: 300px;
+  width: 21.4286rem; /* 300px @14 */
   border-radius: 8px;
   display: block;
 }
@@ -1141,12 +1141,12 @@ body::before {
   display: none;
 }
 .player-now.no-lyrics .player-main-grid {
-  grid-template-columns: 440px 1fr;
-  max-width: 920px;
+  grid-template-columns: 31.4286rem 1fr; /* 440px @14 */
+  max-width: 65.7143rem; /* 920px @14 */
 }
 .player-now.no-lyrics .player-cover img,
 .player-now.no-lyrics .album-art-ph.big {
-  width: 440px;
+  width: 31.4286rem; /* 440px @14 */
   max-width: 100%;
 }
 .player-audio {
@@ -1289,7 +1289,7 @@ body::before {
   pointer-events: none;
 }
 .player-transport-body {
-  max-width: 760px;
+  max-width: 54.2857rem; /* 760px @14 — transport content scales with the root */
   margin: 0 auto;
   padding: 0.85rem 1.25rem 1.05rem;
   display: flex;
@@ -1328,7 +1328,7 @@ body::before {
   right: 0;
   bottom: 0;
   z-index: 320;
-  width: min(380px, 85vw);
+  width: min(27.1429rem, 85vw); /* 380px @14 — drawer scales with the root */
   display: flex;
   flex-direction: column;
   padding: 1rem 1.1rem 1.25rem;
@@ -1686,7 +1686,7 @@ body::before {
   }
   .album-art-ph.big {
     width: 100%;
-    max-width: 280px;
+    max-width: 20rem; /* 280px @14 */
     margin: 0 auto;
   }
   .player-main-grid {
@@ -1694,7 +1694,7 @@ body::before {
   }
   .player-cover img {
     width: 100%;
-    max-width: 300px;
+    max-width: 21.4286rem; /* 300px @14 */
     margin: 0 auto;
   }
   /* Keep the no-lyrics layout single-column on mobile (just a slightly bigger cover). */
@@ -1704,7 +1704,7 @@ body::before {
   .player-now.no-lyrics .player-cover img,
   .player-now.no-lyrics .album-art-ph.big {
     width: 100%;
-    max-width: 380px;
+    max-width: 27.1429rem; /* 380px @14 */
   }
   .artist-header {
     flex-direction: column;
