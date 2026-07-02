@@ -13,11 +13,9 @@ description: |
   Hespera — a local app for your Music, TV, and Movies with automatic metadata
   matching. Launches a chromeless app window on your machine (loopback-only); a
   Docker server mode is also available.
-# ffmpeg powers TV/movie transcoding + tag recovery; openssh-client provides the
-# ssh-keygen used by the optional pubkey auth. apt pulls them on install.
+# ffmpeg powers TV/movie transcoding + tag recovery. apt pulls it on install.
 depends:
   - ffmpeg
-  - openssh-client
 contents:
   - src: dist/hespera
     dst: /usr/bin/hespera

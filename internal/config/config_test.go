@@ -10,7 +10,7 @@ func TestFromEnvDefaults(t *testing.T) {
 	// Clear any env vars that might interfere.
 	for _, k := range []string{
 		"HESPERA_LISTEN", "HESPERA_DATA_DIR", "HESPERA_DB_PATH",
-		"HESPERA_MEDIA_ROOT", "AUTH_ENABLED", "AUTH_SESSION_SECRET",
+		"HESPERA_MEDIA_ROOT",
 	} {
 		os.Unsetenv(k)
 	}
@@ -36,12 +36,6 @@ func TestFromEnvDefaults(t *testing.T) {
 			t.Fatalf("default path must be absolute, got %q", p)
 		}
 	}
-	// Auth is off by default: Hespera ships as a loopback-only single-machine app
-	// where it adds no protection. Exposing it (or Docker server mode) opts in via
-	// AUTH_ENABLED=true or the Settings toggle.
-	if cfg.AuthEnabled {
-		t.Fatalf("expected AuthEnabled=false by default")
-	}
 	if cfg.FFmpegConcurrentLimit != 4 {
 		t.Fatalf("expected FFmpegConcurrentLimit=4, got %d", cfg.FFmpegConcurrentLimit)
 	}
@@ -50,11 +44,9 @@ func TestFromEnvDefaults(t *testing.T) {
 func TestFromEnvCustom(t *testing.T) {
 	os.Setenv("HESPERA_LISTEN", ":9090")
 	os.Setenv("HESPERA_DATA_DIR", "/tmp/iso")
-	os.Setenv("AUTH_ENABLED", "false")
 	defer func() {
 		os.Unsetenv("HESPERA_LISTEN")
 		os.Unsetenv("HESPERA_DATA_DIR")
-		os.Unsetenv("AUTH_ENABLED")
 	}()
 
 	cfg := FromEnv()
@@ -63,9 +55,6 @@ func TestFromEnvCustom(t *testing.T) {
 	}
 	if cfg.DataDir != "/tmp/iso" {
 		t.Fatalf("expected DataDir=/tmp/iso, got %q", cfg.DataDir)
-	}
-	if cfg.AuthEnabled {
-		t.Fatalf("expected AuthEnabled=false")
 	}
 }
 
@@ -86,47 +75,12 @@ func TestValidate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid_with_auth",
-			cfg: Config{
-				Listen:            ":8080",
-				DataDir:           "/tmp/data",
-				DBPath:            "/tmp/data/db.sqlite",
-				MediaRoot:         "/media",
-				AuthEnabled:       true,
-				AuthSessionSecret: "this-is-a-strong-secret-1234",
-			},
-			wantErr: false,
-		},
-		{
 			name: "relative_data_dir",
 			cfg: Config{
 				Listen:    ":8080",
 				DataDir:   "relative/path",
 				DBPath:    "/tmp/db.sqlite",
 				MediaRoot: "/media",
-			},
-			wantErr: true,
-		},
-		{
-			name: "auth_no_secret",
-			cfg: Config{
-				Listen:      ":8080",
-				DataDir:     "/tmp/data",
-				DBPath:      "/tmp/data/db.sqlite",
-				MediaRoot:   "/media",
-				AuthEnabled: true,
-			},
-			wantErr: true,
-		},
-		{
-			name: "auth_weak_secret",
-			cfg: Config{
-				Listen:            ":8080",
-				DataDir:           "/tmp/data",
-				DBPath:            "/tmp/data/db.sqlite",
-				MediaRoot:         "/media",
-				AuthEnabled:       true,
-				AuthSessionSecret: "changeme",
 			},
 			wantErr: true,
 		},
@@ -139,17 +93,5 @@ func TestValidate(t *testing.T) {
 				t.Fatalf("Validate() error=%v, wantErr=%v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestIsWeakSessionSecret(t *testing.T) {
-	if !isWeakSessionSecret("short") {
-		t.Fatalf("expected short secret to be weak")
-	}
-	if !isWeakSessionSecret("changeme") {
-		t.Fatalf("expected 'changeme' to be weak")
-	}
-	if isWeakSessionSecret("this-is-a-strong-secret-1234") {
-		t.Fatalf("expected strong secret to not be weak")
 	}
 }

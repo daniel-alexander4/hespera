@@ -264,22 +264,6 @@ CREATE INDEX IF NOT EXISTS idx_scan_jobs_status ON scan_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_library_id ON scan_jobs(library_id);
 CREATE INDEX IF NOT EXISTS idx_scan_jobs_created_at ON scan_jobs(created_at);
 
-CREATE TABLE IF NOT EXISTS auth_users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS auth_user_keys (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-  public_key TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(user_id, public_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_auth_user_keys_user_id ON auth_user_keys(user_id);
-
 CREATE TABLE IF NOT EXISTS lyrics_cache (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   track_id INTEGER NOT NULL REFERENCES music_tracks(id) ON DELETE CASCADE,
@@ -411,9 +395,10 @@ func Migrate(db *sql.DB) error {
 	// Retired feature tables — drop on existing DBs (the CREATEs are gone from the
 	// schema). year_journey_*: the old "Rediscover a Year" build cache.
 	// youtube_lookups/itunes_art: the removed Top-100 YouTube playback + its
-	// cover-art cache. All were walled-off, non-authoritative caches.
+	// cover-art cache. auth_user_keys/auth_users: the removed SSH-key auth layer.
 	if _, err := db.Exec(`DROP TABLE IF EXISTS year_journey_items; DROP TABLE IF EXISTS year_journeys;
-		DROP TABLE IF EXISTS youtube_lookups; DROP TABLE IF EXISTS itunes_art;`); err != nil {
+		DROP TABLE IF EXISTS youtube_lookups; DROP TABLE IF EXISTS itunes_art;
+		DROP TABLE IF EXISTS auth_user_keys; DROP TABLE IF EXISTS auth_users;`); err != nil {
 		return err
 	}
 	return nil

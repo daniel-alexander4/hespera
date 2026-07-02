@@ -23,11 +23,6 @@ type Config struct {
 	OpenSubtitlesUserAgent string
 	LastfmAPIKey           string
 
-	AuthEnabled       bool
-	AuthSessionSecret string
-	SSHAuthNamespace  string
-	SSHKeygenPath     string
-
 	FFmpegConcurrentLimit int
 	FFmpegAcquireTimeout  time.Duration
 	HLSSegmentConcurrency int
@@ -52,12 +47,6 @@ func FromEnv() Config {
 		OpenSubtitlesAPIKey:    getenv("HESPERA_OPENSUBTITLES_API_KEY", ""),
 		OpenSubtitlesUserAgent: getenv("HESPERA_OPENSUBTITLES_USER_AGENT", ""),
 		LastfmAPIKey:           getenv("HESPERA_LASTFM_API_KEY", ""),
-		AuthEnabled: parseBoolDefaultFalse(
-			os.Getenv("AUTH_ENABLED"),
-		),
-		AuthSessionSecret: getenv("AUTH_SESSION_SECRET", ""),
-		SSHAuthNamespace:  getenv("SSH_AUTH_NAMESPACE", "hespera"),
-		SSHKeygenPath:     getenv("SSH_KEYGEN_PATH", "ssh-keygen"),
 		FFmpegConcurrentLimit: parsePositiveIntDefault(
 			os.Getenv("HESPERA_FFMPEG_CONCURRENCY"), 4,
 		),
@@ -89,12 +78,6 @@ func (c Config) Validate() error {
 	if !filepath.IsAbs(c.MediaRoot) {
 		return fmt.Errorf("HESPERA_MEDIA_ROOT must be absolute: %q", c.MediaRoot)
 	}
-	if c.AuthEnabled && strings.TrimSpace(c.AuthSessionSecret) == "" {
-		return errors.New("AUTH_SESSION_SECRET is required when AUTH_ENABLED=true")
-	}
-	if c.AuthEnabled && isWeakSessionSecret(c.AuthSessionSecret) {
-		return errors.New("AUTH_SESSION_SECRET must be a non-placeholder value and at least 16 characters")
-	}
 	if c.FFmpegConcurrentLimit < 0 {
 		return errors.New("HESPERA_FFMPEG_CONCURRENCY must be >= 0")
 	}
@@ -111,19 +94,6 @@ func (c Config) Validate() error {
 		return errors.New("HESPERA_TV_CACHE_MAX_AGE must be >= 0")
 	}
 	return nil
-}
-
-func isWeakSessionSecret(v string) bool {
-	s := strings.TrimSpace(strings.ToLower(v))
-	if len(s) < 16 {
-		return true
-	}
-	switch s {
-	case "change-me", "changeme", "default", "secret", "password":
-		return true
-	default:
-		return false
-	}
 }
 
 func getenv(k, def string) string {
@@ -160,22 +130,6 @@ func defaultMediaRoot() string {
 		return h
 	}
 	return os.TempDir()
-}
-
-// parseBoolDefaultFalse parses an AUTH_ENABLED-style flag, defaulting to false
-// when unset. Hespera ships as a loopback-only single-machine app where auth
-// adds no protection (only localhost can connect), so the binary boots open by
-// default; a user exposing it (or running the Docker server) opts in via the
-// Settings toggle or AUTH_ENABLED=true. Docker's compose sets AUTH_ENABLED
-// explicitly, so this default doesn't change its behavior.
-func parseBoolDefaultFalse(v string) bool {
-	v = strings.TrimSpace(strings.ToLower(v))
-	switch v {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 func parsePositiveIntDefault(v string, def int) int {

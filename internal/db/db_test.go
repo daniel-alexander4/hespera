@@ -58,7 +58,7 @@ func TestMigrateIdempotent(t *testing.T) {
 	tables := []string{
 		"libraries", "music_artists", "music_albums", "music_tracks",
 		"play_history", "tv_series_files", "tv_series_identities",
-		"scan_jobs", "auth_users", "auth_user_keys",
+		"scan_jobs",
 		"movie_files", "movie_metadata_cache", "movie_art", "movie_playback_progress",
 	}
 	for _, table := range tables {

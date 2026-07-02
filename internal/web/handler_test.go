@@ -32,7 +32,7 @@ func openTestDB(t *testing.T) *sql.DB {
 // stubPages mirrors the page list New() compiles — kept here so the stub asset
 // FS provides every one (a missing page would fail New()).
 var stubPages = []string{
-	"home.html", "login.html", "libraries.html", "libraries_new.html",
+	"home.html", "libraries.html", "libraries_new.html",
 	"settings.html", "settings_jobs.html", "music_home.html", "music_artist.html",
 	"music_artist_external.html", "music_artist_disambiguate.html", "music_artist_art.html",
 	"music_album.html", "music_albums.html", "music_compilations.html", "player.html",
@@ -121,7 +121,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 32
+	expectedPages := 31
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}
@@ -186,13 +186,13 @@ func TestNewMissingPageTemplate(t *testing.T) {
 func TestNewMultipleBrokenPages(t *testing.T) {
 	_, err := New(Deps{
 		Cfg:      config.Config{DataDir: t.TempDir(), MediaRoot: t.TempDir()},
-		AssetsFS: stubAssetsWithout("home.html", "login.html", "player.html"),
+		AssetsFS: stubAssetsWithout("home.html", "libraries.html", "player.html"),
 	})
 	if err == nil {
 		t.Fatal("New() should return error for multiple broken pages")
 	}
 	errStr := err.Error()
-	for _, page := range []string{"home.html", "login.html", "player.html"} {
+	for _, page := range []string{"home.html", "libraries.html", "player.html"} {
 		if !strings.Contains(errStr, page) {
 			t.Errorf("error should mention '%s', got: %v", page, errStr)
 		}

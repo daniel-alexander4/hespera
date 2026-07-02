@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"hespera"
-	"hespera/internal/auth"
 	"hespera/internal/config"
 	"hespera/internal/jobs"
 	"hespera/internal/tmdb"
@@ -45,7 +44,6 @@ type Handler struct {
 	staticFS  fs.FS
 	jobs      *jobs.Service
 	startedAt time.Time
-	auth      *auth.Manager
 	// quit gracefully stops the app (the topbar power button → POST /shutdown);
 	// nil disables the endpoint.
 	quit func()
@@ -79,7 +77,6 @@ func New(d Deps) (*Handler, error) {
 
 	pages := []string{
 		"home.html",
-		"login.html",
 		"libraries.html",
 		"libraries_new.html",
 		"settings.html",
@@ -174,7 +171,6 @@ func New(d Deps) (*Handler, error) {
 		staticFS:  staticFS,
 		jobs:      jobs.New(d.DB),
 		startedAt: time.Now().UTC(),
-		auth:      auth.New(d.Cfg, d.DB),
 		quit:      d.Quit,
 		tmdbValidate: func(ctx context.Context, key string) (bool, error) {
 			return tmdb.NewClient(key).ValidateKey(ctx)
