@@ -88,8 +88,19 @@ function initMediaPlayer() {
     const clientSeek = progressive ? 0 : seekTo; // only the seekable paths seek the element
     const onReady = () => { if (clientSeek > 0) { try { video.currentTime = clientSeek; } catch (e) {} } };
 
-    if (session.protocol === 'hls' && !nativeHLS && window.Hls && Hls.isSupported()) {
-      hls = new Hls({ enableWorker: true });
+    // Prefer hls.js whenever MSE supports it (Chrome, Firefox, desktop Safari) — the
+    // whole transcode player (seeking, error recovery, self-rendered subtitles) is built
+    // on hls.js/MSE. Native <video src> HLS is the fallback only for MSE-less browsers
+    // (iOS Safari). We must NOT gate on !nativeHLS: modern Chrome reports HLS as playable
+    // ('maybe' from canPlayType) yet its native HLS wedges on a resume/seek (seg0-then-jump
+    // DTS append failure), so trusting it silently bypassed the entire hls.js player.
+    if (session.protocol === 'hls' && window.Hls && Hls.isSupported()) {
+      // startPosition makes hls.js load the seek/resume segment FIRST, rather than
+      // loading seg0 and then jumping via onReady's currentTime set. The seg0-then-jump
+      // appends fragments out of DTS order on a fresh pipeline, which Chrome MSE rejects
+      // (CHUNK_DEMUXER_ERROR_APPEND_FAILED: "not in DTS sequence") — wedging any resume/seek
+      // into a transcoded file. Loading the target segment first keeps the appends in order.
+      hls = new Hls({ enableWorker: true, startPosition: clientSeek > 0 ? clientSeek : -1 });
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, onReady);
