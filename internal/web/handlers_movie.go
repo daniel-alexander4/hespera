@@ -57,6 +57,12 @@ func (h *Handler) moviesHome(w http.ResponseWriter, r *http.Request) {
 	continueWatching, _ := h.loadMovieContinueWatching(r.Context(), 18)
 	recentlyAdded, _ := h.loadMovieRecentlyAdded(r.Context(), 18)
 
+	// In-place paging (grid_pager.js) fetches just the movie card grid.
+	if r.URL.Query().Get("grid") == "1" {
+		h.renderFragment(w, "movies_home.html", "movie-cards", movies)
+		return
+	}
+
 	h.render(w, "movies_home.html", map[string]any{
 		"Breadcrumb":       []crumb{bcHome},
 		"Title":            "Movies",

@@ -244,3 +244,22 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 	w.Header().Set("Expires", "0")
 	_, _ = w.Write(buf.Bytes())
 }
+
+// renderFragment writes a single named template block (no layout) from the given
+// page's template set — the fragment path that the grid_pager.js in-place paging
+// fetches (the artist/movie/TV card blocks). Mirrors settingsJobsFragment.
+func (h *Handler) renderFragment(w http.ResponseWriter, page, block string, data any) {
+	t, ok := h.tpls[page]
+	if !ok {
+		httpError(w, 500, "internal server error", "template not found", "handler", "renderFragment", "page", page)
+		return
+	}
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, block, data); err != nil {
+		httpError(w, 500, "internal server error", "render fragment failed", "handler", "renderFragment", "block", block, "err", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(buf.Bytes())
+}

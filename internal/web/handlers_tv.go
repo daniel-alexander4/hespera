@@ -97,6 +97,12 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("load recently-added tv failed", "handler", "tvSeriesList", "err", err)
 	}
 
+	// In-place paging (grid_pager.js) fetches just the series card grid.
+	if r.URL.Query().Get("grid") == "1" {
+		h.renderFragment(w, "tv_home.html", "tv-cards", series)
+		return
+	}
+
 	h.render(w, "tv_home.html", map[string]any{
 		"Breadcrumb":      []crumb{bcHome},
 		"Title":           "TV Shows",
