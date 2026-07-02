@@ -67,8 +67,12 @@
         if (kind === 'major') {
           const label = document.createElement('span');
           label.className = 'era-tick-label';
-          label.style.left = pct(y) + '%';
-          label.textContent = "'" + String(y).slice(-2);
+          const px = pct(y);
+          label.style.left = px + '%';
+          // Keep the first/last decade numbers from overflowing the track edges.
+          if (px <= 6) label.style.transform = 'translateX(0)';
+          else if (px >= 94) label.style.transform = 'translateX(-100%)';
+          label.textContent = String(y); // full year, e.g. 1970 (clearer than '70)
           tape.appendChild(label);
         }
       }
