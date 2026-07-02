@@ -160,4 +160,25 @@
     <a href="/settings" class="btn">Back</a>
   </div>
 </form>
+
+<form method="post" action="/settings/api-keys" class="form-card">
+  <input type="hidden" name="integrity_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="integrity_autorepair" value="1"{{if .IntegrityAutoRepair}} checked{{end}} />
+      Auto-repair corrupt media
+    </label>
+    <small class="form-help">
+      When a scan finds a video file with <strong>container corruption</strong> (bad framing that can glitch playback),
+      Hespera losslessly rewrites it (remux, no re-encode), verifies the result, and atomically replaces the original —
+      no re-encode, no quality loss. Corruption that damages the actual video data can't be repaired and is only flagged.
+      <strong>This is the one operation that writes back to your media files</strong>; turn it off to detect and flag only.
+      Run a deep check any time from the Libraries page.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
 {{end}}

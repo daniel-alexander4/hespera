@@ -406,6 +406,21 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "people", "filmography_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// Media integrity: per-file corruption status for video files. '' = unchecked
+	// (reset to '' by the scanner when size/mtime change); 'ok' = container-clean;
+	// 'repaired' = container losslessly remuxed in place; 'flagged' = unrepairable
+	// (bitstream corruption or a remux that couldn't be safely applied).
+	for _, tbl := range []string{"tv_series_files", "movie_files"} {
+		if err := ensureColumn(db, tbl, "integrity_status", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, tbl, "integrity_checked_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, tbl, "integrity_detail", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
 		return err
 	}

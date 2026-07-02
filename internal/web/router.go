@@ -24,6 +24,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/libraries/media-root", h.librariesMediaRoot)
 	mux.HandleFunc("/libraries/scan", h.librariesScan)
 	mux.HandleFunc("/libraries/reprobe", h.librariesReprobe)
+	mux.HandleFunc("/libraries/integrity-deep", h.librariesIntegrityDeep)
 	mux.HandleFunc("/libraries/jobs-status", h.librariesJobsStatus)
 	mux.HandleFunc("/libraries/delete", h.librariesDelete)
 

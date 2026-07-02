@@ -15,6 +15,7 @@ function initJobStatus() {
     scan: 'Scanning', tvscan: 'Scanning', moviescan: 'Scanning',
     music_match: 'Matching', tv_match: 'Matching', movie_match: 'Matching',
     tag_writeback: 'Writing tags', tv_probe: 'Verifying',
+    integrity_check: 'Checking integrity', integrity_deep: 'Checking integrity',
   };
   const ACTIVE = new Set(['queued', 'running']);
   const seenActive = new Set();   // libraries observed active during this page's life
