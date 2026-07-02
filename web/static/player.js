@@ -47,6 +47,13 @@
   let ytPendingVideoId = '';
   let ytApiLoading = false;
   let ytReadyCbs = [];
+  // Position (seconds) to resume the pending YT video at. A Turbo body swap
+  // reparents the data-turbo-permanent #yt-host iframe, and an <iframe> reloads
+  // its document when detached+reattached (a <video>/<audio> does not), which
+  // re-fires onReady → loadVideoById from 0. Captured on turbo:before-render
+  // while a YT track is live, then consumed once in onReady so the track resumes
+  // where it was instead of restarting on every navigation.
+  let ytResumeSeconds = 0;
 
   const curTime = () => (engine === 'yt' ? (yt && yt.getCurrentTime ? yt.getCurrentTime() : 0) : (audio.currentTime || 0));
   const curDur = () => (engine === 'yt' ? (yt && yt.getDuration ? yt.getDuration() : 0) : audio.duration);
@@ -133,6 +140,8 @@
   // Load+play a videoId on the hidden player, creating it on first use.
   const ytPlay = (videoId) => {
     ytPendingVideoId = videoId;
+    ytResumeSeconds = 0; // a genuine (re)start begins at 0 — never inherit a nav resume offset
+
     ensureYTApi(() => {
       if (yt) {
         yt.loadVideoById(videoId);
@@ -145,7 +154,15 @@
         playerVars: { autoplay: 1, controls: 0, disablekb: 1, playsinline: 1, rel: 0 },
         events: {
           onReady: () => {
-            if (ytPendingVideoId) yt.loadVideoById(ytPendingVideoId);
+            if (ytPendingVideoId) {
+              // Resume where a nav-triggered iframe reload left off (see
+              // ytResumeSeconds); a genuine new track loads via ytPlay (below),
+              // not this path, so the offset only applies on reconnect.
+              yt.loadVideoById(ytResumeSeconds > 0
+                ? { videoId: ytPendingVideoId, startSeconds: ytResumeSeconds }
+                : ytPendingVideoId);
+              ytResumeSeconds = 0;
+            }
             ytStartPoll();
           },
           onStateChange: onYTState,
@@ -551,9 +568,17 @@
     const artist = (t.artist || '').trim();
     view.trackTitle.textContent = artist ? t.title + ' — ' + artist : t.title;
     delete view.coverImg.dataset.fallbackApplied;
-    view.coverImg.src = t.coverUrl || '/art/album/' + t.albumId;
-    view.coverImg.classList.remove('hidden');
-    view.coverPh.classList.add('hidden');
+    // YT tracks are album-less (albumId 0) — never build /art/album/0; use the
+    // resolved YouTube thumbnail (coverUrl) if present, else the placeholder.
+    const coverSrc = t.coverUrl || (t.albumId ? '/art/album/' + t.albumId : '');
+    if (coverSrc) {
+      view.coverImg.src = coverSrc;
+      view.coverImg.classList.remove('hidden');
+      view.coverPh.classList.add('hidden');
+    } else {
+      view.coverImg.classList.add('hidden');
+      view.coverPh.classList.remove('hidden');
+    }
     renderPlaylist();
     renderKaraokeAt(curTime() || 0);
     updateSeek();
@@ -830,5 +855,15 @@
   document.addEventListener('turbo:load', () => {
     bindView();
     updateHeader();
+  });
+
+  // Before Turbo swaps the body (which reparents the permanent #yt-host iframe
+  // and forces it to reload), remember the live YT position so onReady can
+  // resume there instead of restarting the track. Only capture an actively
+  // playing/paused YT track — an ended/idle one should not resume near its end.
+  document.addEventListener('turbo:before-render', () => {
+    if (engine !== 'yt' || !yt || !yt.getPlayerState) return;
+    const st = yt.getPlayerState(); // 1 = playing, 2 = paused
+    ytResumeSeconds = (st === 1 || st === 2) ? (yt.getCurrentTime() || 0) : 0;
   });
 })();
