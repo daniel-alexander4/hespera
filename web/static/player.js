@@ -383,9 +383,9 @@
     view.empty.classList.add('hidden');
     view.main.classList.remove('hidden');
     if (view.transport) view.transport.classList.remove('hidden');
-    view.albumTitle.textContent = t.album;
-    const artist = (t.artist || '').trim();
-    view.trackTitle.textContent = artist ? t.title + ' — ' + artist : t.title;
+    view.trackTitle.textContent = t.title || '';
+    if (view.artist) view.artist.textContent = (t.artist || '').trim();
+    view.albumTitle.textContent = t.album || '';
     delete view.coverImg.dataset.fallbackApplied;
     // Guard an album-less track (albumId 0) — never build /art/album/0.
     const coverSrc = t.albumId ? '/art/album/' + t.albumId : '';
@@ -450,6 +450,7 @@
       coverPh: $('player-cover-ph'),
       albumTitle: $('player-album-title'),
       trackTitle: $('player-track-title'),
+      artist: $('player-artist'),
       seek: $('player-seek'),
       timeLabel: $('player-time'),
       seeking: false,
