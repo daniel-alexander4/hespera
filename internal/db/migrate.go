@@ -383,6 +383,20 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	// Scale indexes, created here (not in schemaSQL) because they cover columns
+	// added by the ensureColumn calls above — on a fresh DB those columns don't
+	// exist yet when schemaSQL runs. The integrity indexes are PARTIAL (only the
+	// tiny 'flagged' subset), so the Libraries page's per-load flagged-count scan
+	// (integrityFlaggedCounts) touches just those rows; idx_movie_files_tmdb_id
+	// backs the actor-filmography join (credits ⋈ movie_files on tmdb_id).
+	if _, err := db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_movie_files_tmdb_id ON movie_files(tmdb_id);
+CREATE INDEX IF NOT EXISTS idx_tv_series_files_flagged ON tv_series_files(library_id) WHERE integrity_status='flagged';
+CREATE INDEX IF NOT EXISTS idx_movie_files_flagged ON movie_files(library_id) WHERE integrity_status='flagged';
+CREATE INDEX IF NOT EXISTS idx_music_tracks_flagged ON music_tracks(library_id) WHERE integrity_status='flagged';
+`); err != nil {
+		return err
+	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
 		return err
 	}
@@ -401,6 +415,11 @@ func Migrate(db *sql.DB) error {
 		DROP TABLE IF EXISTS auth_user_keys; DROP TABLE IF EXISTS auth_users;`); err != nil {
 		return err
 	}
+	// Refresh planner statistics so the indexes above are actually chosen (a new
+	// index on a populated table can be ignored until stats catch up). PRAGMA
+	// optimize is self-limiting — a cheap no-op when stats are already fresh — so
+	// running it on every startup is safe; it's advisory, so ignore any error.
+	_, _ = db.Exec(`PRAGMA optimize`)
 	return nil
 }
 

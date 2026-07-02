@@ -684,12 +684,23 @@ func (s *Scanner) pruneMissingTracks(ctx context.Context, libraryID int64, root 
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	if len(staleIDs) == 0 {
+		return nil
+	}
+	// One transaction for the whole prune: N autocommit DELETEs are N fsyncs on
+	// WAL; a single commit is one — the difference matters when a large move/delete
+	// orphans thousands of rows.
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	for _, id := range staleIDs {
-		if _, err := s.DB.ExecContext(ctx, `DELETE FROM music_tracks WHERE id=?`, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM music_tracks WHERE id=?`, id); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Scanner) cleanupEmptyAlbums(ctx context.Context, libraryID int64) error {

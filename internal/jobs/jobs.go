@@ -39,6 +39,12 @@ type Service struct {
 	cancels map[int64]context.CancelFunc
 }
 
+// jobRetention bounds how long a terminal scan_jobs row is kept. The table is
+// the audit log for scans/matches/integrity runs; without a cap it grows forever
+// (bloating the table and the latest-per-library / recent-jobs queries). Old
+// terminal rows have no operational value, so they're swept at startup.
+const jobRetention = 30 * 24 * time.Hour
+
 func New(db *sql.DB) *Service {
 	s := &Service{
 		db:      db,
@@ -46,8 +52,27 @@ func New(db *sql.DB) *Service {
 		cancels: make(map[int64]context.CancelFunc),
 	}
 	s.reconcileStaleJobs()
+	s.pruneOldJobs()
 	go s.worker()
 	return s
+}
+
+// pruneOldJobs deletes terminal scan_jobs older than jobRetention. The cutoff is
+// formatted in Go with the same RFC3339Nano layout finishJob writes to ended_at,
+// so the string comparison is chronological (both are UTC, same layout).
+func (s *Service) pruneOldJobs() {
+	cutoff := time.Now().UTC().Add(-jobRetention).Format(time.RFC3339Nano)
+	res, err := s.db.Exec(
+		`DELETE FROM scan_jobs WHERE ended_at != '' AND ended_at < ? AND status IN (?, ?, ?)`,
+		cutoff, statusDone, statusFailed, statusCanceled,
+	)
+	if err != nil {
+		slog.Warn("jobs prune old", "err", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("jobs pruned old rows", "count", n)
+	}
 }
 
 // reconcileStaleJobs marks any 'running'/'queued' rows left by a previous process
