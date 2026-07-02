@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -68,58 +67,59 @@ func (h *Handler) moviesHome(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// loadMovieList returns the matched films (one card per TMDB id, deduped across
-// duplicate files), paginated in Go because the title comes from the metadata
-// cache (no title column to ORDER BY in SQL — same as the TV list), plus the
-// count of unmatched title groups for the "needs matching" banner.
+// movieListBase is the FROM clause for the matched-films list: one row per TMDB
+// id (deduped across duplicate files via MIN(id)), LEFT JOINed to the metadata
+// cache with the title/release-date pulled out of the cached JSON payload as real
+// columns (json_extract). Like the TV list, surfacing the title as a column lets
+// the sort + pagination run in SQL instead of loading every matched film into
+// memory to sort in Go.
+const movieListBase = `
+FROM (
+  SELECT sub.tmdb_id, sub.file_id,
+         COALESCE(json_extract(c.payload_json, '$.title'), '') AS title,
+         COALESCE(json_extract(c.payload_json, '$.release_date'), '') AS release_date
+  FROM (
+    SELECT tmdb_id, MIN(id) AS file_id
+    FROM movie_files
+    WHERE match_status='matched' AND tmdb_id != 0
+    GROUP BY tmdb_id
+  ) sub
+  LEFT JOIN movie_metadata_cache c ON c.entity_key = 'movie:' || sub.tmdb_id
+) s`
+
+// loadMovieList returns one page of the matched films, sorted by title in SQL,
+// plus the count of unmatched title groups for the "needs matching" banner.
 func (h *Handler) loadMovieList(ctx context.Context, page int) ([]movieRow, pageNav, int, error) {
-	rows, err := h.db.QueryContext(ctx, `
-SELECT tmdb_id, MIN(id) AS file_id
-FROM movie_files
-WHERE match_status='matched' AND tmdb_id != 0
-GROUP BY tmdb_id
-`)
+	var total int
+	if err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) "+movieListBase).Scan(&total); err != nil {
+		return nil, pageNav{}, 0, err
+	}
+	nav, offset := paginate(page, total, "/movies")
+
+	rows, err := h.db.QueryContext(ctx,
+		"SELECT s.tmdb_id, s.file_id, s.title, s.release_date "+movieListBase+
+			" ORDER BY lower(s.title), s.tmdb_id LIMIT ? OFFSET ?", listPageSize, offset)
 	if err != nil {
 		return nil, pageNav{}, 0, err
 	}
 	defer rows.Close()
 
-	var out []movieRow
-	var ids []int
+	out := make([]movieRow, 0, listPageSize)
 	for rows.Next() {
 		var m movieRow
-		if err := rows.Scan(&m.TMDBID, &m.FileID); err != nil {
+		var releaseDate string
+		if err := rows.Scan(&m.TMDBID, &m.FileID, &m.Title, &releaseDate); err != nil {
 			return nil, pageNav{}, 0, err
 		}
+		m.Year = movieYear(releaseDate)
+		if m.Title == "" {
+			m.Title = fmt.Sprintf("Unknown Movie (TMDB %d)", m.TMDBID)
+		}
 		out = append(out, m)
-		ids = append(ids, m.TMDBID)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, pageNav{}, 0, err
 	}
-
-	metas := h.loadMovieMetaSummaries(ctx, ids)
-	for i := range out {
-		meta := metas[out[i].TMDBID]
-		if meta.title == "" {
-			meta.title = fmt.Sprintf("Unknown Movie (TMDB %d)", out[i].TMDBID)
-		}
-		out[i].Title = meta.title
-		out[i].Year = meta.year
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return strings.ToLower(out[i].Title) < strings.ToLower(out[j].Title)
-	})
-
-	nav, offset := paginate(page, len(out), "/movies")
-	if offset > len(out) {
-		offset = len(out)
-	}
-	end := offset + listPageSize
-	if end > len(out) {
-		end = len(out)
-	}
-	pageRows := out[offset:end]
 
 	var unmatched int
 	_ = h.db.QueryRowContext(ctx, `
@@ -129,7 +129,7 @@ SELECT COUNT(*) FROM (
   GROUP BY lower(guessed_title), year
 )`).Scan(&unmatched)
 
-	return pageRows, nav, unmatched, nil
+	return out, nav, unmatched, nil
 }
 
 type movieMetaSummary struct {
