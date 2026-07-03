@@ -16,8 +16,8 @@ func TestFromEnvDefaults(t *testing.T) {
 	}
 
 	cfg := FromEnv()
-	if cfg.Listen != ":8080" {
-		t.Fatalf("expected Listen=:8080, got %q", cfg.Listen)
+	if cfg.Listen != "127.0.0.1:8080" {
+		t.Fatalf("expected loopback default Listen=127.0.0.1:8080, got %q", cfg.Listen)
 	}
 	// The defaults are now per-user and OS-appropriate (no container, runs as the
 	// invoking user). Assert they match the resolvers and are absolute, rather
