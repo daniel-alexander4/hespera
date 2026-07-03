@@ -446,6 +446,10 @@ body::before {
   border-color: var(--accent);
   color: var(--page-fg);
 }
+/* The inline-flex above otherwise out-specifies the UA [hidden]{display:none},
+   so a hidden button (prev/next episode, Auto-skip) would render as a ghost
+   chip — same trap as .tv-track-pick[hidden]. */
+.btn[hidden] { display: none; }
 
 .btn-primary {
   background: var(--accent-bg);
@@ -1329,10 +1333,11 @@ html.using-mouse .grid-pager-btn,
 .player-controls .tv-volume {
   width: 8rem;
 }
-/* TV transport row: centered, and the play/pause button shows the glyph for the
-   action the press will perform (pause while playing, play while paused). */
+/* TV transport row: flush-left (sharing the track-picker row's left edge so the
+   two rows read as one control block), and the play/pause button shows the glyph
+   for the action the press will perform (pause while playing, play while paused). */
 .tv-transport {
-  justify-content: center;
+  justify-content: flex-start;
   margin-bottom: 1rem;
 }
 .tv-transport .tv-glyph-pause { display: none; }
@@ -1943,26 +1948,42 @@ html.using-mouse .grid-pager-btn,
   object-fit: contain;
 }
 
+/* Track-picker row (audio/subtitles/speed + Auto-skip): same chip family and
+   left edge as the transport above it, sized for text where the transport is
+   sized for icons — so the two rows read as one control system. */
 .tv-player-controls {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.9rem;
   margin-top: 0.75rem;
   flex-wrap: wrap;
+}
+.tv-player-controls select,
+.tv-player-controls .btn {
+  font-size: 1rem;
+  font-family: inherit;
+  padding: 0.85rem 0.9rem;
+  border-radius: 7px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--page-fg);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.tv-player-controls select:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent);
 }
 .tv-track-pick {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: var(--text-muted);
 }
 /* The class display above otherwise overrides the [hidden] attribute, so the
    picker would stay visible even with nothing to choose. */
 .tv-track-pick[hidden] { display: none; }
-.tv-track-pick select {
-  font: inherit;
-}
 .tv-playback-mode {
   margin-left: auto;
   font-size: 0.8rem;
