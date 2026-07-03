@@ -600,3 +600,16 @@ test('hardware media keys: the video page installs the bridge — FF/RW drive th
   doc.dispatchEvent(new env.window.Event('turbo:before-cache'));
   assert.strictEqual(env.window.hesperaMediaControl, null, 'teardown returns the media keys to the music engine');
 });
+
+test('photo clips: prev/next buttons unhide with clip wording; media keys route to them', async () => {
+  const env = await boot({ fixtureOpts: { kind: 'photo', prevFile: 3, nextFile: 9 } });
+  const doc = env.document;
+  const prev = doc.getElementById('tvPrevEpBtn');
+  const next = doc.getElementById('tvNextEpBtn');
+  assert.strictEqual(prev.hidden, false, 'prev clip button shown');
+  assert.strictEqual(next.hidden, false, 'next clip button shown');
+  assert.strictEqual(prev.title, 'Previous clip', 'episode wording swapped for clips');
+  assert.strictEqual(next.getAttribute('aria-label'), 'Next clip');
+  // The hardware-media-key bridge consumes next/prev on a clip page too.
+  assert.strictEqual(env.window.hesperaMediaControl('nexttrack'), true);
+});
