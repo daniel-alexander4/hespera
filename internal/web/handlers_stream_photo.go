@@ -54,9 +54,15 @@ func (h *Handler) photoPlayer(w http.ResponseWriter, r *http.Request) {
 	if t, terr := time.Parse("2006-01-02 15:04:05", takenAt); terr == nil {
 		when = t.Format("January 2, 2006")
 	}
+	// |< / >| step through adjacent clips in the Videos tab's default order
+	// (newest first) — the same neighbor resolution the photo viewer uses. A
+	// non-zero next also arms the shared Up Next auto-advance card.
+	prevID, nextID := h.photoNeighbors(r.Context(), photoFilters{Tab: "videos", Order: "desc"}, fileID, takenAt)
 	h.render(w, "photo_player.html", map[string]any{
 		"Title":       "Playing",
 		"FileID":      fileID,
+		"PrevFile":    prevID,
+		"NextFile":    nextID,
 		"ClipTitle":   strings.TrimSuffix(filepath.Base(absPath), filepath.Ext(absPath)),
 		"When":        when,
 		"CaptionVars": h.captionStyleVars(r.Context()),

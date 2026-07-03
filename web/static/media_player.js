@@ -464,6 +464,11 @@ function initMediaPlayer() {
   const nextEpBtn = document.getElementById('tvNextEpBtn');
   if (prevEpBtn && prevFile > 0) { prevEpBtn.hidden = false; prevEpBtn.addEventListener('click', () => gotoFile(prevFile)); }
   if (nextEpBtn && nextFile > 0) { nextEpBtn.hidden = false; nextEpBtn.addEventListener('click', () => gotoFile(nextFile)); }
+  // The shared transport ships episode wording; a photos-library clip isn't one.
+  if (video.dataset.mediaKind === 'photo') {
+    if (prevEpBtn) { prevEpBtn.title = 'Previous clip'; prevEpBtn.setAttribute('aria-label', 'Previous clip'); }
+    if (nextEpBtn) { nextEpBtn.title = 'Next clip'; nextEpBtn.setAttribute('aria-label', 'Next clip'); }
+  }
 
   // Hardware media keys (Flirc/BT remote): Chrome routes them to the Media
   // Session API, whose page-global handlers player.js owns. While this player
