@@ -1,8 +1,8 @@
 {{define "content"}}
-<div class="tv-player-page" data-couch-parent="/movie/{{.TMDBID}}">
+<div class="tv-player-page" data-couch-parent="{{if .TMDBID}}/movie/{{.TMDBID}}{{else}}/movies{{end}}">
   <div class="tv-player-header">
-    <h1><a href="/movie/{{.TMDBID}}" class="btn btn-head">{{.MovieTitle}}</a></h1>
-    {{if .Year}}<h2>{{.Year}}</h2>{{end}}
+    <h1><a href="{{if .TMDBID}}/movie/{{.TMDBID}}{{else}}/movies{{end}}" class="btn btn-head">{{.MovieTitle}}</a></h1>
+    {{if .ExtraTitle}}<h2>{{.ExtraTitle}}</h2>{{else if .Year}}<h2>{{.Year}}</h2>{{end}}
   </div>
 
   <div class="tv-player-video-wrap" id="tvPlayerWrap">
@@ -43,7 +43,7 @@
 
   <div class="tv-player-nav">
     <span></span>
-    <a href="/movie/{{.TMDBID}}" class="btn btn-sm">Back to Movie</a>
+    <a href="{{if .TMDBID}}/movie/{{.TMDBID}}{{else}}/movies{{end}}" class="btn btn-sm">Back to Movie</a>
     <span></span>
   </div>
 </div>

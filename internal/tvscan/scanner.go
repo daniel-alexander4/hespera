@@ -31,7 +31,7 @@ func (s *Scanner) ScanTV(ctx context.Context, jobID, libraryID int64) error {
 	if err != nil {
 		return err
 	}
-	return s.scanTVRoots(ctx, jobID, libraryID, []string{cleanRoot})
+	return s.scanTVRoots(ctx, jobID, libraryID, []string{cleanRoot}, false)
 }
 
 // ScanTVDirs scans only the given directories (a series' show folder(s)) instead
@@ -62,7 +62,10 @@ func (s *Scanner) ScanTVDirs(ctx context.Context, jobID, libraryID int64, dirs [
 	if len(valid) == 0 {
 		return fmt.Errorf("no scannable directories for series in library %d (folders missing?)", libraryID)
 	}
-	return s.scanTVRoots(ctx, jobID, libraryID, valid)
+	// rootIsTitle: each walked root is a show folder, so a first-level Extras/
+	// is that show's extras container — on a library-root walk it would be a
+	// real entry named "Extras".
+	return s.scanTVRoots(ctx, jobID, libraryID, valid, true)
 }
 
 // tvLibraryRoot returns the cleaned library root + media root, validating the
@@ -86,9 +89,9 @@ func (s *Scanner) tvLibraryRoot(ctx context.Context, libraryID int64) (cleanRoot
 // CountEligibleVideoFiles walks root counting the video files a scan will
 // actually ingest — the same junk-dir SkipDir and junk-file rules as the
 // ingest walks, so a job's progress_total matches what gets processed
-// (counting sample clips and nested Extras/Sample dirs inflated the total and
-// the progress bar stalled short of 100%). Shared by the TV and movie
-// scanners.
+// (counting sample clips and nested Sample dirs inflated the total and the
+// progress bar stalled short of 100%). Extras-dir files ARE counted — they
+// ingest as playable extras. Shared by the TV and movie scanners.
 func CountEligibleVideoFiles(root string) int {
 	n := 0
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
@@ -116,8 +119,9 @@ func CountEligibleVideoFiles(root string) int {
 }
 
 // runs the move-relink + prune passes scoped to each root. ScanTV passes the
-// single library root; ScanTVDirs passes a series' show folder(s).
-func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots []string) error {
+// single library root (rootIsTitle=false); ScanTVDirs passes a series' show
+// folder(s) (rootIsTitle=true — see ClassifyExtra).
+func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots []string, rootIsTitle bool) error {
 	totalFiles := 0
 	for _, r := range roots {
 		totalFiles += CountEligibleVideoFiles(r)
@@ -140,8 +144,10 @@ func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots
 				return walkErr
 			}
 			if d.IsDir() {
-				// Skip extras/sample subdirectories, but only when nested inside the
-				// walked root — a top-level folder of that name is a real entry.
+				// Skip sample subdirectories, but only when nested inside the walked
+				// root — a top-level folder of that name is a real entry. Extras-type
+				// dirs (Trailers/Featurettes/…) are walked: their files ingest as
+				// playable extras (ClassifyExtra below).
 				if p != walkRoot && IsJunkDirName(d.Name()) {
 					if rel, relErr := filepath.Rel(walkRoot, p); relErr == nil && strings.ContainsRune(rel, filepath.Separator) {
 						return fs.SkipDir
@@ -152,11 +158,12 @@ func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots
 			if !video.IsVideoExt(filepath.Ext(p)) {
 				return nil
 			}
-			// Skip sample/extra clips by their release-tag token (never a real episode).
+			// Skip sample clips by their release-tag token (never a real episode).
 			if IsJunkFile(strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))) {
 				return nil
 			}
-			counted, ingestErr := s.ingestTVFile(ctx, libraryID, p, d)
+			extraCategory, _ := ClassifyExtra(p, walkRoot, rootIsTitle)
+			counted, ingestErr := s.ingestTVFile(ctx, libraryID, p, d, extraCategory)
 			if ingestErr != nil {
 				scanErrors++
 				slog.Warn("tvscan file error", "path", p, "err", ingestErr)
@@ -179,6 +186,10 @@ func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots
 		slog.Warn("tvscan completed with errors", "library_id", libraryID, "files_scanned", processed, "errors", scanErrors)
 	}
 
+	if err := s.resetExtraIdentities(ctx, libraryID); err != nil {
+		return err
+	}
+
 	for _, r := range roots {
 		if err := s.relinkMovedFiles(ctx, libraryID, r); err != nil {
 			return err
@@ -191,10 +202,13 @@ func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots
 }
 
 // ingestTVFile probes (or fast-paths an unchanged file) and upserts a single
-// video file. counted reports whether it was a real file we processed (so the
-// caller advances progress); a pathguard/stat failure returns counted=false with
-// no error (logged + skipped, as the library scan always did).
-func (s *Scanner) ingestTVFile(ctx context.Context, libraryID int64, p string, d fs.DirEntry) (counted bool, err error) {
+// video file. extraCategory != "" marks the file a playable extra: no episode
+// identification (its identity row stays the blank placeholder, so it never
+// enters matching), title derived from the filename. counted reports whether
+// it was a real file we processed (so the caller advances progress); a
+// pathguard/stat failure returns counted=false with no error (logged +
+// skipped, as the library scan always did).
+func (s *Scanner) ingestTVFile(ctx context.Context, libraryID int64, p string, d fs.DirEntry, extraCategory string) (counted bool, err error) {
 	mediaRoot := filepath.Clean(s.Cfg.MediaRoot)
 	resolvedPath, gErr := pathguard.ResolveExistingUnderRoot(mediaRoot, p)
 	if gErr != nil {
@@ -211,14 +225,30 @@ func (s *Scanner) ingestTVFile(ctx context.Context, libraryID int64, p string, d
 
 	// Identify episode from filename — pure path parsing (no I/O), so it runs on
 	// every scan, letting a re-scan reconverge identities as parsing improves.
-	ident := IdentifyFile(resolvedPath)
+	// Extras are never identified: their identity is "bonus content of the
+	// folder they live in", not a parseable episode.
+	var ident *EpisodeIdentity
+	extra := extraFields{Category: extraCategory}
+	if extraCategory == "" {
+		ident = IdentifyFile(resolvedPath)
+	} else {
+		extra.Title = ExtraTitle(resolvedPath)
+	}
 
-	// Unchanged-file fast path: skip the probe but refresh the derived identity.
+	// Unchanged-file fast path: skip the probe but refresh the derived identity
+	// (and, for extras, the derived flag/title — rows predating the extras
+	// feature carry is_extra=0 until this runs).
 	var existingID, existingSize, existingMtime int64
 	if qErr := s.DB.QueryRowContext(ctx,
 		"SELECT id, file_size_bytes, mtime_unix FROM tv_series_files WHERE library_id=? AND abs_path=?",
 		libraryID, resolvedPath,
 	).Scan(&existingID, &existingSize, &existingMtime); qErr == nil && existingSize == fileSize && existingMtime == mtimeUnix {
+		if _, uErr := s.DB.ExecContext(ctx,
+			"UPDATE tv_series_files SET is_extra=?, extra_title=?, extra_category=? WHERE id=? AND (is_extra<>? OR extra_title<>? OR extra_category<>?)",
+			extra.isExtra(), extra.Title, extra.Category, existingID, extra.isExtra(), extra.Title, extra.Category,
+		); uErr != nil {
+			return true, uErr
+		}
 		// Unchanged file: a single identity refresh — no transaction needed.
 		return true, s.upsertIdentity(ctx, s.DB, existingID, ident)
 	}
@@ -232,7 +262,21 @@ func (s *Scanner) ingestTVFile(ctx context.Context, libraryID int64, p string, d
 		b, _ := json.Marshal(probeResult)
 		streamInfoJSON = string(b)
 	}
-	return true, s.upsertTVFile(ctx, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, ident)
+	return true, s.upsertTVFile(ctx, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, ident, extra)
+}
+
+// extraFields is a file's extras classification: zero-valued for a regular
+// episode file, category+title for a file inside an extras directory.
+type extraFields struct {
+	Category string
+	Title    string
+}
+
+func (e extraFields) isExtra() int {
+	if e.Category != "" {
+		return 1
+	}
+	return 0
 }
 
 // ShowDirsForFiles maps a series' file paths to the distinct show-folder(s) to
@@ -297,7 +341,7 @@ type dbtx interface {
 // once per file instead of per statement — the fsync savings dominate a re-scan,
 // which skips the probe but still upserts every file. Returns an error if any DB
 // operation fails; the caller logs and continues scanning (the tx rolls back).
-func (s *Scanner) upsertTVFile(ctx context.Context, libraryID int64, resolvedPath, container string, fileSize, mtimeUnix int64, streamInfoJSON string, ident *EpisodeIdentity) error {
+func (s *Scanner) upsertTVFile(ctx context.Context, libraryID int64, resolvedPath, container string, fileSize, mtimeUnix int64, streamInfoJSON string, ident *EpisodeIdentity, extra extraFields) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -305,18 +349,21 @@ func (s *Scanner) upsertTVFile(ctx context.Context, libraryID int64, resolvedPat
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO tv_series_files (library_id, abs_path, container, file_size_bytes, mtime_unix, stream_info_json)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO tv_series_files (library_id, abs_path, container, file_size_bytes, mtime_unix, stream_info_json, is_extra, extra_title, extra_category)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(library_id, abs_path) DO UPDATE SET
   container=excluded.container,
   file_size_bytes=excluded.file_size_bytes,
   mtime_unix=excluded.mtime_unix,
   stream_info_json=excluded.stream_info_json,
+  is_extra=excluded.is_extra,
+  extra_title=excluded.extra_title,
+  extra_category=excluded.extra_category,
   -- a changed file (new size or mtime) invalidates its integrity status so the
   -- next integrity_check re-examines (and re-repairs) it.
   integrity_status=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE integrity_status END,
   updated_at=datetime('now')
-`, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON)
+`, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, extra.isExtra(), extra.Title, extra.Category)
 	if err != nil {
 		return fmt.Errorf("upsert tv_series_files: %w", err)
 	}
@@ -372,6 +419,26 @@ ON CONFLICT(file_id) DO NOTHING
 `, fileID)
 	if err != nil {
 		return fmt.Errorf("upsert tv_series_identities fallback: %w", err)
+	}
+	return nil
+}
+
+// resetExtraIdentities blanks the identity row of every extras file back to
+// the unmatched placeholder. Ingest never writes a real identity for an extra,
+// but rows can predate their dir being recognized as an extras container (e.g.
+// "Behind The Scenes/" files scanned as unmatched noise, or even hand-matched)
+// — an empty guessed_title keeps them out of the matcher/review, and a
+// non-matched status keeps them out of every episode/count/CW query. One
+// idempotent statement per scan.
+func (s *Scanner) resetExtraIdentities(ctx context.Context, libraryID int64) error {
+	if _, err := s.DB.ExecContext(ctx, `
+UPDATE tv_series_identities SET
+  status='unmatched', provider='', series_id='', guessed_title='', season_number=-1,
+  episode_numbers_csv='', match_confidence=0, match_method='', matched_at='', air_date='', year=0
+WHERE file_id IN (SELECT id FROM tv_series_files WHERE library_id=? AND is_extra=1)
+  AND (status<>'unmatched' OR guessed_title<>'' OR series_id<>'')
+`, libraryID); err != nil {
+		return fmt.Errorf("reset extra identities: %w", err)
 	}
 	return nil
 }

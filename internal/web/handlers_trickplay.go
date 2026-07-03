@@ -37,8 +37,10 @@ const trickplayCacheMaxBytes = 2 << 30
 // gated inside GenerateTrickplay. table is tv_series_files or movie_files.
 func (h *Handler) generateTrickplayMissing(ctx context.Context, table string, jobID, libraryID int64) error {
 	mediaRoot := filepath.Clean(h.cfg.MediaRoot)
+	// is_extra=0: sprite generation is the expensive chained job (~15s/file) and
+	// extras are rarely scrubbed — the hover preview degrades to timestamp-only.
 	rows, err := h.db.QueryContext(ctx,
-		"SELECT id, abs_path, mtime_unix, file_size_bytes FROM "+table+" WHERE library_id=?", libraryID)
+		"SELECT id, abs_path, mtime_unix, file_size_bytes FROM "+table+" WHERE library_id=? AND is_extra=0", libraryID)
 	if err != nil {
 		return fmt.Errorf("query files for trickplay: %w", err)
 	}

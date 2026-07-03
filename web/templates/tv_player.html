@@ -1,8 +1,8 @@
 {{define "content"}}
-<div class="tv-player-page" data-couch-parent="/tv/series/{{.SeriesID}}">
+<div class="tv-player-page" data-couch-parent="{{if .SeriesID}}/tv/series/{{.SeriesID}}{{else}}/tv{{end}}">
   <div class="tv-player-header">
-    <h1><a href="/tv/series/{{.SeriesID}}" class="btn btn-head">{{.ShowName}}</a></h1>
-    <h2>S{{.SeasonNum}} — {{.EpName}}</h2>
+    <h1><a href="{{if .SeriesID}}/tv/series/{{.SeriesID}}{{else}}/tv{{end}}" class="btn btn-head">{{.ShowName}}</a></h1>
+    <h2>{{if .IsExtra}}{{.EpName}}{{else}}S{{.SeasonNum}} — {{.EpName}}{{end}}</h2>
   </div>
 
   <div class="tv-player-video-wrap" id="tvPlayerWrap">
@@ -49,7 +49,11 @@
     {{else}}
     <span></span>
     {{end}}
+    {{if .IsExtra}}
+    <a href="{{if .SeriesID}}/tv/series/{{.SeriesID}}{{else}}/tv{{end}}" class="btn btn-sm">Back to Show</a>
+    {{else}}
     <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNum}}" class="btn btn-sm">Back to Season</a>
+    {{end}}
     {{if .NextFileID}}
     <a href="/tv/player?file={{.NextFileID}}" class="btn btn-sm">{{template "icon-skip-forward"}}Next</a>
     {{else}}

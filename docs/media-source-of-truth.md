@@ -335,6 +335,37 @@ repairs corrupt **video (TV + movies) and music** files in place:
   `flagged` = unrepairable **bitstream** damage (data loss) or a remux that
   couldn't be safely applied.
 
+## 6b. Local extras (bonus content)
+
+Files inside a title's nested extras directory (`Extras`, `Featurettes`,
+`Trailers`, `Behind The Scenes`, `Deleted Scenes`, `Interviews`, `Shorts` —
+`tvscan.extrasDirs`; `Sample`/`Samples` stay junk-skipped) are ingested as
+**playable extras**, not episodes/movies:
+
+- **Ownership of the classification**: the **scanner** (`tvscan.ClassifyExtra`,
+  shared by moviescan). Rows live in the normal file tables with `is_extra=1`,
+  a filename-derived `extra_title`, and a dir-derived `extra_category`. Same
+  nesting rule as junk dirs: only a *nested* extras dir counts — a top-level
+  `Extras/` under the library root is a real title. On a per-series scoped scan
+  the walked root IS the show folder, so a first-level `Extras/` counts there.
+- **No metadata identity, ever.** TV extras keep the blank placeholder
+  `tv_series_identities` row (`guessed_title=''` keeps them out of the matcher,
+  review backlog, and needs-matching banner); movie extras keep
+  `guessed_title=''`/`match_status=''`. Post-walk passes
+  (`resetExtraIdentities`/`resetExtraMatches`) blank any stale identity/match on
+  rows that predate their dir being recognized as extras. Because every browse/
+  count/CW/search/stats query gates on `matched`, extras are invisible to all of
+  them by construction.
+- **Owning title is path-derived at render time** (`tvscan.ExtrasOwnerDir` — the
+  folder containing the extras dir, season dirs roll up to the show folder), not
+  stored — nothing goes stale on rematch/unmatch/move. The series/movie detail
+  pages list extras under the title's folder(s); the players resolve the owner
+  the same way for the heading + back link.
+- **Participation**: probe + playback progress/resume **in** (both `file_id`-
+  keyed, no changes needed); trickplay + integrity **out** (`is_extra=0` in
+  their candidate queries — extras aren't title content for the corrupt pills,
+  and sprites aren't worth ~15s/file); relink transfers progress like any file.
+
 ## 7. Rules for anyone touching media data
 
 - **Never treat the DB as authoritative for existence.** If you need "what media

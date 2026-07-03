@@ -1704,6 +1704,53 @@ html.using-mouse .grid-pager-btn,
   line-height: 1.5;
 }
 
+/* Local extras (trailers/featurettes/… on the series/movie detail pages) */
+.extras-list {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+.extras-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.25rem;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--page-fg);
+  text-decoration: none;
+}
+.extras-row:hover .extras-title,
+.extras-row:focus-visible .extras-title {
+  color: var(--accent);
+}
+.extras-title {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extras-duration {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.extras-resume {
+  display: inline-block;
+  width: 4rem;
+  height: 4px;
+  background: var(--surface-panel);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.extras-resume > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
 /* TV Player */
 .tv-player-page {
   max-width: 1200px;

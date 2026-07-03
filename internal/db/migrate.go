@@ -376,6 +376,21 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "people", "filmography_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// Local extras: files inside a title's Extras/Featurettes/Trailers/… dir are
+	// ingested as playable bonus content (is_extra=1) with a filename-derived
+	// display title + a dir-derived category chip. They never enter matching
+	// (guessed_title stays ''), and the trickplay/integrity sweeps exclude them.
+	for _, tbl := range []string{"tv_series_files", "movie_files"} {
+		if err := ensureColumn(db, tbl, "is_extra", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, tbl, "extra_title", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+		if err := ensureColumn(db, tbl, "extra_category", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
 	// Media integrity: per-file corruption status for video files. '' = unchecked
 	// (reset to '' by the scanner when size/mtime change); 'ok' = container-clean;
 	// 'repaired' = container losslessly remuxed in place; 'flagged' = unrepairable

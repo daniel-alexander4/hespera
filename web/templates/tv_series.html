@@ -51,6 +51,23 @@
 </div>
 {{end}}
 
+{{if .Extras}}
+<h2>Extras</h2>
+<ul class="extras-list">
+  {{range .Extras}}
+  <li>
+    <a href="/tv/player?file={{.FileID}}" class="extras-row">
+      {{template "icon-play"}}
+      <span class="extras-title">{{.Title}}</span>
+      <span class="meta-tag">{{.Category}}</span>
+      {{if .DurationMin}}<span class="extras-duration">{{.DurationMin}} min</span>{{end}}
+      {{if and .ResumePct (not .Completed)}}<span class="extras-resume" title="{{.ResumePct}}% watched"><span style="width:{{.ResumePct}}%"></span></span>{{end}}
+    </a>
+  </li>
+  {{end}}
+</ul>
+{{end}}
+
 {{if .Cast}}
 <h2>Cast</h2>
 <div class="home-carousel-row">

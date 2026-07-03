@@ -331,16 +331,100 @@ func ParseSeasonDir(dirName string) (int, bool) {
 	return n, true
 }
 
-// junkDirs are subdirectories that hold non-episode extras. They are skipped by
-// the scanner ONLY when nested inside a show — a top-level folder of the same
-// name (the show "Extras", "Trailer Park Boys" under "Trailers"… ) is kept.
+// junkDirs are subdirectories holding worthless sample clips. They are skipped
+// by the scanner ONLY when nested inside a show — a top-level folder of the
+// same name is kept. Extras-type dirs (Trailers/Featurettes/…) are NOT junk:
+// they classify their files as playable extras (see extrasDirs).
 var junkDirs = map[string]bool{
-	"sample": true, "samples": true, "featurettes": true, "trailers": true, "extras": true,
+	"sample": true, "samples": true,
 }
 
-// IsJunkDirName reports whether a directory name is an extras/sample container.
+// IsJunkDirName reports whether a directory name is a sample container.
 func IsJunkDirName(name string) bool {
 	return junkDirs[strings.ToLower(strings.TrimSpace(name))]
+}
+
+// extrasDirs maps a bonus-content directory name (the Plex convention, minus
+// the too-generic "Scenes"/"Other") to the category label its files carry.
+// Like junkDirs, a dir counts ONLY when nested inside a title's folder — a
+// top-level "Extras"/"Trailers" under the library root is a real entry (the
+// show literally named "Extras", "Trailer Park Boys" under "Trailers"…).
+var extrasDirs = map[string]string{
+	"extras":            "Extra",
+	"featurettes":       "Featurette",
+	"trailers":          "Trailer",
+	"behind the scenes": "Behind the Scenes",
+	"deleted scenes":    "Deleted Scene",
+	"interviews":        "Interview",
+	"shorts":            "Short",
+}
+
+// ExtrasDirCategory returns the category label for an extras directory name.
+func ExtrasDirCategory(name string) (string, bool) {
+	c, ok := extrasDirs[strings.ToLower(strings.TrimSpace(name))]
+	return c, ok
+}
+
+// ClassifyExtra reports whether a file path (under walkRoot) sits inside an
+// extras directory, and the category of the outermost one. rootIsTitle says
+// walkRoot is already a single title's folder (a per-series scoped scan) —
+// there a first-level "Extras/" counts; on a library-root walk it doesn't
+// (that's a real entry named "Extras"), matching the junk-dir nesting rule.
+func ClassifyExtra(path, walkRoot string, rootIsTitle bool) (category string, ok bool) {
+	rel, err := filepath.Rel(walkRoot, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	for i, dir := range parts[:max(len(parts)-1, 0)] { // dir components only
+		if i == 0 && !rootIsTitle {
+			continue
+		}
+		if c, isExtras := ExtrasDirCategory(dir); isExtras {
+			return c, true
+		}
+	}
+	return "", false
+}
+
+// ExtraTitle derives an extra's display title from its filename: leading scene
+// noise stripped, separators normalized to spaces. Never empty for a non-empty
+// stem (falls back to the raw stem).
+func ExtraTitle(path string) string {
+	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	t := StripLeadingNoise(stem)
+	t = strings.NewReplacer(".", " ", "_", " ").Replace(t)
+	t = strings.Join(strings.Fields(t), " ")
+	if t == "" {
+		return stem
+	}
+	return t
+}
+
+// ExtrasOwnerDir maps an extra's path to the owning title's folder: the path
+// up to (excluding) the outermost nested extras directory, climbing one more
+// level when that leaves a season dir (Show/Season 1/Extras/x → Show). root is
+// the library root — a first-level extras-named dir is a real entry, not a
+// container, per the nesting rule.
+func ExtrasOwnerDir(path, root string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	for i, dir := range parts[:max(len(parts)-1, 0)] {
+		if i == 0 {
+			continue
+		}
+		if _, isExtras := ExtrasDirCategory(dir); isExtras {
+			owner := filepath.Join(append([]string{root}, parts[:i]...)...)
+			if _, isSeason := ParseSeasonDir(filepath.Base(owner)); isSeason && i > 1 {
+				owner = filepath.Dir(owner)
+			}
+			return owner, true
+		}
+	}
+	return "", false
 }
 
 // reSampleFile matches a delimited "sample" token in a non-leading position —
