@@ -24,6 +24,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/libraries/media-root", h.librariesMediaRoot)
 	mux.HandleFunc("/libraries/scan", h.librariesScan)
 	mux.HandleFunc("/libraries/integrity-deep", h.librariesIntegrityDeep)
+	mux.HandleFunc("/libraries/integrity-report", h.librariesIntegrityReport)
 	mux.HandleFunc("/libraries/jobs-status", h.librariesJobsStatus)
 	mux.HandleFunc("/libraries/delete", h.librariesDelete)
 
@@ -93,6 +94,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/stream/tv-burnin/", h.streamTVBurnIn)
 	mux.HandleFunc("/stream/tv-hls/", h.streamTVHLS)
 	mux.HandleFunc("/stream/tv-subtitles/", h.streamTVSubtitles)
+	mux.HandleFunc("/stream/tv-trickplay/", h.streamTrickplay("tv_series_files", "/stream/tv-trickplay/"))
 
 	// Movie playback + streaming (reuses the playback/video layers; thin clones
 	// of the TV stream handlers over movie_files + movie_playback_progress).
@@ -104,6 +106,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/stream/movie-burnin/", h.streamMovieBurnIn)
 	mux.HandleFunc("/stream/movie-hls/", h.streamMovieHLS)
 	mux.HandleFunc("/stream/movie-subtitles/", h.streamMovieSubtitles)
+	mux.HandleFunc("/stream/movie-trickplay/", h.streamTrickplay("movie_files", "/stream/movie-trickplay/"))
 
 	// TV art
 	mux.HandleFunc("/art/tv/", h.tvArt)

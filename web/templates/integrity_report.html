@@ -1,0 +1,44 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Integrity report — {{.LibraryName}}</h1>
+</div>
+
+{{if not .Flagged}}{{if not .Degraded}}
+<div class="empty-state">
+  <p>No damaged files. Every checked file in this library is clean or was losslessly repaired.</p>
+</div>
+{{end}}{{end}}
+
+{{if .Flagged}}
+<h2 class="section-title">Corrupt — needs replacement ({{len .Flagged}})</h2>
+<p class="form-help">Unrepairable damage: decode errors or a container auto-repair couldn't fix. These files may show artifacts or fail during playback.</p>
+<div class="integrity-report-list">
+  {{range .Flagged}}{{template "integrity-report-row" .}}{{end}}
+</div>
+{{end}}
+
+{{if .Degraded}}
+<h2 class="section-title">Degraded — playable with known defects ({{len .Degraded}})</h2>
+<p class="form-help">These files are missing a stretch of audio, but play cleanly — the transcoder fills each gap with silence. Replacing them is optional.</p>
+<div class="integrity-report-list">
+  {{range .Degraded}}{{template "integrity-report-row" .}}{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "integrity-report-row"}}
+<div class="card integrity-report-row">
+  <div class="integrity-report-head">
+    {{if .Href}}<a href="{{.Href}}" class="integrity-report-title">{{.Title}}</a>{{else}}<span class="integrity-report-title">{{.Title}}</span>{{end}}
+    {{if .Subtitle}}<span class="text-muted">{{.Subtitle}}</span>{{end}}
+    {{if .Degraded}}<span class="badge badge-neutral">degraded</span>{{else}}<span class="badge badge-warn">corrupt</span>{{end}}
+  </div>
+  <div class="integrity-report-meta text-muted">
+    <code>{{.Path}}</code>
+    <span>{{humanBytes .SizeBytes}}</span>
+    <span>checked {{.CheckedAt}}</span>
+  </div>
+  <div class="integrity-report-detail"><strong>Damage:</strong> {{.Detail}}</div>
+  <div class="integrity-report-detail"><strong>What you can do:</strong> {{.Mitigation}}</div>
+</div>
+{{end}}

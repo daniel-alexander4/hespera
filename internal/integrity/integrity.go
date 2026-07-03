@@ -89,7 +89,7 @@ func run(ctx context.Context, db *sql.DB, mediaRoot, table string, jobID, librar
 
 	_, _ = db.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", len(targets), jobID)
 
-	var clean, repaired, flagged, failed int
+	var clean, repaired, flagged, degraded, failed int
 	for i, t := range targets {
 		select {
 		case <-ctx.Done():
@@ -111,6 +111,8 @@ func run(ctx context.Context, db *sql.DB, mediaRoot, table string, jobID, librar
 			repaired++
 		case "flagged":
 			flagged++
+		case "degraded":
+			degraded++
 		case "ok":
 			clean++
 		default:
@@ -123,7 +125,7 @@ func run(ctx context.Context, db *sql.DB, mediaRoot, table string, jobID, librar
 
 	slog.Info("integrity check complete",
 		"table", table, "library_id", libraryID, "deep", deep,
-		"candidates", len(targets), "clean", clean, "repaired", repaired, "flagged", flagged, "failed", failed)
+		"candidates", len(targets), "clean", clean, "repaired", repaired, "flagged", flagged, "degraded", degraded, "failed", failed)
 	return nil
 }
 
@@ -138,30 +140,18 @@ func repairOne(ctx context.Context, db *sql.DB, table string, id int64, path str
 		slog.Warn("integrity check", "file_id", id, "path", path, "err", err)
 		return ""
 	}
-	// Also examine audio (a gap the container check won't see). An audio hole is
-	// unrepairable data loss, so it flags even when the container was clean/repaired.
-	status, detail := out.Status, out.Detail
-	var extra []string
-	if ad := auditAudio(ctx, id, path); ad != "" {
-		extra = append(extra, ad)
-	}
-	// Music files are small, so a full decode is cheap — fold the bitstream check
-	// into the scan-time tier for MUSIC (MP3 corruption surfaces only on decode,
-	// not in the container). Video keeps the full decode in the opt-in deep tier
+	// Also examine audio (a gap the container check won't see), and — for music,
+	// where files are small and MP3 corruption surfaces only on decode — the
+	// bitstream. Video keeps the full decode in the opt-in deep tier
 	// (minutes/file). Only new/changed files reach here, so the cost is bounded.
+	gapDetail := auditAudio(ctx, id, path)
+	decodeDetail := ""
 	if table == "music_tracks" {
-		if dd, hardErr := auditDecode(ctx, id, path); !hardErr && dd != "" {
-			extra = append(extra, dd)
+		if dd, hardErr := auditDecode(ctx, id, path); !hardErr {
+			decodeDetail = dd
 		}
 	}
-	for _, e := range extra {
-		status = "flagged"
-		if detail != "" {
-			detail += "; " + e
-		} else {
-			detail = e
-		}
-	}
+	status, detail := classify(out.Status, out.Detail, gapDetail, decodeDetail)
 	if out.Replaced {
 		refreshAfterReplace(ctx, db, table, id, path, out, status, detail)
 		slog.Info("integrity repaired", "file_id", id, "path", path, "detail", detail)
@@ -258,10 +248,49 @@ func auditDecode(ctx context.Context, id int64, path string) (detail string, har
 // below it a discontinuity is inaudible jitter, not real data loss.
 const audioGapFlagThreshold = 0.5
 
+// degradedSuffix is appended to a degraded row's detail so the stored reason
+// reads complete on its own (report page, tooltips, hescli).
+const degradedSuffix = " — playable: the transcoder silence-fills the gap; replace the file to restore the missing audio"
+
+// classify folds the audit findings into the container verdict, splitting
+// unplayable-grade damage from playable residue:
+//
+//   - decode errors (damaged frames — audible/visible artifacts) or a
+//     container that repair could not fix → "flagged": real corruption that
+//     needs action, counted by the corrupt pill and detail-page badges.
+//   - an audio gap ALONE on a sound container → "degraded": missing data,
+//     but the transcode path silence-fills it (aresample=async=1), so the
+//     file plays cleanly. Surfaced only on the integrity report page.
+//
+// Detail strings accumulate in audit order (container, gap, decode) so the
+// stored reason names everything found.
+func classify(status, detail, gapDetail, decodeDetail string) (string, string) {
+	join := func(d, e string) string {
+		if e == "" {
+			return d
+		}
+		if d == "" {
+			return e
+		}
+		return d + "; " + e
+	}
+	detail = join(detail, gapDetail)
+	detail = join(detail, decodeDetail)
+	switch {
+	case decodeDetail != "" || status == "flagged":
+		status = "flagged"
+	case gapDetail != "":
+		status = "degraded"
+		detail += degradedSuffix
+	}
+	return status, detail
+}
+
 // flagDeep examines one file's BOTH streams — a full decode for video bitstream
 // corruption plus an audio packet-gap scan for missing audio — and flags it when
 // either is damaged. It never modifies the file and never un-flags (only the
-// cheap tier / a file change clears a status). Returns "flagged" or "ok".
+// cheap tier / a file change clears a status). Returns "flagged" (decode
+// damage), "degraded" (audio-gap-only — playable), or "ok".
 func flagDeep(ctx context.Context, db *sql.DB, table string, id int64, path string) string {
 	decodeDetail, hardErr := auditDecode(ctx, id, path)
 	if hardErr {
@@ -275,12 +304,19 @@ func flagDeep(ctx context.Context, db *sql.DB, table string, id int64, path stri
 		problems = append(problems, ad)
 	}
 	if len(problems) > 0 {
+		status := "flagged"
 		detail := strings.Join(problems, "; ") + " — data loss, not auto-repairable"
+		if decodeDetail == "" {
+			// Audio-gap-only: playable residue, not unplayable damage — the
+			// transcode path silence-fills the hole (see classify).
+			status = "degraded"
+			detail = strings.Join(problems, "; ") + degradedSuffix
+		}
 		_, _ = db.ExecContext(ctx,
-			"UPDATE "+table+" SET integrity_status='flagged', integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?",
-			detail, id)
-		slog.Warn("integrity flagged", "file_id", id, "path", path, "detail", detail)
-		return "flagged"
+			"UPDATE "+table+" SET integrity_status=?, integrity_detail=?, integrity_checked_at=datetime('now') WHERE id=?",
+			status, detail, id)
+		slog.Warn("integrity "+status, "file_id", id, "path", path, "detail", detail)
+		return status
 	}
 	_, _ = db.ExecContext(ctx,
 		"UPDATE "+table+" SET integrity_checked_at=datetime('now') WHERE id=?", id)

@@ -90,6 +90,7 @@ func New(d Deps) (*Handler, error) {
 	pages := []string{
 		"home.html",
 		"libraries.html",
+		"integrity_report.html",
 		"libraries_new.html",
 		"settings.html",
 		"settings_jobs.html",
@@ -141,8 +142,9 @@ func New(d Deps) (*Handler, error) {
 	}
 
 	layoutBase, err := template.New("layout.html").Funcs(template.FuncMap{
-		"staticv": staticURL,
-		"initial": initialRune,
+		"staticv":    staticURL,
+		"initial":    initialRune,
+		"humanBytes": humanBytes,
 	}).ParseFS(webRoot, "templates/layout.html")
 	if err != nil {
 		return nil, fmt.Errorf("layout template: %w", err)
@@ -287,4 +289,18 @@ func initialRune(s string) string {
 		return string(r)
 	}
 	return ""
+}
+
+// humanBytes renders a byte count in binary units for the templates.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

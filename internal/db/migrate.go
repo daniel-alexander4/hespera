@@ -379,7 +379,10 @@ func Migrate(db *sql.DB) error {
 	// Media integrity: per-file corruption status for video files. '' = unchecked
 	// (reset to '' by the scanner when size/mtime change); 'ok' = container-clean;
 	// 'repaired' = container losslessly remuxed in place; 'flagged' = unrepairable
-	// (bitstream corruption or a remux that couldn't be safely applied).
+	// damage (bitstream corruption or a remux that couldn't be safely applied);
+	// 'degraded' = audio-gap-only on a sound container — missing data, but the
+	// transcoder silence-fills it so the file plays cleanly (report page only,
+	// not counted as corrupt).
 	for _, tbl := range []string{"tv_series_files", "movie_files", "music_tracks"} {
 		if err := ensureColumn(db, tbl, "integrity_status", "TEXT NOT NULL DEFAULT ''"); err != nil {
 			return err
@@ -402,7 +405,13 @@ CREATE INDEX IF NOT EXISTS idx_movie_files_tmdb_id ON movie_files(tmdb_id);
 CREATE INDEX IF NOT EXISTS idx_tv_series_files_flagged ON tv_series_files(library_id) WHERE integrity_status='flagged';
 CREATE INDEX IF NOT EXISTS idx_movie_files_flagged ON movie_files(library_id) WHERE integrity_status='flagged';
 CREATE INDEX IF NOT EXISTS idx_music_tracks_flagged ON music_tracks(library_id) WHERE integrity_status='flagged';
+CREATE INDEX IF NOT EXISTS idx_tv_series_files_degraded ON tv_series_files(library_id) WHERE integrity_status='degraded';
+CREATE INDEX IF NOT EXISTS idx_movie_files_degraded ON movie_files(library_id) WHERE integrity_status='degraded';
+CREATE INDEX IF NOT EXISTS idx_music_tracks_degraded ON music_tracks(library_id) WHERE integrity_status='degraded';
 `); err != nil {
+		return err
+	}
+	if err := migrateIntegrityDegraded(db); err != nil {
 		return err
 	}
 	if err := migrateIdentitiesSkippedStatus(db); err != nil {
@@ -596,4 +605,29 @@ func ensureColumn(db *sql.DB, table, col, decl string) error {
 
 	_, err = db.Exec("ALTER TABLE " + table + " ADD COLUMN " + col + " " + decl)
 	return err
+}
+
+// migrateIntegrityDegraded reclassifies pre-split 'flagged' rows whose only
+// finding was an audio gap into the 'degraded' status introduced with the
+// integrity report page: audio-gap-only files play cleanly (the transcoder
+// silence-fills the hole), so they are playable residue, not the unplayable
+// damage the corrupt pill counts. The predicate parses only our own generated
+// detail vocabulary (integrity.go writes "audio gap …" and "bitstream
+// corruption …" and nothing else names either), so a decode-error file can
+// never be downgraded. Idempotent: reclassified rows no longer match. A wrong
+// call self-heals on the next deep check, which re-audits non-flagged rows.
+func migrateIntegrityDegraded(db *sql.DB) error {
+	for _, tbl := range []string{"tv_series_files", "movie_files", "music_tracks"} {
+		if _, err := db.Exec(`
+UPDATE ` + tbl + ` SET integrity_status='degraded',
+  integrity_detail = integrity_detail || ' — playable: the transcoder silence-fills the gap; replace the file to restore the missing audio'
+WHERE integrity_status='flagged'
+  AND integrity_detail LIKE '%audio gap%'
+  AND integrity_detail NOT LIKE '%bitstream corruption%'
+  AND integrity_detail NOT LIKE '%repair failed%'
+`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
