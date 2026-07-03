@@ -128,6 +128,16 @@
       move(DIRS[e.key]);
       return;
     }
+    // A focused text input is otherwise a one-way door for a remote (arrows move
+    // the caret, Back keys are suppressed while typing) — so Escape-family keys
+    // exit the field instead of doing nothing. Backspace stays native: it must
+    // keep deleting characters.
+    if (typing && (e.key === 'Escape' || e.key === 'BrowserBack' || e.key === 'GoBack')) {
+      html.classList.remove('using-mouse');
+      e.preventDefault();
+      target.blur();
+      return;
+    }
     if (BACK_KEYS.has(e.key) && !typing) {
       // Native fullscreen owns Escape: exiting fullscreen must not also
       // navigate. Let the browser handle it untouched.

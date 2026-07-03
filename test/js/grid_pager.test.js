@@ -17,10 +17,10 @@ function cards(n, page) {
   return h;
 }
 
-function fixture({ page = 1, total = 3, q = '', couch = true } = {}) {
+function fixture({ page = 1, total = 3, couch = true } = {}) {
   return `<!DOCTYPE html><html${couch ? ' data-scale="tv"' : ''}><body>
     <div class="subtab-panel">
-      <div class="band-albums-grid" data-grid-pager data-page="${page}" data-total-pages="${total}" data-q="${q}">
+      <div class="band-albums-grid" data-grid-pager data-page="${page}" data-total-pages="${total}">
         ${cards(4, page)}
       </div>
       <nav class="grid-pager" data-total-pages="${total}">
@@ -135,13 +135,6 @@ test('a chevron click never steals focus', async () => {
   clickChevron(env, 'next');
   await flush();
   assert.strictEqual(env.document.activeElement, before, 'mouse flip leaves focus alone');
-});
-
-test('carries the search query into fragment fetches', async () => {
-  const env = boot({ page: 1, total: 3, q: 'sab' });
-  clickChevron(env, 'next');
-  await flush();
-  assert.ok(env.calls.some((u) => u.includes('q=sab')), 'q carried into the fetch');
 });
 
 test('single-page grids wire nothing', async () => {

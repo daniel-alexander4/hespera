@@ -41,11 +41,9 @@ test('a remembered tab is restored on the next visit', () => {
   assert.strictEqual(activePanel(env), 'tab-artists');
 });
 
-test('a ?q=/?page= deep link keeps the server-marked tab (no restore)', () => {
-  for (const qs of ['?q=sab', '?page=2']) {
-    const env = boot({ url: 'http://localhost/music' + qs, storage: { 'iso_subtab:/music': 'artists' } });
-    assert.strictEqual(activeTab(env), 'recent', qs);
-  }
+test('a ?page= deep link keeps the server-marked tab (no restore)', () => {
+  const env = boot({ url: 'http://localhost/music?page=2', storage: { 'iso_subtab:/music': 'artists' } });
+  assert.strictEqual(activeTab(env), 'recent');
 });
 
 test('a stored tab that no longer exists is ignored', () => {

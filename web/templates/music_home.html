@@ -17,14 +17,11 @@
 
 <!-- Artists Tab -->
 <div class="subtab-panel{{if eq .ActiveMusicTab "artists"}} active{{end}}" id="tab-artists">
-  {{if .ArtistsSearch}}{{template "searchForm" .ArtistsSearch}}{{end}}
   {{if .Artists}}
-  <div class="band-albums-grid" data-grid-pager data-page="{{.ArtistsPage.Page}}" data-total-pages="{{.ArtistsPage.TotalPages}}" data-q="{{.ArtistsSearch.Q}}">
+  <div class="band-albums-grid" data-grid-pager data-page="{{.ArtistsPage.Page}}" data-total-pages="{{.ArtistsPage.TotalPages}}">
     {{template "artist-cards" .Artists}}
   </div>
   {{template "grid-pager" .ArtistsPage}}
-  {{else if and .ArtistsSearch .ArtistsSearch.Q}}
-  <div class="empty-state"><p>No artists match “{{.ArtistsSearch.Q}}”. <a href="/music" class="btn btn-sm">Clear search</a></p></div>
   {{else}}
   <div class="empty-state"><p>No artists found. Scan a music library to get started.</p></div>
   {{end}}

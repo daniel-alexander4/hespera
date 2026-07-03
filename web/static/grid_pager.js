@@ -28,14 +28,13 @@
 
     const base = location.pathname; // /music, /movies, /tv — each has one paged grid
     const total = parseInt(grid.dataset.totalPages, 10) || 1;
-    const q = grid.dataset.q || '';
     let page = parseInt(grid.dataset.page, 10) || 1;
     if (total <= 1) return; // single page — nothing to wire
 
     const panel = grid.closest('.subtab-panel') || grid.parentElement || document;
     const nav = panel.querySelector('.grid-pager');
-    const key = (p) => base + '|' + p + '|' + q;
-    const url = (p) => base + '?grid=1&page=' + p + (q ? '&q=' + encodeURIComponent(q) : '');
+    const key = (p) => base + '|' + p;
+    const url = (p) => base + '?grid=1&page=' + p;
     const wrapNext = () => (page >= total ? 1 : page + 1);
     const wrapPrev = () => (page <= 1 ? total : page - 1);
     let navigating = false;

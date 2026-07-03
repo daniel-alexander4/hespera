@@ -7,9 +7,9 @@
 // The last tab you clicked is remembered per path (localStorage
 // `iso_subtab:<pathname>`) and restored on the next visit, so wandering off
 // the Artists tab and coming back to /music doesn't reset you to Recent.
-// A URL that carries ?q= or ?page= is a deep link into a specific tab's
-// search/pager state — the server already marks the right tab active there,
-// so the stored tab must not override it.
+// A URL that carries ?page= is a deep link into a specific tab's pager state —
+// the server already marks the right tab active there, so the stored tab must
+// not override it.
 //
 // Re-bound on every Turbo render (turbo:load fires on the initial load too).
 // The .subtab nodes are fresh after each page swap, so binding never doubles up.
@@ -36,9 +36,9 @@
       });
     });
 
-    // Restore the remembered tab — unless the URL pins one (?q= / ?page=).
+    // Restore the remembered tab — unless the URL pins one (?page=).
     const params = new URLSearchParams(location.search);
-    if (params.has('q') || params.has('page')) return;
+    if (params.has('page')) return;
     let saved = null;
     try { saved = localStorage.getItem(storeKey()); } catch (_) { /* private mode */ }
     if (!saved) return;

@@ -43,7 +43,7 @@ func TestLoadTVSeriesListSQLPagination(t *testing.T) {
 	seedTVSeries(t, db, libID, "200", "apple show", 1)
 	seedTVSeries(t, db, libID, "300", "Mango", 3)
 
-	rows, _, unmatched, err := h.loadTVSeriesList(ctx, 1, "")
+	rows, _, unmatched, err := h.loadTVSeriesList(ctx, 1)
 	if err != nil {
 		t.Fatalf("loadTVSeriesList: %v", err)
 	}
@@ -64,14 +64,6 @@ func TestLoadTVSeriesListSQLPagination(t *testing.T) {
 		t.Fatalf("unmatched: want 0, got %d", unmatched)
 	}
 
-	// ?q= filters on name, in SQL.
-	sr, _, _, err := h.loadTVSeriesList(ctx, 1, "man")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sr) != 1 || sr[0].Name != "Mango" {
-		t.Fatalf("search 'man' → %+v", sr)
-	}
 }
 
 func TestLoadTVSeriesListPaginatesInSQL(t *testing.T) {
@@ -88,7 +80,7 @@ func TestLoadTVSeriesListPaginatesInSQL(t *testing.T) {
 		seedTVSeries(t, db, libID, fmt.Sprintf("%d", 1000+i), fmt.Sprintf("Show %03d", i), 1)
 	}
 
-	p1, nav1, _, err := h.loadTVSeriesList(ctx, 1, "")
+	p1, nav1, _, err := h.loadTVSeriesList(ctx, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +94,7 @@ func TestLoadTVSeriesListPaginatesInSQL(t *testing.T) {
 		t.Fatalf("page 1 first: %q", p1[0].Name)
 	}
 
-	p2, nav2, _, err := h.loadTVSeriesList(ctx, 2, "")
+	p2, nav2, _, err := h.loadTVSeriesList(ctx, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
