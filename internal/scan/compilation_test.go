@@ -404,3 +404,90 @@ func TestFinalizeCompilations(t *testing.T) {
 		}
 	})
 }
+
+// TestFinalizeCompilationsDirectoryScope pins the co-location rule on the
+// variant merge: only albums whose files live in the compilation's own
+// folder(s) are absorbed -- a genuinely distinct album that merely shares
+// the title+year survives.
+func TestFinalizeCompilationsDirectoryScope(t *testing.T) {
+	t.Run("distinct same-title+year album in another folder is not absorbed", func(t *testing.T) {
+		db := openTestDB(t)
+		libID := seedLibrary(t, db, "Music", "music", "/tmp/music")
+		ctx := context.Background()
+
+		// Untagged VA compilation "Live" (2015) in /tmp/music/comp: one
+		// multi-artist candidate row plus a per-artist fragment row.
+		a1 := seedArtist(t, db, libID, "Artist One")
+		a2 := seedArtist(t, db, libID, "Artist Two")
+		a3 := seedArtist(t, db, libID, "Artist Three")
+		cand := seedAlbum(t, db, libID, a1, "Live", 2015, false)
+		seedTrack(t, db, libID, a1, cand, "Song A", 1, "/tmp/music/comp/a.mp3")
+		seedTrack(t, db, libID, a2, cand, "Song B", 2, "/tmp/music/comp/b.mp3")
+		frag := seedAlbum(t, db, libID, a3, "Live", 2015, false)
+		seedTrack(t, db, libID, a3, frag, "Song C", 3, "/tmp/music/comp/c.mp3")
+
+		// Artist X's own studio album "Live" (2015) in its own folder.
+		ax := seedArtist(t, db, libID, "Artist X")
+		own := seedAlbum(t, db, libID, ax, "Live", 2015, false)
+		seedTrack(t, db, libID, ax, own, "Solo 1", 1, "/tmp/music/artistx/live/s1.mp3")
+		seedTrack(t, db, libID, ax, own, "Solo 2", 2, "/tmp/music/artistx/live/s2.mp3")
+
+		scanner := &Scanner{DB: db}
+		if err := scanner.finalizeCompilations(ctx, libID); err != nil {
+			t.Fatalf("finalizeCompilations: %v", err)
+		}
+
+		// The co-located fragment merged onto the candidate...
+		var n int
+		if err := db.QueryRow("SELECT COUNT(*) FROM music_tracks WHERE album_id=?", cand).Scan(&n); err != nil {
+			t.Fatalf("query candidate tracks: %v", err)
+		}
+		if n != 3 {
+			t.Fatalf("expected 3 tracks on the compilation, got %d", n)
+		}
+		// ...while artist X's album keeps its row and both tracks.
+		if err := db.QueryRow("SELECT COUNT(*) FROM music_tracks WHERE album_id=?", own).Scan(&n); err != nil {
+			t.Fatalf("query own-album tracks: %v", err)
+		}
+		if n != 2 {
+			t.Fatalf("expected artist X's album to keep 2 tracks, got %d", n)
+		}
+		var isComp int
+		if err := db.QueryRow("SELECT is_compilation FROM music_albums WHERE id=?", own).Scan(&isComp); err != nil {
+			t.Fatalf("artist X's album row was absorbed/deleted: %v", err)
+		}
+		if isComp != 0 {
+			t.Fatalf("artist X's album wrongly marked compilation")
+		}
+	})
+
+	t.Run("disc subfolders count as the same folder", func(t *testing.T) {
+		db := openTestDB(t)
+		libID := seedLibrary(t, db, "Music", "music", "/tmp/music")
+		ctx := context.Background()
+
+		// Multi-disc compilation: candidate tracks on Disc 1, a fragment
+		// variant on Disc 2 -- both normalize to the comp folder.
+		a1 := seedArtist(t, db, libID, "Artist One")
+		a2 := seedArtist(t, db, libID, "Artist Two")
+		a3 := seedArtist(t, db, libID, "Artist Three")
+		cand := seedAlbum(t, db, libID, a1, "Box Set", 2010, false)
+		seedTrack(t, db, libID, a1, cand, "Song A", 1, "/tmp/music/boxset/Disc 1/a.mp3")
+		seedTrack(t, db, libID, a2, cand, "Song B", 2, "/tmp/music/boxset/Disc 1/b.mp3")
+		frag := seedAlbum(t, db, libID, a3, "Box Set", 2010, false)
+		seedTrack(t, db, libID, a3, frag, "Song C", 1, "/tmp/music/boxset/Disc 2/c.mp3")
+
+		scanner := &Scanner{DB: db}
+		if err := scanner.finalizeCompilations(ctx, libID); err != nil {
+			t.Fatalf("finalizeCompilations: %v", err)
+		}
+
+		var n int
+		if err := db.QueryRow("SELECT COUNT(*) FROM music_tracks WHERE album_id=?", cand).Scan(&n); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if n != 3 {
+			t.Fatalf("expected the Disc 2 fragment merged (3 tracks), got %d", n)
+		}
+	})
+}

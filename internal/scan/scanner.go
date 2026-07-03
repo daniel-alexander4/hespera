@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"hespera/internal/config"
@@ -440,24 +441,119 @@ UPDATE music_albums SET is_compilation = 1, album_artist_id = ? WHERE id = ?
 			return fmt.Errorf("mark compilation: %w", err)
 		}
 
-		// Merge any other album records with the same title+year onto the target (BUG-03 fix).
-		// Now safe because all tracks are already inserted -- no more files will create new variants.
-		if _, err := tx.ExecContext(ctx, `
-UPDATE music_tracks SET album_id = ?
-WHERE library_id = ?
-  AND album_id IN (
-    SELECT id FROM music_albums
-    WHERE library_id = ?
-      AND lower(title) = lower(?)
-      AND year = ?
-      AND id <> ?
-  )
-`, target, libraryID, libraryID, strings.TrimSpace(a.title), a.year, target); err != nil {
+		// Merge other album records with the same title+year onto the target
+		// (BUG-03 fix) -- but only co-located ones. The variants this merge
+		// consolidates are per-artist fragment rows of one physical album
+		// folder (tracks whose missing album-artist tag keyed them under
+		// their own track artist), so their files live in the compilation's
+		// own directory. A genuinely distinct album that merely shares the
+		// title+year (an artist's own "Live" next to a VA "Live"
+		// compilation) lives elsewhere on disk and must not be absorbed.
+		// Safe to run now because all tracks are already inserted -- no more
+		// files will create new variants.
+		refIDs := []int64{a.id}
+		if target != a.id {
+			refIDs = append(refIDs, target)
+		}
+		refDirs, err := albumTrackDirs(ctx, tx, refIDs)
+		if err != nil {
 			return fmt.Errorf("merge album variants: %w", err)
+		}
+		sibRows, err := tx.QueryContext(ctx, `
+SELECT id FROM music_albums
+WHERE library_id = ? AND lower(title) = lower(?) AND year = ? AND id NOT IN (?, ?)
+`, libraryID, strings.TrimSpace(a.title), a.year, a.id, target)
+		if err != nil {
+			return fmt.Errorf("merge album variants: %w", err)
+		}
+		var siblings []int64
+		for sibRows.Next() {
+			var id int64
+			if err := sibRows.Scan(&id); err != nil {
+				sibRows.Close()
+				return err
+			}
+			siblings = append(siblings, id)
+		}
+		if err := sibRows.Err(); err != nil {
+			sibRows.Close()
+			return err
+		}
+		sibRows.Close()
+
+		mergeIDs := make([]int64, 0, len(siblings)+1)
+		if target != a.id {
+			// The candidate itself is definitionally part of the compilation.
+			mergeIDs = append(mergeIDs, a.id)
+		}
+		for _, sib := range siblings {
+			sibDirs, err := albumTrackDirs(ctx, tx, []int64{sib})
+			if err != nil {
+				return fmt.Errorf("merge album variants: %w", err)
+			}
+			for d := range sibDirs {
+				if refDirs[d] {
+					mergeIDs = append(mergeIDs, sib)
+					break
+				}
+			}
+		}
+		if len(mergeIDs) > 0 {
+			ph := strings.TrimSuffix(strings.Repeat("?,", len(mergeIDs)), ",")
+			args := make([]any, 0, len(mergeIDs)+1)
+			args = append(args, target)
+			for _, id := range mergeIDs {
+				args = append(args, id)
+			}
+			if _, err := tx.ExecContext(ctx,
+				"UPDATE music_tracks SET album_id = ? WHERE album_id IN ("+ph+")", args...); err != nil {
+				return fmt.Errorf("merge album variants: %w", err)
+			}
 		}
 	}
 
 	return tx.Commit()
+}
+
+// discDirPattern matches disc-split subfolders (Disc 1, CD 2, Disk 3) so a
+// multi-disc album's tracks normalize to one shared directory key.
+var discDirPattern = regexp.MustCompile(`(?i)^(?:cd|dis[ck])\s*\d+$`)
+
+// albumDirKey is the directory an album physically lives in, derived from one
+// of its track paths: the file's directory, with a disc subfolder collapsed
+// onto its parent.
+func albumDirKey(absPath string) string {
+	dir := filepath.Dir(absPath)
+	if discDirPattern.MatchString(filepath.Base(dir)) {
+		dir = filepath.Dir(dir)
+	}
+	return dir
+}
+
+// albumTrackDirs returns the set of albumDirKey values across all tracks of
+// the given albums.
+func albumTrackDirs(ctx context.Context, tx *sql.Tx, albumIDs []int64) (map[string]bool, error) {
+	dirs := make(map[string]bool)
+	for _, id := range albumIDs {
+		rows, err := tx.QueryContext(ctx, "SELECT abs_path FROM music_tracks WHERE album_id = ?", id)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var p string
+			if err := rows.Scan(&p); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			dirs[albumDirKey(p)] = true
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return dirs, nil
 }
 
 // --- Checksum ---
