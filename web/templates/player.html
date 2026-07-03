@@ -1,7 +1,5 @@
 {{define "content"}}
 <div class="player-page" data-autoload="{{.AutoloadQuery}}" data-lyrics-enabled="{{if .LyricsEnabled}}1{{end}}" data-couch-parent="/music">
-  <p><a href="/music" class="btn btn-sm">&#8592; Back to Music</a></p>
-
   <div id="player-empty" class="empty-state hidden">
     <p>Nothing is playing right now.</p>
     <p><a href="/music" class="btn">Browse Music</a></p>
@@ -33,6 +31,10 @@
 {{/* Transport (seek + controls) is an auto-hiding overlay pinned to the bottom of
      the screen: player.js slides it fully off-screen after a few seconds of
      inactivity and brings it back on pointer/keyboard/touch activity. */}}
+{{/* Floating back control — top-left overlay chrome, shown/hidden in sync
+     with the transport's idle collapse (player.js drives .collapsed on both). */}}
+<a id="player-back" href="/music" class="btn btn-sm player-back">&#8592; Back to Music</a>
+
 <div id="player-transport" class="player-transport">
   <div class="player-transport-body">
     <div class="player-seek-row">

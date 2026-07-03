@@ -438,6 +438,11 @@
     if (!view || !view.transport) return;
     view.transport.classList.toggle('collapsed', c);
     view.transport.setAttribute('aria-hidden', String(c));
+    // The floating Back control is overlay chrome too — one idle system.
+    if (view.backBtn) {
+      view.backBtn.classList.toggle('collapsed', c);
+      view.backBtn.setAttribute('aria-hidden', String(c));
+    }
   };
   const idleCollapseTransport = () => {
     if (!view || !view.transport) return;
@@ -488,6 +493,7 @@
       playlistScrim: $('playlist-scrim'),
       playlistList: $('playlist-list'),
       transport: $('player-transport'),
+      backBtn: $('player-back'),
     };
 
     // Start with the card hidden (cover expanded) always — loadKaraokeForTrack
