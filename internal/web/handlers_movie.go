@@ -198,15 +198,28 @@ func movieYear(releaseDate string) string {
 }
 
 // loadMovieContinueWatching returns in-progress (not completed) films, newest
-// activity first.
+// activity first — one card per film. A film with two in-progress files (two
+// editions/downloads) is deduped to its most-recently-watched file via the
+// latest CTE + join-back (the TV recently-watched pattern): a bare GROUP BY
+// tmdb_id would pair the MAX(updated_at) with an arbitrary row's file_id and
+// progress, not the most-recent one's.
 func (h *Handler) loadMovieContinueWatching(ctx context.Context, limit int) ([]movieRow, error) {
 	rows, err := h.db.QueryContext(ctx, `
+WITH latest AS (
+  SELECT f.tmdb_id AS tid, MAX(p.updated_at) AS last_watched
+  FROM movie_playback_progress p
+  JOIN movie_files f ON f.id = p.file_id
+  WHERE f.match_status='matched' AND f.tmdb_id != 0 AND COALESCE(p.completed,0)=0
+  GROUP BY f.tmdb_id
+)
 SELECT f.id, f.tmdb_id,
        CASE WHEN p.duration_seconds > 0 THEN CAST(p.position_seconds*100/p.duration_seconds AS INTEGER) ELSE 0 END,
        CAST(strftime('%s', p.updated_at) AS INTEGER)
-FROM movie_playback_progress p
-JOIN movie_files f ON f.id = p.file_id
-WHERE f.match_status='matched' AND f.tmdb_id != 0 AND COALESCE(p.completed,0)=0
+FROM latest l
+JOIN movie_files f ON f.tmdb_id = l.tid
+JOIN movie_playback_progress p ON p.file_id = f.id AND p.updated_at = l.last_watched
+WHERE f.match_status='matched' AND COALESCE(p.completed,0)=0
+GROUP BY f.tmdb_id
 ORDER BY p.updated_at DESC
 LIMIT ?
 `, limit)

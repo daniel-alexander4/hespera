@@ -30,6 +30,7 @@ func TestHeadMetaNoPreview(t *testing.T) {
 		// Mirror Handler.New: layout base (with the staticv FuncMap) + the page.
 		base := template.New("layout.html").Funcs(template.FuncMap{
 			"staticv": func(p string) string { return p },
+			"initial": initialRune,
 		})
 		tpl, err := base.ParseFiles(layoutPath, filepath.Join(tplDir, page))
 		if err != nil {

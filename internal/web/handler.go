@@ -131,6 +131,7 @@ func New(d Deps) (*Handler, error) {
 
 	layoutBase, err := template.New("layout.html").Funcs(template.FuncMap{
 		"staticv": staticURL,
+		"initial": initialRune,
 	}).ParseFS(webRoot, "templates/layout.html")
 	if err != nil {
 		return nil, fmt.Errorf("layout template: %w", err)
@@ -262,4 +263,15 @@ func (h *Handler) renderFragment(w http.ResponseWriter, page, block string, data
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(buf.Bytes())
+}
+
+// initialRune returns the first rune of s — the letter-avatar monogram the
+// templates render when there is no art. The old {{slice s 0 1}} took the
+// first *byte*, splitting a multibyte initial (Björk, 日本) into an invalid
+// glyph. Empty input yields "".
+func initialRune(s string) string {
+	for _, r := range s {
+		return string(r)
+	}
+	return ""
 }

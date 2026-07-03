@@ -60,7 +60,7 @@
       {{if .HasArt}}
       <img src="/art/person/{{.PersonID}}" alt="{{.Name}}" loading="lazy" />
       {{else}}
-      <div class="album-art-ph">{{if .Name}}{{slice .Name 0 1}}{{end}}</div>
+      <div class="album-art-ph">{{if .Name}}{{initial .Name}}{{end}}</div>
       {{end}}
     </div>
     <div class="band-album-meta">
