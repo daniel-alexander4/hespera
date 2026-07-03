@@ -1,0 +1,53 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>{{.PlaylistName}}</h1>
+</div>
+
+<div class="album-actions">
+  <a href="/music/player?source=playlist&amp;playlist={{.PlaylistID}}" class="btn btn-primary" data-play>{{template "icon-play"}}Play</a>
+  <a href="/music/player?source=playlist&amp;playlist={{.PlaylistID}}&amp;shuffle=1" class="btn" data-play>{{template "icon-shuffle"}}Shuffle</a>
+  <form method="post" action="/music/playlist/rename" class="inline-form playlist-rename">
+    <input type="hidden" name="id" value="{{.PlaylistID}}" />
+    <input type="text" name="name" value="{{.PlaylistName}}" class="input" maxlength="120" aria-label="Playlist name" />
+    <button type="submit" class="btn btn-sm">{{template "icon-pencil"}}Rename</button>
+  </form>
+  <form method="post" action="/music/playlist/delete" class="inline-form"
+        onsubmit="return confirm('Delete this playlist? The songs themselves are untouched.');">
+    <input type="hidden" name="id" value="{{.PlaylistID}}" />
+    <button type="submit" class="btn btn-sm">{{template "icon-trash"}}Delete</button>
+  </form>
+</div>
+
+{{if not .Tracks}}
+<div class="empty-state"><p>This playlist is empty. Use the {{template "icon-plus"}} button on any song to add it.</p></div>
+{{else}}
+<ol class="tracks">
+  {{range $t := .Tracks}}
+  <li class="track" data-track-id="{{$t.ID}}">
+    <span class="track-row-number">{{$t.TrackNo}}</span>
+    <a href="/music/player?source=playlist&amp;playlist={{$.PlaylistID}}&amp;track={{$t.ID}}" class="track-play-btn" title="Play from here" data-play>
+      {{$t.Title}}
+    </a>
+    <span class="track-artist">{{$t.Artist}}</span>
+    <form method="post" action="/music/playlist/move" class="inline-form">
+      <input type="hidden" name="playlist_id" value="{{$.PlaylistID}}" />
+      <input type="hidden" name="track_id" value="{{$t.ID}}" />
+      <input type="hidden" name="dir" value="up" />
+      <button type="submit" class="btn btn-sm" title="Move up" aria-label="Move up">▲</button>
+    </form>
+    <form method="post" action="/music/playlist/move" class="inline-form">
+      <input type="hidden" name="playlist_id" value="{{$.PlaylistID}}" />
+      <input type="hidden" name="track_id" value="{{$t.ID}}" />
+      <input type="hidden" name="dir" value="down" />
+      <button type="submit" class="btn btn-sm" title="Move down" aria-label="Move down">▼</button>
+    </form>
+    <form method="post" action="/music/playlist/remove-track" class="inline-form">
+      <input type="hidden" name="playlist_id" value="{{$.PlaylistID}}" />
+      <input type="hidden" name="track_id" value="{{$t.ID}}" />
+      <button type="submit" class="btn btn-sm" title="Remove from playlist" aria-label="Remove from playlist">{{template "icon-x"}}</button>
+    </form>
+  </li>
+  {{end}}
+</ol>
+{{end}}
+{{end}}

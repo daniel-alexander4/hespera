@@ -451,6 +451,9 @@
     view.empty.classList.add('hidden');
     view.main.classList.remove('hidden');
     if (view.transport) view.transport.classList.remove('hidden');
+    // Keep the transport's Add-to-playlist button pointed at the current track
+    // (playlist_picker.js reads the data-track-id like an album-row button).
+    if (view.addBtn) view.addBtn.setAttribute('data-track-id', String(t.id || 0));
     view.trackTitle.textContent = t.title || '';
     if (view.artist) view.artist.textContent = (t.artist || '').trim();
     view.albumTitle.textContent = t.album || '';
@@ -539,6 +542,7 @@
       playlistList: $('playlist-list'),
       transport: $('player-transport'),
       backBtn: $('player-back'),
+      addBtn: $('player-add-btn'),
     };
 
     // Start with the card hidden (cover expanded) always — loadKaraokeForTrack
@@ -705,6 +709,11 @@
 
   // Final listen report when the tab actually closes (rare under Turbo).
   window.addEventListener('beforeunload', () => reportCurrentTrack(false, { beacon: true }));
+
+  // The queue snapshot for "Save as playlist" (playlist_picker.js) — the
+  // current play order's track ids. A tiny read-only bridge; this script is
+  // the queue's single owner.
+  window.hesperaPlayerQueueIDs = () => queue.map((i) => tracks[i].id).filter((id) => id > 0);
 
   // Re-bind the now-playing view + refresh the header on every Turbo visit
   // (turbo:load fires on the initial load too).

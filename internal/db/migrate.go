@@ -75,6 +75,27 @@ CREATE INDEX IF NOT EXISTS idx_music_tracks_album_id ON music_tracks(album_id);
 CREATE INDEX IF NOT EXISTS idx_music_tracks_artist_id ON music_tracks(artist_id);
 CREATE INDEX IF NOT EXISTS idx_music_tracks_size_checksum ON music_tracks(library_id, file_size_bytes, checksum_sha256);
 
+CREATE TABLE IF NOT EXISTS playlists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- User-curated playlist membership. PK (playlist_id, track_id) = no duplicate
+-- songs in one playlist (adds are idempotent); ordering via position, renumbered
+-- contiguously on remove/reorder (no UNIQUE on position — a one-statement swap
+-- would trip it mid-transaction). Track deletion cascades the membership away;
+-- the move-relink pass re-points track_id like play_history/lyrics_cache.
+CREATE TABLE IF NOT EXISTS playlist_tracks (
+  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  track_id INTEGER NOT NULL REFERENCES music_tracks(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (playlist_id, track_id)
+);
+CREATE INDEX IF NOT EXISTS idx_playlist_tracks_position ON playlist_tracks(playlist_id, position);
+
 CREATE TABLE IF NOT EXISTS play_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   track_id INTEGER NOT NULL REFERENCES music_tracks(id) ON DELETE CASCADE,

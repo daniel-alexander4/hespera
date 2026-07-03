@@ -38,6 +38,8 @@
         <span class="track-artist">{{.ArtistDisplay}}</span>
         {{end}}
         {{if .Flagged}}<span class="badge badge-warn" title="{{if .FlagDetail}}{{.FlagDetail}}{{else}}Unrepairable corruption{{end}}">corrupt</span>{{end}}
+        <button type="button" class="btn btn-sm track-row-btn" data-playlist-add data-track-id="{{.ID}}" title="Add to playlist" aria-label="Add to playlist">{{template "icon-list-plus"}}</button>
+        <a href="/music/player?source=mix&amp;track={{.ID}}" class="btn btn-sm track-row-btn" data-play title="Instant mix from this song" aria-label="Instant mix from this song">{{template "icon-radio"}}</a>
         <a href="/music/track/edit?id={{.ID}}" class="track-edit-btn" title="Edit track tags">Edit</a>
       </li>
       {{end}}
