@@ -76,6 +76,20 @@ test('Backspace inside a text field edits text, never navigates', () => {
   assert.strictEqual(env.backCalls.length, 0);
 });
 
+test('Escape inside a text field blurs it (exits the trap) without navigating', () => {
+  const env = boot({ body: breadcrumb(['/', '/music']) + '<input id="q" />' });
+  const input = env.document.getElementById('q');
+  input.focus();
+  assert.strictEqual(env.document.activeElement, input);
+  pressKey(env, 'Escape', input);
+  assert.notStrictEqual(env.document.activeElement, input); // focus left the field
+  assert.strictEqual(env.visited.length, 0); // first press only exits — no navigation
+  assert.strictEqual(env.backCalls.length, 0);
+  // The next Escape (no longer typing) climbs to the parent as usual.
+  pressKey(env, 'Escape');
+  assert.deepStrictEqual(env.visited, ['/music']);
+});
+
 test('navigation is always on — Back works without the tv scale class', () => {
   const env = boot({ body: breadcrumb(['/', '/music']), couch: false });
   pressKey(env, 'Escape');

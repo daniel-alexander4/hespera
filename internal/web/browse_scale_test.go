@@ -147,7 +147,7 @@ func BenchmarkBrowseScaleTV(b *testing.B) {
 			ctx := context.Background()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, _, _, err := h.loadTVSeriesList(ctx, 1, ""); err != nil {
+				if _, _, _, err := h.loadTVSeriesList(ctx, 1); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -159,14 +159,7 @@ func BenchmarkBrowseScaleTV(b *testing.B) {
 	ctx := context.Background()
 	b.Run("series=30000/deep-page", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			if _, _, _, err := h.loadTVSeriesList(ctx, 250, ""); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-	b.Run("series=30000/search", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			if _, _, _, err := h.loadTVSeriesList(ctx, 1, "show 0123"); err != nil {
+			if _, _, _, err := h.loadTVSeriesList(ctx, 250); err != nil {
 				b.Fatal(err)
 			}
 		}

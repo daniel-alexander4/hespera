@@ -1,7 +1,6 @@
 {{define "content"}}
 <div class="page-header">
   <h1>All Albums</h1>
-  {{if .Search}}{{template "searchForm" .Search}}{{end}}
 </div>
 
 {{if .Albums}}
@@ -23,8 +22,6 @@
   {{end}}
 </div>
 {{template "pagination" .Page}}
-{{else if and .Search .Search.Q}}
-<div class="empty-state"><p>No albums match “{{.Search.Q}}”. <a href="/music/albums" class="btn btn-sm">Clear search</a></p></div>
 {{else}}
 <div class="empty-state"><p>No albums found.</p></div>
 {{end}}

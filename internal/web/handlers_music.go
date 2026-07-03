@@ -178,29 +178,21 @@ func (h *Handler) musicHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Artists (paginated — this tab is the primary artist browse; a ?q= filters
-	// it by name). The artist EXISTS-an-album predicate + optional name filter is
-	// shared by the COUNT and the page query.
-	q := searchParam(r)
+	// Artists (paginated — this tab is the primary artist browse). The artist
+	// EXISTS-an-album predicate is shared by the COUNT and the page query.
 	const artistWhere = `
 FROM music_artists a
 WHERE a.library_id=?
   AND EXISTS (SELECT 1 FROM music_albums al WHERE al.album_artist_id=a.id AND COALESCE(al.is_compilation,0)=0)`
 	artistArgs := []any{libraryID}
-	artistFilter := ""
-	if q != "" {
-		artistFilter = " AND lower(a.name) LIKE ?"
-		artistArgs = append(artistArgs, likeContains(q))
-	}
 
 	var artistTotal int
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) "+artistWhere+artistFilter, artistArgs...).Scan(&artistTotal); err != nil {
+		"SELECT COUNT(*) "+artistWhere, artistArgs...).Scan(&artistTotal); err != nil {
 		httpError(w, 500, "internal server error", "db count failed", "handler", "musicHome", "err", err)
 		return
 	}
 	artistNav, artistOffset := paginate(pageParam(r), artistTotal, "/music")
-	artistNav = artistNav.withQuery(q)
 
 	artistRows, err := h.db.QueryContext(r.Context(),
 		`SELECT a.id, a.name, a.art_path,
@@ -208,7 +200,7 @@ WHERE a.library_id=?
          WHERE t.artist_id=a.id AND COALESCE(al.is_compilation,0)=0) AS track_count,
        (SELECT COUNT(*) FROM play_history ph WHERE ph.artist_id=a.id) AS play_count,
        COALESCE((SELECT MAX(ph.created_at) FROM play_history ph WHERE ph.artist_id=a.id), '') AS last_played `+
-			artistWhere+artistFilter+" ORDER BY lower(a.name) LIMIT ? OFFSET ?",
+			artistWhere+" ORDER BY lower(a.name) LIMIT ? OFFSET ?",
 		append(artistArgs, listPageSize, artistOffset)...)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
@@ -289,12 +281,12 @@ LIMIT ?
 		return
 	}
 
-	// A full-reload from the Artists list (its pagination Next/Prev or search)
-	// carries ?page= or ?q= — both Artists-only on /music — so re-open on the
-	// Artists subtab instead of the default Recent one. subtabs.js takes the
-	// landing tab from whichever button/panel is server-marked `active`.
+	// A full-reload from the Artists list (its pagination Next/Prev) carries
+	// ?page= — Artists-only on /music — so re-open on the Artists subtab instead
+	// of the default Recent one. subtabs.js takes the landing tab from whichever
+	// button/panel is server-marked `active`.
 	activeMusicTab := "recent"
-	if q != "" || r.URL.Query().Has("page") {
+	if r.URL.Query().Has("page") {
 		activeMusicTab = "artists"
 	}
 
@@ -307,7 +299,6 @@ LIMIT ?
 		"RecentlyAddedAlbums": recentlyAddedAlbums,
 		"Artists":             artists,
 		"ArtistsPage":         artistNav,
-		"ArtistsSearch":       searchBox{Action: "/music", Q: q},
 		"Compilations":        compilations,
 		"MoreCompilations":    moreCompilations,
 		"EraPicker":           h.eraPicker(r.Context(), libraryID),
@@ -1431,9 +1422,7 @@ func (h *Handler) musicAlbums(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A ?q= search matches the album title OR the (album-)artist name. The COUNT
-	// uses the same JOIN+filter as the page query so total-pages stays accurate.
-	q := searchParam(r)
+	// The COUNT uses the same JOIN as the page query so total-pages stays accurate.
 	const albumsFrom = `
 FROM music_albums al
 JOIN music_artists ar ON ar.id = CASE
@@ -1442,25 +1431,18 @@ JOIN music_artists ar ON ar.id = CASE
 END
 WHERE al.library_id=?`
 	args := []any{libraryID}
-	filter := ""
-	if q != "" {
-		filter = " AND (lower(al.title) LIKE ? OR lower(ar.name) LIKE ?)"
-		like := likeContains(q)
-		args = append(args, like, like)
-	}
 
 	var total int
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) "+albumsFrom+filter, args...).Scan(&total); err != nil {
+		"SELECT COUNT(*) "+albumsFrom, args...).Scan(&total); err != nil {
 		httpError(w, 500, "internal server error", "db count failed", "handler", "musicAlbums", "err", err)
 		return
 	}
 	nav, offset := paginate(pageParam(r), total, "/music/albums")
-	nav = nav.withQuery(q)
 
 	rows, err := h.db.QueryContext(r.Context(),
 		"SELECT al.id, al.title, al.year, al.art_path, ar.name, ar.id, COALESCE(al.is_compilation,0) "+
-			albumsFrom+filter+" ORDER BY lower(ar.name), al.year, lower(al.title) LIMIT ? OFFSET ?",
+			albumsFrom+" ORDER BY lower(ar.name), al.year, lower(al.title) LIMIT ? OFFSET ?",
 		append(args, listPageSize, offset)...)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicAlbums", "err", err)
@@ -1501,7 +1483,6 @@ WHERE al.library_id=?`
 		"Albums":     albums,
 		"LibraryID":  libraryID,
 		"Page":       nav,
-		"Search":     searchBox{Action: "/music/albums", Q: q},
 	})
 }
 
@@ -1517,27 +1498,18 @@ func (h *Handler) musicCompilations(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "music_compilations.html", map[string]any{"Breadcrumb": []crumb{bcHome, bcMusic}, "Title": "Compilations"})
 		return
 	}
-	q := searchParam(r)
-	args := []any{libraryID}
-	filter := ""
-	if q != "" {
-		filter = " AND lower(title) LIKE ?"
-		args = append(args, likeContains(q))
-	}
-
 	var total int
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM music_albums WHERE library_id=? AND COALESCE(is_compilation,0)=1"+filter, args...).Scan(&total); err != nil {
+		"SELECT COUNT(*) FROM music_albums WHERE library_id=? AND COALESCE(is_compilation,0)=1", libraryID).Scan(&total); err != nil {
 		httpError(w, 500, "internal server error", "db count failed", "handler", "musicCompilations", "err", err)
 		return
 	}
 	nav, offset := paginate(pageParam(r), total, "/music/compilations")
-	nav = nav.withQuery(q)
 
 	rows, err := h.db.QueryContext(r.Context(),
-		"SELECT id, title, year, art_path FROM music_albums WHERE library_id=? AND COALESCE(is_compilation,0)=1"+filter+
+		"SELECT id, title, year, art_path FROM music_albums WHERE library_id=? AND COALESCE(is_compilation,0)=1"+
 			" ORDER BY year, lower(title) LIMIT ? OFFSET ?",
-		append(args, listPageSize, offset)...)
+		libraryID, listPageSize, offset)
 	if err != nil {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "musicCompilations", "err", err)
 		return
@@ -1566,7 +1538,6 @@ func (h *Handler) musicCompilations(w http.ResponseWriter, r *http.Request) {
 		"LibraryID":    libraryID,
 		"Compilations": compilations,
 		"Page":         nav,
-		"Search":       searchBox{Action: "/music/compilations", Q: q},
 	})
 }
 

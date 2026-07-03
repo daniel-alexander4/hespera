@@ -81,7 +81,7 @@ func stubAssetsFS() fs.FS {
 			`{{else}}<p>No jobs found.</p>{{end}}{{end}}`,
 		"templates/player.html": `{{define "content"}}<div class="player-page" data-autoload="{{.AutoloadQuery}}"></div>{{end}}`,
 		"templates/music_albums.html": `{{define "content"}}{{range .Albums}}<a class="album" href="/music/album/{{.ID}}"></a>{{end}}` +
-			`<span id="pg">{{.Page.Page}}/{{.Page.TotalPages}}</span><span id="q">{{.Page.Query}}</span>` +
+			`<span id="pg">{{.Page.Page}}/{{.Page.TotalPages}}</span>` +
 			`{{if .Page.HasPrev}}<a class="prev"></a>{{end}}{{if .Page.HasNext}}<a class="next"></a>{{end}}{{end}}`,
 		// Integrity-badge wiring: render the flag fields the detail handlers pass.
 		"templates/tv_season.html": `{{define "content"}}{{range .Episodes}}<div class="ep">{{.EpisodeNumber}}` +

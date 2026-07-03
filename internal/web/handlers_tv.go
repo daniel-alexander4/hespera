@@ -85,8 +85,7 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := searchParam(r)
-	series, nav, unmatched, err := h.loadTVSeriesList(r.Context(), pageParam(r), q)
+	series, nav, unmatched, err := h.loadTVSeriesList(r.Context(), pageParam(r))
 	if err != nil {
 		httpError(w, 500, "internal server error", "load tv series list failed", "handler", "tvSeriesList", "err", err)
 		return
@@ -114,7 +113,6 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		"Title":           "TV Shows",
 		"Series":          series,
 		"SeriesPage":      nav,
-		"SeriesSearch":    searchBox{Action: "/tv", Q: q},
 		"UnmatchedCount":  unmatched,
 		"RecentlyWatched": recentlyWatched,
 		"RecentlyAdded":   recentlyAdded,
@@ -281,25 +279,16 @@ FROM (
 // loadTVSeriesList returns one page of the matched (watchable) series, sorted by
 // name in SQL, plus a count of distinct unmatched titles (surfaced as a "needs
 // matching" banner, not rendered inline).
-func (h *Handler) loadTVSeriesList(ctx context.Context, page int, q string) ([]tvSeriesRow, pageNav, int, error) {
-	filter := ""
-	var filterArgs []any
-	if q != "" {
-		filter = " WHERE lower(s.name) LIKE ?"
-		filterArgs = append(filterArgs, "%"+strings.ToLower(q)+"%")
-	}
-
+func (h *Handler) loadTVSeriesList(ctx context.Context, page int) ([]tvSeriesRow, pageNav, int, error) {
 	var total int
-	if err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) "+tvSeriesListBase+filter, filterArgs...).Scan(&total); err != nil {
+	if err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) "+tvSeriesListBase).Scan(&total); err != nil {
 		return nil, pageNav{}, 0, err
 	}
 	nav, offset := paginate(page, total, "/tv")
-	nav = nav.withQuery(q)
 
-	args := append(append([]any{}, filterArgs...), listPageSize, offset)
 	rows, err := h.db.QueryContext(ctx,
-		"SELECT s.series_id, s.ep_count, s.name, s.poster_path, s.first_air "+tvSeriesListBase+filter+
-			" ORDER BY lower(s.name), s.series_id LIMIT ? OFFSET ?", args...)
+		"SELECT s.series_id, s.ep_count, s.name, s.poster_path, s.first_air "+tvSeriesListBase+
+			" ORDER BY lower(s.name), s.series_id LIMIT ? OFFSET ?", listPageSize, offset)
 	if err != nil {
 		return nil, pageNav{}, 0, err
 	}
