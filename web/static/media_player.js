@@ -266,10 +266,13 @@ function initMediaPlayer() {
     // Text subtitles deliver as a WebVTT sidecar; bitmap subs (PGS/DVD/DVB) are
     // burned into the video by a continuous server-side transcode. Offer both,
     // marking bitmap tracks so the transcode cost is visible. Each track keeps its
-    // original 1-based ordinal (what the server expects).
+    // original 1-based ordinal (what the server expects). With an OpenSubtitles
+    // key configured (TV only — the movie template never sets data-os-enabled),
+    // the list ends with a "Search subtitles…" action option, so the dropdown
+    // shows even for a file with no subtitle tracks at all.
     const subs = session.subtitle_tracks || [];
-    const textSubs = subs.filter((s) => s.text);
-    if (subs.length > 0) {
+    const osEnabled = video.dataset.osEnabled === '1';
+    if (subs.length > 0 || osEnabled) {
       subSelect.innerHTML = '';
       const off = document.createElement('option');
       off.value = 0; off.textContent = 'Off'; off.selected = true;
@@ -282,13 +285,13 @@ function initMediaPlayer() {
         subSelect.appendChild(o);
         if (!s.text) subBurnIn.add(Number(s.ordinal)); // bitmap → burned into the video stream
       });
+      if (osEnabled) {
+        const search = document.createElement('option');
+        search.value = 'search';
+        search.textContent = 'Search subtitles…';
+        subSelect.appendChild(search);
+      }
       document.getElementById('subPick').hidden = false;
-    }
-    // No deliverable text track? Offer the OpenSubtitles search (when a key is
-    // configured) — an external text sidecar is preferable to a burn-in transcode.
-    const searchBtn = document.getElementById('subsSearchBtn');
-    if (searchBtn && video.dataset.osEnabled === '1' && textSubs.length === 0) {
-      searchBtn.hidden = false;
     }
     selectsBuilt = true;
   }
@@ -340,6 +343,15 @@ function initMediaPlayer() {
   // .media-overlay) doesn't keep :focus-visible and pin the controls open.
   if (audioSelect) audioSelect.addEventListener('change', () => { loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()); audioSelect.blur(); });
   if (subSelect) subSelect.addEventListener('change', () => {
+    // The "Search subtitles…" action option: restore the previous selection
+    // (picking an action must not switch subtitles off) and open the search
+    // dialog. Checked before parseInt, which would misread it as Off.
+    if (subSelect.value === 'search') {
+      subSelect.value = String(currentSub);
+      openSubsModal();
+      subSelect.blur();
+      return;
+    }
     const newSub = parseInt(subSelect.value, 10) || 0;
     // Reload the video stream only when burn-in is involved (entering or leaving a
     // bitmap sub changes the stream); a text/off↔text/off change is a sidecar swap.
@@ -970,12 +982,12 @@ function initMediaPlayer() {
     try { video.load(); } catch (e) {}
   }, { once: true });
 
-  // --- OpenSubtitles search dialog (shown only when no text track is offered
-  //     and a key is configured; TV only — movie pages don't set the endpoints) ---
+  // --- OpenSubtitles search dialog (opened by the subtitles dropdown's
+  //     "Search subtitles…" option, offered whenever a key is configured;
+  //     TV only — movie pages don't set data-os-enabled) ---
   const subsModal = document.getElementById('subs-modal');
   const subsStatus = document.getElementById('subs-status');
   const subsResults = document.getElementById('subs-results');
-  const subsSearchBtn = document.getElementById('subsSearchBtn');
   const subsCloseBtn = document.getElementById('subs-close-btn');
 
   function openSubsModal() {
@@ -1040,7 +1052,6 @@ function initMediaPlayer() {
     closeSubsModal();
   }
 
-  if (subsSearchBtn) subsSearchBtn.addEventListener('click', openSubsModal);
   if (subsCloseBtn) subsCloseBtn.addEventListener('click', closeSubsModal);
 
   loadFromSession(0, 0, null);
