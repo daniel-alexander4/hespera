@@ -25,6 +25,16 @@
         <label class="tv-track-pick" id="subPick" hidden>Subtitles
           <select id="subSelect"></select>
         </label>
+        <label class="tv-track-pick" id="speedPick">Speed
+          <select id="speedSelect">
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
         <button type="button" id="skipAutoBtn" class="btn btn-sm" hidden aria-pressed="false" title="Automatically skip intros & ads">{{template "icon-skip-forward"}}Auto-skip</button>
         <span id="playbackMode" class="tv-playback-mode"></span>
       </div>

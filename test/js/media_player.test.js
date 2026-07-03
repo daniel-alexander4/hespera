@@ -19,6 +19,9 @@ function fixture({ kind = 'tv', fileId = 7, prevFile = 0, nextFile = 0, osEnable
       <div id="mediaOverlay">
         <div id="audioPick" hidden><select id="audioSelect"></select></div>
         <div id="subPick" hidden><select id="subSelect"></select></div>
+        <div id="speedPick"><select id="speedSelect">
+          <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+        </select></div>
         <div id="tvTransport">
           <button id="tvPrevEpBtn" hidden></button>
           <button id="tvRewindBtn"></button>
@@ -252,4 +255,24 @@ test('the reload button re-loads the stream at the current position', async () =
   await flush();
   const src = video.getAttribute('src') || '';
   assert.ok(/[?&]start=42\b/.test(src), `reload re-anchors at the current position: got ${src}`);
+});
+
+test('playback speed: change sets playbackRate + persists; stored value applied on boot', async () => {
+  let env = await boot();
+  let video = env.document.getElementById('tvVideo');
+  const sel = env.document.getElementById('speedSelect');
+  sel.value = '1.5';
+  sel.dispatchEvent(new env.window.Event('change', { bubbles: true }));
+  assert.strictEqual(video.playbackRate, 1.5, 'change applies the rate');
+  assert.strictEqual(env.window.localStorage.getItem('tv_speed'), '1.5', 'rate persisted');
+
+  // A fresh boot with the stored value pre-selects and applies it.
+  env = await boot({ storage: { tv_speed: '2' } });
+  video = env.document.getElementById('tvVideo');
+  assert.strictEqual(video.playbackRate, 2, 'stored rate applied on boot');
+  assert.strictEqual(env.document.getElementById('speedSelect').value, '2');
+
+  // Garbage in storage falls back to 1× rather than an off-menu rate.
+  env = await boot({ storage: { tv_speed: '17' } });
+  assert.strictEqual(env.document.getElementById('tvVideo').playbackRate, 1);
 });
