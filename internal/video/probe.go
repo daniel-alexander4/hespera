@@ -96,6 +96,9 @@ type ProbeFormat struct {
 	Duration string `json:"duration"`
 	Size     string `json:"size"`
 	BitRate  string `json:"bit_rate"`
+	// CreationTime is the container's creation_time tag (RFC3339, usually UTC)
+	// when present — a home clip's capture timestamp (photoscan's By Date view).
+	CreationTime string `json:"creation_time,omitempty"`
 }
 
 type ProbeStream struct {
@@ -135,8 +138,17 @@ type rawProbeChapter struct {
 	} `json:"tags"`
 }
 
+type rawProbeFormat struct {
+	Duration string `json:"duration"`
+	Size     string `json:"size"`
+	BitRate  string `json:"bit_rate"`
+	Tags     struct {
+		CreationTime string `json:"creation_time"`
+	} `json:"tags"`
+}
+
 type rawProbeResult struct {
-	Format   ProbeFormat       `json:"format"`
+	Format   rawProbeFormat    `json:"format"`
 	Streams  []rawProbeStream  `json:"streams"`
 	Chapters []rawProbeChapter `json:"chapters"`
 }
@@ -173,7 +185,12 @@ func parseProbeJSON(data []byte) (*ProbeResult, error) {
 		return nil, fmt.Errorf("parse ffprobe json: %w", err)
 	}
 	result := &ProbeResult{
-		Format:  raw.Format,
+		Format: ProbeFormat{
+			Duration:     raw.Format.Duration,
+			Size:         raw.Format.Size,
+			BitRate:      raw.Format.BitRate,
+			CreationTime: raw.Format.Tags.CreationTime,
+		},
 		Streams: make([]ProbeStream, len(raw.Streams)),
 	}
 	for i, s := range raw.Streams {

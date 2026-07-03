@@ -264,6 +264,41 @@ CREATE TABLE IF NOT EXISTS movie_playback_progress (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Photos libraries: mixed still images + home-video clips, one row per file.
+-- No matching/identity — photos have no metadata provider; taken_at is the
+-- capture timestamp (EXIF > container creation_time > file mtime, per
+-- taken_source) driving the By Date view, dir_rel the Folders grouping.
+-- thumb_path: '' = pending generation, 'unavailable' = generation failed
+-- (undecodable format), else the id-keyed file under DataDir/thumbs/photos.
+CREATE TABLE IF NOT EXISTS photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+  abs_path TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'photo',
+  container TEXT NOT NULL DEFAULT '',
+  file_size_bytes INTEGER NOT NULL DEFAULT 0,
+  mtime_unix INTEGER NOT NULL DEFAULT 0,
+  taken_at TEXT NOT NULL DEFAULT '',
+  taken_source TEXT NOT NULL DEFAULT '',
+  orientation INTEGER NOT NULL DEFAULT 0,
+  stream_info_json TEXT NOT NULL DEFAULT '{}',
+  dir_rel TEXT NOT NULL DEFAULT '',
+  thumb_path TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(library_id, abs_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_photos_library_taken ON photos(library_id, taken_at);
+CREATE INDEX IF NOT EXISTS idx_photos_library_dir ON photos(library_id, dir_rel);
+
+CREATE TABLE IF NOT EXISTS photo_playback_progress (
+  file_id INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+  position_seconds REAL NOT NULL DEFAULT 0,
+  duration_seconds REAL NOT NULL DEFAULT 0,
+  completed INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS scan_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   library_id INTEGER NOT NULL DEFAULT 0,
