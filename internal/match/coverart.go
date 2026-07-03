@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,13 +168,39 @@ func pickBestImage(images []caaImage) string {
 }
 
 func (c *CAAClient) downloadAndSave(ctx context.Context, imgURL, hashKey string) (string, error) {
+	// CAA has historically returned some image/thumbnail fields as http://;
+	// both coverartarchive.org and the ia*.archive.org hosts its downloads
+	// redirect to serve https, so upgrade the scheme on those known hosts
+	// rather than letting the guard reject a legitimate cover.
+	if u, err := url.Parse(imgURL); err == nil && u.Scheme == "http" {
+		if h := u.Hostname(); h == "coverartarchive.org" || h == "archive.org" || strings.HasSuffix(h, ".archive.org") {
+			u.Scheme = "https"
+			imgURL = u.String()
+		}
+	}
+	// Same SSRF posture as the artist-image downloads (artistmeta.go): the URL
+	// comes from a third-party API response, so validate it and re-validate
+	// every redirect hop (CAA 307s to ia*.archive.org — public https, passes).
+	if err := imageURLGuard(imgURL); err != nil {
+		return "", err
+	}
+	client := &http.Client{
+		Timeout: c.client.Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			return imageURLGuard(req.URL.String())
+		},
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imgURL, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("User-Agent", mbUserAgent)
 
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
