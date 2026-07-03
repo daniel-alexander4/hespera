@@ -600,27 +600,6 @@
     true,
   );
 
-  // The era "play a year range" GET form → go to the player page with that
-  // range's queue (in place if already there), matching every other play control.
-  document.addEventListener(
-    'submit',
-    (e) => {
-      const form = e.target.closest && e.target.closest('[data-play-form]');
-      if (!form) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const qs = new URLSearchParams(new FormData(form)).toString();
-      if (location.pathname === '/music/player') {
-        playFromHref('?' + qs);
-      } else if (window.Turbo) {
-        window.Turbo.visit('/music/player?' + qs);
-      } else {
-        location.assign('/music/player?' + qs);
-      }
-    },
-    true,
-  );
-
   // If any other media starts (e.g. a TV video), pause the music so they don't
   // play over each other. 'play' doesn't bubble, so listen in the capture phase.
   document.addEventListener(
