@@ -51,10 +51,6 @@
           <input type="hidden" name="id" value="{{.ID}}" />
           <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
         </form>
-        <form method="post" action="/libraries/reprobe" class="inline-form" data-live-job title="Re-probe files missing stream info so every episode is seekable/resumable">
-          <input type="hidden" name="id" value="{{.ID}}" />
-          <button type="submit" class="btn btn-sm">{{template "icon-play"}}Verify playback</button>
-        </form>
         {{end}}
         {{if eq .Type "movies"}}
         <form method="post" action="/movies/match" class="inline-form" data-live-job>

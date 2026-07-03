@@ -23,7 +23,8 @@ var nativeContainers = map[string]bool{"mp4": true, "m4v": true, "mov": true}
 // it needs up front. Without it that path falls back to a live ffprobe on every
 // manifest request, or 500s outright when the live probe also fails. A normal
 // rescan won't heal these rows (the size+mtime fast-path skips re-probing an
-// unchanged file), which is why this is a separate job.
+// unchanged file), which is why this is a separate job, chained after every
+// TV scan.
 //
 // Fully-probed rows are left untouched. ffprobe is gated by the shared ffmpeg
 // semaphore (video.Probe acquires it), so a large backfill yields to live
