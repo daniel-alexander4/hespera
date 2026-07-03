@@ -134,6 +134,16 @@ func (h *Handler) effectiveIntegrityAutoRepair(ctx context.Context) bool {
 	return strings.TrimSpace(v) != "0"
 }
 
+// effectiveWatchEnabled reports whether the library filesystem watcher may
+// auto-trigger scans on file changes. Default ON — the watcher is the
+// zero-click ingest path; '0' turns it off without a restart (internal/watch
+// re-reads it at each debounce fire). The integrity_autorepair pattern.
+func (h *Handler) effectiveWatchEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='watch_enabled'").Scan(&v)
+	return strings.TrimSpace(v) != "0"
+}
+
 // effectiveLyricsEnabled reports whether synced-lyrics fetching + the
 // now-playing lyrics card are on. Default OFF (opt-in) — stored as '1' when
 // enabled, absent = off. The single source of truth for both the client (skips
@@ -218,6 +228,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesMasked":     osMask,
 			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
+			"WatchEnabled":            h.effectiveWatchEnabled(ctx),
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
@@ -290,6 +301,19 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				val = ""
 			}
 			if err := h.saveAPIKey(ctx, "integrity_autorepair", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["watch_present"]; ok {
+			// Default-ON kill-switch, same shape as integrity_autorepair.
+			val := "0"
+			if r.FormValue("watch_enabled") == "1" {
+				val = ""
+			}
+			if err := h.saveAPIKey(ctx, "watch_enabled", val); err != nil {
 				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 				return
 			}
@@ -626,37 +650,27 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		httpError(w, 400, "bad request", "parse form failed", "handler", "librariesScan", "err", err)
-		return
-	}
-	idStr := strings.TrimSpace(r.FormValue("id"))
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
-		http.Error(w, "invalid id", 400)
-		return
-	}
+// errUnsupportedLibraryType marks a scan request against a library type with
+// no scanner (photos/home_videos today).
+var errUnsupportedLibraryType = errors.New("scanning not supported for this library type")
 
+// EnqueueLibraryScan enqueues the full scan chain for a library — scan →
+// match → integrity_check → probe/loudness, per type. The one owner of the
+// chain: the Scan button (librariesScan), the management socket, and the
+// filesystem watcher all route through it. Returns sql.ErrNoRows for an
+// unknown library and errUnsupportedLibraryType for a type with no scanner.
+func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy string) (int64, error) {
 	var libType string
-	if err := h.db.QueryRowContext(r.Context(), "SELECT type FROM libraries WHERE id=?", id).Scan(&libType); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.NotFound(w, r)
-			return
-		}
-		httpError(w, 500, "internal server error", "db query failed", "handler", "librariesScan", "err", err)
-		return
+	if err := h.db.QueryRowContext(ctx, "SELECT type FROM libraries WHERE id=?", id).Scan(&libType); err != nil {
+		return 0, err
 	}
 
 	var jobID int64
+	var err error
 	switch libType {
 	case "music":
 		scanner := scan.New(h.cfg, h.db)
-		jobID, err = h.jobs.Enqueue("scan", id, "user", func(ctx context.Context, jID, libID int64) error {
+		jobID, err = h.jobs.Enqueue("scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := scanner.ScanMusic(ctx, jID, libID); err != nil {
 				return err
 			}
@@ -680,7 +694,7 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 		})
 	case "tv":
 		tvScanner := tvscan.New(h.cfg, h.db)
-		jobID, err = h.jobs.Enqueue("tvscan", id, "user", func(ctx context.Context, jID, libID int64) error {
+		jobID, err = h.jobs.Enqueue("tvscan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := tvScanner.ScanTV(ctx, jID, libID); err != nil {
 				return err
 			}
@@ -708,7 +722,7 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 		})
 	case "movies":
 		movieScanner := moviescan.New(h.cfg, h.db)
-		jobID, err = h.jobs.Enqueue("moviescan", id, "user", func(ctx context.Context, jID, libID int64) error {
+		jobID, err = h.jobs.Enqueue("moviescan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := movieScanner.ScanMovies(ctx, jID, libID); err != nil {
 				return err
 			}
@@ -732,23 +746,47 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 	default:
-		http.Error(w, "scanning not supported for this library type", 400)
+		return 0, errUnsupportedLibraryType
+	}
+	return jobID, err
+}
+
+func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "librariesScan", "err", err)
+		return
+	}
+	idStr := strings.TrimSpace(r.FormValue("id"))
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid id", 400)
+		return
+	}
+
+	jobID, err := h.EnqueueLibraryScan(r.Context(), id, "user")
 	if err != nil {
-		if errors.Is(err, jobs.ErrQueueFull) {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			http.NotFound(w, r)
+		case errors.Is(err, errUnsupportedLibraryType):
+			http.Error(w, "scanning not supported for this library type", 400)
+		case errors.Is(err, jobs.ErrQueueFull):
 			if requestWantsJSON(r) {
 				jsonErr(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "librariesScan", "err", err)
 				return
 			}
 			httpError(w, http.StatusServiceUnavailable, "service unavailable", "job queue full", "handler", "librariesScan", "err", err)
-			return
+		default:
+			if requestWantsJSON(r) {
+				jsonErr(w, 500, "internal server error", "enqueue scan failed", "handler", "librariesScan", "err", err)
+				return
+			}
+			httpError(w, 500, "internal server error", "enqueue scan failed", "handler", "librariesScan", "err", err)
 		}
-		if requestWantsJSON(r) {
-			jsonErr(w, 500, "internal server error", "enqueue scan failed", "handler", "librariesScan", "err", err)
-			return
-		}
-		httpError(w, 500, "internal server error", "enqueue scan failed", "handler", "librariesScan", "err", err)
 		return
 	}
 

@@ -236,6 +236,7 @@ var managedSettings = []settingSpec{
 	{Key: "opensubtitles_api_key", Kind: kindSecret, Env: "HESPERA_OPENSUBTITLES_API_KEY"},
 	{Key: "opensubtitles_user_agent", Kind: kindString, Env: "HESPERA_OPENSUBTITLES_USER_AGENT", Default: "Hespera v1.0"},
 	{Key: "integrity_autorepair", Kind: kindToggle, OnStored: "", OffStored: "0"},
+	{Key: "watch_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "lyrics_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "media_root", Kind: kindPath, Env: "HESPERA_MEDIA_ROOT", ApplyOnRestart: true},
 }
