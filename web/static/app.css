@@ -234,6 +234,22 @@ a:hover {
   border-color: var(--accent);
 }
 .topbar-btn .icon { width: 1.05rem; height: 1.05rem; display: block; }
+/* Version pill (update_pill.js): yellow = status unknown / checks off,
+   green = on the latest release, red = update available (click downloads). */
+.update-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  padding: 0 0.65rem;
+  border: none;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.update-pill.is-unknown { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
+.update-pill.is-current { background: var(--badge-success-bg); color: var(--badge-success-fg); }
+.update-pill.is-outdated { background: var(--badge-error-bg); color: var(--badge-error-fg); }
 /* Power button reads as destructive on hover. */
 .topbar-btn--power:hover {
   color: var(--danger);

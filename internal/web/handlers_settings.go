@@ -154,6 +154,17 @@ func (h *Handler) effectiveLyricsEnabled(ctx context.Context) bool {
 	return strings.TrimSpace(v) == "1"
 }
 
+// effectiveUpdateCheckEnabled reports whether the once-per-session automatic
+// update check (the topbar version pill's startup fetch) is on. Default OFF
+// (opt-in — no phone-home until the user asks for it): stored as '1' when
+// enabled, absent = off. The pill's click always checks regardless; this gates
+// only the automatic path.
+func (h *Handler) effectiveUpdateCheckEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='update_check_enabled'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -231,6 +242,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"WatchEnabled":            h.effectiveWatchEnabled(ctx),
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
 			"KeytraceEnabled":         h.effectiveKeytraceEnabled(ctx),
+			"UpdateCheckEnabled":      h.effectiveUpdateCheckEnabled(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -341,6 +353,19 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				val = "1"
 			}
 			if err := h.saveAPIKey(ctx, "keytrace_enabled", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["update_present"]; ok {
+			// Default-OFF opt-in automatic update check, same shape as lyrics_enabled.
+			val := ""
+			if r.FormValue("update_check_enabled") == "1" {
+				val = "1"
+			}
+			if err := h.saveAPIKey(ctx, "update_check_enabled", val); err != nil {
 				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 				return
 			}

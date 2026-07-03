@@ -239,6 +239,7 @@ var managedSettings = []settingSpec{
 	{Key: "watch_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "lyrics_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "keytrace_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
+	{Key: "update_check_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "media_root", Kind: kindPath, Env: "HESPERA_MEDIA_ROOT", ApplyOnRestart: true},
 }
 

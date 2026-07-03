@@ -174,4 +174,24 @@
     <a href="/settings" class="btn">Back</a>
   </div>
 </form>
+
+<form method="post" action="/settings/api-keys" class="form-card">
+  <input type="hidden" name="update_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="update_check_enabled" value="1"{{if .UpdateCheckEnabled}} checked{{end}} />
+      Check for updates automatically
+    </label>
+    <small class="form-help">
+      Off (default). On: once per session the topbar version pill checks the newest
+      published release &mdash; green means you're on the latest, red means an update
+      exists (click the pill to download it). Off, the pill stays yellow (status
+      unknown); clicking it still checks on demand. Nothing installs automatically.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
 {{end}}

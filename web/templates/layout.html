@@ -55,6 +55,7 @@
   <script src="{{staticv "/static/search.js"}}" defer></script>
   <script src="{{staticv "/static/playlist_picker.js"}}" defer></script>
   <script src="{{staticv "/static/keytrace.js"}}" defer></script>
+  <script src="{{staticv "/static/update_pill.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -101,6 +102,7 @@
     </div>
     <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
     <div class="topbar-controls">
+    <button type="button" id="update-pill" class="update-pill is-unknown" title="Installed version v{{appVersion}} — update status unknown. Click to check for updates.">v{{appVersion}}</button>
     <button type="button" class="topbar-btn" data-search-open aria-label="Search" title="Search ( / )">{{template "icon-search"}}</button>
     <button type="button" class="topbar-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
     <button type="button" class="topbar-btn" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
