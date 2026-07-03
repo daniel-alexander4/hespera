@@ -144,3 +144,25 @@ test('arrows inside a select stay native (no preventDefault)', () => {
   sel.dispatchEvent(e);
   assert.strictEqual(e.defaultPrevented, false);
 });
+
+test('focusFirst lands on the active subtab at tv scale (Recent when arriving from the topbar)', () => {
+  const env = boot({
+    body:
+      breadcrumb(['/']) +
+      '<a id="early" href="/x">earlier control</a>' +
+      '<div class="subtabs"><button class="subtab active" data-tab="recent">Recent</button><button class="subtab" data-tab="artists">Artists</button></div>' +
+      '<div id="tab-recent" class="subtab-panel active"></div>',
+    url: 'http://localhost/music',
+  });
+  env.document.dispatchEvent(new env.window.Event('turbo:load'));
+  assert.strictEqual(env.document.activeElement.textContent, 'Recent', 'ring lands on the active subtab, not the first control');
+
+  // Not at tv scale: no focus stealing on load.
+  const desk = boot({
+    body: '<div class="subtabs"><button class="subtab active" data-tab="recent">Recent</button></div>',
+    url: 'http://localhost/music',
+    couch: false,
+  });
+  desk.document.dispatchEvent(new desk.window.Event('turbo:load'));
+  assert.strictEqual(desk.document.activeElement, desk.document.body, 'desktop scale never steals focus');
+});
