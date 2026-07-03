@@ -14,6 +14,11 @@
 <div class="movie-actions">
   <a href="/movie/player?file={{.FileID}}" class="btn btn-primary">{{template "icon-play"}}{{if and .ResumePct (not .Completed)}}Resume{{else}}Play{{end}}</a>
   {{if and .ResumePct (not .Completed)}}<span class="form-help">{{.ResumePct}}% watched</span>{{end}}
+  <form method="post" action="/movie/mark-watched" class="inline-form">
+    <input type="hidden" name="tmdb" value="{{.TMDBID}}" />
+    <input type="hidden" name="watched" value="{{if .Completed}}0{{else}}1{{end}}" />
+    <button type="submit" class="btn btn-sm" title="{{if .Completed}}Mark unwatched{{else}}Mark watched{{end}}">{{if .Completed}}Unwatch{{else}}{{template "icon-check"}}Mark watched{{end}}</button>
+  </form>
 </div>
 {{else}}
 <p class="form-help">No playable file for this movie.</p>

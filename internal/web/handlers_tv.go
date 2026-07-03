@@ -2,12 +2,14 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -721,11 +723,105 @@ ORDER BY i.episode_numbers_csv
 		"Title":           fmt.Sprintf("%s — %s", showName, seasonName),
 		"ShowID":          seriesID,
 		"ShowName":        showName,
+		"SeasonNum":       seasonNum,
 		"SeasonName":      seasonName,
 		"SeasonOverview":  seasonOverview,
 		"Episodes":        episodes,
 		"MissingEpisodes": len(missingEps),
 	})
+}
+
+// tvMarkWatched sets or clears the watched flag without playback: a single
+// file (`file=N`) or a whole season (`series=X&season=N`), `watched=1|0`.
+// Marking watched keeps any partial position (completed alone drives the
+// watched semantics everywhere); marking unwatched resets position so the next
+// play starts fresh. Redirects back to the season page.
+func (h *Handler) tvMarkWatched(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "tvMarkWatched", "err", err)
+		return
+	}
+	watched := r.FormValue("watched") == "1"
+	seriesID := strings.TrimSpace(r.FormValue("series"))
+	season, seasonErr := strconv.Atoi(strings.TrimSpace(r.FormValue("season")))
+
+	var fileIDs []int64
+	if fileStr := strings.TrimSpace(r.FormValue("file")); fileStr != "" {
+		id, err := strconv.ParseInt(fileStr, 10, 64)
+		if err != nil || id <= 0 {
+			http.Error(w, "invalid file", 400)
+			return
+		}
+		fileIDs = append(fileIDs, id)
+	} else if seriesID != "" && seasonErr == nil {
+		rows, err := h.db.QueryContext(r.Context(), `
+SELECT f.id FROM tv_series_identities i
+JOIN tv_series_files f ON f.id = i.file_id
+WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'matched'`, seriesID, season)
+		if err != nil {
+			httpError(w, 500, "internal server error", "db query failed", "handler", "tvMarkWatched", "err", err)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				httpError(w, 500, "internal server error", "row scan failed", "handler", "tvMarkWatched", "err", err)
+				return
+			}
+			fileIDs = append(fileIDs, id)
+		}
+		if err := rows.Err(); err != nil {
+			httpError(w, 500, "internal server error", "rows iteration failed", "handler", "tvMarkWatched", "err", err)
+			return
+		}
+	} else {
+		http.Error(w, "file or series+season required", 400)
+		return
+	}
+
+	if err := markWatched(r.Context(), h.db, "tv_playback_progress", fileIDs, watched); err != nil {
+		httpError(w, 500, "internal server error", "db upsert failed", "handler", "tvMarkWatched", "err", err)
+		return
+	}
+
+	if seriesID != "" && seasonErr == nil {
+		http.Redirect(w, r, fmt.Sprintf("/tv/season/?series=%s&season=%d", url.QueryEscape(seriesID), season), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/tv", http.StatusSeeOther)
+}
+
+// markWatched upserts the completed flag for a set of files in one progress
+// table (`tv_playback_progress` / `movie_playback_progress` — identical shape).
+// Unwatching zeroes the position so a replay starts from the top.
+func markWatched(ctx context.Context, db *sql.DB, table string, fileIDs []int64, watched bool) error {
+	completed := 0
+	if watched {
+		completed = 1
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range fileIDs {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO `+table+` (file_id, position_seconds, duration_seconds, completed, updated_at)
+VALUES (?, 0, 0, ?, datetime('now'))
+ON CONFLICT(file_id) DO UPDATE SET
+  completed = excluded.completed,
+  position_seconds = CASE WHEN excluded.completed = 1 THEN position_seconds ELSE 0 END,
+  updated_at = datetime('now')
+`, id, completed); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // missingEpisodes returns rows for episodes in the cached TMDB season that have
