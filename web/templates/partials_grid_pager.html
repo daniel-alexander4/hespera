@@ -1,14 +1,16 @@
-{{/* Grid pager — the mouse/remote affordance that replaces the bottom Prev/Next
-     on the artist/movie/TV browse grids. The primary interaction is remote:
-     grid_pager.js flips the grid in place when you move off its right/left edge
-     (see the controller). These ‹ › chevrons are the mouse path + a discovery
-     hint; they're fixed to the screen edges and click to advance/retreat in
-     place. Rendered only when there's more than one page. Takes a pageNav. */}}
+{{/* Grid pager — the mouse affordance for the in-place-paged artist/movie/TV
+     browse grids. The primary interaction is remote/keyboard: grid_pager.js
+     flips the grid in place when you move off any edge (→/↓ next, ←/↑ prev,
+     wrapping at both ends — see the controller). These ‹ › chevrons, fixed to
+     the screen edges, are the mouse path: CSS reveals them only while the
+     mouse is the active input (html.using-mouse). With wraparound both are
+     always meaningful, so neither is ever hidden by page position. Rendered
+     only when there's more than one page. Takes a pageNav. */}}
 {{define "grid-pager"}}
 {{if gt .TotalPages 1}}
 <nav class="grid-pager" aria-label="Pagination" data-total-pages="{{.TotalPages}}">
-  <a class="grid-pager-btn grid-pager-prev{{if not .HasPrev}} is-hidden{{end}}" href="{{.BasePath}}?{{if .Query}}{{.Query}}&{{end}}page={{.PrevPage}}" rel="prev" aria-label="Previous page" title="Previous page">{{template "icon-chevron-left"}}</a>
-  <a class="grid-pager-btn grid-pager-next{{if not .HasNext}} is-hidden{{end}}" href="{{.BasePath}}?{{if .Query}}{{.Query}}&{{end}}page={{.NextPage}}" rel="next" aria-label="Next page" title="Next page">{{template "icon-chevron-right"}}</a>
+  <a class="grid-pager-btn grid-pager-prev" href="{{.BasePath}}?{{if .Query}}{{.Query}}&{{end}}page={{.PrevPage}}" rel="prev" aria-label="Previous page" title="Previous page">{{template "icon-chevron-left"}}</a>
+  <a class="grid-pager-btn grid-pager-next" href="{{.BasePath}}?{{if .Query}}{{.Query}}&{{end}}page={{.NextPage}}" rel="next" aria-label="Next page" title="Next page">{{template "icon-chevron-right"}}</a>
   <span class="grid-pager-info" aria-live="polite">Page {{.Page}} of {{.TotalPages}}</span>
 </nav>
 {{end}}

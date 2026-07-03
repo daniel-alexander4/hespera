@@ -1,17 +1,22 @@
 // grid_pager.js — remote-native, in-place paging for the artist/movie/TV browse
 // grids (the ones tagged `.band-albums-grid[data-grid-pager]`).
 //
-// Instead of a bottom Prev/Next that reloads the page, the grid refills in place
-// with the next screenful when you move a remote past its right edge (and back
-// past its left edge) — the couch interaction Dan asked for. The ‹ › chevrons
-// fixed to the screen edges are the mouse path + a discovery hint; both call the
-// same advance/retreat. The adjacent page is prefetched and cached (a Map keyed
-// by page) so a flip is instant.
+// Instead of a bottom Prev/Next that reloads the page, the grid refills in
+// place when you move past its edge in any direction: rightmost card + → or
+// bottom row + ↓ advances; leftmost card + ← or top row + ↑ retreats. Paging
+// is continuous — it wraps at both ends (page 1 ← → last page). The ‹ ›
+// chevrons fixed to the screen edges are the mouse path; they're revealed only
+// while the mouse is the active input (html.using-mouse, tracked by couch.js)
+// so remote/keyboard users never see them. The adjacent pages are prefetched
+// and cached (a Map keyed by page) so a flip is instant.
+//
+// Escape (couch.js's staged Back) is the way OUT of the grid to the subtab
+// menu bar above it — ↑ pages rather than leaving, by design.
 //
 // Couch seam: couch.js binds keydown on `document`; a listener on the grid
-// element fires first (bubble phase), so at a horizontal edge we advance and
-// stopPropagation so couch.js never runs its spatial fallback. Off the edge, we
-// leave the event alone and couch.js moves the ring normally.
+// element fires first (bubble phase), so at an edge we page and
+// stopPropagation so couch.js never runs its spatial fallback. Off the edge,
+// we leave the event alone and couch.js moves the ring normally.
 (function () {
   'use strict';
 
@@ -31,6 +36,8 @@
     const nav = panel.querySelector('.grid-pager');
     const key = (p) => base + '|' + p + '|' + q;
     const url = (p) => base + '?grid=1&page=' + p + (q ? '&q=' + encodeURIComponent(q) : '');
+    const wrapNext = () => (page >= total ? 1 : page + 1);
+    const wrapPrev = () => (page <= 1 ? total : page - 1);
     let navigating = false;
 
     async function fetchPage(p) {
@@ -52,15 +59,12 @@
       if (!nav) return;
       const info = nav.querySelector('.grid-pager-info');
       if (info) info.textContent = 'Page ' + page + ' of ' + total;
-      const prev = nav.querySelector('.grid-pager-prev');
-      const next = nav.querySelector('.grid-pager-next');
-      if (prev) prev.classList.toggle('is-hidden', page <= 1);
-      if (next) next.classList.toggle('is-hidden', page >= total);
     }
 
-    // Swap to page p. `focusEnd` lands the couch ring on the last card (when
-    // retreating leftward) instead of the first, so left/right feels continuous.
-    async function goTo(p, focusEnd) {
+    // Swap to page p. `focus` (keyboard-driven flips only — a chevron click
+    // must not steal the mouse user's focus) lands on the last card when
+    // retreating and the first when advancing, so paging feels continuous.
+    async function goTo(p, focus, focusEnd) {
       if (navigating || p < 1 || p > total || p === page) return;
       navigating = true;
       try {
@@ -70,44 +74,53 @@
         page = p;
         grid.dataset.page = String(p);
         updateNav();
-        if (document.documentElement.getAttribute('data-couch') === '1') {
+        if (focus) {
           const cards = grid.querySelectorAll('.band-album-card');
           const target = focusEnd ? cards[cards.length - 1] : cards[0];
           if (target) target.focus();
         }
-        prefetch(p + 1);
-        prefetch(p - 1);
+        prefetch(wrapNext());
+        prefetch(wrapPrev());
       } finally {
         navigating = false;
       }
     }
-    const advance = () => goTo(page + 1, false);
-    const retreat = () => goTo(page - 1, true);
+    const advance = (focus) => goTo(wrapNext(), focus, false);
+    const retreat = (focus) => goTo(wrapPrev(), focus, true);
 
-    // True when `el` has no card further in `dir` within its own row — i.e. it
-    // sits on the grid's left/right edge. Mirrors couch.js's row-overlap test.
+    // True when `el` has no card further in `dir` within its own row (for
+    // left/right) or column (for up/down) — i.e. it sits on that edge of the
+    // grid. Mirrors couch.js's cross-axis overlap test.
     function atEdge(el, dir) {
       const r = el.getBoundingClientRect();
+      const horizontal = dir === 'left' || dir === 'right';
       for (const c of grid.children) {
         if (c === el) continue;
         const cr = c.getBoundingClientRect();
-        if (cr.bottom <= r.top || cr.top >= r.bottom) continue; // not same row
-        if (dir === 'right' && cr.left > r.left + 1) return false;
-        if (dir === 'left' && cr.left < r.left - 1) return false;
+        if (horizontal) {
+          if (cr.bottom <= r.top || cr.top >= r.bottom) continue; // not same row
+          if (dir === 'right' && cr.left > r.left + 1) return false;
+          if (dir === 'left' && cr.left < r.left - 1) return false;
+        } else {
+          if (cr.right <= r.left || cr.left >= r.right) continue; // not same column
+          if (dir === 'down' && cr.top > r.top + 1) return false;
+          if (dir === 'up' && cr.top < r.top - 1) return false;
+        }
       }
       return true;
     }
 
+    const KEY_DIRS = { ArrowRight: 'right', ArrowLeft: 'left', ArrowDown: 'down', ArrowUp: 'up' };
     grid.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const dir = KEY_DIRS[e.key];
+      if (!dir) return;
       const active = document.activeElement;
       if (!active || !grid.contains(active)) return;
-      const dir = e.key === 'ArrowRight' ? 'right' : 'left';
       if (!atEdge(active, dir)) return; // not at the edge — let couch.js move normally
       e.preventDefault();
       e.stopPropagation(); // suppress couch.js's spatial fallback for this edge press
-      if (dir === 'right') advance();
-      else retreat();
+      if (dir === 'right' || dir === 'down') advance(true);
+      else retreat(true);
     });
 
     if (nav) {
@@ -115,13 +128,13 @@
         const a = e.target.closest && e.target.closest('a');
         if (!a) return;
         e.preventDefault();
-        if (a.classList.contains('grid-pager-next')) advance();
-        else if (a.classList.contains('grid-pager-prev')) retreat();
+        if (a.classList.contains('grid-pager-next')) advance(false);
+        else if (a.classList.contains('grid-pager-prev')) retreat(false);
       });
     }
 
     updateNav();
-    prefetch(page + 1); // warm the next page so the first flip is instant
+    prefetch(wrapNext()); // warm the next page so the first flip is instant
   }
 
   const init = () => document.querySelectorAll('.band-albums-grid[data-grid-pager]').forEach(initGrid);
