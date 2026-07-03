@@ -19,6 +19,7 @@ import (
 	"hespera/internal/db"
 	"hespera/internal/singleton"
 	"hespera/internal/video"
+	"hespera/internal/watch"
 	"hespera/internal/web"
 )
 
@@ -116,6 +117,20 @@ func main() {
 		slog.Info("management socket listening", "path", config.ManagementSocketPath(cfg.DataDir))
 	}
 
+	// Library filesystem watcher: new media triggers the scan chain with zero
+	// clicks (debounced per library; the watch_enabled setting is its runtime
+	// kill-switch). Best-effort — without it the Scan button still works.
+	watcher, err := watch.New(dbConn, func(libID int64) {
+		if _, err := h.EnqueueLibraryScan(context.Background(), libID, "watch"); err != nil {
+			slog.Warn("auto-scan enqueue failed", "library_id", libID, "err", err)
+		} else {
+			slog.Info("auto-scan triggered by file change", "library_id", libID)
+		}
+	}, 30*time.Second, 30*time.Second)
+	if err != nil {
+		slog.Warn("library watcher unavailable", "err", err)
+	}
+
 	// App mode opens a chromeless browser window and binds a random loopback
 	// port — Hespera runs as a single-machine app. HESPERA_NO_BROWSER opts out
 	// (server/headless), keeping the env-configured listen address. An
@@ -191,6 +206,9 @@ func main() {
 		if err := mgmt.Close(); err != nil {
 			slog.Warn("management socket shutdown", "err", err)
 		}
+	}
+	if watcher != nil {
+		_ = watcher.Close()
 	}
 	h.Shutdown()
 	slog.Info("shutdown complete")

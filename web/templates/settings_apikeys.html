@@ -120,6 +120,23 @@
 </form>
 
 <form method="post" action="/settings/api-keys" class="form-card">
+  <input type="hidden" name="watch_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="watch_enabled" value="1"{{if .WatchEnabled}} checked{{end}} />
+      Auto-scan on library changes
+    </label>
+    <small class="form-help">
+      Watch the library folders and run the usual scan chain automatically when files
+      are added, moved, or removed — new media appears without clicking Scan.
+      Debounced, so a copy in progress doesn't trigger mid-write; a scan already
+      running is never doubled. Turn off to scan only via the Libraries page.
+    </small>
+  </div>
+  <button type="submit" class="btn btn-primary">Save</button>
+</form>
+
+<form method="post" action="/settings/api-keys" class="form-card">
   <input type="hidden" name="lyrics_present" value="1" />
   <div class="form-group">
     <label class="form-check">

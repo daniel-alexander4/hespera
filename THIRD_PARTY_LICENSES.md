@@ -25,6 +25,7 @@ in that directory's README.
 
 - **github.com/bogem/id3v2/v2** — MIT License.
 - **github.com/dhowden/tag** — BSD-2-Clause License.
+- **github.com/fsnotify/fsnotify** — BSD-3-Clause License.
 - **github.com/gcottom/audiometa/v3** — MIT License (Copyright © 2024 Gage Cottom). The published module omits the `LICENSE` file; the license is in the upstream repository: <https://github.com/gcottom/audiometa/blob/main/LICENSE.md>.
 - **modernc.org/sqlite** — BSD-3-Clause License. The pure-Go translation of the SQLite amalgamation it bundles is itself in the public domain (the SQLite blessing; see the module's `SQLITE-LICENSE`).
 

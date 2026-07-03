@@ -12,6 +12,8 @@ github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8 h1:OtSeLS5y0Uy01jaKK4m
 github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8/go.mod h1:apkPC/CR3s48O2D7Y++n1XWEpgPNNCjXYga3PPbJe2E=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
+github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx59Ho=
+github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
 github.com/gcottom/audiometa/v3 v3.0.4 h1:uVroqEtpVTb1CKfQVguMaA+hgZvQUU2FNdQdtumdXdc=
 github.com/gcottom/audiometa/v3 v3.0.4/go.mod h1:leKAd+cCn/utjZkiaeerCs1rAQPxw7GFcbANXL35kxg=
 github.com/gcottom/flacmeta v0.0.6 h1:NilXb0pRRZhGVb2alnfPoepyqJAkNTdV7NEttIvMbLg=
