@@ -1,8 +1,9 @@
 // Tests for web/static/couch.js — the remote/keyboard navigation layer (always
 // on; couch mode is display-only). jsdom drives the real IIFE through
 // dispatched keydown events. These cover the Back button's staged walk-up
-// (overlay/menu guards, subtab-panel → menu bar, semantic parent, history
-// fallback, typing guard, broadened keycodes) and the always-on behavior.
+// (overlay/menu guards, subtab-panel → menu bar, then history.back() —
+// Back retraces browsing history; the breadcrumb is the way UP — typing
+// guard, broadened keycodes) and the always-on behavior.
 // What jsdom can't model — the visible()/overlay-dismiss path and spatial
 // arrow focus both need real layout (getBoundingClientRect) — stays in the
 // Playwright/manual smoke.
@@ -38,31 +39,33 @@ function pressKey(env, key, target) {
 const breadcrumb = (hrefs) =>
   `<nav class="breadcrumb"><ol>${hrefs.map((h) => `<li><a href="${h}">x</a></li>`).join('')}</ol></nav>`;
 
-test('Back navigates to the breadcrumb\'s last crumb (immediate parent)', () => {
+test('Back retraces history even on a breadcrumbed page (breadcrumb is the way UP, Back the way BACK)', () => {
   const env = boot({ body: breadcrumb(['/', '/music', '/music/artist/1']) });
   pressKey(env, 'Escape');
-  assert.deepStrictEqual(env.visited, ['/music/artist/1']);
-  assert.strictEqual(env.backCalls.length, 0);
+  assert.strictEqual(env.visited.length, 0, 'no Turbo.visit — Back must never push a parent entry');
+  assert.strictEqual(env.backCalls.length, 1);
 });
 
-test('every broadened back keycode triggers the parent climb', () => {
+test('every broadened back keycode triggers history.back()', () => {
   for (const key of ['Backspace', 'Escape', 'BrowserBack', 'GoBack']) {
     const env = boot({ body: breadcrumb(['/', '/music']) });
     pressKey(env, key);
-    assert.deepStrictEqual(env.visited, ['/music'], `key ${key}`);
+    assert.strictEqual(env.backCalls.length, 1, `key ${key}`);
+    assert.strictEqual(env.visited.length, 0, `key ${key}`);
   }
 });
 
-test('a breadcrumb-less player page climbs to its data-couch-parent', () => {
+test('a player page retraces history back to wherever it was opened from', () => {
   const env = boot({
-    body: '<div class="tv-player-page" data-couch-parent="/tv/series/42"></div>',
+    body: '<div class="tv-player-page"></div>',
     url: 'http://localhost/tv/player',
   });
   pressKey(env, 'Escape');
-  assert.deepStrictEqual(env.visited, ['/tv/series/42']);
+  assert.strictEqual(env.visited.length, 0);
+  assert.strictEqual(env.backCalls.length, 1);
 });
 
-test('a page with no parent falls back to history.back()', () => {
+test('Back on the root page also retraces history', () => {
   const env = boot({ body: '<h1>Home</h1>', url: 'http://localhost/' });
   pressKey(env, 'Escape');
   assert.strictEqual(env.visited.length, 0);
@@ -85,18 +88,18 @@ test('Escape inside a text field blurs it (exits the trap) without navigating', 
   assert.notStrictEqual(env.document.activeElement, input); // focus left the field
   assert.strictEqual(env.visited.length, 0); // first press only exits — no navigation
   assert.strictEqual(env.backCalls.length, 0);
-  // The next Escape (no longer typing) climbs to the parent as usual.
+  // The next Escape (no longer typing) retraces history as usual.
   pressKey(env, 'Escape');
-  assert.deepStrictEqual(env.visited, ['/music']);
+  assert.strictEqual(env.backCalls.length, 1);
 });
 
 test('navigation is always on — Back works without the tv scale class', () => {
   const env = boot({ body: breadcrumb(['/', '/music']), couch: false });
   pressKey(env, 'Escape');
-  assert.deepStrictEqual(env.visited, ['/music']);
+  assert.strictEqual(env.backCalls.length, 1);
 });
 
-test('Back from inside a subtab panel focuses the menu bar, second press climbs', () => {
+test('Back from inside a subtab panel focuses the menu bar, second press goes back', () => {
   const env = boot({
     body:
       breadcrumb(['/']) +
@@ -108,9 +111,10 @@ test('Back from inside a subtab panel focuses the menu bar, second press climbs'
   card.focus();
   pressKey(env, 'Escape', card);
   assert.strictEqual(env.visited.length, 0, 'first press must not navigate');
+  assert.strictEqual(env.backCalls.length, 0, 'first press must not navigate');
   assert.strictEqual(env.document.activeElement.className, 'subtab active');
   pressKey(env, 'Escape', env.document.activeElement);
-  assert.deepStrictEqual(env.visited, ['/'], 'second press climbs to the parent');
+  assert.strictEqual(env.backCalls.length, 1, 'second press retraces history');
 });
 
 test('Back yields to native fullscreen (Escape exits fullscreen, no navigation)', () => {
@@ -174,9 +178,9 @@ test('Back on an engaged control releases it without navigating; the next Back n
   assert.strictEqual(range.hasAttribute('data-couch-engaged'), true, 'range engages via Enter');
   pressOn(env, range, 'Escape');
   assert.strictEqual(range.hasAttribute('data-couch-engaged'), false, 'Back releases');
-  assert.strictEqual(env.visited.length, 0, 'the releasing press does not navigate');
+  assert.strictEqual(env.backCalls.length, 0, 'the releasing press does not navigate');
   pressOn(env, range, 'Escape');
-  assert.deepStrictEqual(env.visited, ['/music'], 'once released, Back climbs as usual');
+  assert.strictEqual(env.backCalls.length, 1, 'once released, Back retraces history as usual');
 });
 
 test('a [data-couch-capture] widget joins the protocol', () => {

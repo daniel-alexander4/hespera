@@ -7,9 +7,10 @@
 // nicety keyed to the tv scale class is auto-focusing a starting element after
 // each render (focusFirst) — on a desk it would steal focus for no benefit.
 //
-// Back walks up the hierarchy in stages, like a TV remote's back button:
+// Back walks up the UI in stages, then retraces browsing history:
 // dismiss an open overlay/menu → pull focus out of a subtab panel onto its
-// menu bar → climb to the breadcrumb's semantic parent → history.back().
+// menu bar → history.back(). Repeated presses reverse through the pages you
+// actually visited (going "up" a level instead is the breadcrumb's job).
 //
 // Overlay contract: an element tagged [data-couch-overlay] that is currently
 // visible (any hide mechanism — display:none via class, attribute, or inline
@@ -87,22 +88,6 @@
   // depending on the dongle/OS (Flirc, BT, CEC, webOS/Android TV), so catch them
   // all — otherwise the behaviour depends on which code the remote happens to send.
   const BACK_KEYS = new Set(['Backspace', 'Escape', 'BrowserBack', 'GoBack']);
-
-  // The current page's semantic parent, so Back climbs the hierarchy like a TV
-  // remote's up button (Album → Artist → Music → Home) rather than retracing
-  // browsing history. The breadcrumb already encodes the parent chain, so its
-  // LAST crumb IS the immediate parent; the breadcrumb-less immersive players
-  // carry the same target in [data-couch-parent]. Null → no known parent.
-  const parentHref = () => {
-    const crumbs = document.querySelectorAll('.breadcrumb a[href]');
-    if (crumbs.length) return crumbs[crumbs.length - 1].getAttribute('href');
-    const hint = document.querySelector('[data-couch-parent]');
-    return hint ? hint.getAttribute('data-couch-parent') : null;
-  };
-  const navigateUp = (href) => {
-    if (window.Turbo && typeof window.Turbo.visit === 'function') window.Turbo.visit(href);
-    else window.location.href = href;
-  };
 
   // Input-modality tracking: mouse presence reveals mouse-only affordances
   // (html.using-mouse in CSS); any handled key hands control back to the
@@ -202,15 +187,18 @@
       }
       // Stage 2 (subtab pages): pull focus out of the content panel onto its
       // menu bar — the remote-Back way OUT of a grid whose ↑ pages instead of
-      // leaving (grid_pager.js). Second press then climbs to the parent.
+      // leaving (grid_pager.js). Second press then goes back.
       const active = document.activeElement;
       if (active && active.closest && active.closest('.subtab-panel')) {
         const menu = document.querySelector('.subtab.active') || document.querySelector('.subtab');
         if (menu) { menu.focus(); return; }
       }
-      const parent = parentHref();
-      if (parent) { navigateUp(parent); return; } // climb to the semantic parent
-      history.back(); // root/unknown-parent pages: retrace history
+      // Retrace browsing history — each press one real step back. Navigating
+      // to the parent instead would push entries and bury the history under
+      // pages never visited (the old ping-pong at Home); the breadcrumb is
+      // the way UP, Back is the way BACK. At history's first entry this is a
+      // native no-op, which is fine.
+      history.back();
     }
     // Enter / OK is left to native behavior (activates links and buttons).
   });
