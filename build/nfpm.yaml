@@ -44,5 +44,7 @@ contents:
       mode: 0644
   - src: THIRD_PARTY_LICENSES.md
     dst: /usr/share/doc/hespera/THIRD_PARTY_LICENSES.md
+  - src: third_party/licenses
+    dst: /usr/share/doc/hespera/licenses
     file_info:
       mode: 0644
