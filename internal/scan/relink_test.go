@@ -60,6 +60,12 @@ func TestRelinkMovedTracks(t *testing.T) {
 		if _, err := db.Exec(`INSERT INTO lyrics_cache (track_id, provider_key, lyrics_text) VALUES (?, 'lrclib', 'la la')`, oldID); err != nil {
 			t.Fatalf("seed lyrics_cache: %v", err)
 		}
+		if _, err := db.Exec(`INSERT INTO playlists (name) VALUES ('P')`); err != nil {
+			t.Fatalf("seed playlist: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (1, ?, 1)`, oldID); err != nil {
+			t.Fatalf("seed playlist_tracks: %v", err)
+		}
 
 		if err := s.relinkMovedTracks(ctx, libID, root); err != nil {
 			t.Fatalf("relinkMovedTracks: %v", err)
@@ -77,6 +83,12 @@ func TestRelinkMovedTracks(t *testing.T) {
 		}
 		if trackID != newID {
 			t.Fatalf("lyrics_cache not re-pointed: got %d want %d", trackID, newID)
+		}
+		if err := db.QueryRow(`SELECT track_id FROM playlist_tracks`).Scan(&trackID); err != nil {
+			t.Fatalf("read playlist_tracks: %v", err)
+		}
+		if trackID != newID {
+			t.Fatalf("playlist_tracks not re-pointed: got %d want %d", trackID, newID)
 		}
 
 		// Prune the orphan; the re-pointed history must survive the cascade.

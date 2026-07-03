@@ -35,7 +35,7 @@ var stubPages = []string{
 	"home.html", "libraries.html", "libraries_new.html", "integrity_report.html",
 	"settings.html", "settings_jobs.html", "music_home.html", "music_artist.html",
 	"music_artist_external.html", "music_artist_disambiguate.html", "music_artist_art.html",
-	"music_album.html", "music_albums.html", "music_compilations.html", "player.html",
+	"music_album.html", "music_albums.html", "music_compilations.html", "music_playlist.html", "player.html",
 	"music_match_review.html", "music_album_edit.html", "music_track_edit.html", "music_duplicates.html",
 	"settings_tags.html", "settings_apikeys.html", "settings_about.html", "tv_home.html", "tv_series.html",
 	"tv_season.html", "tv_match_review.html", "tv_player.html", "person.html",
@@ -145,7 +145,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 32
+	expectedPages := 33
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}

@@ -53,6 +53,7 @@
   <script src="{{staticv "/static/era_slider.js"}}" defer></script>
   <script src="{{staticv "/static/grid_pager.js"}}" defer></script>
   <script src="{{staticv "/static/search.js"}}" defer></script>
+  <script src="{{staticv "/static/playlist_picker.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -114,6 +115,25 @@
   <footer class="footer">
     <div>Hespera</div>
   </footer>
+
+  {{/* Add-to-playlist picker (playlist_picker.js) — opened by any
+       [data-playlist-add] (album track rows, the transport's Add) or
+       [data-playlist-save] (save the current queue). Same couch-overlay
+       pattern as the search palette; re-rendered closed per Turbo swap. */}}
+  <div id="plpick-modal" class="playlist-modal hidden" data-couch-overlay>
+    <div class="playlist-panel">
+      <div class="plpick-head">
+        <strong id="plpick-title">Add to playlist</strong>
+        <button id="plpick-close" type="button" class="btn btn-sm" data-couch-dismiss aria-label="Close">Close</button>
+      </div>
+      <ol id="plpick-list" class="tracks"></ol>
+      <form id="plpick-new" class="plpick-new">
+        <input id="plpick-name" type="text" class="input" placeholder="New playlist…" maxlength="120" autocomplete="off" />
+        <button type="submit" class="btn btn-sm btn-primary">Create</button>
+      </form>
+      <p id="plpick-status" class="form-help"></p>
+    </div>
+  </div>
 
   {{/* Global search palette — the "/" jump-to (search.js). A couch overlay:
        Back dismisses via the Close button; while visible, couch.js scopes

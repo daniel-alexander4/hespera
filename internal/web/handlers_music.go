@@ -311,6 +311,7 @@ LIMIT ?
 		"Compilations":        compilations,
 		"MoreCompilations":    moreCompilations,
 		"EraPicker":           h.eraPicker(r.Context(), libraryID),
+		"Playlists":           h.loadPlaylistRows(r.Context()),
 	})
 }
 
@@ -1606,15 +1607,34 @@ type playerQueue struct {
 }
 
 // buildPlayerQueue resolves the ?source= switch (single album / all / popular /
-// era) into an ordered queue. notFound signals invalid params (→ 404); err is a
-// server error. It is the one owner of player queue-building; both the HTML
-// now-playing view and the /music/queue JSON endpoint route through it so the
-// queue never grows a second, drifting copy.
+// era / playlist / mix) into an ordered queue. notFound signals invalid params
+// (→ 404); err is a server error. It is the one owner of player queue-building;
+// both the HTML now-playing view and the /music/queue JSON endpoint route
+// through it so the queue never grows a second, drifting copy.
 func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound bool, err error) {
 	source := strings.TrimSpace(r.URL.Query().Get("source"))
 	q.BackURL = "/music"
 
 	switch source {
+	case "playlist":
+		playlistID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("playlist")), 10, 64)
+		if perr != nil || playlistID <= 0 {
+			return q, true, nil
+		}
+		if qerr := h.db.QueryRowContext(r.Context(),
+			"SELECT name FROM playlists WHERE id=?", playlistID).Scan(&q.Title); qerr != nil {
+			return q, true, nil
+		}
+		q.BackURL = fmt.Sprintf("/music/playlist?id=%d", playlistID)
+		q.Tracks, err = h.queryPlayerTracks(r.Context(),
+			playerTrackSelect+` JOIN playlist_tracks pt ON pt.track_id=t.id WHERE pt.playlist_id=? ORDER BY pt.position`, playlistID)
+	case "mix":
+		artistID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("artist")), 10, 64)
+		seedTrackID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("track")), 10, 64)
+		if artistID <= 0 && seedTrackID <= 0 {
+			return q, true, nil
+		}
+		return h.buildMixQueue(r.Context(), artistID, seedTrackID)
 	case "all":
 		libraryID := h.resolveMusicLibraryID(r)
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),

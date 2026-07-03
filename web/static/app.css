@@ -1164,6 +1164,52 @@ html.using-mouse .grid-pager-btn,
   color: var(--accent-hover);
   background: var(--accent-bg);
 }
+/* Per-track icon buttons (add-to-playlist, instant mix) — compact, muted until
+   hovered, matching the Edit link's weight. */
+.track-row-btn {
+  flex-shrink: 0;
+  padding: 0.1rem 0.35rem;
+  color: var(--text-soft);
+  border: none;
+  background: none;
+}
+.track-row-btn:hover,
+.track-row-btn:focus-visible {
+  color: var(--accent-hover);
+  background: var(--accent-bg);
+}
+.track-row-btn .icon {
+  width: 1em;
+  height: 1em;
+}
+
+/* Add-to-playlist picker (#plpick-modal, playlist_picker.js) */
+.plpick-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.plpick-new {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.plpick-new .input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Playlist rows on the music-home Playlists section */
+.playlists-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.playlists-row .playlists-link {
+  flex: 1;
+  min-width: 0;
+}
 
 /* Player page */
 .player-page {

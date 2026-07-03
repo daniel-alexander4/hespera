@@ -727,12 +727,12 @@ func (s *Scanner) relinkMovedTracks(ctx context.Context, libraryID int64, root s
 	return nil
 }
 
-// transferTrackState re-points a moved track's play history and lyrics cache
-// from the orphaned old row (fromID) onto the new row (toID). The orphan itself
-// is deleted afterwards by pruneMissingTracks.
+// transferTrackState re-points a moved track's play history, lyrics cache, and
+// playlist membership from the orphaned old row (fromID) onto the new row
+// (toID). The orphan itself is deleted afterwards by pruneMissingTracks.
 func (s *Scanner) transferTrackState(ctx context.Context, fromID, toID int64) error {
-	// One transaction so a failure on the second update doesn't leave play_history
-	// re-pointed while lyrics_cache still references the about-to-be-pruned orphan.
+	// One transaction so a failure on a later update doesn't leave play_history
+	// re-pointed while the rest still references the about-to-be-pruned orphan.
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transfer: %w", err)
@@ -745,6 +745,17 @@ func (s *Scanner) transferTrackState(ctx context.Context, fromID, toID int64) er
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE lyrics_cache SET track_id=? WHERE track_id=?`, toID, fromID); err != nil {
 		return fmt.Errorf("transfer lyrics_cache: %w", err)
+	}
+	// OR IGNORE: if a playlist somehow already contains the new row, the PK
+	// (playlist_id, track_id) blocks the re-point — drop the orphan's entry
+	// instead of failing (prune would cascade it anyway).
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE OR IGNORE playlist_tracks SET track_id=? WHERE track_id=?`, toID, fromID); err != nil {
+		return fmt.Errorf("transfer playlist_tracks: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM playlist_tracks WHERE track_id=?`, fromID); err != nil {
+		return fmt.Errorf("clear orphan playlist_tracks: %w", err)
 	}
 	return tx.Commit()
 }

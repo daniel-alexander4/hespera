@@ -42,7 +42,7 @@ Config: `internal/config/config.go` — `DataDir` (DB + all derived artifacts) a
 | Artwork rows | `art_path` on album/artist | `tv_series_art` | `movie_art` |
 | Cast / people | — | `people` + `credits` (global TMDB cache; `credits.media_type` discriminates tv/movie) | reuses `people` + `credits` |
 | Playback/resume | — | `tv_playback_progress` (PK `file_id`) | `movie_playback_progress` (PK `file_id`) |
-| Other user state | `play_history` (FK `track_id`) | — | — |
+| Other user state | `play_history`, `playlist_tracks` (FK `track_id`) | — | — |
 | Scanner | `internal/scan` (`ScanMusic`) | `internal/tvscan` (`ScanTV`) | `internal/moviescan` (`ScanMovies`) |
 | Matcher | `internal/match` (`RunMusicMatch`) | `internal/tmdb` (`RunTVMatch`) | `internal/tmdb` (`RunMovieMatch`) |
 | Move-relink | `relinkMovedTracks` | `relinkMovedFiles` | `relinkMovedFiles` (moviescan) |
@@ -130,6 +130,7 @@ they only parse filenames/tags and probe streams. Matchers
   request — only the saved round-trip / negative-cache is lost).
 - **Mitigation** (`relinkMovedTracks`): on a 1:1 content-signature match
   `(file_size_bytes, checksum_sha256)`, re-points `play_history` + `lyrics_cache`
+  + `playlist_tracks` (playlist membership survives a move)
   to the new track before prune. Empty checksum never matches.
 
 ### Derived artifacts
@@ -246,7 +247,7 @@ and drop per-file state the *file* itself doesn't carry. Each scanner runs a
 
 | | Signature | Transfers |
 |---|---|---|
-| Music (`relinkMovedTracks`) | `(file_size_bytes, checksum_sha256)` | `play_history`, `lyrics_cache` |
+| Music (`relinkMovedTracks`) | `(file_size_bytes, checksum_sha256)` | `play_history`, `lyrics_cache`, `playlist_tracks` |
 | TV (`relinkMovedFiles` / `transferFileState`) | `(file_size_bytes, mtime_unix)` | `matched`/`skipped` `tv_series_identities`, `tv_playback_progress` |
 
 **Known residual gap**: a TV move that rewrites `mtime` (`cp`, some sync tools)
