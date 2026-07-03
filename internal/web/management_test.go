@@ -87,6 +87,7 @@ func TestMgmtLibraryAddValidation(t *testing.T) {
 		{"missing fields", url.Values{"name": {"x"}}},
 		{"bad type", url.Values{"name": {"x"}, "type": {"bogus"}, "root_path": {h.cfg.MediaRoot}}},
 		{"outside media root", url.Values{"name": {"x"}, "type": {"music"}, "root_path": {"/etc"}}},
+		{"traversal escape", url.Values{"name": {"x"}, "type": {"music"}, "root_path": {h.cfg.MediaRoot + "/../etc"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

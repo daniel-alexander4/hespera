@@ -16,6 +16,7 @@ import (
 	"hespera/internal/jobs"
 	"hespera/internal/match"
 	"hespera/internal/moviescan"
+	"hespera/internal/pathguard"
 	"hespera/internal/scan"
 	"hespera/internal/tmdb"
 	"hespera/internal/tvscan"
@@ -512,7 +513,9 @@ func (h *Handler) createLibrary(ctx context.Context, name, libType, root string)
 	if !validLibraryType(libType) {
 		return 0, badRequestError("invalid type")
 	}
-	if !strings.HasPrefix(root, h.cfg.MediaRoot+"/") && root != h.cfg.MediaRoot {
+	// pathguard.WithinRoot Cleans both sides, so an absolute path that only
+	// lexically starts with the media root ("<root>/../etc") can't escape.
+	if !pathguard.WithinRoot(root, h.cfg.MediaRoot) {
 		return 0, badRequestError("root_path must be under the configured media root")
 	}
 	res, err := h.db.ExecContext(ctx,
