@@ -120,6 +120,15 @@ test('edge ArrowDown advances; edge ArrowUp retreats (wrapping)', async () => {
   assert.strictEqual(grid(env).dataset.page, '3');
 });
 
+test('a handled edge press clears the using-mouse modality class', async () => {
+  const env = boot({ page: 1, total: 3 });
+  env.document.documentElement.classList.add('using-mouse');
+  grid(env).querySelector('.band-album-card').focus();
+  pressArrow(env, 'ArrowRight');
+  await flush();
+  assert.ok(!env.document.documentElement.classList.contains('using-mouse'));
+});
+
 test('a chevron click never steals focus', async () => {
   const env = boot({ page: 1, total: 3 });
   const before = env.document.activeElement;

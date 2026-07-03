@@ -119,6 +119,9 @@
       if (!atEdge(active, dir)) return; // not at the edge — let couch.js move normally
       e.preventDefault();
       e.stopPropagation(); // suppress couch.js's spatial fallback for this edge press
+      // stopPropagation means couch.js never sees this key, so hand the
+      // modality back to the keyboard here (hides the mouse chevrons).
+      document.documentElement.classList.remove('using-mouse');
       if (dir === 'right' || dir === 'down') advance(true);
       else retreat(true);
     });
