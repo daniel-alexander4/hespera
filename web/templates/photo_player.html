@@ -1,0 +1,55 @@
+{{define "content"}}
+{{/* Home-video clip player — the movie player shell with the photo endpoints
+     (media_player.js derives them from data-media-kind="photo"). Clips have
+     no metadata: the title is the filename, the parent is the Photos grid. */}}
+<div class="tv-player-page">
+  <div class="tv-player-header">
+    <h1><a href="/photos" class="btn btn-head">{{.ClipTitle}}</a></h1>
+    {{if .When}}<h2>{{.When}}</h2>{{end}}
+  </div>
+
+  <div class="tv-player-video-wrap" id="tvPlayerWrap" style="{{.CaptionVars}}">
+    <video id="tvVideo" class="tv-video" autoplay
+           data-media-kind="photo"
+           data-file-id="{{.FileID}}"
+           data-prev-file="0"
+           data-next-file="0">
+      Your browser does not support video playback.
+    </video>
+    <div class="media-overlay" id="mediaOverlay">
+      {{template "media-seekbar" .}}
+      {{template "media-transport" .}}
+      <div class="tv-player-controls">
+        <label class="tv-track-pick" id="audioPick" hidden>Audio
+          <select id="audioSelect"></select>
+        </label>
+        <label class="tv-track-pick" id="subPick" hidden>Subtitles
+          <select id="subSelect"></select>
+        </label>
+        <label class="tv-track-pick" id="speedPick">Speed
+          <select id="speedSelect">
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+        <span id="playbackMode" class="tv-playback-mode"></span>
+        <button type="button" id="skipAutoBtn" class="btn" hidden aria-pressed="false">{{template "icon-skip-forward"}}Auto-skip</button>
+        <button type="button" id="muteAdsBtn" class="btn" hidden aria-pressed="false">{{template "icon-volume-x"}}Mute ads</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tv-player-nav">
+    <span></span>
+    <a href="/photos" class="btn btn-sm">Back to Photos</a>
+    <span></span>
+  </div>
+</div>
+{{end}}
+
+{{/* Same Turbo cached-preview opt-out as the TV/movie players. */}}
+{{define "headmeta"}}<meta name="turbo-cache-control" content="no-preview">{{end}}

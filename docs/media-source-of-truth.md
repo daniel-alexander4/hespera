@@ -397,3 +397,24 @@ When you change scan/match/prune/relink logic, the schema of any table in §1, o
 the move/derived-artifact behavior, **update this doc in the same commit**.
 Citations here use file + function names (stable) rather than line numbers
 (which drift) — keep them that way.
+
+## 7. Photos
+
+### Path & ownership
+- One row per file in `photos` (`UNIQUE(library_id, abs_path)`), `kind` = `photo` | `video`. **No matching and no external metadata** — a photos row carries only facts derived from the file itself, so *everything* re-derives on rescan except playback progress.
+- `taken_at` + `taken_source`: capture timestamp cascade — JPEG/TIFF EXIF `DateTimeOriginal`/`Digitized`/`DateTime` (`exif`) → clip container `creation_time` (`probe`) → file mtime (`mtime`). Naive local wall-clock; a video's UTC creation_time converts to local so one clock orders the By Date view.
+- `dir_rel` (parent dir relative to the library root) drives the Folders grouping — path-derived at scan, never stored ownership that can go stale.
+- `orientation` (EXIF 1-8) feeds thumbnail/rendition transposes; ffmpeg does not auto-apply EXIF orientation to still images.
+
+### Scan logic (`internal/photoscan/scanner.go`)
+- Walk skips dot-dirs, dot-files (AppleDouble `._*`), and `@eaDir`. Ext whitelist: images per `IsImageExt`, clips per `video.IsVideoExt` + `.mts`/`.mpg`/`.mpeg`/`.3gp`.
+- Unchanged (size+mtime) = pure skip (taken_at/orientation derive from bytes that didn't change). Changed bytes reset `thumb_path` to `''` so the chained `photo_thumb` job regenerates.
+- Clips probe at scan (`stream_info_json`); `photo_probe` (chained) backfills failures and can late-recover `taken_at` from creation_time when the scan fell back to mtime.
+
+### Manual state (NOT re-derivable)
+- `photo_playback_progress` (clip resume) — the only user state. Move-relink transfers it on the `(file_size_bytes, mtime_unix)` signature, strictly 1:1, before prune.
+
+### Derived artifacts
+- Grid thumbnails: `DataDir/thumbs/photos/photo_<id>.webp` (480px, `photo_thumb` job, missing-only). `thumb_path` states: `''` pending, `unavailable` = generation failed (e.g. grid-HEIC on ffmpeg <7 — grid placeholder, retried when bytes change), else the file path.
+- Display renditions: `photo_<id>_full.webp` (2048px), generated lazily on first view for formats a browser can't decode (HEIC/TIFF); browser-displayable formats serve the original.
+- Both are id-keyed and deleted by the prune pass when their row goes; a moved file's thumbs regenerate under the surviving row's id rather than transfer.

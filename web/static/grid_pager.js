@@ -34,7 +34,12 @@
     const panel = grid.closest('.subtab-panel') || grid.parentElement || document;
     const nav = panel.querySelector('.grid-pager');
     const key = (p) => base + '|' + p;
-    const url = (p) => base + '?grid=1&page=' + p;
+    // Carry the page's own query params (the photos tabs/filters) into the
+    // fragment URLs so a filtered grid pages within its filter.
+    const params = new URLSearchParams(location.search);
+    params.delete('page');
+    params.set('grid', '1');
+    const url = (p) => base + '?' + params.toString() + '&page=' + p;
     const wrapNext = () => (page >= total ? 1 : page + 1);
     const wrapPrev = () => (page <= 1 ? total : page - 1);
     let navigating = false;

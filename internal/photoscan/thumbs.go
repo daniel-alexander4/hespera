@@ -2,7 +2,6 @@ package photoscan
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -106,7 +105,7 @@ func (s *Scanner) GenerateThumbsMissing(ctx context.Context, jobID, libraryID in
 // photo whose native format the browser can't decode, generating and caching
 // it on first request. The caller decides *whether* a rendition is needed
 // (browser-displayable formats serve the original).
-func EnsureRendition(ctx context.Context, db *sql.DB, dataDir string, photoID int64, absPath string, orientation int) (string, error) {
+func EnsureRendition(ctx context.Context, dataDir string, photoID int64, absPath string, orientation int) (string, error) {
 	dir := filepath.Join(dataDir, "thumbs", "photos")
 	dst := filepath.Join(dir, ThumbFileNames(photoID)[1])
 	if _, err := os.Stat(dst); err == nil {

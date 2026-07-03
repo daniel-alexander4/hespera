@@ -1,6 +1,7 @@
 package web
 
 import (
+	"html/template"
 	"net/http"
 	"strconv"
 )
@@ -23,6 +24,13 @@ type pageNav struct {
 	HasPrev    bool
 	HasNext    bool
 	BasePath   string // e.g. "/music/albums"
+	// Query carries the list's non-page query params (tab/filter/order) into
+	// the pager links. The grid-pager partial references it, so it must exist
+	// even when empty — its removal in e01e8ac left every multi-page grid
+	// failing template exec. template.URL because a plain string would be
+	// percent-escaped as a single query VALUE by the autoescaper; it is always
+	// server-built from url.Values, never user input verbatim.
+	Query template.URL
 }
 
 // pageParam reads the 1-based ?page= query param, defaulting to 1.
