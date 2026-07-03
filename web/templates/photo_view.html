@@ -1,0 +1,26 @@
+{{define "content"}}
+{{/* Full-screen photo viewer. The container is focusable and photo_view.js
+     listens on it (target-phase before couch.js's document listener), so ←/→
+     navigate prev/next in the grid's order; Back (couch) returns to the grid.
+     A clip shows its thumb with a Play control instead of an <img>. */}}
+<div class="photo-view" id="photoView" tabindex="0"
+     data-prev="{{.PrevHref}}" data-next="{{.NextHref}}">
+  <div class="photo-view-stage">
+    {{if .IsVideo}}
+    <a href="/photo/player?file={{.ID}}" class="photo-view-play btn btn-primary">{{template "icon-play"}} Play video</a>
+    {{else}}
+    <img class="photo-view-img" src="/photos/full/{{.ID}}" alt="{{.Name}}" />
+    {{end}}
+  </div>
+  <div class="photo-view-chrome">
+    {{if .PrevHref}}<a class="photo-view-nav" href="{{.PrevHref}}" rel="prev" aria-label="Previous">{{template "icon-chevron-left"}}</a>{{else}}<span class="photo-view-nav is-off">{{template "icon-chevron-left"}}</span>{{end}}
+    <div class="photo-view-caption">
+      <div class="photo-view-name">{{.Name}}</div>
+      {{if .When}}<div class="photo-view-when">{{.When}}</div>{{end}}
+      {{if and .Dir (ne .Dir ".")}}<div class="photo-view-dir">{{template "icon-folder"}} {{.Dir}}</div>{{end}}
+    </div>
+    {{if .NextHref}}<a class="photo-view-nav" href="{{.NextHref}}" rel="next" aria-label="Next">{{template "icon-chevron-right"}}</a>{{else}}<span class="photo-view-nav is-off">{{template "icon-chevron-right"}}</span>{{end}}
+  </div>
+  <a class="photo-view-back btn btn-sm" href="{{.BackHref}}">Back to Photos</a>
+</div>
+{{end}}

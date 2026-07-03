@@ -123,6 +123,21 @@ func (h *Handler) Router() http.Handler {
 	// Cast / actor images
 	mux.HandleFunc("/art/person/", h.personArt)
 
+	// Photos browse / viewer / clip playback (the streaming set is the third
+	// thin clone of the TV layer, over photos + photo_playback_progress).
+	mux.HandleFunc("/photos", h.photosHome)
+	mux.HandleFunc("/photos/view", h.photoView)
+	mux.HandleFunc("/photos/full/", h.photoFull)
+	mux.HandleFunc("/art/photo/", h.photoArt)
+	mux.HandleFunc("/photo/player", h.photoPlayer)
+	mux.HandleFunc("/photo/playback-session", h.photoPlaybackSession)
+	mux.HandleFunc("/photo/playback-progress", h.photoPlaybackProgress)
+	mux.HandleFunc("/stream/photo/", h.streamPhotoDirect)
+	mux.HandleFunc("/stream/photo-remux/", h.streamPhotoRemux)
+	mux.HandleFunc("/stream/photo-burnin/", h.streamPhotoBurnIn)
+	mux.HandleFunc("/stream/photo-hls/", h.streamPhotoHLS)
+	mux.HandleFunc("/stream/photo-subtitles/", h.streamPhotoSubtitles)
+
 	// Movie browse / detail / player / match
 	mux.HandleFunc("/movies", h.moviesHome)
 	mux.HandleFunc("/movie/player", h.moviePlayer)

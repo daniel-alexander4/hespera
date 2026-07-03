@@ -11,6 +11,17 @@
 // couch.js/subtabs.js — so it survives Turbo body swaps without a body-script
 // race. initMediaPlayer is a no-op on pages with no #tvVideo.
 function mediaPlayerConfig(kind) {
+  if (kind === 'photo') {
+    // Home-video clips in a photos library — same player, photo endpoints.
+    return {
+      sessionURL: '/photo/playback-session',
+      progressURL: '/photo/playback-progress',
+      playerURL: '/photo/player',
+      progressiveRe: /\/stream\/photo-(remux|burnin)\//,
+      subtitleSearchURL: '/photo/subtitles/search',
+      subtitleFetchURL: '/photo/subtitles/fetch',
+    };
+  }
   if (kind === 'movie') {
     return {
       sessionURL: '/movie/playback-session',

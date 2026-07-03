@@ -39,6 +39,7 @@ var stubPages = []string{
 	"music_match_review.html", "music_album_edit.html", "music_track_edit.html", "music_duplicates.html",
 	"settings_tags.html", "tv_home.html", "tv_series.html",
 	"tv_season.html", "tv_match_review.html", "tv_player.html", "person.html",
+	"photos_home.html", "photo_view.html", "photo_player.html",
 	"movies_home.html", "movie_detail.html", "movie_match_review.html", "movie_player.html",
 }
 
@@ -109,7 +110,6 @@ func stubAssetsFS() fs.FS {
 			`{{define "irow"}}<div class="irow">{{if .Href}}<a href="{{.Href}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}` +
 			`<code>{{.Path}}</code><span>{{humanBytes .SizeBytes}}</span>` +
 			`<em>{{.Detail}}</em><p>{{.Mitigation}}</p></div>{{end}}`,
-
 	}
 	for path, content := range overrides {
 		m[path] = &fstest.MapFile{Data: []byte(content)}
@@ -148,7 +148,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 29
+	expectedPages := 32
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}

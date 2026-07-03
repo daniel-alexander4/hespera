@@ -1,0 +1,89 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Photos</h1>
+</div>
+
+{{if .LibraryEmpty}}
+<div class="empty-state">
+  <p>No photos found. Use <a href="/settings?open=libraries">Libraries</a> to add a photos library, then scan.</p>
+</div>
+{{else}}
+
+{{/* Server-driven tabs: each subtab is a link carrying the current filters —
+     one paginated grid per render, so every tab can page independently. */}}
+<div class="subtabs">
+  <a class="subtab{{if eq .Filters.Tab "all"}} active{{end}}" href="/photos{{with index .TabQ "all"}}?{{.}}{{end}}">All</a>
+  <a class="subtab{{if eq .Filters.Tab "date"}} active{{end}}" href="/photos?{{index .TabQ "date"}}">By Date</a>
+  <a class="subtab{{if eq .Filters.Tab "folders"}} active{{end}}" href="/photos?{{index .TabQ "folders"}}">Folders</a>
+  <a class="subtab{{if eq .Filters.Tab "videos"}} active{{end}}" href="/photos?{{index .TabQ "videos"}}">Videos</a>
+</div>
+
+{{if ne .Filters.Tab "folders"}}
+<form method="get" action="/photos" class="photo-toolbar">
+  {{if ne .Filters.Tab "all"}}<input type="hidden" name="tab" value="{{.Filters.Tab}}" />{{end}}
+  {{if .Filters.Dir}}<input type="hidden" name="dir" value="{{.Filters.Dir}}" />{{end}}
+  <label>Year
+    <select name="year">
+      <option value="">All</option>
+      {{$sel := .Filters.Year}}
+      {{range .Years}}<option value="{{.}}"{{if eq . $sel}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </label>
+  <label>Order
+    <select name="order">
+      <option value="desc"{{if eq .Filters.Order "desc"}} selected{{end}}>Newest first</option>
+      <option value="asc"{{if eq .Filters.Order "asc"}} selected{{end}}>Oldest first</option>
+    </select>
+  </label>
+  <button type="submit" class="btn btn-sm">Apply</button>
+  {{if .Filters.Dir}}
+  <a class="btn btn-sm" href="/photos{{if ne .Filters.Tab "all"}}?tab={{.Filters.Tab}}{{end}}" title="Clear the folder filter">📁 {{.Filters.Dir}} ✕</a>
+  {{end}}
+</form>
+{{end}}
+
+{{if eq .Filters.Tab "folders"}}
+<div class="band-albums-grid photo-grid">
+  {{range .Folders}}
+  <a href="/photos?dir={{.Dir}}" class="band-album-card photo-card">
+    <div class="band-album-art photo-thumb">
+      <div class="photo-thumb-ph">{{template "icon-folder"}}</div>
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{if eq .Dir "."}}(top level){{else}}{{.Dir}}{{end}}</div>
+      <div class="artist-card-stats">{{.Count}} item{{if ne .Count 1}}s{{end}}</div>
+    </div>
+  </a>
+  {{else}}
+  <div class="empty-state"><p>No folders.</p></div>
+  {{end}}
+</div>
+{{else}}
+<div class="band-albums-grid photo-grid" data-grid-pager data-page="{{.Page.Page}}" data-total-pages="{{.Page.TotalPages}}">
+  {{template "photo-cards" .}}
+</div>
+{{template "grid-pager" .Page}}
+{{end}}
+
+{{end}}
+{{end}}
+
+{{/* Photo cards, factored out so the full page and the ?grid=1 fragment render
+     identical markup. `.` carries Cards + Filters (the viewer context). On the
+     By Date tab a card's Header renders as a full-width month divider. */}}
+{{define "photo-cards"}}
+{{$q := .Filters.CtxQuery}}
+{{range .Cards}}
+{{if .Header}}<h3 class="photo-date-header">{{.Header}}</h3>{{end}}
+<a href="{{if eq .Kind "video"}}/photo/player?file={{.ID}}{{else}}/photos/view?id={{.ID}}{{if $q}}&{{$q}}{{end}}{{end}}" class="band-album-card photo-card" title="{{.Name}} · {{.TakenAt}}">
+  <div class="band-album-art photo-thumb">
+    {{if .HasThumb}}
+    <img src="/art/photo/{{.ID}}" alt="{{.Name}}" loading="lazy" />
+    {{else}}
+    <div class="photo-thumb-ph">{{template "icon-image"}}</div>
+    {{end}}
+    {{if eq .Kind "video"}}<span class="photo-play-badge">{{template "icon-play"}}</span>{{end}}
+  </div>
+</a>
+{{end}}
+{{end}}
