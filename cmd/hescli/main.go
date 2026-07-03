@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -65,7 +64,8 @@ Commands:
   jobs [--status S] [--type T] [--limit N] Recent jobs
   status                                   Server overview
 
-Socket: --socket, else $HESPERA_SOCKET, else <data-dir>/hescli.sock.
+Socket: --socket, else $HESPERA_SOCKET, else <data-dir>/hescli.sock (an
+over-long data dir falls back to a runtime-dir socket, same as the server).
 `)
 }
 
@@ -76,7 +76,7 @@ func resolveSocket(flagVal string) string {
 	if s := strings.TrimSpace(os.Getenv("HESPERA_SOCKET")); s != "" {
 		return s
 	}
-	return filepath.Join(config.FromEnv().DataDir, "hescli.sock")
+	return config.ManagementSocketPath(config.FromEnv().DataDir)
 }
 
 func dispatch(c *client, args []string) error {
