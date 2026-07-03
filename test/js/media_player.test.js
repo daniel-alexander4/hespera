@@ -35,7 +35,9 @@ function fixture({ kind = 'tv', fileId = 7, prevFile = 0, nextFile = 0, osEnable
           <button id="tvFullscreenBtn"></button>
           <button id="skipAutoBtn" hidden></button>
         </div>
-        <div id="mediaScrubber"><div id="mediaScrubberFill"></div><div id="mediaScrubberThumb"></div></div>
+        <div id="mediaScrubber"><div id="mediaScrubberFill"></div><div id="mediaScrubberThumb"></div>
+          <div class="media-scan-pill" id="mediaScanPill" hidden><span class="media-scan-rw"></span><span class="media-scan-ff"></span><span class="media-scan-speed"></span></div>
+        </div>
         <span id="mediaCur"></span><span id="mediaDur"></span>
       </div>
       <span id="playbackMode"></span>
@@ -388,4 +390,75 @@ test('hover preview: manifest fetched lazily; sprite math positions the frame; 4
 
   scrubber.dispatchEvent(new env.window.Event('pointerleave', { bubbles: true }));
   assert.ok(preview.hidden, 'hidden on leave');
+});
+
+test('FF/RW scan: presses cycle 1×/2×/3× with the pill tracking direction + speed', async () => {
+  const env = await boot();
+  const doc = env.document;
+  const video = doc.getElementById('tvVideo');
+  const pill = doc.getElementById('mediaScanPill');
+  const speed = pill.querySelector('.media-scan-speed');
+  const ff = doc.getElementById('tvForwardBtn');
+  const rw = doc.getElementById('tvRewindBtn');
+
+  video.play(); // "watching" — the transport reflects play/pause events
+  const transport = doc.getElementById('tvTransport');
+  assert.ok(transport.classList.contains('playing'));
+  ff.click();
+  assert.ok(!transport.classList.contains('playing'), 'entering scan pauses playback');
+  assert.strictEqual(pill.hidden, false, 'pill shows from the first press');
+  assert.strictEqual(speed.textContent, '1×');
+  assert.strictEqual(pill.querySelector('.media-scan-ff').hidden, false, 'forward glyph shown');
+  assert.strictEqual(pill.querySelector('.media-scan-rw').hidden, true);
+
+  ff.click();
+  assert.strictEqual(speed.textContent, '2×');
+  ff.click();
+  assert.strictEqual(speed.textContent, '3×');
+  ff.click();
+  assert.strictEqual(speed.textContent, '1×', '4th press wraps back to 1×');
+
+  rw.click();
+  assert.strictEqual(speed.textContent, '1×', 'opposite direction restarts at 1×');
+  assert.strictEqual(pill.querySelector('.media-scan-rw').hidden, false, 'rewind glyph shown');
+  assert.strictEqual(pill.querySelector('.media-scan-ff').hidden, true);
+
+  doc.getElementById('tvToggleBtn').click();
+  assert.strictEqual(pill.hidden, true, 'play ends the scan and hides the pill');
+});
+
+test('FF/RW scan: play commits the advanced position as one real seek and resumes', async () => {
+  const env = await boot();
+  const doc = env.document;
+  const video = doc.getElementById('tvVideo');
+  const ff = doc.getElementById('tvForwardBtn');
+
+  video.currentTime = 100;
+  ff.click(); ff.click(); ff.click(); // 3× forward
+  await new Promise((r) => setTimeout(r, 450)); // let the 200ms ticker advance the virtual playhead
+  assert.strictEqual(video.currentTime, 100, 'no seek while scanning — the playhead is virtual');
+  doc.getElementById('tvToggleBtn').click();
+  assert.ok(video.currentTime > 100, `commit seeks past the entry point: ${video.currentTime}`);
+  // jsdom's `paused` is a getter the stubs can't flip — assert resumption via the
+  // 'play' event's DOM effect (the transport class the controller maintains).
+  assert.ok(doc.getElementById('tvTransport').classList.contains('playing'), 'playback resumed');
+});
+
+test('FF/RW scan: rewind moves backward; a scrubber drag cancels without seeking', async () => {
+  const env = await boot();
+  const doc = env.document;
+  const video = doc.getElementById('tvVideo');
+
+  video.currentTime = 100;
+  doc.getElementById('tvRewindBtn').click();
+  await new Promise((r) => setTimeout(r, 450));
+  doc.getElementById('tvToggleBtn').click();
+  assert.ok(video.currentTime < 100 && video.currentTime > 90, `1× rewind landed just behind the entry point: ${video.currentTime}`);
+
+  // Drag-cancel: enter a scan, then grab the scrubber — scan dies, no commit.
+  video.currentTime = 50;
+  doc.getElementById('tvForwardBtn').click();
+  doc.getElementById('mediaScrubber').dispatchEvent(new env.window.Event('pointerdown', { bubbles: true }));
+  assert.strictEqual(doc.getElementById('mediaScanPill').hidden, true, 'drag cancels the scan');
+  assert.strictEqual(video.currentTime, 50, 'no seek committed by the canceled scan');
 });
