@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestOpenSubtitlesCombinedForm covers the merged key+UA form: both save
@@ -361,4 +362,59 @@ func TestLibraryHandlers(t *testing.T) {
 			t.Fatal("expected library to be deleted")
 		}
 	})
+}
+
+// TestLibrariesScanChainsProbe verifies that a library scan chains the reprobe
+// job that heals rows whose scan-time probe failed (empty stream_info_json) —
+// the automation that replaced the manual "Verify playback" button. The scan
+// runs against an empty (but existing) library root, so no ffmpeg is involved;
+// the chained job row is written by the worker goroutine, hence the poll.
+func TestLibrariesScanChainsProbe(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+
+	for _, tc := range []struct {
+		libType, probeType string
+	}{
+		{"tv", "tv_probe"},
+		{"movies", "movie_probe"},
+	} {
+		t.Run(tc.libType, func(t *testing.T) {
+			root := filepath.Join(h.cfg.MediaRoot, tc.libType+"-chain")
+			if err := os.MkdirAll(root, 0o755); err != nil {
+				t.Fatalf("mkdir root: %v", err)
+			}
+			res, err := db.Exec("INSERT INTO libraries (name, type, root_path) VALUES (?, ?, ?)",
+				tc.libType+" chain", tc.libType, root)
+			if err != nil {
+				t.Fatalf("insert library: %v", err)
+			}
+			libID, _ := res.LastInsertId()
+
+			req := httptest.NewRequest(http.MethodPost, "/libraries/scan",
+				strings.NewReader(fmt.Sprintf("id=%d", libID)))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusSeeOther {
+				t.Fatalf("expected 303, got %d; body: %s", rec.Code, rec.Body.String())
+			}
+
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				var n int
+				if err := db.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE library_id=? AND job_type=?",
+					libID, tc.probeType).Scan(&n); err != nil {
+					t.Fatalf("query scan_jobs: %v", err)
+				}
+				if n > 0 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("no chained %s job appeared", tc.probeType)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
+	}
 }
