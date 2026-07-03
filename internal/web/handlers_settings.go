@@ -230,6 +230,7 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
 			"WatchEnabled":            h.effectiveWatchEnabled(ctx),
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
+			"KeytraceEnabled":         h.effectiveKeytraceEnabled(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -327,6 +328,19 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				val = "1"
 			}
 			if err := h.saveAPIKey(ctx, "lyrics_enabled", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["keytrace_present"]; ok {
+			// Default-OFF opt-in diagnostic, same shape as lyrics_enabled.
+			val := ""
+			if r.FormValue("keytrace_enabled") == "1" {
+				val = "1"
+			}
+			if err := h.saveAPIKey(ctx, "keytrace_enabled", val); err != nil {
 				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 				return
 			}
