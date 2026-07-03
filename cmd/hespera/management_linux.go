@@ -10,21 +10,23 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"syscall"
 	"time"
 
+	"hespera/internal/config"
 	"hespera/internal/web"
 )
 
 // serveManagementSocket starts the hescli management API on a unix socket at
-// DataDir/hescli.sock, gated by SO_PEERCRED: only root or the user running the
-// server may connect (the socket is a local admin channel, so cross-user access
-// is refused even though the socket file is reachable). Returns a Closer that
-// stops the server and removes the socket. Linux-only — peer-cred is a Linux
-// socket option; other platforms get the no-op stub in management_other.go.
+// config.ManagementSocketPath (DataDir/hescli.sock, with a runtime-dir
+// fallback for DataDirs past the sun_path limit), gated by SO_PEERCRED: only
+// root or the user running the server may connect (the socket is a local admin
+// channel, so cross-user access is refused even though the socket file is
+// reachable). Returns a Closer that stops the server and removes the socket.
+// Linux-only — peer-cred is a Linux socket option; other platforms get the
+// no-op stub in management_other.go.
 func serveManagementSocket(h *web.Handler, dataDir string) (io.Closer, error) {
-	sockPath := filepath.Join(dataDir, "hescli.sock")
+	sockPath := config.ManagementSocketPath(dataDir)
 	// Remove a stale socket left by a hard-killed prior instance; a live instance
 	// is already handled by the singleton --replace path before we get here.
 	_ = os.Remove(sockPath)

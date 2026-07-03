@@ -106,7 +106,7 @@ func main() {
 	if err != nil {
 		slog.Warn("management socket unavailable", "err", err)
 	} else if mgmt != nil {
-		slog.Info("management socket listening", "path", filepath.Join(cfg.DataDir, "hescli.sock"))
+		slog.Info("management socket listening", "path", config.ManagementSocketPath(cfg.DataDir))
 	}
 
 	// App mode (the default) opens a chromeless browser window and binds a random
