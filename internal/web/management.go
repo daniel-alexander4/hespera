@@ -212,7 +212,8 @@ const (
 // settingSpec describes one runtime setting the CLI can read/write. Values still
 // live in app_settings (via saveAPIKey) + the effective* getters — this registry
 // is only an adapter that names the keys and their kind for the CLI's config
-// verb. See pending.md "Setting-key registry drift".
+// verb. Drift against the web settings forms (a key added there but not here,
+// or vice versa) fails the build via TestManagedSettingsCoverSettingsForms.
 type settingSpec struct {
 	Key            string
 	Kind           settingKind
