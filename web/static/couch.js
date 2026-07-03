@@ -177,6 +177,13 @@
   // visits without re-binding.
   const focusFirst = () => {
     if (!isTVScale()) return;
+    // A page with a subtab bar (Music / TV / Movies) lands the ring on its
+    // active tab — selecting a main tab from the topbar starts you on "Recent",
+    // not whatever control happens to be first in the content. This runs before
+    // subtabs.js restores a remembered tab (couch.js loads first), so the
+    // server-rendered default tab is what gets the ring.
+    const tab = document.querySelector('.subtab.active') || document.querySelector('.subtab');
+    if (tab) { tab.focus(); return; }
     const all = candidates();
     if (!all.length) return;
     // Prefer the first in-content control over the breadcrumb, so a page doesn't
