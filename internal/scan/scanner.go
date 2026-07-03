@@ -515,9 +515,14 @@ WHERE library_id = ? AND lower(title) = lower(?) AND year = ? AND id NOT IN (?, 
 	return tx.Commit()
 }
 
-// discDirPattern matches disc-split subfolders (Disc 1, CD 2, Disk 3) so a
-// multi-disc album's tracks normalize to one shared directory key.
-var discDirPattern = regexp.MustCompile(`(?i)^(?:cd|dis[ck])\s*\d+$`)
+// discDirPattern matches disc-split subfolders so a multi-part album's tracks
+// normalize to one shared directory key: the numbered disc synonyms (Disc 1,
+// CD2, Disk 3, Vol 1, Vol. 2, Volume 3, Part 1, Pt. 2) plus vinyl sides
+// (Side A, Side 1). Deliberately nothing looser — an arbitrary subfolder name
+// (per-artist dirs, bonus/, Extras) must NOT collapse, because folding those
+// re-opens the over-merge the co-location rule exists to prevent; the layout
+// matrix in variant_layout_test.go pins both directions.
+var discDirPattern = regexp.MustCompile(`(?i)^(?:(?:cd|dis[ck]|vol(?:ume)?\.?|pt\.?|part)\s*\d+|side\s*(?:\d+|[a-d]))$`)
 
 // albumDirKey is the directory an album physically lives in, derived from one
 // of its track paths: the file's directory, with a disc subfolder collapsed
