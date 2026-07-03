@@ -152,8 +152,9 @@ func (h *Handler) musicHome(w http.ResponseWriter, r *http.Request) {
 	libraryID := h.resolveMusicLibraryID(r)
 	if libraryID == 0 {
 		h.render(w, "music_home.html", map[string]any{
-			"Breadcrumb": []crumb{bcHome},
-			"Title":      "Music",
+			"Breadcrumb":     []crumb{bcHome},
+			"Title":          "Music",
+			"ActiveMusicTab": "recent",
 		})
 		return
 	}
@@ -268,10 +269,20 @@ LIMIT ?
 		return
 	}
 
+	// A full-reload from the Artists list (its pagination Next/Prev or search)
+	// carries ?page= or ?q= — both Artists-only on /music — so re-open on the
+	// Artists subtab instead of the default Recent one. subtabs.js takes the
+	// landing tab from whichever button/panel is server-marked `active`.
+	activeMusicTab := "recent"
+	if q != "" || r.URL.Query().Has("page") {
+		activeMusicTab = "artists"
+	}
+
 	h.render(w, "music_home.html", map[string]any{
 		"Breadcrumb":          []crumb{bcHome},
 		"Title":               "Music",
 		"LibraryID":           libraryID,
+		"ActiveMusicTab":      activeMusicTab,
 		"RecentlyPlayed":      recentlyPlayed,
 		"RecentlyAddedAlbums": recentlyAddedAlbums,
 		"Artists":             artists,
