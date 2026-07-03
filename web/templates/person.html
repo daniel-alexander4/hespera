@@ -8,7 +8,7 @@
     {{if .HasArt}}
     <img src="/art/person/{{.PersonID}}" alt="{{.Name}}" class="artist-header-img" />
     {{else}}
-    <div class="artist-thumb-ph big">{{if .Name}}{{slice .Name 0 1}}{{end}}</div>
+    <div class="artist-thumb-ph big">{{if .Name}}{{initial .Name}}{{end}}</div>
     {{end}}
   </div>
   <div class="artist-side">

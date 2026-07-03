@@ -486,6 +486,9 @@ FROM tv_series_identities`)
 	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_tv_series_identities_status ON tv_series_identities(status)"); err != nil {
 		return err
 	}
+	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_tv_series_identities_series_id ON tv_series_identities(series_id, status, season_number)"); err != nil {
+		return err
+	}
 
 	return tx.Commit()
 }
@@ -545,6 +548,9 @@ FROM tv_series_identities`)
 		return err
 	}
 	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_tv_series_identities_status ON tv_series_identities(status)"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_tv_series_identities_series_id ON tv_series_identities(series_id, status, season_number)"); err != nil {
 		return err
 	}
 

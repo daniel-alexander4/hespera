@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -369,5 +370,43 @@ func TestMovieCastBackfillEnqueue(t *testing.T) {
 	_ = db.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE job_type='movie_cast_fetch'").Scan(&after)
 	if after != before {
 		t.Fatalf("marker present should suppress enqueue: job count went %d → %d", before, after)
+	}
+}
+
+// TestLoadMovieContinueWatchingDedupsByFilm pins the one-card-per-film rule: a
+// film with two in-progress files (two editions/downloads) yields a single
+// continue-watching card carrying the most-recently-watched file's progress.
+func TestLoadMovieContinueWatchingDedupsByFilm(t *testing.T) {
+	h, db := newTestHandler(t)
+	ctx := context.Background()
+
+	seedMovieMetadata(t, db, 500)
+	older := seedMovieFile(t, db, "Edition A", 2020, "matched", 500, h.cfg.MediaRoot)
+	newer := seedMovieFile(t, db, "Edition B", 2020, "matched", 500, h.cfg.MediaRoot)
+	if _, err := db.Exec(
+		"INSERT INTO movie_playback_progress (file_id, position_seconds, duration_seconds, completed, updated_at) VALUES (?, 600, 6000, 0, datetime('now','-1 hour'))",
+		older,
+	); err != nil {
+		t.Fatalf("seed older progress: %v", err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO movie_playback_progress (file_id, position_seconds, duration_seconds, completed, updated_at) VALUES (?, 3000, 6000, 0, datetime('now'))",
+		newer,
+	); err != nil {
+		t.Fatalf("seed newer progress: %v", err)
+	}
+
+	got, err := h.loadMovieContinueWatching(ctx, 12)
+	if err != nil {
+		t.Fatalf("loadMovieContinueWatching: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 card for the film, got %d", len(got))
+	}
+	if got[0].FileID != newer {
+		t.Fatalf("card file = %d, want the most-recent file %d", got[0].FileID, newer)
+	}
+	if got[0].ProgressPct != 50 {
+		t.Fatalf("card progress = %d%%, want the most-recent file's 50%%", got[0].ProgressPct)
 	}
 }

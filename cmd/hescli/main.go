@@ -205,7 +205,7 @@ func configCmd(c *client, args []string) error {
 
 func jobsCmd(c *client, args []string) error {
 	fs := flag.NewFlagSet("jobs", flag.ContinueOnError)
-	status := fs.String("status", "", "filter by status (queued|running|completed|failed)")
+	status := fs.String("status", "", "filter by status (queued|running|done|failed|canceled)")
 	typ := fs.String("type", "", "filter by job type")
 	limit := fs.Int("limit", 20, "max rows")
 	if err := fs.Parse(args); err != nil {
