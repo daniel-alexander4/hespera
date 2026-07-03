@@ -268,12 +268,19 @@ function initMediaPlayer() {
     // marking bitmap tracks so the transcode cost is visible. Each track keeps its
     // original 1-based ordinal (what the server expects). With an OpenSubtitles
     // key configured (TV only — the movie template never sets data-os-enabled),
-    // the list ends with a "Search subtitles…" action option, so the dropdown
-    // shows even for a file with no subtitle tracks at all.
+    // the list leads with a "Search subtitles…" action option — one keypress above
+    // the default Off — so the dropdown shows even for a file with no subtitle
+    // tracks at all; the file's own tracks follow Off.
     const subs = session.subtitle_tracks || [];
     const osEnabled = video.dataset.osEnabled === '1';
     if (subs.length > 0 || osEnabled) {
       subSelect.innerHTML = '';
+      if (osEnabled) {
+        const search = document.createElement('option');
+        search.value = 'search';
+        search.textContent = 'Search subtitles…';
+        subSelect.appendChild(search);
+      }
       const off = document.createElement('option');
       off.value = 0; off.textContent = 'Off'; off.selected = true;
       subSelect.appendChild(off);
@@ -285,12 +292,6 @@ function initMediaPlayer() {
         subSelect.appendChild(o);
         if (!s.text) subBurnIn.add(Number(s.ordinal)); // bitmap → burned into the video stream
       });
-      if (osEnabled) {
-        const search = document.createElement('option');
-        search.value = 'search';
-        search.textContent = 'Search subtitles…';
-        subSelect.appendChild(search);
-      }
       document.getElementById('subPick').hidden = false;
     }
     selectsBuilt = true;
@@ -983,7 +984,7 @@ function initMediaPlayer() {
   }, { once: true });
 
   // --- OpenSubtitles search dialog (opened by the subtitles dropdown's
-  //     "Search subtitles…" option, offered whenever a key is configured;
+  //     leading "Search subtitles…" option, offered whenever a key is configured;
   //     TV only — movie pages don't set data-os-enabled) ---
   const subsModal = document.getElementById('subs-modal');
   const subsStatus = document.getElementById('subs-status');
