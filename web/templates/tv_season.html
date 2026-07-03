@@ -23,6 +23,7 @@
         {{if .Completed}}<span class="tv-episode-watched" title="Watched" aria-label="Watched">{{template "icon-check"}}</span>{{end}}
         {{if .FileID}}<a href="/tv/player?file={{.FileID}}" class="btn btn-head">{{if .Name}}{{.Name}}{{else}}Episode {{.EpisodeNumber}}{{end}}</a>{{else}}{{if .Name}}{{.Name}}{{else}}Episode {{.EpisodeNumber}}{{end}}{{end}}
         {{if .Missing}}<span class="tv-missing-badge">Missing</span>{{end}}
+        {{if .Flagged}}<span class="badge badge-warn" title="{{if .FlagDetail}}{{.FlagDetail}}{{else}}Unrepairable (bitstream) corruption{{end}}">corrupt</span>{{end}}
       </div>
       {{if .AirDate}}<div class="tv-episode-date">{{.AirDate}}</div>{{end}}
       {{if and .ProgressPct (not .Completed)}}<div class="tv-episode-progress"><div class="tv-episode-progress-bar" style="width:{{.ProgressPct}}%"></div></div>{{end}}

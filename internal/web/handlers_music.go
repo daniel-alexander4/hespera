@@ -85,6 +85,8 @@ type trackRow struct {
 	DiscNo        int
 	MIME          string
 	IsCompilation bool
+	Flagged       bool   // unrepairable corruption (integrity_status='flagged')
+	FlagDetail    string // integrity_detail — the human-readable reason
 }
 
 type discSection struct {
@@ -565,7 +567,8 @@ WHERE al.id=?
 	isCompilation := compInt != 0
 
 	rows, err := h.db.QueryContext(r.Context(), `
-SELECT t.id, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream')
+SELECT t.id, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream'),
+       t.integrity_status, t.integrity_detail
 FROM music_tracks t
 JOIN music_artists ar ON ar.id=t.artist_id
 WHERE t.album_id=?
@@ -582,10 +585,12 @@ ORDER BY disc_no, track_no, lower(title)
 	discOrder := make([]int, 0, 2)
 	for rows.Next() {
 		var t trackRow
-		if err := rows.Scan(&t.ID, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME); err != nil {
+		var integStatus string
+		if err := rows.Scan(&t.ID, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME, &integStatus, &t.FlagDetail); err != nil {
 			httpError(w, 500, "internal server error", "row scan failed", "handler", "musicAlbumTracks", "err", err)
 			return
 		}
+		t.Flagged = integStatus == "flagged"
 		t.AlbumID = albumID
 		t.AlbumTitle = albumTitle
 		t.AlbumYear = albumYear

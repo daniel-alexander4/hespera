@@ -7,6 +7,7 @@
   {{if .Year}}<span class="meta-tag">{{.Year}}</span>{{end}}
   {{if .Runtime}}<span class="meta-tag">{{.Runtime}} min</span>{{end}}
   {{range .Genres}}<span class="meta-tag">{{.Name}}</span> {{end}}
+  {{if .Flagged}}<span class="badge badge-warn" title="{{if .FlagDetail}}{{.FlagDetail}}{{else}}Unrepairable (bitstream) corruption{{end}}">corrupt</span>{{end}}
 </div>
 
 {{if .FileID}}

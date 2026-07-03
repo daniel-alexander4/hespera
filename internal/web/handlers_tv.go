@@ -51,6 +51,7 @@ type tvSeasonRow struct {
 	Name         string
 	EpisodeCount int
 	Missing      bool // in TMDB metadata but no files present locally
+	FlaggedCount int  // files with unrepairable corruption (integrity_status='flagged')
 }
 
 // tvPosterPlaceholder is the static asset served for a season card when no
@@ -65,7 +66,9 @@ type tvEpisodeRow struct {
 	FileID        int64
 	ProgressPct   int
 	Completed     bool
-	Missing       bool // in TMDB metadata but no file present locally
+	Missing       bool   // in TMDB metadata but no file present locally
+	Flagged       bool   // file has unrepairable corruption (integrity_status='flagged')
+	FlagDetail    string // integrity_detail — the human-readable reason
 }
 
 // --- TV Series List ---
@@ -409,7 +412,8 @@ func (h *Handler) tvSeriesDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Query seasons that actually have files.
 	seasonRows, err := h.db.QueryContext(r.Context(), `
-SELECT i.season_number, COUNT(*) AS ep_count
+SELECT i.season_number, COUNT(*) AS ep_count,
+       SUM(CASE WHEN f.integrity_status = 'flagged' THEN 1 ELSE 0 END) AS flagged
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 WHERE i.series_id = ? AND i.status = 'matched' AND i.season_number >= 0
@@ -424,8 +428,8 @@ ORDER BY i.season_number
 
 	var seasons []tvSeasonRow
 	for seasonRows.Next() {
-		var sn, count int
-		if err := seasonRows.Scan(&sn, &count); err != nil {
+		var sn, count, flagged int
+		if err := seasonRows.Scan(&sn, &count, &flagged); err != nil {
 			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeriesDetail", "err", err)
 			return
 		}
@@ -443,6 +447,7 @@ ORDER BY i.season_number
 			SeasonNumber: sn,
 			Name:         seasonName,
 			EpisodeCount: count,
+			FlaggedCount: flagged,
 		})
 	}
 	if err := seasonRows.Err(); err != nil {
@@ -600,7 +605,8 @@ func (h *Handler) tvSeasonDetail(w http.ResponseWriter, r *http.Request) {
 	// Query files for this series+season, with playback progress.
 	fileRows, err := h.db.QueryContext(r.Context(), `
 SELECT f.id, i.episode_numbers_csv,
-       COALESCE(p.position_seconds, 0), COALESCE(p.duration_seconds, 0), COALESCE(p.completed, 0)
+       COALESCE(p.position_seconds, 0), COALESCE(p.duration_seconds, 0), COALESCE(p.completed, 0),
+       f.integrity_status, f.integrity_detail
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 LEFT JOIN tv_playback_progress p ON p.file_id = f.id
@@ -620,7 +626,8 @@ ORDER BY i.episode_numbers_csv
 		var epCSV string
 		var pos, dur float64
 		var completed int
-		if err := fileRows.Scan(&fileID, &epCSV, &pos, &dur, &completed); err != nil {
+		var integStatus, integDetail string
+		if err := fileRows.Scan(&fileID, &epCSV, &pos, &dur, &completed, &integStatus, &integDetail); err != nil {
 			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeasonDetail", "err", err)
 			return
 		}
@@ -650,6 +657,8 @@ ORDER BY i.episode_numbers_csv
 				FileID:        fileID,
 				ProgressPct:   progressPct,
 				Completed:     completed == 1,
+				Flagged:       integStatus == "flagged",
+				FlagDetail:    integDetail,
 			}
 			if cached, ok := epCacheMap[epNum]; ok {
 				epRow.Name = cached.Name

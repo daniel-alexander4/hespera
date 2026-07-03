@@ -44,7 +44,7 @@
     </div>
     <div class="band-album-meta">
       <div class="artist-card-name">{{.Name}}</div>
-      <div class="artist-card-stats">{{if .Missing}}<span class="tv-missing-badge">Missing</span>{{else}}{{.EpisodeCount}} episodes{{end}}</div>
+      <div class="artist-card-stats">{{if .Missing}}<span class="tv-missing-badge">Missing</span>{{else}}{{.EpisodeCount}} episodes{{if .FlaggedCount}} <span class="badge badge-warn" title="Episodes with unrepairable (bitstream) corruption">{{.FlaggedCount}} corrupt</span>{{end}}{{end}}</div>
     </div>
   </a>
   {{end}}

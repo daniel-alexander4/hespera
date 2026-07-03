@@ -83,6 +83,15 @@ func stubAssetsFS() fs.FS {
 		"templates/music_albums.html": `{{define "content"}}{{range .Albums}}<a class="album" href="/music/album/{{.ID}}"></a>{{end}}` +
 			`<span id="pg">{{.Page.Page}}/{{.Page.TotalPages}}</span><span id="q">{{.Page.Query}}</span>` +
 			`{{if .Page.HasPrev}}<a class="prev"></a>{{end}}{{if .Page.HasNext}}<a class="next"></a>{{end}}{{end}}`,
+		// Integrity-badge wiring: render the flag fields the detail handlers pass.
+		"templates/tv_season.html": `{{define "content"}}{{range .Episodes}}<div class="ep">{{.EpisodeNumber}}` +
+			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}</div>{{end}}{{end}}`,
+		"templates/tv_series.html": `{{define "content"}}{{range .Seasons}}<div class="season">{{.Name}}` +
+			`{{if .FlaggedCount}}<span class="badge badge-warn">{{.FlaggedCount}} corrupt</span>{{end}}</div>{{end}}{{end}}`,
+		"templates/movie_detail.html": `{{define "content"}}<h1>{{.MovieTitle}}</h1>` +
+			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}{{end}}`,
+		"templates/music_album.html": `{{define "content"}}{{range .DiscTracks}}{{range .Tracks}}<li>{{.Title}}` +
+			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}</li>{{end}}{{end}}{{end}}`,
 	}
 	for path, content := range overrides {
 		m[path] = &fstest.MapFile{Data: []byte(content)}
