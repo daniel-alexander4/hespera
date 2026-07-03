@@ -64,7 +64,9 @@
           <button type="submit" class="btn btn-sm">{{template "icon-play"}}Check integrity</button>
         </form>
         {{$flagged := index $.Flagged .ID}}
-        {{if $flagged}}<span class="badge badge-warn" title="Files with unrepairable (bitstream) corruption">{{$flagged}} corrupt</span>{{end}}
+        {{if $flagged}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-warn" title="Files with unrepairable corruption — open the integrity report">{{$flagged}} corrupt</a>{{end}}
+        {{$degraded := index $.Degraded .ID}}
+        {{if $degraded}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-neutral" title="Playable files with known defects (silence-filled audio gaps) — open the integrity report">{{$degraded}} degraded</a>{{end}}
         {{end}}
         <form method="post" action="/libraries/delete" class="inline-form" onsubmit="return confirm('Delete this library and all its data?')">
           <input type="hidden" name="id" value="{{.ID}}" />

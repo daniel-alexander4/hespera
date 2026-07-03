@@ -15,7 +15,7 @@ import (
 
 // TestCheckLibraryAudioFlagLive proves the CHEAP tier (the one chained after a
 // scan, so it runs on newly-added media) examines audio and flags a file with an
-// audio gap. Gated on HESPERA_LIVE_FIXTURE (a file with an audio gap). Runs with
+// audio gap (degraded: playable residue). Gated on HESPERA_LIVE_FIXTURE. Runs with
 // repair OFF so it never writes to the fixture — read-only.
 func TestCheckLibraryAudioFlagLive(t *testing.T) {
 	fixture := os.Getenv("HESPERA_LIVE_FIXTURE")
@@ -49,8 +49,8 @@ func TestCheckLibraryAudioFlagLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("status=%q detail=%q", status, detail)
-	if status != "flagged" || !strings.Contains(detail, "audio gap") {
-		t.Fatalf("cheap tier should flag the audio gap: got status=%q detail=%q", status, detail)
+	if status != "degraded" || !strings.Contains(detail, "audio gap") {
+		t.Fatalf("cheap tier should mark a gap-only file degraded: got status=%q detail=%q", status, detail)
 	}
 }
 

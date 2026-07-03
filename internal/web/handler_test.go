@@ -32,7 +32,7 @@ func openTestDB(t *testing.T) *sql.DB {
 // stubPages mirrors the page list New() compiles — kept here so the stub asset
 // FS provides every one (a missing page would fail New()).
 var stubPages = []string{
-	"home.html", "libraries.html", "libraries_new.html",
+	"home.html", "libraries.html", "libraries_new.html", "integrity_report.html",
 	"settings.html", "settings_jobs.html", "music_home.html", "music_artist.html",
 	"music_artist_external.html", "music_artist_disambiguate.html", "music_artist_art.html",
 	"music_album.html", "music_albums.html", "music_compilations.html", "player.html",
@@ -94,6 +94,19 @@ func stubAssetsFS() fs.FS {
 			`data-prev-file="{{.PrevFileID}}" data-next-file="{{.NextFileID}}"></video>{{end}}`,
 		"templates/music_album.html": `{{define "content"}}{{range .DiscTracks}}{{range .Tracks}}<li>{{.Title}}` +
 			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}</li>{{end}}{{end}}{{end}}`,
+		// Integrity report wiring: both severity sections + the per-row fields.
+		"templates/integrity_report.html": `{{define "content"}}` +
+			`{{if .Flagged}}<h2>Corrupt — needs replacement ({{len .Flagged}})</h2>{{end}}` +
+			`{{if .Degraded}}<h2>Degraded — playable with known defects ({{len .Degraded}})</h2>{{end}}` +
+			`{{range .Flagged}}{{template "irow" .}}{{end}}{{range .Degraded}}{{template "irow" .}}{{end}}{{end}}` +
+			`{{define "irow"}}<div class="irow">{{if .Href}}<a href="{{.Href}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}` +
+			`<code>{{.Path}}</code><span>{{humanBytes .SizeBytes}}</span>` +
+			`<em>{{.Detail}}</em><p>{{.Mitigation}}</p></div>{{end}}`,
+		// Libraries pills: the corrupt/degraded report links the test asserts.
+		"templates/libraries.html": `{{define "content"}}{{range .Libraries}}<div class="lib">{{.Name}}` +
+			`{{$f := index $.Flagged .ID}}{{if $f}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-warn">{{$f}} corrupt</a>{{end}}` +
+			`{{$d := index $.Degraded .ID}}{{if $d}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-neutral">{{$d}} degraded</a>{{end}}` +
+			`</div>{{end}}{{end}}`,
 	}
 	for path, content := range overrides {
 		m[path] = &fstest.MapFile{Data: []byte(content)}
@@ -132,7 +145,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 31
+	expectedPages := 32
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}

@@ -92,11 +92,11 @@ func TestMovieDetailIntegrityBadge(t *testing.T) {
 		t.Fatal("unflagged film must not badge")
 	}
 	if _, err := db.Exec(
-		"UPDATE movie_files SET integrity_status='flagged', integrity_detail='audio gap 2.0s (missing audio)' WHERE id=?", fileID); err != nil {
+		"UPDATE movie_files SET integrity_status='flagged', integrity_detail='bitstream corruption (3 decode errors)' WHERE id=?", fileID); err != nil {
 		t.Fatalf("flag file: %v", err)
 	}
 	body := get()
-	if !strings.Contains(body, "badge-warn") || !strings.Contains(body, "audio gap 2.0s (missing audio)") {
+	if !strings.Contains(body, "badge-warn") || !strings.Contains(body, "bitstream corruption (3 decode errors)") {
 		t.Fatal("flagged film should badge with the detail tooltip")
 	}
 }

@@ -567,31 +567,9 @@ func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
 		"MediaRoot":        h.cfg.MediaRoot,
 		"Saved":            r.URL.Query().Get("saved"),
 		"MediaRootInvalid": r.URL.Query().Get("mediaroot") == "invalid",
-		"Flagged":          h.integrityFlaggedCounts(r.Context()),
+		"Flagged":          h.integrityStatusCounts(r.Context(), "flagged"),
+		"Degraded":         h.integrityStatusCounts(r.Context(), "degraded"),
 	})
-}
-
-// integrityFlaggedCounts returns per-library counts of video files flagged with
-// unrepairable corruption, so the libraries page can surface a warning. Keyed by
-// library_id; libraries with no flags are absent. Best-effort (nil on error).
-func (h *Handler) integrityFlaggedCounts(ctx context.Context) map[int64]int {
-	out := map[int64]int{}
-	for _, tbl := range []string{"tv_series_files", "movie_files", "music_tracks"} {
-		rows, err := h.db.QueryContext(ctx,
-			"SELECT library_id, COUNT(*) FROM "+tbl+" WHERE integrity_status='flagged' GROUP BY library_id")
-		if err != nil {
-			continue
-		}
-		for rows.Next() {
-			var lib int64
-			var n int
-			if rows.Scan(&lib, &n) == nil {
-				out[lib] += n
-			}
-		}
-		rows.Close()
-	}
-	return out
 }
 
 // librariesMediaRoot persists the media folder (the pathguard containment root)
@@ -718,6 +696,11 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			_, _ = h.jobs.Enqueue("tv_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
 				return tvScanner.ReprobeMissing(ctx, pJID, pLibID)
 			})
+			// Chain trickplay sprite generation for new/changed files (measured
+			// ~15s per full movie, content-keyed so unchanged files are free).
+			_, _ = h.jobs.Enqueue("tv_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+				return h.generateTrickplayMissing(ctx, "tv_series_files", tJID, tLibID)
+			})
 			return nil
 		})
 	case "movies":
@@ -742,6 +725,10 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// twin of the tv_probe chain above.
 			_, _ = h.jobs.Enqueue("movie_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
 				return movieScanner.ReprobeMissing(ctx, pJID, pLibID)
+			})
+			// Chain trickplay sprite generation — the movie twin.
+			_, _ = h.jobs.Enqueue("movie_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+				return h.generateTrickplayMissing(ctx, "movie_files", tJID, tLibID)
 			})
 			return nil
 		})
