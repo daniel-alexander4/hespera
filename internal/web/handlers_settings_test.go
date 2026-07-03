@@ -297,6 +297,19 @@ func TestLibraryHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("POST /libraries/new traversal root 400", func(t *testing.T) {
+		// Lexically under the media root, resolves outside it.
+		body := "name=Bad&type=music&root_path=" + h.cfg.MediaRoot + "/../etc"
+		req := httptest.NewRequest(http.MethodPost, "/libraries/new",
+			strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
 	t.Run("POST /libraries/scan enqueues job", func(t *testing.T) {
 		res, err := db.Exec("INSERT INTO libraries (name, type, root_path) VALUES ('Scan Lib', 'music', ?)",
 			filepath.Join(h.cfg.MediaRoot, "scanlib"))
