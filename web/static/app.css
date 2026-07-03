@@ -1522,6 +1522,40 @@ html.using-mouse .grid-pager-btn,
   overflow-y: auto;
 }
 
+/* Global search palette — the "/" jump-to (search.js). Rides the
+   playlist-modal overlay; panel pinned near the top so results grow down. */
+.search-modal { align-items: flex-start; padding-top: 10vh; }
+.search-panel { max-width: 560px; }
+.search-head { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.5rem; }
+#search-input {
+  flex: 1;
+  padding: 0.55rem 0.8rem;
+  font-size: 1rem;
+  color: var(--page-fg);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+}
+.search-results { display: flex; flex-direction: column; }
+.search-section-label {
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.search-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  color: var(--page-fg);
+}
+.search-row:hover, .search-row:focus-visible { background: var(--accent-bg); outline: none; }
+.search-row-context { color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; }
+
 /* TV Episodes */
 .tv-episode-list {
   display: flex;

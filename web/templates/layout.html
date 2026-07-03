@@ -52,6 +52,7 @@
   <script src="{{staticv "/static/job_status.js"}}" defer></script>
   <script src="{{staticv "/static/era_slider.js"}}" defer></script>
   <script src="{{staticv "/static/grid_pager.js"}}" defer></script>
+  <script src="{{staticv "/static/search.js"}}" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -98,6 +99,7 @@
     </div>
     <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
     <div class="topbar-controls">
+    <button type="button" class="topbar-btn" data-search-open aria-label="Search" title="Search ( / )">{{template "icon-search"}}</button>
     <button type="button" class="topbar-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
     <button type="button" class="topbar-btn" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
     <button type="button" class="topbar-btn topbar-btn--power" data-app-quit aria-label="Quit Hespera" title="Quit Hespera">{{template "icon-power"}}</button>
@@ -112,6 +114,19 @@
   <footer class="footer">
     <div>Hespera</div>
   </footer>
+
+  {{/* Global search palette — the "/" jump-to (search.js). A couch overlay:
+       Back dismisses via the Close button; while visible, couch.js scopes
+       focus candidates to it. Re-rendered per Turbo swap (state = closed). */}}
+  <div id="search-modal" class="playlist-modal search-modal hidden" data-couch-overlay>
+    <div class="playlist-panel search-panel">
+      <div class="search-head">
+        <input id="search-input" type="search" placeholder="Search artists, albums, songs, shows, movies, people…" autocomplete="off" spellcheck="false" />
+        <button id="search-close" type="button" class="btn btn-sm" data-couch-dismiss aria-label="Close search">Close</button>
+      </div>
+      <div id="search-results" class="search-results"></div>
+    </div>
+  </div>
 
   <script>
     (() => {

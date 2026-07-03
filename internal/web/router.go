@@ -15,6 +15,9 @@ func (h *Handler) Router() http.Handler {
 		http.ServeFileFS(w, r, h.staticFS, "hespera-favicon.ico")
 	})
 
+	// Global search (the "/" jump-to palette)
+	mux.HandleFunc("/search", h.searchAPI)
+
 	// Libraries
 	mux.HandleFunc("/libraries", h.libraries)
 	mux.HandleFunc("/libraries/new", h.librariesNew)
