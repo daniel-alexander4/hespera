@@ -154,6 +154,38 @@ FROM watched w
 ORDER BY w.last_watched DESC
 LIMIT ?`
 
+// tvContinueWatchingQuery is the home Continue-Watching variant of
+// tvRecentlyWatchedQuery: same CTE and forward-only season roll, but a series
+// with nothing left unwatched at-or-after its watch point is DROPPED instead of
+// falling back to a "rewatch" card — matching the movie row's completed=0
+// filter, so the merged home row holds only continuable items. Starting a
+// rewatch resurfaces the show automatically (the progress upsert recomputes
+// completed on every save). The /tv page's "Recently Watched" strip keeps the
+// unfiltered query — there a finished show WAS recently watched.
+const tvContinueWatchingQuery = `
+WITH watched AS (
+  SELECT i.series_id AS sid, i.season_number AS nr, MAX(p.updated_at) AS last_watched
+  FROM tv_playback_progress p
+  JOIN tv_series_files f ON f.id = p.file_id
+  JOIN tv_series_identities i ON i.file_id = f.id
+  WHERE i.status = 'matched' AND i.provider = 'tmdb' AND i.series_id != ''
+  GROUP BY i.series_id
+)
+SELECT sid, target_season, recency FROM (
+  SELECT w.sid AS sid,
+         (SELECT MIN(i2.season_number)
+          FROM tv_series_identities i2
+          LEFT JOIN tv_playback_progress p2 ON p2.file_id = i2.file_id
+          WHERE i2.series_id = w.sid AND i2.status = 'matched'
+            AND i2.season_number >= w.nr
+            AND COALESCE(p2.completed, 0) = 0) AS target_season,
+         CAST(strftime('%s', w.last_watched) AS INTEGER) AS recency
+  FROM watched w
+)
+WHERE target_season IS NOT NULL
+ORDER BY recency DESC
+LIMIT ?`
+
 // tvRecentlyAddedQuery returns the newest-on-disk matched series. season_number
 // is selected to match the three-column shape recentTVSeries scans, but the
 // Recently-Added card links to the series page, so the value is unused; the
