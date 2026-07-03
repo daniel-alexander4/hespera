@@ -110,6 +110,7 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp.SkipSegments = skipSegmentsFor(&probe, "")
 	}
+	resp.Chapters = chapterMarks(&probe)
 	if out.SubtitleSidecar && sub > 0 {
 		resp.SubtitleURL = fmt.Sprintf("/stream/movie-subtitles/%d?track=%d", fileID, sub)
 	}
