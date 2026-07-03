@@ -91,6 +91,21 @@ function loadController(file, { html, url = 'http://localhost/', stubs = {}, sto
   Object.defineProperty(mediaProto, 'load', { configurable: true, value: function () {} });
   Object.defineProperty(mediaProto, 'canPlayType', { configurable: true, value: function () { return ''; } });
 
+  // Media Session: jsdom has no navigator.mediaSession, so provide a recording
+  // stub — registered action handlers land in window.__mediaSessionHandlers so a
+  // test can invoke them like Chrome would on a hardware media key. MediaMetadata
+  // is stubbed alongside (player.js constructs it whenever mediaSession exists).
+  const msHandlers = {};
+  window.navigator.mediaSession = stubs.mediaSession || {
+    playbackState: 'none',
+    metadata: null,
+    setActionHandler: (action, handler) => { msHandlers[action] = handler; },
+  };
+  window.__mediaSessionHandlers = msHandlers;
+  if (!window.MediaMetadata) {
+    window.MediaMetadata = class { constructor(m) { Object.assign(this, m || {}); } };
+  }
+
   // fetch + sendBeacon (network); default no-op fetch if a test doesn't set one.
   window.fetch = stubs.fetch || makeFetch({});
   const beacons = [];
