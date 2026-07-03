@@ -1327,6 +1327,56 @@ html.using-mouse .grid-pager-btn,
   background: var(--accent);
   pointer-events: none;
 }
+/* Seek-bar tick layer (media_player.js): chapter ticks + skip-segment spans,
+   painted inside the scrubber, never interactive. */
+.media-scrub-marks { position: absolute; inset: 0; pointer-events: none; }
+.media-scrub-tick {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 9px;
+  background: var(--text-soft);
+  border-radius: 1px;
+}
+.media-scrub-seg {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 5px;
+  background: var(--badge-warn-fg);
+  opacity: 0.55;
+  border-radius: 3px;
+}
+
+/* Hover preview (trickplay): a floating frame + timestamp above the bar. The
+   frame div is sized/painted from the sprite manifest; timestamp-only when no
+   sprites exist for the file. */
+.media-scrub-preview {
+  position: absolute;
+  bottom: 18px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: 4;
+}
+.media-scrub-preview-frame {
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 4px;
+  background-color: #000;
+}
+.media-scrub-preview-frame[hidden] { display: none; }
+.media-scrub-preview-time {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.8rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.82);
+  border-radius: 4px;
+}
+
 .media-scrubber-thumb {
   position: absolute;
   left: 0;

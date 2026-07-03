@@ -45,6 +45,27 @@ func classifyChapter(title string) (string, bool) {
 	return "", false
 }
 
+// chapterMark is one chapter start on the absolute timeline, emitted verbatim
+// in the playback session for the seek-bar tick layer (unlike skip segments,
+// which only carry the classified intro/recap/commercial chapters).
+type chapterMark struct {
+	Start float64 `json:"start"`
+	Title string  `json:"title"`
+}
+
+// chapterMarks maps every probed chapter to a tick — content chapters
+// included; classification is the skip system's concern, not the tick layer's.
+func chapterMarks(probe *video.ProbeResult) []chapterMark {
+	if probe == nil {
+		return nil
+	}
+	var out []chapterMark
+	for _, c := range probe.Chapters {
+		out = append(out, chapterMark{Start: c.StartSec, Title: c.Title})
+	}
+	return out
+}
+
 // skipSegmentsFor collects skip ranges for a media file from its probed chapters
 // (classified by title) and a sibling `<file>.edl` commercial sidecar (comskip /
 // Kodi format), if present. cleanPath must be the pathguard-resolved absolute

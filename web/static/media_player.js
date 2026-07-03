@@ -55,6 +55,8 @@ function initMediaPlayer() {
   let isProgressive = false; // current stream is remux/burn-in (linear, seeks via ?start= reload)
   let reloading = false;     // a ?start= reload is in flight (re-entrancy guard for seeks)
   let skipSegments = [];     // intro/recap/commercial ranges (absolute timeline) from the session
+  let chapterList = [];      // raw chapter starts (absolute timeline) — seek-bar ticks
+  let renderScrubMarks = () => {}; // bound to the real renderer once the scrubber wires up
   const subBurnIn = new Set(); // subtitle ordinals the server burns in (bitmap subs) — these change the video stream
   let recoverMediaDate = 0, recoverSwapDate = 0; // hls.js fatal-media-error recovery guards (anti-loop)
 
@@ -322,7 +324,9 @@ function initMediaPlayer() {
     if (subtitleOnly) { attachSubtitle(session); return; }
     sessionDuration = session.duration_seconds || sessionDuration;
     skipSegments = session.skip_segments || [];
+    chapterList = session.chapters || [];
     resetSkip();
+    renderScrubMarks();
     modeLabel.textContent = session.decision.replace('_', ' ');
     if (session.protocol === 'hls' && !nativeHLS && !(window.Hls && Hls.isSupported())) {
       modeLabel.textContent = 'This browser cannot play the transcoded stream';
@@ -565,7 +569,107 @@ function initMediaPlayer() {
     // Couch/remote: Left/Right on the focused bar nudge ±10s (reuses seekBy).
     // stopPropagation so couch.js's directional-focus nav doesn't ALSO move focus
     // off the bar on the same press — Up/Down still bubble, so the user can leave.
-    scrubber.addEventListener('keydown', (e) => {
+    // --- seek-bar tick marks + hover preview (trickplay) ---
+  // Ticks: neutral marks for every chapter, accent marks spanning skip
+  // segments — painted into a pointer-events:none layer inside the scrubber,
+  // re-rendered when the session (or duration) changes. Preview: a floating
+  // frame above the bar on hover/drag, background-position math over the
+  // sprite sheets; the manifest is fetched lazily on first hover and a 404
+  // silently disables previews.
+  const marksLayer = (() => {
+    if (!scrubber) return null;
+    const el = document.createElement('div');
+    el.className = 'media-scrub-marks';
+    scrubber.appendChild(el);
+    return el;
+  })();
+  renderScrubMarks = function () {
+    if (!marksLayer) return;
+    marksLayer.textContent = '';
+    const dur = sessionDuration;
+    if (!(dur > 0)) return;
+    for (const c of chapterList) {
+      if (!(c.start > 0) || c.start >= dur) continue; // a tick at 0 is noise
+      const t = document.createElement('div');
+      t.className = 'media-scrub-tick';
+      t.style.left = (c.start / dur * 100) + '%';
+      if (c.title) t.title = c.title;
+      marksLayer.appendChild(t);
+    }
+    for (const seg of skipSegments) {
+      const m = document.createElement('div');
+      m.className = 'media-scrub-seg media-scrub-seg-' + (seg.kind || 'intro');
+      m.style.left = (seg.start / dur * 100) + '%';
+      m.style.width = (Math.max(0, seg.end - seg.start) / dur * 100) + '%';
+      m.title = seg.kind || '';
+      marksLayer.appendChild(m);
+    }
+  };
+  video.addEventListener('durationchange', () => renderScrubMarks());
+
+  let tpManifest = null, tpState = 'idle'; // idle | loading | ready | absent
+  const tpBase = () => '/stream/' + video.dataset.mediaKind + '-trickplay/' + fileID + '/';
+  const preview = (() => {
+    if (!scrubber) return null;
+    const el = document.createElement('div');
+    el.className = 'media-scrub-preview';
+    el.hidden = true;
+    const img = document.createElement('div');
+    img.className = 'media-scrub-preview-frame';
+    const label = document.createElement('div');
+    label.className = 'media-scrub-preview-time';
+    el.appendChild(img);
+    el.appendChild(label);
+    scrubber.appendChild(el);
+    return { el, img, label };
+  })();
+  function loadTPManifest() {
+    if (tpState !== 'idle') return;
+    tpState = 'loading';
+    fetch(tpBase() + 'manifest.json')
+      .then((res) => { if (!res.ok) throw new Error('absent'); return res.json(); })
+      .then((m) => { tpManifest = m; tpState = 'ready'; })
+      .catch(() => { tpState = 'absent'; });
+  }
+  function showPreview(frac) {
+    if (!preview) return;
+    const dur = sessionDuration;
+    if (!(dur > 0)) return;
+    const t = frac * dur;
+    preview.label.textContent = fmtTime(t);
+    if (tpState === 'ready' && tpManifest) {
+      const m = tpManifest;
+      let idx = Math.floor(t / m.interval_sec);
+      if (idx >= m.frames) idx = m.frames - 1;
+      const per = m.tile * m.tile;
+      const sheet = Math.floor(idx / per), cell = idx % per;
+      const col = cell % m.tile, row = Math.floor(cell / m.tile);
+      preview.img.style.width = m.width + 'px';
+      preview.img.style.height = m.height + 'px';
+      preview.img.style.backgroundImage = "url('" + tpBase() + 'sprite' + String(sheet).padStart(5, '0') + ".jpg')";
+      preview.img.style.backgroundPosition = (-col * m.width) + 'px ' + (-row * m.height) + 'px';
+      preview.img.hidden = false;
+    } else {
+      preview.img.hidden = true; // timestamp-only until (unless) sprites exist
+    }
+    const frameW = (tpState === 'ready' && tpManifest) ? tpManifest.width : 60;
+    const barW = scrubber.getBoundingClientRect().width || 1;
+    let leftPx = frac * barW - frameW / 2;
+    leftPx = Math.max(0, Math.min(barW - frameW, leftPx));
+    preview.el.style.left = leftPx + 'px';
+    preview.el.hidden = false;
+  }
+  function hidePreview() { if (preview) preview.el.hidden = true; }
+  scrubber.addEventListener('pointerenter', loadTPManifest);
+  scrubber.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch' && !dragging) return;
+    showPreview(fracFromEvent(e));
+  });
+  scrubber.addEventListener('pointerleave', () => { if (!dragging) hidePreview(); });
+  scrubber.addEventListener('pointerup', hidePreview);
+  scrubber.addEventListener('pointercancel', hidePreview);
+
+  scrubber.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); seekBy(10); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); seekBy(-10); }
     });

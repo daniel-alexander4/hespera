@@ -43,6 +43,10 @@ func (h *Handler) pruneTVCacheOnce() {
 		}
 	}()
 	_ = video.PruneCache(h.tvHLSCacheRoot(), h.cfg.TVHLSCacheMaxBytes, h.cfg.TVCacheMaxAge)
+	// The trickplay sprite cache is a sibling root the sweep must visit
+	// explicitly (PruneCache only knows the one root it's handed). Sprites are
+	// tiny and rebuildable; a fixed byte cap + the same max-age suffice.
+	_ = video.PruneCache(h.trickplayCacheRoot(), trickplayCacheMaxBytes, h.cfg.TVCacheMaxAge)
 }
 
 type tvFileSource struct {
@@ -91,6 +95,7 @@ type playbackSessionResponse struct {
 	AudioTracks    []sessionTrack    `json:"audio_tracks,omitempty"`
 	SubtitleTracks []sessionTrack    `json:"subtitle_tracks,omitempty"`
 	SkipSegments   []skipSegment     `json:"skip_segments,omitempty"`
+	Chapters       []chapterMark     `json:"chapters,omitempty"`
 }
 
 // tvPlaybackSession resolves how a given client should play a TV file: the
@@ -167,6 +172,7 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp.SkipSegments = skipSegmentsFor(&probe, "")
 	}
+	resp.Chapters = chapterMarks(&probe)
 	resp.SkipSegments = append(resp.SkipSegments, h.dbTVSkipSegments(r.Context(), fileID)...)
 	// Lazily fingerprint this episode's season for intros, once, in the background
 	// (gentle on I/O — only seasons you play, gated by a per-season marker). Its

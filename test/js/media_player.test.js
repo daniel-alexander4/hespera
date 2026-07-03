@@ -304,3 +304,54 @@ test('Up Next: no card without a next file (movies, last episode)', async () => 
   env.document.getElementById('tvVideo').dispatchEvent(new env.window.Event('ended'));
   assert.strictEqual(env.document.querySelector('.media-upnext'), null);
 });
+
+test('seek-bar marks: chapter ticks + skip-segment spans render from the session', async () => {
+  const env = await boot({
+    sessionData: session({
+      chapters: [{ start: 90, title: 'Chapter 2' }, { start: 0, title: 'Start' }],
+      skip_segments: [{ start: 10, end: 40, kind: 'intro' }],
+    }),
+  });
+  const marks = env.document.querySelector('.media-scrub-marks');
+  assert.ok(marks, 'marks layer created');
+  const ticks = marks.querySelectorAll('.media-scrub-tick');
+  assert.strictEqual(ticks.length, 1, 'chapter at 0 is skipped as noise');
+  assert.strictEqual(ticks[0].title, 'Chapter 2');
+  // 90s of 3661 ≈ 2.458%
+  assert.ok(ticks[0].style.left.startsWith('2.4'), `tick position: ${ticks[0].style.left}`);
+  const segs = marks.querySelectorAll('.media-scrub-seg');
+  assert.strictEqual(segs.length, 1);
+  assert.ok(segs[0].classList.contains('media-scrub-seg-intro'));
+});
+
+test('hover preview: manifest fetched lazily; sprite math positions the frame; 404 degrades silently', async () => {
+  const manifest = { interval_sec: 10, width: 240, height: 100, tile: 5, frames: 599 };
+  const env = await boot({
+    stubs: {
+      fetch: makeFetch({
+        '/tv/playback-session': session(),
+        '/tv-trickplay/7/manifest.json': manifest,
+      }),
+    },
+  });
+  const scrubber = env.document.getElementById('mediaScrubber');
+  const preview = env.document.querySelector('.media-scrub-preview');
+  assert.ok(preview, 'preview element created');
+
+  // First hover triggers exactly one manifest fetch.
+  scrubber.dispatchEvent(new env.window.Event('pointerenter', { bubbles: true }));
+  scrubber.dispatchEvent(new env.window.Event('pointerenter', { bubbles: true }));
+  await flush();
+  const calls = env.fetch.calls.filter((c) => c.url.indexOf('trickplay') >= 0);
+  assert.strictEqual(calls.length, 1, 'manifest fetched once');
+
+  // A pointermove mid-bar shows the frame; jsdom rects are 0-wide, so drive
+  // the math via a synthetic event and assert background positioning exists.
+  scrubber.dispatchEvent(new env.window.MouseEvent('pointermove', { bubbles: true, clientX: 0 }));
+  const frame = env.document.querySelector('.media-scrub-preview-frame');
+  assert.ok(!preview.hidden, 'preview shown on move');
+  assert.ok(frame.style.backgroundImage.indexOf('sprite00000.jpg') >= 0, `sprite sheet: ${frame.style.backgroundImage}`);
+
+  scrubber.dispatchEvent(new env.window.Event('pointerleave', { bubbles: true }));
+  assert.ok(preview.hidden, 'hidden on leave');
+});
