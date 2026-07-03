@@ -27,6 +27,11 @@
   let currentTrackReported = false;
   let karaokeLines = [];
   let karaokeToken = 0; // guards a stale lyrics fetch from overwriting a newer track
+  // Per-song lyrics overrides (track id → on/off), flipped by the transport's
+  // Lyrics button. In-memory for the session: the global lyrics_enabled setting
+  // stays the default for every track without an entry here. An explicit "on"
+  // sends force=1 so one track can opt in even while the global default is off.
+  const lyricsOverride = new Map();
   let view = null; // now-playing view DOM refs, when that page is shown
   // The autoload query of the queue currently loaded into the player. Persists
   // across Turbo navigations (this script loads once in the shell), so returning
@@ -150,13 +155,29 @@
     if (view && view.main) view.main.classList.toggle('no-lyrics', on);
   };
 
+  // Effective lyrics state for a track: its per-song override when set, else
+  // the global default.
+  const lyricsOnFor = (t) =>
+    t && t.id && lyricsOverride.has(t.id) ? lyricsOverride.get(t.id) : !!(view && view.lyricsEnabled);
+
+  // Reflect the current track's lyrics state on the transport's toggle button.
+  const updateLyricsBtn = () => {
+    if (!view || !view.lyricsBtn) return;
+    const t = currentTrack();
+    const on = !!(t && t.id) && lyricsOnFor(t);
+    view.lyricsBtn.classList.toggle('is-on', on);
+    view.lyricsBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+
   const loadKaraokeForTrack = (t) => {
     karaokeLines = [];
     const token = ++karaokeToken;
     if (!view) return;
-    // Lyrics disabled globally (default off), or a track with no local id (nothing
-    // cached) → hide the card so the cover/info expand.
-    if (!view.lyricsEnabled || !t.id) {
+    updateLyricsBtn();
+    // Lyrics off for this track (per-song override, else the global default),
+    // or a track with no local id (nothing cached) → hide the card so the
+    // cover/info expand.
+    if (!t.id || !lyricsOnFor(t)) {
       setNoLyrics(true);
       return;
     }
@@ -169,7 +190,9 @@
     fetch('/music/lyrics/fetch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'track_id=' + encodeURIComponent(t.id),
+      // An explicit per-song "on" carries force=1 past the endpoint's global
+      // lyrics_enabled gate — a deliberate user gesture, not an automatic fetch.
+      body: 'track_id=' + encodeURIComponent(t.id) + (lyricsOverride.get(t.id) === true ? '&force=1' : ''),
     })
       .then((r) => r.json())
       .then((payload) => {
@@ -458,6 +481,7 @@
       karaokeCurrent: $('player-karaoke-current'),
       karaokeNext: $('player-karaoke-next'),
       lyricsEnabled: page.dataset.lyricsEnabled === '1',
+      lyricsBtn: $('player-lyrics-btn'),
       playlistOpenBtn: $('playlist-open-btn'),
       playlistCloseBtn: $('playlist-close-btn'),
       playlistDrawer: $('playlist-drawer'),
@@ -470,6 +494,16 @@
     // reveals it only once a track's synced lyrics are confirmed to exist, so it
     // never appears empty (whether lyrics are off, or on but the track has none).
     if (view.main) view.main.classList.add('no-lyrics');
+
+    if (view.lyricsBtn) {
+      view.lyricsBtn.addEventListener('click', () => {
+        const t = currentTrack();
+        if (!t || !t.id) return;
+        lyricsOverride.set(t.id, !lyricsOnFor(t));
+        loadKaraokeForTrack(t); // re-evaluates: fetch+reveal on, or hide off
+      });
+      updateLyricsBtn();
+    }
 
     $('player-prev-btn').addEventListener('click', playPrev);
     $('player-rewind-btn').addEventListener('click', () => {

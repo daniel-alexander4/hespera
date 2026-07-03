@@ -30,6 +30,7 @@ function fixture({ autoload = '', lyrics = false } = {}) {
           <button id="player-toggle-btn"></button><button id="player-forward-btn"></button>
           <button id="player-next-btn"></button>
         </div>
+        <button id="player-lyrics-btn"></button>
         <button id="playlist-open-btn"></button><button id="playlist-close-btn"></button>
         <div id="playlist-drawer"></div><div id="playlist-scrim"></div><ul id="playlist-list"></ul>
       </div>
@@ -115,4 +116,47 @@ test('a track with no synced lyrics keeps the card hidden and never shows "Loadi
   await flush();
   assert.strictEqual(hasNoLyrics(env), true, 'no synced lyrics → card stays hidden');
   assert.strictEqual(env.document.getElementById('player-karaoke-current').textContent, '', 'never flashed a Loading placeholder');
+});
+
+test('the per-song Lyrics toggle opts one track in past a disabled global default (force=1)', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 21, albumId: 6, album: 'Rising', title: 'Stargazer', artist: 'Rainbow' }] },
+    '/music/lyrics/fetch': { ok: true, data: { synced_lyrics: '[00:02.00]High noon' } },
+  };
+  const env = boot({ autoload: 'source=all&library=1', lyrics: false, routes });
+  await flush();
+  assert.strictEqual(hasNoLyrics(env), true, 'global default off → card hidden');
+  assert.strictEqual(env.fetch.calls.filter((c) => c.url.indexOf('/music/lyrics/fetch') >= 0).length, 0, 'no automatic fetch while disabled');
+
+  const btn = env.document.getElementById('player-lyrics-btn');
+  btn.click();
+  await flush();
+  const lyricCalls = env.fetch.calls.filter((c) => c.url.indexOf('/music/lyrics/fetch') >= 0);
+  assert.strictEqual(lyricCalls.length, 1, 'toggle-on fetches lyrics');
+  assert.ok(/(^|&)force=1(&|$)/.test(lyricCalls[0].opts.body || ''), 'explicit opt-in carries force=1');
+  assert.strictEqual(hasNoLyrics(env), false, 'card revealed for this song');
+  assert.strictEqual(btn.classList.contains('is-on'), true, 'button reflects on');
+
+  // Toggle back off: card hides again, no extra fetch needed.
+  btn.click();
+  await flush();
+  assert.strictEqual(hasNoLyrics(env), true, 'toggle-off hides the card');
+  assert.strictEqual(btn.classList.contains('is-on'), false, 'button reflects off');
+});
+
+test('the per-song Lyrics toggle hides lyrics for one track when the global default is on', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 22, albumId: 7, album: 'Believe', title: 'Believe', artist: 'Cher' }] },
+    '/music/lyrics/fetch': { ok: true, data: { synced_lyrics: '[00:01.00]Do you believe' } },
+  };
+  const env = boot({ autoload: 'source=all&library=1', lyrics: true, routes });
+  await flush();
+  assert.strictEqual(hasNoLyrics(env), false, 'global on + synced lyrics → card shown');
+  const btn = env.document.getElementById('player-lyrics-btn');
+  assert.strictEqual(btn.classList.contains('is-on'), true, 'button starts on (global default)');
+
+  btn.click();
+  await flush();
+  assert.strictEqual(hasNoLyrics(env), true, 'per-song off hides the card despite the global default');
+  assert.strictEqual(btn.classList.contains('is-on'), false);
 });

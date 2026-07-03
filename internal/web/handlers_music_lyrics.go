@@ -18,6 +18,9 @@ import (
 // once. Gated by the `lyrics_enabled` app-setting (default OFF, opt-in via
 // Settings → API Keys): when off this endpoint returns immediately and the
 // now-playing page hides the lyrics card so the cover expands into the space.
+// The gate governs *automatic* fetching; the transport's per-song Lyrics
+// toggle sends force=1 — an explicit user gesture that opts one track in even
+// while the global default is off (still cache-first).
 
 const (
 	lyricsProviderKey = "lrclib"
@@ -57,14 +60,15 @@ func (h *Handler) musicLyricsFetch(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	// Global opt-in gate (default off): the single source of truth — even if the
-	// client calls this directly, no LRCLIB fetch happens when lyrics are disabled.
-	if !h.effectiveLyricsEnabled(r.Context()) {
-		writeLyricsJSON(w, http.StatusOK, true, "lyrics disabled", nil)
-		return
-	}
 	if err := r.ParseForm(); err != nil {
 		writeLyricsJSON(w, http.StatusBadRequest, false, "invalid request", nil)
+		return
+	}
+	// Global opt-in gate (default off) for *automatic* fetches — no LRCLIB call
+	// happens when lyrics are disabled. force=1 is the per-song toggle's
+	// explicit user gesture, which opts this one track in past the default.
+	if !h.effectiveLyricsEnabled(r.Context()) && r.FormValue("force") != "1" {
+		writeLyricsJSON(w, http.StatusOK, true, "lyrics disabled", nil)
 		return
 	}
 	trackID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("track_id")), 10, 64)
