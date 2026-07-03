@@ -199,9 +199,10 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
   file_size_bytes=excluded.file_size_bytes,
   mtime_unix=excluded.mtime_unix,
   checksum_sha256=excluded.checksum_sha256,
-  -- a changed file (new size or mtime) invalidates its integrity status so the
-  -- next integrity_check re-examines (and re-repairs) it.
-  integrity_status=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE integrity_status END
+  -- a changed file (new size or mtime) invalidates its integrity status and
+  -- loudness so the chained integrity_check / music_loudness jobs re-examine it.
+  integrity_status=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE integrity_status END,
+  loudness_lufs=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN 0 ELSE loudness_lufs END
 `, libraryID, artistID, albumID, meta.Title, meta.Track, meta.Disc, resolvedPath, meta.MIMEType, fileSize, mtimeUnix, checksumSHA)
 	if err != nil {
 		_ = tx.Rollback()
