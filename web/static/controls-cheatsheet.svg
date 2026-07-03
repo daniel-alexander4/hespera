@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="600" viewBox="0 0 840 600" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <!-- Hespera keyboard/remote controls cheat sheet — Catppuccin Mocha. The
+       keyboard mimics a TV remote everywhere (couch.js is always on):
+       arrows = D-pad, Enter = OK, Esc/Backspace = Back. -->
+  <defs>
+    <g id="keycap">
+      <rect x="0" y="0" width="44" height="44" rx="8" fill="#313244" stroke="#45475a" stroke-width="1.5"/>
+    </g>
+    <g id="keycap-wide">
+      <rect x="0" y="0" width="76" height="44" rx="8" fill="#313244" stroke="#45475a" stroke-width="1.5"/>
+    </g>
+  </defs>
+
+  <rect width="840" height="600" fill="#1e1e2e"/>
+
+  <!-- Title -->
+  <text x="420" y="46" text-anchor="middle" font-size="24" font-weight="700" fill="#cdd6f4">Hespera — Remote &amp; Keyboard Controls</text>
+  <text x="420" y="70" text-anchor="middle" font-size="13" fill="#a6adc8">The keyboard works like a TV remote, everywhere — desk and couch alike</text>
+
+  <!-- ======================= LEFT COLUMN ======================= -->
+
+  <!-- Navigate -->
+  <text x="60" y="122" font-size="15" font-weight="700" fill="#cba6f7">NAVIGATE</text>
+  <use href="#keycap" x="112" y="138"/>
+  <text x="134" y="167" text-anchor="middle" font-size="18" fill="#cdd6f4">&#8593;</text>
+  <use href="#keycap" x="62" y="188"/>
+  <text x="84" y="217" text-anchor="middle" font-size="18" fill="#cdd6f4">&#8592;</text>
+  <use href="#keycap" x="112" y="188"/>
+  <text x="134" y="217" text-anchor="middle" font-size="18" fill="#cdd6f4">&#8595;</text>
+  <use href="#keycap" x="162" y="188"/>
+  <text x="184" y="217" text-anchor="middle" font-size="18" fill="#cdd6f4">&#8594;</text>
+  <text x="240" y="185" font-size="14" fill="#cdd6f4">Move the focus ring</text>
+  <text x="240" y="205" font-size="12.5" fill="#a6adc8">between cards, buttons and links.</text>
+  <text x="240" y="222" font-size="12.5" fill="#a6adc8">Arrows stay normal in text boxes.</text>
+
+  <!-- Select -->
+  <text x="60" y="282" font-size="15" font-weight="700" fill="#a6e3a1">SELECT</text>
+  <use href="#keycap-wide" x="62" y="298"/>
+  <text x="100" y="326" text-anchor="middle" font-size="14" font-weight="600" fill="#cdd6f4">Enter</text>
+  <text x="160" y="318" font-size="14" fill="#cdd6f4">Open / Play</text>
+  <text x="160" y="336" font-size="12.5" fill="#a6adc8">activates the focused item (remote OK)</text>
+
+  <!-- Back -->
+  <text x="60" y="396" font-size="15" font-weight="700" fill="#fab387">BACK</text>
+  <use href="#keycap-wide" x="62" y="412"/>
+  <text x="100" y="440" text-anchor="middle" font-size="14" font-weight="600" fill="#cdd6f4">Esc</text>
+  <use href="#keycap" x="146" y="412"/>
+  <text x="168" y="440" text-anchor="middle" font-size="17" fill="#cdd6f4">&#9003;</text>
+  <text x="216" y="420" font-size="14" fill="#cdd6f4">Steps back up, one press at a time:</text>
+  <text x="216" y="440" font-size="12.5" fill="#a6adc8">1&#8201;&#8212;&#8201;close an open popup or menu</text>
+  <text x="216" y="457" font-size="12.5" fill="#a6adc8">2&#8201;&#8212;&#8201;jump from a grid to its tab bar</text>
+  <text x="216" y="474" font-size="12.5" fill="#a6adc8">3&#8201;&#8212;&#8201;go to the parent page</text>
+
+  <!-- Column divider -->
+  <line x1="420" y1="100" x2="420" y2="500" stroke="#313244" stroke-width="1.5"/>
+
+  <!-- ======================= RIGHT COLUMN ======================= -->
+
+  <!-- Browse grids -->
+  <text x="460" y="122" font-size="15" font-weight="700" fill="#89dceb">BROWSE GRIDS</text>
+  <!-- mini grid diagram -->
+  <g>
+    <rect x="497" y="142" width="30" height="30" rx="4" fill="#313244"/>
+    <rect x="533" y="142" width="30" height="30" rx="4" fill="#313244"/>
+    <rect x="569" y="142" width="30" height="30" rx="4" fill="#45475a" stroke="#cba6f7" stroke-width="2"/>
+    <rect x="497" y="178" width="30" height="30" rx="4" fill="#313244"/>
+    <rect x="533" y="178" width="30" height="30" rx="4" fill="#313244"/>
+    <rect x="569" y="178" width="30" height="30" rx="4" fill="#313244"/>
+    <!-- exit arrows -->
+    <text x="613" y="163" font-size="16" fill="#89dceb">&#8594;</text>
+    <text x="583" y="134" text-anchor="middle" font-size="16" fill="#89dceb">&#8593;</text>
+  </g>
+  <text x="648" y="158" font-size="14" fill="#cdd6f4">Flip the page by moving</text>
+  <text x="648" y="176" font-size="14" fill="#cdd6f4">off any edge of the grid</text>
+  <text x="648" y="196" font-size="12.5" fill="#a6adc8">&#8594; / &#8595; next &#183; &#8592; / &#8593; previous</text>
+  <text x="648" y="213" font-size="12.5" fill="#a6adc8">wraps around at both ends</text>
+  <text x="497" y="232" font-size="12.5" fill="#a6adc8">Esc jumps out of the grid to the tab bar.</text>
+
+  <!-- Video player -->
+  <text x="460" y="282" font-size="15" font-weight="700" fill="#f38ba8">VIDEO PLAYER</text>
+  <use href="#keycap" x="462" y="298"/>
+  <text x="484" y="327" text-anchor="middle" font-size="18" fill="#cdd6f4">&#8592;</text>
+  <use href="#keycap" x="512" y="298"/>
+  <text x="534" y="327" text-anchor="middle" font-size="18" fill="#cdd6f4">&#8594;</text>
+  <text x="572" y="318" font-size="14" fill="#cdd6f4">&#177;10 seconds</text>
+  <text x="572" y="336" font-size="12.5" fill="#a6adc8">with the seek bar focused</text>
+
+  <!-- Era slider -->
+  <text x="460" y="396" font-size="15" font-weight="700" fill="#f9e2af">ERA SLIDER <tspan font-weight="400" fill="#a6adc8" font-size="12">(music &#8594; shuffle an era)</tspan></text>
+  <text x="462" y="424" font-size="14" fill="#cdd6f4">&#8592; &#8594;</text>
+  <text x="530" y="424" font-size="12.5" fill="#a6adc8">slide the year range</text>
+  <text x="462" y="447" font-size="14" fill="#cdd6f4">&#8593; &#8595;</text>
+  <text x="530" y="447" font-size="12.5" fill="#a6adc8">widen / narrow it</text>
+  <text x="462" y="470" font-size="14" fill="#cdd6f4">Enter</text>
+  <text x="530" y="470" font-size="12.5" fill="#a6adc8">play the range</text>
+
+  <!-- Footer -->
+  <line x1="60" y1="520" x2="780" y2="520" stroke="#313244" stroke-width="1.5"/>
+  <text x="420" y="548" text-anchor="middle" font-size="12.5" fill="#a6adc8">Mouse users: page chevrons &#8249; &#8250; appear at the screen edges as soon as the mouse moves.</text>
+  <text x="420" y="568" text-anchor="middle" font-size="12.5" fill="#6c7086">Couch mode (?couch=1) makes everything bigger for the TV &#8212; same keys.</text>
+</svg>
