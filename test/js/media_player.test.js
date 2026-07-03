@@ -432,7 +432,7 @@ test('hover preview: manifest fetched lazily; sprite math positions the frame; 4
   assert.ok(preview.hidden, 'hidden on leave');
 });
 
-test('FF/RW scan: presses cycle 1×/2×/3× with the pill tracking direction + speed', async () => {
+test('FF/RW scan: presses cycle 2×/8×/32× with the indicator riding the preview cluster', async () => {
   const env = await boot();
   const doc = env.document;
   const video = doc.getElementById('tvVideo');
@@ -441,25 +441,30 @@ test('FF/RW scan: presses cycle 1×/2×/3× with the pill tracking direction + s
   const ff = doc.getElementById('tvForwardBtn');
   const rw = doc.getElementById('tvRewindBtn');
 
+  // The indicator is reparented into the trickplay preview cluster, so during a
+  // scan it rides the playhead with the frame + timestamp (the Plex/Roku look).
+  assert.ok(pill.closest('.media-scrub-preview'), 'pill lives inside the preview cluster');
+
   video.play(); // "watching" — the transport reflects play/pause events
   const transport = doc.getElementById('tvTransport');
   assert.ok(transport.classList.contains('playing'));
   ff.click();
   assert.ok(!transport.classList.contains('playing'), 'entering scan pauses playback');
   assert.strictEqual(pill.hidden, false, 'pill shows from the first press');
-  assert.strictEqual(speed.textContent, '1×');
+  assert.strictEqual(speed.textContent, '2×');
   assert.strictEqual(pill.querySelector('.media-scan-ff').hidden, false, 'forward glyph shown');
   assert.strictEqual(pill.querySelector('.media-scan-rw').hidden, true);
+  assert.ok(!pill.closest('.media-scrub-preview').hidden, 'preview cluster appears with the first press');
 
   ff.click();
-  assert.strictEqual(speed.textContent, '2×');
+  assert.strictEqual(speed.textContent, '8×');
   ff.click();
-  assert.strictEqual(speed.textContent, '3×');
+  assert.strictEqual(speed.textContent, '32×');
   ff.click();
-  assert.strictEqual(speed.textContent, '1×', '4th press wraps back to 1×');
+  assert.strictEqual(speed.textContent, '2×', '4th press wraps back to 2×');
 
   rw.click();
-  assert.strictEqual(speed.textContent, '1×', 'opposite direction restarts at 1×');
+  assert.strictEqual(speed.textContent, '2×', 'opposite direction restarts at 2×');
   assert.strictEqual(pill.querySelector('.media-scan-rw').hidden, false, 'rewind glyph shown');
   assert.strictEqual(pill.querySelector('.media-scan-ff').hidden, true);
 
@@ -474,7 +479,7 @@ test('FF/RW scan: play commits the advanced position as one real seek and resume
   const ff = doc.getElementById('tvForwardBtn');
 
   video.currentTime = 100;
-  ff.click(); ff.click(); ff.click(); // 3× forward
+  ff.click(); ff.click(); ff.click(); // 32× forward
   await new Promise((r) => setTimeout(r, 450)); // let the 200ms ticker advance the virtual playhead
   assert.strictEqual(video.currentTime, 100, 'no seek while scanning — the playhead is virtual');
   doc.getElementById('tvToggleBtn').click();
@@ -493,7 +498,7 @@ test('FF/RW scan: rewind moves backward; a scrubber drag cancels without seeking
   doc.getElementById('tvRewindBtn').click();
   await new Promise((r) => setTimeout(r, 450));
   doc.getElementById('tvToggleBtn').click();
-  assert.ok(video.currentTime < 100 && video.currentTime > 90, `1× rewind landed just behind the entry point: ${video.currentTime}`);
+  assert.ok(video.currentTime < 100 && video.currentTime > 90, `2× rewind landed just behind the entry point: ${video.currentTime}`);
 
   // Drag-cancel: enter a scan, then grab the scrubber — scan dies, no commit.
   video.currentTime = 50;

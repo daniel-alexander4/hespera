@@ -1472,14 +1472,11 @@ html.using-mouse .grid-pager-btn,
   border-radius: 4px;
 }
 
-/* FF/RW scan pill (media_player.js): floats just below the bar while a virtual
-   scan runs, showing direction + speed (▶▶ 2×). Same overlay-chrome treatment
-   as the skip button / preview timestamp; never interactive. */
+/* FF/RW scan indicator (media_player.js): a chip inside the trickplay preview
+   cluster, so during a virtual scan the direction + speed (▶▶ 8×) ride the
+   playhead with the frame + timestamp — the Plex/Roku trick-mode look. Same
+   overlay-chrome treatment as the preview timestamp; never interactive. */
 .media-scan-pill {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -1492,7 +1489,6 @@ html.using-mouse .grid-pager-btn,
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 999px;
   pointer-events: none;
-  z-index: 4;
 }
 .media-scan-pill[hidden],
 .media-scan-pill > [hidden] { display: none; }

@@ -9,8 +9,9 @@
        aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <div class="media-scrubber-fill" id="mediaScrubberFill"></div>
     <div class="media-scrubber-thumb" id="mediaScrubberThumb"></div>
-    {{/* FF/RW scan pill (media_player.js): floats below the bar while a
-         virtual scan runs, showing direction + speed (▶▶ 2×). */}}
+    {{/* FF/RW scan indicator (media_player.js): rendered here for its inline
+         SVG icons, then reparented into the trickplay preview cluster so
+         direction + speed (▶▶ 8×) ride the playhead during a virtual scan. */}}
     <div class="media-scan-pill" id="mediaScanPill" hidden>
       <span class="media-scan-rw">{{template "icon-rewind"}}</span><span class="media-scan-ff">{{template "icon-fast-forward"}}</span><span class="media-scan-speed"></span>
     </div>
@@ -29,9 +30,9 @@
        carries a non-zero data-prev-file / data-next-file (hidden on movies and at
        season boundaries). */}}
   <button id="tvPrevEpBtn" type="button" class="btn btn-sm" aria-label="Previous episode" title="Previous episode" hidden>{{template "icon-skip-back"}}</button>
-  <button id="tvRewindBtn" type="button" class="btn btn-sm" aria-label="Rewind" title="Rewind — press again for 2×/3×">{{template "icon-rewind"}}</button>
+  <button id="tvRewindBtn" type="button" class="btn btn-sm" aria-label="Rewind" title="Rewind — press again for 8× / 32×">{{template "icon-rewind"}}</button>
   <button id="tvToggleBtn" type="button" class="btn btn-primary btn-sm" aria-label="Play or pause" title="Play / Pause"><span class="tv-glyph-play">{{template "icon-play"}}</span><span class="tv-glyph-pause">{{template "icon-pause"}}</span></button>
-  <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Fast-forward" title="Fast-forward — press again for 2×/3×">{{template "icon-fast-forward"}}</button>
+  <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Fast-forward" title="Fast-forward — press again for 8× / 32×">{{template "icon-fast-forward"}}</button>
   <button id="tvNextEpBtn" type="button" class="btn btn-sm" aria-label="Next episode" title="Next episode" hidden>{{template "icon-skip-forward"}}</button>
   <button id="tvMuteBtn" type="button" class="btn btn-sm" aria-pressed="false" aria-label="Mute" title="Mute"><span class="tv-glyph-vol">{{template "icon-volume"}}</span><span class="tv-glyph-mute" hidden>{{template "icon-volume-x"}}</span></button>
   <input id="tvVolume" type="range" min="0" max="1" step="0.05" value="1" class="tv-volume" aria-label="Volume" />
