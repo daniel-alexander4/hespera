@@ -10,13 +10,13 @@
 {{else}}
 
 <div class="subtabs">
-  <button class="subtab active" data-tab="recent">Recent</button>
-  <button class="subtab" data-tab="artists">Artists</button>
-  <button class="subtab" data-tab="compilations">Compilations</button>
+  <button class="subtab{{if eq .ActiveMusicTab "recent"}} active{{end}}" data-tab="recent">Recent</button>
+  <button class="subtab{{if eq .ActiveMusicTab "artists"}} active{{end}}" data-tab="artists">Artists</button>
+  <button class="subtab{{if eq .ActiveMusicTab "compilations"}} active{{end}}" data-tab="compilations">Compilations</button>
 </div>
 
 <!-- Artists Tab -->
-<div class="subtab-panel" id="tab-artists">
+<div class="subtab-panel{{if eq .ActiveMusicTab "artists"}} active{{end}}" id="tab-artists">
   {{if .ArtistsSearch}}{{template "searchForm" .ArtistsSearch}}{{end}}
   {{if .Artists}}
   <div class="band-albums-grid" data-grid-pager data-page="{{.ArtistsPage.Page}}" data-total-pages="{{.ArtistsPage.TotalPages}}" data-q="{{.ArtistsSearch.Q}}">
@@ -31,7 +31,7 @@
 </div>
 
 <!-- Compilations Tab -->
-<div class="subtab-panel" id="tab-compilations">
+<div class="subtab-panel{{if eq .ActiveMusicTab "compilations"}} active{{end}}" id="tab-compilations">
   {{if .Compilations}}
   <div class="band-albums-grid">
     {{range .Compilations}}
@@ -57,7 +57,7 @@
 </div>
 
 <!-- Recent Tab -->
-<div class="subtab-panel active" id="tab-recent">
+<div class="subtab-panel{{if eq .ActiveMusicTab "recent"}} active{{end}}" id="tab-recent">
   <h3 class="section-title">Playlists</h3>
   <div class="quick-playlists" style="display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem; margin-bottom:1.25rem;">
     <a class="btn btn-primary" href="/music/player?source=all&amp;shuffle=1&amp;library={{.LibraryID}}" data-play>{{template "icon-shuffle"}}Shuffle All</a>
