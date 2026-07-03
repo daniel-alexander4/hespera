@@ -1428,6 +1428,32 @@ html.using-mouse .grid-pager-btn,
   border-radius: 4px;
 }
 
+/* FF/RW scan pill (media_player.js): floats just below the bar while a virtual
+   scan runs, showing direction + speed (▶▶ 2×). Same overlay-chrome treatment
+   as the skip button / preview timestamp; never interactive. */
+.media-scan-pill {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 4;
+}
+.media-scan-pill[hidden],
+.media-scan-pill > [hidden] { display: none; }
+.media-scan-pill .icon { width: 1em; height: 1em; }
+
 .media-scrubber-thumb {
   position: absolute;
   left: 0;

@@ -57,6 +57,9 @@ function initMediaPlayer() {
   let skipSegments = [];     // intro/recap/commercial ranges (absolute timeline) from the session
   let chapterList = [];      // raw chapter starts (absolute timeline) — seek-bar ticks
   let renderScrubMarks = () => {}; // bound to the real renderer once the scrubber wires up
+  // Trickplay-preview hooks for the FF/RW scan — bound to the real preview
+  // functions once the scrubber wires up (same pattern as renderScrubMarks).
+  let scanShowPreview = () => {}, scanHidePreview = () => {}, scanLoadPreview = () => {};
   const subBurnIn = new Set(); // subtitle ordinals the server burns in (bitmap subs) — these change the video stream
   let recoverMediaDate = 0, recoverSwapDate = 0; // hls.js fatal-media-error recovery guards (anti-loop)
 
@@ -394,8 +397,9 @@ function initMediaPlayer() {
   // that video.seekable is [0,0], so the element can't seek natively at all (a
   // currentTime assignment, even within the buffer, clamps to 0). Every seek
   // therefore re-anchors the stream server-side at the new ?start= (reusing the
-  // resume -ss). The ±10s transport buttons drive it; the native <video> scrubber
-  // can't (it can't address an unindexed stream).
+  // resume -ss). The scrubber (drag-release + ±10s arrow keys) and the scan
+  // commit drive it; the native <video> scrubber can't (it can't address an
+  // unindexed stream).
   function seekProgressiveTo(targetAbs) {
     if (reloading) return;
     targetAbs = Math.max(0, targetAbs);
@@ -412,9 +416,14 @@ function initMediaPlayer() {
     video.currentTime = t;
   };
 
-  const togglePlay = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
-  if (rewindBtn) rewindBtn.addEventListener('click', () => seekBy(-10));
-  if (forwardBtn) forwardBtn.addEventListener('click', () => seekBy(10));
+  // Play (button or video-frame click) is also the scan-mode exit: it commits
+  // the scanned-to position as the one real seek and resumes playback.
+  const togglePlay = () => {
+    if (endScan(true)) { video.play().catch(() => {}); return; }
+    if (video.paused) video.play().catch(() => {}); else video.pause();
+  };
+  if (rewindBtn) rewindBtn.addEventListener('click', () => scanPress(-1));
+  if (forwardBtn) forwardBtn.addEventListener('click', () => scanPress(1));
   if (toggleBtn) toggleBtn.addEventListener('click', togglePlay);
 
   // Reload: re-fetch the session and replay at the current position — recovers a
@@ -513,7 +522,7 @@ function initMediaPlayer() {
     if (durLabel) durLabel.textContent = fmtTime(sessionDuration);
   }
   function updateScrubFromPlayback() {
-    if (dragging) return;
+    if (dragging || scanActive()) return; // the drag / the scan ticker owns the bar
     const dur = sessionDuration || video.duration || 0;
     renderScrub(dur > 0 ? currentAbsTime() / dur : 0, currentAbsTime());
   }
@@ -561,6 +570,7 @@ function initMediaPlayer() {
   }
   if (scrubber) {
     scrubber.addEventListener('pointerdown', (e) => {
+      endScan(false); // a drag takes over from a scan; its release sets the position
       dragging = true;
       try { scrubber.setPointerCapture(e.pointerId); } catch (e2) {}
       dragFrac = fracFromEvent(e);
@@ -673,6 +683,7 @@ function initMediaPlayer() {
     preview.el.hidden = false;
   }
   function hidePreview() { if (preview) preview.el.hidden = true; }
+  scanShowPreview = showPreview; scanHidePreview = hidePreview; scanLoadPreview = loadTPManifest;
   scrubber.addEventListener('pointerenter', loadTPManifest);
   scrubber.addEventListener('pointermove', (e) => {
     if (e.pointerType === 'touch' && !dragging) return;
@@ -687,6 +698,71 @@ function initMediaPlayer() {
       else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); seekBy(-10); }
     });
   }
+
+  // --- FF/RW scan (DVR-style) --- the rewind/fast-forward buttons drive a
+  //     *virtual* playhead, not the video: the first press pauses playback in
+  //     place and scans at 1× (one timeline-second per real second); repeat
+  //     presses cycle 2× → 3× → 1×; the opposite direction restarts at 1× that
+  //     way. The scrubber fill and the trickplay preview track the scan
+  //     position, and a floating pill under the bar shows direction + speed.
+  //     Play (button or video-frame click) commits the single real seek — the
+  //     drag-release pattern, timer-driven — so a scan costs the server nothing
+  //     until it lands and works identically on the seekable and progressive
+  //     paths (browsers have no reverse playback, and a per-step progressive
+  //     seek would reload the stream every step; the virtual playhead sidesteps
+  //     both). The overlay stays pinned throughout because the video is paused.
+  const SCAN_SPEEDS = [1, 2, 3]; // timeline seconds per real second, per press
+  const scanPill = document.getElementById('mediaScanPill');
+  let scanDir = 0, scanTier = 0, scanPos = 0, scanTimer = null, scanLast = 0;
+  function scanActive() { return scanDir !== 0; }
+  function renderScanPill() {
+    if (!scanPill) return;
+    const rw = scanPill.querySelector('.media-scan-rw');
+    const ff = scanPill.querySelector('.media-scan-ff');
+    const speed = scanPill.querySelector('.media-scan-speed');
+    if (rw) rw.hidden = scanDir >= 0;
+    if (ff) ff.hidden = scanDir <= 0;
+    if (speed) speed.textContent = SCAN_SPEEDS[scanTier] + '×';
+    scanPill.hidden = !scanActive();
+  }
+  function scanTick() {
+    const now = performance.now();
+    const dt = (now - scanLast) / 1000;
+    scanLast = now;
+    const dur = sessionDuration || video.duration || 0;
+    scanPos = Math.max(0, scanPos + scanDir * SCAN_SPEEDS[scanTier] * dt);
+    if (dur > 1 && scanPos > dur - 1) scanPos = dur - 1; // pin at the edges; play commits
+    const frac = dur > 0 ? scanPos / dur : 0;
+    renderScrub(frac, scanPos);
+    scanShowPreview(frac);
+  }
+  function scanPress(dir) {
+    if (!scanActive()) {
+      scanPos = currentAbsTime();
+      scanDir = dir; scanTier = 0;
+      video.pause();
+      scanLoadPreview();
+      scanLast = performance.now();
+      scanTimer = setInterval(scanTick, 200);
+    } else if (scanDir === dir) {
+      scanTier = (scanTier + 1) % SCAN_SPEEDS.length; // 1× → 2× → 3× → 1×
+    } else {
+      scanDir = dir; scanTier = 0; // opposite direction restarts at 1×
+    }
+    renderScanPill();
+  }
+  // endScan leaves scan mode; commit=true seeks to the scanned-to position (the
+  // play path), commit=false abandons it (a drag or teardown takes over).
+  function endScan(commit) {
+    if (!scanActive()) return false;
+    clearInterval(scanTimer); scanTimer = null;
+    scanDir = 0; scanTier = 0;
+    renderScanPill();
+    scanHidePreview();
+    if (commit) seekToAbs(scanPos);
+    return true;
+  }
+  document.addEventListener('turbo:before-cache', () => endScan(false), { once: true });
 
   // Fullscreen the video-wrap (which holds the auto-hiding controls overlay), so
   // the custom transport + scrubber stay reachable in fullscreen — there are no
