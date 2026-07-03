@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"sort"
 	"time"
+
+	"hespera/internal/ratelimit"
 )
 
 // lbBaseURL is the ListenBrainz API root. ListenBrainz is a MetaBrainz-family
@@ -32,13 +34,13 @@ type LBClient struct {
 	client  *http.Client
 	baseURL string
 	labsURL string // ListenBrainz Labs host (similar-artists); separate subdomain
-	limiter *rateLimiter
+	limiter *ratelimit.Limiter
 }
 
 // NewLBClient builds a ListenBrainz client. It takes the shared MetaBrainz
 // limiter (ListenBrainz is a MetaBrainz host) rather than its own, so all
 // MetaBrainz-family traffic stays within one budget.
-func NewLBClient(limiter *rateLimiter) *LBClient {
+func NewLBClient(limiter *ratelimit.Limiter) *LBClient {
 	return &LBClient{
 		client:  &http.Client{Timeout: 15 * time.Second},
 		baseURL: lbBaseURL,
@@ -68,7 +70,7 @@ func (c *LBClient) TopRecordings(ctx context.Context, artistMBID string) ([]LBRe
 	if c == nil || artistMBID == "" {
 		return nil, false
 	}
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	reqURL := fmt.Sprintf("%s/1/popularity/top-recordings-for-artist/%s", c.baseURL, url.PathEscape(artistMBID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -129,7 +131,7 @@ func (c *LBClient) SimilarArtists(ctx context.Context, artistMBID string) ([]Sim
 	if c == nil || artistMBID == "" {
 		return nil, false
 	}
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	reqURL := fmt.Sprintf("%s/similar-artists/json?artist_mbids=%s&algorithm=%s",
 		c.labsURL, url.QueryEscape(artistMBID), url.QueryEscape(lbSimilarAlgorithm))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	isodb "hespera/internal/db"
+	"hespera/internal/ratelimit"
 )
 
 // newMockMusicServer creates a single httptest.Server that routes requests by
@@ -176,7 +177,7 @@ func newTestMatcher(t *testing.T, db *sql.DB, srv *httptest.Server) *Matcher {
 		t.Fatalf("mkdir thumbs: %v", err)
 	}
 
-	limiter := newRateLimiter(0)
+	limiter := ratelimit.New(0)
 	return &Matcher{
 		db:      db,
 		dataDir: dataDir,

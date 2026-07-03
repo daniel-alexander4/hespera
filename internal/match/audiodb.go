@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"hespera/internal/ratelimit"
 )
 
 // AudioDBClient fetches artist bios and images from TheAudioDB, keyed by
@@ -19,7 +21,7 @@ type AudioDBClient struct {
 	client  *http.Client
 	apiKey  string
 	baseURL string
-	limiter *rateLimiter
+	limiter *ratelimit.Limiter
 }
 
 // NewAudioDBClient returns a client, or nil when apiKey is empty. The public
@@ -34,7 +36,7 @@ func NewAudioDBClient(apiKey string) *AudioDBClient {
 		apiKey:  apiKey,
 		baseURL: "https://www.theaudiodb.com/api/v1/json",
 		// Own host, own budget; the free tier is ~30/min so keep it gentle.
-		limiter: newRateLimiter(2 * time.Second),
+		limiter: ratelimit.New(2 * time.Second),
 	}
 }
 
@@ -50,7 +52,7 @@ func (c *AudioDBClient) fetchArtist(ctx context.Context, artistMBID string) (bio
 	if c == nil || artistMBID == "" {
 		return "", ""
 	}
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	reqURL := fmt.Sprintf("%s/%s/artist-mb.php?i=%s", c.baseURL, url.PathEscape(c.apiKey), url.QueryEscape(artistMBID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {

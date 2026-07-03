@@ -17,8 +17,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
+
+	"hespera/internal/ratelimit"
 )
 
 // defaultUserAgent is the fallback User-Agent when none is configured. The UA
@@ -30,30 +31,13 @@ const defaultUserAgent = "Hespera v1.0"
 
 const baseURL = "https://api.opensubtitles.com/api/v1"
 
-// rateLimiter enforces a minimum interval between successive calls. OpenSubtitles
-// is its own host with its own budget, so each OSClient gets its own limiter.
-type rateLimiter struct {
-	mu       sync.Mutex
-	last     time.Time
-	interval time.Duration
-}
-
-func (l *rateLimiter) wait() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if since := time.Since(l.last); since < l.interval {
-		time.Sleep(l.interval - since)
-	}
-	l.last = time.Now()
-}
-
 // OSClient talks to the OpenSubtitles REST API. Construct with New; a nil
 // *OSClient is a valid no-op receiver (Search/Download return empty/err).
 type OSClient struct {
 	client    *http.Client
 	apiKey    string
 	baseURL   string
-	limiter   *rateLimiter
+	limiter   *ratelimit.Limiter
 	userAgent string
 }
 
@@ -71,7 +55,7 @@ func New(apiKey, userAgent string) *OSClient {
 		client:    &http.Client{Timeout: 15 * time.Second},
 		apiKey:    apiKey,
 		baseURL:   baseURL,
-		limiter:   &rateLimiter{interval: time.Second},
+		limiter:   ratelimit.New(time.Second),
 		userAgent: userAgent,
 	}
 }
@@ -120,7 +104,7 @@ func (c *OSClient) Search(ctx context.Context, parentTMDBID string, season, epis
 	}
 	reqURL := c.baseURL + "/subtitles?" + q.Encode()
 
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
@@ -178,7 +162,7 @@ func (c *OSClient) Download(ctx context.Context, fileID int64) (link string, err
 	}
 	bodyBytes, _ := json.Marshal(map[string]int64{"file_id": fileID})
 
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/download", bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", err

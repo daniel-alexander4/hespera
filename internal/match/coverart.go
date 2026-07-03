@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"hespera/internal/fsutil"
+	"hespera/internal/ratelimit"
 )
 
 const caaBaseURL = "https://coverartarchive.org"
@@ -23,10 +24,10 @@ type CAAClient struct {
 	client   *http.Client
 	baseURL  string
 	thumbDir string
-	limiter  *rateLimiter
+	limiter  *ratelimit.Limiter
 }
 
-func NewCAAClient(dataDir string, limiter *rateLimiter) *CAAClient {
+func NewCAAClient(dataDir string, limiter *ratelimit.Limiter) *CAAClient {
 	return &CAAClient{
 		client:   &http.Client{Timeout: 30 * time.Second},
 		baseURL:  caaBaseURL,
@@ -88,7 +89,7 @@ func (c *CAAClient) FetchCover(ctx context.Context, releaseGroupID string, relea
 }
 
 func (c *CAAClient) findCoverURL(ctx context.Context, endpoint string) (string, error) {
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", err

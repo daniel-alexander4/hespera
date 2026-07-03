@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"hespera/internal/ratelimit"
 )
 
 func TestLastfmTopTracks(t *testing.T) {
@@ -25,7 +27,7 @@ func TestLastfmTopTracks(t *testing.T) {
 
 	c := NewLastfmClient("k")
 	c.baseURL = srv.URL
-	c.limiter = newRateLimiter(0)
+	c.limiter = ratelimit.New(0)
 
 	got, ok := c.TopTracks(context.Background(), "The Beatles")
 	if !ok {

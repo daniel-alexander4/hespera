@@ -10,8 +10,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"hespera/internal/ratelimit"
 )
 
 const (
@@ -19,34 +20,11 @@ const (
 	mbUserAgent = "hespera/1.0"
 )
 
-// rateLimiter enforces a minimum interval between successive calls across all
-// holders of the same instance. Safe for concurrent use. The MusicBrainz and
-// Cover Art Archive clients share one instance so they stay within a single
-// MetaBrainz-family request budget.
-type rateLimiter struct {
-	mu       sync.Mutex
-	last     time.Time
-	interval time.Duration
-}
-
-func newRateLimiter(interval time.Duration) *rateLimiter {
-	return &rateLimiter{interval: interval}
-}
-
-func (l *rateLimiter) wait() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if since := time.Since(l.last); since < l.interval {
-		time.Sleep(l.interval - since)
-	}
-	l.last = time.Now()
-}
-
 // MBClient queries the MusicBrainz API with a shared 1 req/sec rate limiter.
 type MBClient struct {
 	client  *http.Client
 	baseURL string
-	limiter *rateLimiter
+	limiter *ratelimit.Limiter
 	// wikiClient is used by enrichment functions for Wikipedia/Wikidata/Commons.
 	// If nil, enrichment functions create their own ad-hoc clients.
 	wikiClient      *http.Client
@@ -55,7 +33,7 @@ type MBClient struct {
 	commonsBaseURL  string // e.g. "https://commons.wikimedia.org"
 }
 
-func NewMBClient(limiter *rateLimiter) *MBClient {
+func NewMBClient(limiter *ratelimit.Limiter) *MBClient {
 	return &MBClient{
 		client:  &http.Client{Timeout: 15 * time.Second},
 		baseURL: mbBaseURL,
@@ -63,12 +41,14 @@ func NewMBClient(limiter *rateLimiter) *MBClient {
 	}
 }
 
-func (c *MBClient) throttle() {
-	c.limiter.wait()
+func (c *MBClient) throttle(ctx context.Context) {
+	// The Wait error is ignored on purpose: throttling is a side effect, and a
+	// canceled ctx fails the request itself on the very next line.
+	_ = c.limiter.Wait(ctx)
 }
 
 func (c *MBClient) get(ctx context.Context, path string) ([]byte, error) {
-	c.throttle()
+	c.throttle(ctx)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {

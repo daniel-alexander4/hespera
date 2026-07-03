@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"hespera/internal/ratelimit"
 )
 
 func TestFetchPopularity(t *testing.T) {
@@ -23,7 +25,7 @@ func TestFetchPopularity(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := &Matcher{db: db, lb: &LBClient{client: srv.Client(), baseURL: srv.URL, limiter: newRateLimiter(0)}}
+	m := &Matcher{db: db, lb: &LBClient{client: srv.Client(), baseURL: srv.URL, limiter: ratelimit.New(0)}}
 
 	// Library + an artist with an MBID and one without.
 	libRes, _ := db.Exec(`INSERT INTO libraries (name,type,root_path) VALUES ('M','music','/m')`)
@@ -97,8 +99,8 @@ func TestFetchPopularityLastfmBlend(t *testing.T) {
 
 	m := &Matcher{
 		db:     db,
-		lb:     &LBClient{client: lbSrv.Client(), baseURL: lbSrv.URL, limiter: newRateLimiter(0)},
-		lastfm: &LastfmClient{client: lfSrv.Client(), apiKey: "k", baseURL: lfSrv.URL, limiter: newRateLimiter(0)},
+		lb:     &LBClient{client: lbSrv.Client(), baseURL: lbSrv.URL, limiter: ratelimit.New(0)},
+		lastfm: &LastfmClient{client: lfSrv.Client(), apiKey: "k", baseURL: lfSrv.URL, limiter: ratelimit.New(0)},
 	}
 
 	libRes, _ := db.Exec(`INSERT INTO libraries (name,type,root_path) VALUES ('M','music','/m')`)

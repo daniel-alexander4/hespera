@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"hespera/internal/ratelimit"
 )
 
 func TestNewClientsNilWithoutKey(t *testing.T) {
@@ -24,7 +26,7 @@ func TestFanartArtistImageURL(t *testing.T) {
 
 	c := NewFanartClient("k")
 	c.baseURL = srv.URL
-	c.limiter = newRateLimiter(0)
+	c.limiter = ratelimit.New(0)
 
 	if got := c.ArtistImageURL(context.Background(), "mbid-1"); got != "https://img/thumb.jpg" {
 		t.Fatalf("ArtistImageURL = %q, want the thumb (preferred over background)", got)
@@ -44,7 +46,7 @@ func TestAudioDBArtistBioAndImage(t *testing.T) {
 
 	c := NewAudioDBClient("k")
 	c.baseURL = srv.URL
-	c.limiter = newRateLimiter(0)
+	c.limiter = ratelimit.New(0)
 
 	if got := c.ArtistBio(context.Background(), "mbid-1"); got != "A short bio." {
 		t.Fatalf("ArtistBio = %q", got)
@@ -61,12 +63,12 @@ func TestBackfillEmptyResponse(t *testing.T) {
 	defer srv.Close()
 
 	f := NewFanartClient("k")
-	f.baseURL, f.limiter = srv.URL, newRateLimiter(0)
+	f.baseURL, f.limiter = srv.URL, ratelimit.New(0)
 	if got := f.ArtistImageURL(context.Background(), "x"); got != "" {
 		t.Fatalf("fanart empty resp = %q, want empty", got)
 	}
 	a := NewAudioDBClient("k")
-	a.baseURL, a.limiter = srv.URL, newRateLimiter(0)
+	a.baseURL, a.limiter = srv.URL, ratelimit.New(0)
 	if got := a.ArtistBio(context.Background(), "x"); got != "" {
 		t.Fatalf("audiodb empty resp = %q, want empty", got)
 	}

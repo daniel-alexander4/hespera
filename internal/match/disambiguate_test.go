@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"hespera/internal/ratelimit"
 )
 
 // TestSearchArtistCandidates verifies the artist search surfaces the full
@@ -45,7 +47,7 @@ func TestSearchArtistCandidates(t *testing.T) {
 	c := &MBClient{
 		client:  srv.Client(),
 		baseURL: srv.URL,
-		limiter: newRateLimiter(0),
+		limiter: ratelimit.New(0),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -86,7 +88,7 @@ func TestSearchArtistCandidatesEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &MBClient{client: srv.Client(), baseURL: srv.URL, limiter: newRateLimiter(0)}
+	c := &MBClient{client: srv.Client(), baseURL: srv.URL, limiter: ratelimit.New(0)}
 	got, err := c.SearchArtistCandidates(context.Background(), "Nobody")
 	if err != nil {
 		t.Fatalf("SearchArtistCandidates: %v", err)

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"hespera/internal/ratelimit"
 )
 
 // FanartClient fetches artist artwork from fanart.tv, keyed by MusicBrainz
@@ -17,7 +19,7 @@ type FanartClient struct {
 	client  *http.Client
 	apiKey  string
 	baseURL string
-	limiter *rateLimiter
+	limiter *ratelimit.Limiter
 }
 
 // NewFanartClient returns a client, or nil when apiKey is empty so callers can
@@ -32,7 +34,7 @@ func NewFanartClient(apiKey string) *FanartClient {
 		baseURL: "https://webservice.fanart.tv/v3",
 		// fanart.tv is its own host with its own budget — never the shared
 		// MetaBrainz limiter.
-		limiter: newRateLimiter(time.Second),
+		limiter: ratelimit.New(time.Second),
 	}
 }
 
@@ -63,7 +65,7 @@ func (c *FanartClient) fetchArtistJSON(ctx context.Context, artistMBID string) (
 	if c == nil || artistMBID == "" {
 		return a, false
 	}
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	reqURL := fmt.Sprintf("%s/music/%s?api_key=%s", c.baseURL, url.PathEscape(artistMBID), url.QueryEscape(c.apiKey))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
