@@ -146,6 +146,7 @@ func New(d Deps) (*Handler, error) {
 		"staticv":    staticURL,
 		"initial":    initialRune,
 		"humanBytes": humanBytes,
+		"appVersion": func() string { return assetVersion },
 	}).ParseFS(webRoot, "templates/layout.html")
 	if err != nil {
 		return nil, fmt.Errorf("layout template: %w", err)
