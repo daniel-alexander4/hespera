@@ -93,14 +93,16 @@ type continueItem struct {
 	TMDBID int
 }
 
-// loadContinueWatching merges in-progress TV (recentTVSeries) and movies
-// (loadMovieContinueWatching) into one row ordered by most-recent activity. Each
-// source is best-effort — one failing still renders the other — and the two
-// canonical loaders own their queries/metadata, so this only interleaves. Both
-// sources are fetched to the same limit, so the top `limit` overall are a subset
-// of their union; the final slice is capped to limit.
+// loadContinueWatching merges in-progress TV (recentTVSeries with the
+// continue-watching query, which drops fully-watched series just like the movie
+// side drops completed films) and movies (loadMovieContinueWatching) into one
+// row ordered by most-recent activity. Each source is best-effort — one failing
+// still renders the other — and the two canonical loaders own their
+// queries/metadata, so this only interleaves. Both sources are fetched to the
+// same limit, so the top `limit` overall are a subset of their union; the final
+// slice is capped to limit.
 func (h *Handler) loadContinueWatching(ctx context.Context, limit int) []continueItem {
-	tvRows, err := h.recentTVSeries(ctx, tvRecentlyWatchedQuery, limit)
+	tvRows, err := h.recentTVSeries(ctx, tvContinueWatchingQuery, limit)
 	if err != nil {
 		slog.Warn("home: load continue-watching tv failed", "err", err)
 	}

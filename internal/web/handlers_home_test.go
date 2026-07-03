@@ -82,4 +82,38 @@ func TestContinueWatchingMerged(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("after completed movie: got %d items, want still 2", len(got))
 	}
+
+	// A fully-watched series must NOT appear either (matching the movie rule) —
+	// but it must STAY on the /tv "Recently Watched" strip, which is a recency
+	// list, not a continue list.
+	if _, err := db.Exec("UPDATE tv_playback_progress SET completed=1, position_seconds=1400 WHERE file_id=?", tvFile); err != nil {
+		t.Fatal(err)
+	}
+	got = h.loadContinueWatching(ctx, 12)
+	if len(got) != 1 || got[0].Kind != "movie" {
+		t.Fatalf("fully-watched series should drop off home continue-watching, got %+v", got)
+	}
+	recent, err := h.recentTVSeries(ctx, tvRecentlyWatchedQuery, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recent) != 1 || recent[0].SeriesID != "999" {
+		t.Fatalf("fully-watched series should remain on /tv recently-watched, got %+v", recent)
+	}
+
+	// Starting a rewatch (the progress upsert recomputes completed=0) resurfaces
+	// the show on the home row.
+	if _, err := db.Exec("UPDATE tv_playback_progress SET completed=0, position_seconds=60, updated_at=datetime('now') WHERE file_id=?", tvFile); err != nil {
+		t.Fatal(err)
+	}
+	got = h.loadContinueWatching(ctx, 12)
+	found := false
+	for _, it := range got {
+		if it.Kind == "tv" && it.SeriesID == "999" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("rewatch-in-progress series should resurface on home continue-watching, got %+v", got)
+	}
 }
