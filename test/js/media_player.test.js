@@ -276,3 +276,31 @@ test('playback speed: change sets playbackRate + persists; stored value applied 
   env = await boot({ storage: { tv_speed: '17' } });
   assert.strictEqual(env.document.getElementById('tvVideo').playbackRate, 1);
 });
+
+test('Up Next: episode end shows a cancelable countdown card instead of an instant jump', async () => {
+  const env = await boot({ fixtureOpts: { nextFile: 5 } });
+  const video = env.document.getElementById('tvVideo');
+  const card = env.document.querySelector('.media-upnext');
+  assert.ok(card, 'card created when a next file exists');
+  assert.strictEqual(card.hidden, true, 'hidden until the episode ends');
+
+  video.dispatchEvent(new env.window.Event('ended'));
+  assert.strictEqual(card.hidden, false, 'shown at episode end');
+  assert.strictEqual(card.querySelector('#upnextCount').textContent, '8');
+  assert.ok(card.hasAttribute('data-couch-overlay'), 'remote Back can dismiss it');
+
+  card.querySelector('#upnextCancel').click();
+  assert.strictEqual(card.hidden, true, 'cancel dismisses');
+
+  // Rewinding back into the credits must not be fought.
+  video.dispatchEvent(new env.window.Event('ended'));
+  assert.strictEqual(card.hidden, false);
+  video.dispatchEvent(new env.window.Event('seeking'));
+  assert.strictEqual(card.hidden, true, 'a seek cancels the countdown');
+});
+
+test('Up Next: no card without a next file (movies, last episode)', async () => {
+  const env = await boot({ fixtureOpts: { nextFile: 0 } });
+  env.document.getElementById('tvVideo').dispatchEvent(new env.window.Event('ended'));
+  assert.strictEqual(env.document.querySelector('.media-upnext'), null);
+});

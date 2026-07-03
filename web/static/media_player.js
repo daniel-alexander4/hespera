@@ -797,10 +797,50 @@ function initMediaPlayer() {
     }
   });
   video.addEventListener('pause', () => { lastReport = 0; reportProgress(false); });
+  // --- Up Next --- at episode end a cancelable countdown card replaces an
+  // instant jump: Play now / a live "in Ns" count / Cancel. data-couch-overlay
+  // makes the remote's Back dismiss it (couch.js overlay contract) instead of
+  // leaving the page; play/seeking cancel it so rewinding back into the
+  // credits isn't fought. Movies have no next file, so it never exists there.
+  let upnextTimer = null;
+  const upnextCard = (() => {
+    if (!(nextFile > 0)) return null;
+    const w = video.closest('.tv-player-video-wrap');
+    if (!w) return null;
+    const el = document.createElement('div');
+    el.className = 'media-upnext';
+    el.hidden = true;
+    el.setAttribute('data-couch-overlay', '');
+    el.innerHTML = '<span class="media-upnext-label">Up next in <span id="upnextCount">8</span>s</span>' +
+      '<button type="button" class="btn btn-sm btn-primary" id="upnextPlay">Play now</button>' +
+      '<button type="button" class="btn btn-sm" id="upnextCancel" data-couch-dismiss>Cancel</button>';
+    w.appendChild(el);
+    el.querySelector('#upnextPlay').addEventListener('click', () => gotoFile(nextFile));
+    el.querySelector('#upnextCancel').addEventListener('click', () => hideUpNext());
+    return el;
+  })();
+  function hideUpNext() {
+    if (upnextTimer) { clearInterval(upnextTimer); upnextTimer = null; }
+    if (upnextCard) upnextCard.hidden = true;
+  }
+  function showUpNext() {
+    if (!upnextCard || !upnextCard.hidden) return;
+    let left = 8;
+    upnextCard.querySelector('#upnextCount').textContent = String(left);
+    upnextCard.hidden = false;
+    upnextCard.querySelector('#upnextPlay').focus();
+    upnextTimer = setInterval(() => {
+      left--;
+      if (left <= 0) { hideUpNext(); gotoFile(nextFile); return; }
+      upnextCard.querySelector('#upnextCount').textContent = String(left);
+    }, 1000);
+  }
   video.addEventListener('ended', () => {
     reportProgress(true);
-    if (nextFile > 0) window.location.href = cfg.playerURL + '?file=' + nextFile;
+    if (nextFile > 0) showUpNext();
   });
+  video.addEventListener('play', () => hideUpNext());
+  video.addEventListener('seeking', () => hideUpNext());
   // Named so the turbo:before-cache teardown can remove it — otherwise a fresh
   // listener (closing over a detached video) accumulates on every player visit.
   const onBeforeUnload = () => { lastReport = 0; reportProgress(false); };
@@ -817,6 +857,7 @@ function initMediaPlayer() {
     reportProgress(false);
     video.pause();
     teardownHLS();
+    hideUpNext();
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
     if (subDebugTimer) clearInterval(subDebugTimer);
     stopRVFC();

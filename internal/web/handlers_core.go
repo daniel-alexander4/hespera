@@ -89,8 +89,12 @@ type continueItem struct {
 	SeriesID     string
 	SeasonNumber int
 	HasPoster    bool
+	// NextFileID is the target season's first unwatched episode file — the
+	// card's one-click play target (0 → the card falls back to the season page).
+	NextFileID int64
 	// movie
 	TMDBID int
+	FileID int64 // the in-progress file, for the one-click resume link
 }
 
 // loadContinueWatching merges in-progress TV (recentTVSeries with the
@@ -115,11 +119,14 @@ func (h *Handler) loadContinueWatching(ctx context.Context, limit int) []continu
 		items = append(items, continueItem{
 			Kind: "tv", Title: r.Name, Year: r.Year, RecencyUnix: r.RecencyUnix,
 			SeriesID: r.SeriesID, SeasonNumber: r.SeasonNumber, HasPoster: r.PosterPath != "",
+			// One-click play: the target season's first unwatched episode.
+			NextFileID: h.firstUnwatchedInSeason(ctx, r.SeriesID, r.SeasonNumber),
 		})
 	}
 	for _, r := range movieRows {
 		items = append(items, continueItem{
 			Kind: "movie", Title: r.Title, Year: r.Year, RecencyUnix: r.RecencyUnix, TMDBID: r.TMDBID,
+			FileID: r.FileID,
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].RecencyUnix > items[j].RecencyUnix })

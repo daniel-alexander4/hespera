@@ -1647,8 +1647,12 @@ WHERE f.id = ?
 		fileID,
 	).Scan(&position, &duration, &completed)
 
-	// Prev/next navigation.
+	// Prev/next navigation. At the season's last episode, Up Next rolls into
+	// the next local season's first episode.
 	prevFileID, nextFileID := h.findAdjacentEpisode(r.Context(), seriesID, seasonNum, epCSV, fileID)
+	if nextFileID == 0 {
+		nextFileID = h.nextSeasonFirstEpisode(r.Context(), seriesID, seasonNum)
+	}
 
 	h.render(w, "tv_player.html", map[string]any{
 		"Title":                fmt.Sprintf("%s — %s", showName, epName),
@@ -1679,37 +1683,45 @@ func firstEpNum(csv string) int {
 	return 1 << 30
 }
 
-func (h *Handler) findAdjacentEpisode(ctx context.Context, seriesID string, seasonNum int, currentEpCSV string, currentFileID int64) (prevID, nextID int64) {
+// epFileEntry is one episode file of a season, for numeric ordering.
+type epFileEntry struct {
+	id        int64
+	epCSV     string
+	completed bool
+}
+
+// seasonEpisodeFiles returns a season's matched files in numeric episode order
+// (episode_numbers_csv is TEXT — lexical order puts "10" before "2"), each with
+// its watched flag.
+func (h *Handler) seasonEpisodeFiles(ctx context.Context, seriesID string, seasonNum int) []epFileEntry {
 	rows, err := h.db.QueryContext(ctx, `
-SELECT f.id, i.episode_numbers_csv
+SELECT f.id, i.episode_numbers_csv, COALESCE(p.completed, 0)
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
+LEFT JOIN tv_playback_progress p ON p.file_id = f.id
 WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'matched'
-ORDER BY i.episode_numbers_csv
 `, seriesID, seasonNum)
 	if err != nil {
-		return 0, 0
+		return nil
 	}
 	defer rows.Close()
-
-	type entry struct {
-		id    int64
-		epCSV string
-	}
-	var entries []entry
+	var entries []epFileEntry
 	for rows.Next() {
-		var e entry
-		if rows.Scan(&e.id, &e.epCSV) == nil {
+		var e epFileEntry
+		var completed int
+		if rows.Scan(&e.id, &e.epCSV, &completed) == nil {
+			e.completed = completed == 1
 			entries = append(entries, e)
 		}
 	}
-
-	// episode_numbers_csv is TEXT; sort numerically so prev/next navigation is
-	// correct past episode 9 (lexical order puts "10" before "2").
 	sort.Slice(entries, func(i, j int) bool {
 		return firstEpNum(entries[i].epCSV) < firstEpNum(entries[j].epCSV)
 	})
+	return entries
+}
 
+func (h *Handler) findAdjacentEpisode(ctx context.Context, seriesID string, seasonNum int, currentEpCSV string, currentFileID int64) (prevID, nextID int64) {
+	entries := h.seasonEpisodeFiles(ctx, seriesID, seasonNum)
 	for i, e := range entries {
 		if e.id == currentFileID {
 			if i > 0 {
@@ -1722,6 +1734,33 @@ ORDER BY i.episode_numbers_csv
 		}
 	}
 	return 0, 0
+}
+
+// nextSeasonFirstEpisode returns the first episode file of the next local
+// season after seasonNum — the cross-season half of Up Next (0 when this is
+// the last season). findAdjacentEpisode covers within-season.
+func (h *Handler) nextSeasonFirstEpisode(ctx context.Context, seriesID string, seasonNum int) int64 {
+	var next sql.NullInt64
+	if err := h.db.QueryRowContext(ctx, `
+SELECT MIN(season_number) FROM tv_series_identities
+WHERE series_id = ? AND status = 'matched' AND season_number > ?`, seriesID, seasonNum).Scan(&next); err != nil || !next.Valid {
+		return 0
+	}
+	if entries := h.seasonEpisodeFiles(ctx, seriesID, int(next.Int64)); len(entries) > 0 {
+		return entries[0].id
+	}
+	return 0
+}
+
+// firstUnwatchedInSeason returns the season's first not-completed episode file
+// (0 when everything is watched) — the home Continue-Watching play target.
+func (h *Handler) firstUnwatchedInSeason(ctx context.Context, seriesID string, seasonNum int) int64 {
+	for _, e := range h.seasonEpisodeFiles(ctx, seriesID, seasonNum) {
+		if !e.completed {
+			return e.id
+		}
+	}
+	return 0
 }
 
 // --- TV Playback Progress ---
