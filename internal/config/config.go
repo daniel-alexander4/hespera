@@ -31,7 +31,13 @@ type Config struct {
 }
 
 func FromEnv() Config {
-	listen := getenv("HESPERA_LISTEN", ":8080")
+	// Loopback by default: Hespera has no authentication layer (a deliberate
+	// single-machine posture), so exposing server mode to the LAN is an
+	// explicit operator opt-in (HESPERA_LISTEN=:8080), never the default.
+	// App mode overrides this with a random loopback port anyway; the Docker
+	// image sets its own in-container bind (the published port is the opt-in
+	// boundary there).
+	listen := getenv("HESPERA_LISTEN", "127.0.0.1:8080")
 	dataDir := getenv("HESPERA_DATA_DIR", defaultDataDir())
 	dbPath := getenv("HESPERA_DB_PATH", filepath.Join(dataDir, "hespera.sqlite"))
 	mediaRoot := getenv("HESPERA_MEDIA_ROOT", defaultMediaRoot())

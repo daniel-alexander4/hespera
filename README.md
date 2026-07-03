@@ -77,16 +77,23 @@ a per-user data directory (`~/.config/hespera` on Linux, the equivalent on
 macOS/Windows).
 
 `HESPERA_NO_BROWSER=1` runs **server mode** instead: no window, binds
-`HESPERA_LISTEN` (default `:8080`) so you can reach it from other devices — this
-is what the Docker image uses.
+`HESPERA_LISTEN` (default `127.0.0.1:8080` — loopback only). To reach it from
+other devices, opt in explicitly with `HESPERA_LISTEN=:8080`. This is what the
+Docker image uses (inside a container the published port is the opt-in).
 
-### Authentication
+### Security posture
 
-`AUTH_ENABLED` defaults to **false**: as a loopback-only single-machine app,
-only your computer can reach Hespera, so no sign-in is needed. If you expose it
-beyond `localhost` (e.g. server mode), turn on **Require sign-in** under
-Settings → API Keys (or set `AUTH_ENABLED=true` with an `AUTH_SESSION_SECRET`
-of 16+ chars and `ssh-keygen` on PATH for SSH-pubkey login).
+Hespera has **no authentication layer, by design** — it is a single-machine
+media app, and in app mode it is only reachable from your own computer.
+That means anyone who can reach the port in server mode has *full* access:
+not just playback, but the tag editor (writes into your music files), the
+integrity auto-repair (the one path that rewrites media files), settings,
+and shutdown. The built-in CSRF guard stops hostile web pages, not direct
+network peers. Hence the loopback default: exposing Hespera to a network is
+an explicit choice, and should only be made on a network you trust end to
+end. For anything beyond that (shared LAN, remote access), put a reverse
+proxy with authentication in front (Caddy `basic_auth`, nginx `auth_basic`,
+Tailscale, etc.) — that is the supported pattern, not an app-level login.
 
 ### Configuration
 

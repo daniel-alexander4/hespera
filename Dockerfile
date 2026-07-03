@@ -29,4 +29,11 @@ RUN mkdir -p /var/lib/hespera && chown 65532:65532 /var/lib/hespera
 USER 65532
 EXPOSE 8080
 
+# Server mode, bound on all interfaces inside the container: the config
+# default is loopback (no-auth posture — LAN exposure is opt-in), but in a
+# container the opt-in boundary is publishing the port, so a bare `docker run`
+# works without env plumbing. Compose sets these too; explicit env still wins.
+ENV HESPERA_NO_BROWSER=1 \
+    HESPERA_LISTEN=:8080
+
 ENTRYPOINT ["hespera"]
