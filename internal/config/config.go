@@ -26,8 +26,12 @@ type Config struct {
 	FFmpegConcurrentLimit int
 	FFmpegAcquireTimeout  time.Duration
 	HLSSegmentConcurrency int
-	TVHLSCacheMaxBytes    int64
-	TVCacheMaxAge         time.Duration
+	// HLSEncoder selects the segment video encoder: "software" (libx264,
+	// default) or "vaapi" (opt-in hardware encode; capability-probed at
+	// startup with a software fallback).
+	HLSEncoder         string
+	TVHLSCacheMaxBytes int64
+	TVCacheMaxAge      time.Duration
 }
 
 func FromEnv() Config {
@@ -62,6 +66,7 @@ func FromEnv() Config {
 		HLSSegmentConcurrency: parsePositiveIntDefault(
 			os.Getenv("HESPERA_HLS_SEGMENT_CONCURRENCY"), 1,
 		),
+		HLSEncoder: getenv("HESPERA_HLS_ENCODER", "software"),
 		TVHLSCacheMaxBytes: parsePositiveInt64Default(
 			os.Getenv("HESPERA_TV_HLS_CACHE_MAX_BYTES"), 20<<30,
 		),
@@ -72,6 +77,11 @@ func FromEnv() Config {
 }
 
 func (c Config) Validate() error {
+	// Empty tolerated (zero-value Configs in tests / embedders) — it reads as
+	// software everywhere (SetEncoder treats anything but "vaapi" as software).
+	if c.HLSEncoder != "" && c.HLSEncoder != "software" && c.HLSEncoder != "vaapi" {
+		return fmt.Errorf("HESPERA_HLS_ENCODER must be software or vaapi, got %q", c.HLSEncoder)
+	}
 	if strings.TrimSpace(c.Listen) == "" {
 		return errors.New("HESPERA_LISTEN is required")
 	}
