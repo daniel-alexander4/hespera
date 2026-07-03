@@ -114,19 +114,22 @@ test('buildSelects populates audio + subtitle pickers and labels burn-in subs', 
   assert.strictEqual(sub.options[2].textContent, 'eng · Forced · burn-in'); // bitmap flagged
 });
 
-test('the subtitles dropdown ends with "Search subtitles…" whenever a key is configured', async () => {
+test('the subtitles dropdown leads with "Search subtitles…" whenever a key is configured', async () => {
   const withText = await boot({
     fixtureOpts: { osEnabled: '1' },
     sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }] }),
   });
   let sub = withText.document.getElementById('subSelect');
-  assert.strictEqual(sub.options[sub.options.length - 1].value, 'search', 'key + text track → search option offered');
+  assert.strictEqual(sub.options[0].value, 'search', 'key + text track → search option leads');
+  assert.strictEqual(sub.options[1].textContent, 'Off');
+  assert.strictEqual(sub.value, '0', 'Off stays the default selection');
+  assert.strictEqual(sub.options[2].value, '1', 'file tracks follow Off');
 
   const noSubs = await boot({ fixtureOpts: { osEnabled: '1' }, sessionData: session({ subtitle_tracks: [] }) });
   sub = noSubs.document.getElementById('subSelect');
   assert.strictEqual(noSubs.document.getElementById('subPick').hidden, false, 'key + no tracks → dropdown still shown');
-  assert.strictEqual(sub.options.length, 2, 'Off + search only');
-  assert.strictEqual(sub.options[1].value, 'search');
+  assert.strictEqual(sub.options.length, 2, 'search + Off only');
+  assert.strictEqual(sub.options[0].value, 'search');
 
   const noKey = await boot({ fixtureOpts: { osEnabled: '0' }, sessionData: session({ subtitle_tracks: [] }) });
   assert.strictEqual(noKey.document.getElementById('subPick').hidden, true, 'no key + no tracks → no dropdown');
@@ -135,7 +138,7 @@ test('the subtitles dropdown ends with "Search subtitles…" whenever a key is c
     sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }] }),
   });
   sub = noKeySubs.document.getElementById('subSelect');
-  assert.notStrictEqual(sub.options[sub.options.length - 1].value, 'search', 'no key → never offered');
+  assert.notStrictEqual(sub.options[0].value, 'search', 'no key → never offered');
 });
 
 test('picking "Search subtitles…" opens the dialog and restores the previous selection', async () => {
