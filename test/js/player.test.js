@@ -182,3 +182,56 @@ test('near-gapless: starting a track warms the NEXT track via a preloader Audio'
   audio.dispatchEvent(new env.window.Event('ended'));
   assert.strictEqual(audio.getAttribute('src'), '/stream/track/32', 'advances to the warmed track');
 });
+
+// --- Hardware media keys: player.js owns the page-global Media Session and the
+// keydown fallback; an active video player's window.hesperaMediaControl bridge
+// gets every action first (video page → video control, else music).
+
+test('media session: handlers registered once, and they defer to an active video bridge', async () => {
+  const env = boot({});
+  const handlers = env.window.__mediaSessionHandlers;
+  for (const a of ['play', 'pause', 'previoustrack', 'nexttrack', 'seekbackward', 'seekforward']) {
+    assert.strictEqual(typeof handlers[a], 'function', `handler registered for ${a}`);
+  }
+  const seen = [];
+  env.window.hesperaMediaControl = (action) => { seen.push(action); return true; };
+  handlers.play();
+  handlers.seekforward({});
+  assert.deepStrictEqual(seen, ['play', 'seekforward'], 'bridge gets the actions first');
+  const audio = env.document.getElementById('hespera-audio');
+  assert.ok(audio.paused !== false, 'music engine untouched while the bridge consumes');
+});
+
+test('media-key keydown fallback dispatches through the same bridge', async () => {
+  const env = boot({});
+  const seen = [];
+  env.window.hesperaMediaControl = (action) => { seen.push(action); return true; };
+  for (const [key, action] of [['MediaPlayPause', 'playpause'], ['MediaFastForward', 'seekforward'], ['MediaRewind', 'seekbackward'], ['MediaTrackNext', 'nexttrack'], ['MediaTrackPrevious', 'previoustrack']]) {
+    const e = new env.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    env.document.dispatchEvent(e);
+    assert.strictEqual(e.defaultPrevented, true, `${key} consumed`);
+    assert.strictEqual(seen[seen.length - 1], action, `${key} → ${action}`);
+  }
+  // Without a bridge, a media key falls through to the music engine (no throw,
+  // still consumed) — with an empty queue the observable is just consumption.
+  env.window.hesperaMediaControl = null;
+  const e = new env.window.KeyboardEvent('keydown', { key: 'MediaPlayPause', bubbles: true, cancelable: true });
+  env.document.dispatchEvent(e);
+  assert.strictEqual(e.defaultPrevented, true, 'handled by the music engine when no video is active');
+});
+
+test('music playbackState writes are suppressed while a video page is active', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 7, albumId: 3, album: 'A', title: 'T', artist: 'X' }] },
+  };
+  const env = boot({ autoload: 'source=all&library=1', routes });
+  await flush();
+  const ms = env.window.navigator.mediaSession;
+  assert.strictEqual(ms.playbackState, 'playing', 'music playback drives the state normally');
+  // A video page appears (Turbo swap) and the music pauses — the video owns the
+  // state now; music's pause must not flip it under the video.
+  env.document.body.insertAdjacentHTML('beforeend', '<video data-media-kind="tv"></video>');
+  ms.playbackState = 'playing'; // the video's play listener set this
+  env.document.getElementById('hespera-audio').pause();
+  assert.strictEqual(ms.playbackState, 'playing', 'paused music left the video\'s state alone');
+});

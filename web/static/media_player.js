@@ -454,6 +454,25 @@ function initMediaPlayer() {
   if (prevEpBtn && prevFile > 0) { prevEpBtn.hidden = false; prevEpBtn.addEventListener('click', () => gotoFile(prevFile)); }
   if (nextEpBtn && nextFile > 0) { nextEpBtn.hidden = false; nextEpBtn.addEventListener('click', () => gotoFile(nextFile)); }
 
+  // Hardware media keys (Flirc/BT remote): Chrome routes them to the Media
+  // Session API, whose page-global handlers player.js owns. While this player
+  // is active the bridge receives the dispatched actions so the remote drives
+  // THE VIDEO — play/pause = the toggle path (play commits an in-progress
+  // scan), FF/RW = the DVR scan, next/prev = adjacent episodes — exactly the
+  // on-screen buttons. Returns true for every media action (a remote press on
+  // a video page must never fall through and skip a music track); cleared on
+  // turbo:before-cache so music control returns to player.js.
+  window.hesperaMediaControl = (action) => {
+    switch (action) {
+      case 'play': case 'pause': case 'playpause': togglePlay(); return true;
+      case 'seekforward': scanPress(1); return true;
+      case 'seekbackward': scanPress(-1); return true;
+      case 'nexttrack': if (nextFile > 0) gotoFile(nextFile); return true;
+      case 'previoustrack': if (prevFile > 0) gotoFile(prevFile); return true;
+    }
+    return false;
+  };
+
   // Click the video frame to play/pause (standard player UX). The listener is on
   // the <video> itself, so it fires only on direct video clicks — the overlay
   // controls and the floating skip button are separate elements that never reach
@@ -463,8 +482,17 @@ function initMediaPlayer() {
   // intercepts (the play button is right there). A click also bumps the controls
   // visible via the wrap's pointerdown listener.
   video.addEventListener('click', togglePlay);
-  video.addEventListener('play', () => { if (transport) transport.classList.add('playing'); });
-  video.addEventListener('pause', () => { if (transport) transport.classList.remove('playing'); });
+  // playbackState drives Chrome's play-vs-pause translation of the single
+  // hardware play/pause key — without it the (paused) music engine's state
+  // decides, and the key misfires on video pages.
+  video.addEventListener('play', () => {
+    if (transport) transport.classList.add('playing');
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+  });
+  video.addEventListener('pause', () => {
+    if (transport) transport.classList.remove('playing');
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  });
 
   // --- skip segments (intro / recap / commercial) --- ranges come from the
   //     playback session (embedded chapters + an EDL sidecar). A "Skip …" button
@@ -1118,6 +1146,7 @@ function initMediaPlayer() {
   // topbar "resume" chip (tv_resume.js) then links back here. once:true so it
   // doesn't accumulate across repeat visits.
   document.addEventListener('turbo:before-cache', () => {
+    window.hesperaMediaControl = null; // media keys go back to the music engine
     lastReport = 0;
     reportProgress(false);
     video.pause();

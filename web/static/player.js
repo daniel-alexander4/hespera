@@ -20,6 +20,22 @@
   const MIN_REPORT_MS = 15 * 1000;
   const hasMediaSession = 'mediaSession' in navigator;
 
+  // Hardware media keys (a Flirc/BT remote's play-pause/FF/RW): Chrome consumes
+  // them at the browser level and routes them to the page-global Media Session,
+  // whose handlers are registered ONCE here (player.js is the session owner —
+  // handlers are global, so per-player register/unregister would let a video
+  // visit clobber music control). While a TV/movie player page is active it
+  // installs window.hesperaMediaControl (media_player.js, cleared on teardown);
+  // every media action dispatches there first — video page → video control
+  // (FF/RW = the DVR scan), else the music behavior below. videoActive() guards
+  // the music playbackState writes the same way, so the paused music engine
+  // can't skew Chrome's play-vs-pause key translation while a video plays.
+  const videoBridge = (action) => {
+    const mc = window.hesperaMediaControl;
+    return !!(mc && mc(action));
+  };
+  const videoActive = () => !!document.querySelector('video[data-media-kind]');
+
   // Playback state (lives here, not in any page).
   let tracks = []; // [{id, albumId, album, title, artist}]
   let queue = []; // indices into tracks
@@ -238,7 +254,8 @@
     if (hasMediaSession) {
       try {
         navigator.mediaSession.metadata = null;
-        navigator.mediaSession.playbackState = 'none';
+        // Don't clobber an active video player's state (its keys, its state).
+        if (!videoActive()) navigator.mediaSession.playbackState = 'none';
       } catch (_) {}
     }
     updateHeader(); // currentTrack() is null -> hides #np-cluster
@@ -639,11 +656,13 @@
   });
   audio.addEventListener('play', () => {
     updateHeader();
-    if (hasMediaSession) navigator.mediaSession.playbackState = 'playing';
+    if (hasMediaSession && !videoActive()) navigator.mediaSession.playbackState = 'playing';
   });
   audio.addEventListener('pause', () => {
     updateHeader();
-    if (hasMediaSession) navigator.mediaSession.playbackState = 'paused';
+    // On a video page the video owns playbackState — the music pausing (which
+    // starting a video does) must not flip it to 'paused' under the video.
+    if (hasMediaSession && !videoActive()) navigator.mediaSession.playbackState = 'paused';
   });
 
   if (npToggle) npToggle.addEventListener('click', toggle);
@@ -653,9 +672,13 @@
   }
 
   if (hasMediaSession) {
+    // Each handler defers to an active video player first (videoBridge above).
     const setHandler = (action, handler) => {
       try {
-        navigator.mediaSession.setActionHandler(action, handler);
+        navigator.mediaSession.setActionHandler(action, (d) => {
+          if (videoBridge(action)) return;
+          handler(d);
+        });
       } catch (_) {}
     };
     setHandler('play', doPlay);
@@ -669,6 +692,37 @@
       seekTo(curTime() + ((d && d.seekOffset) || 10));
     });
   }
+
+  // Keydown fallback for media keys delivered as real key events (Chrome
+  // normally consumes them for the Media Session above; other environments —
+  // or Chrome with hardware-media-key handling off — deliver keydown instead).
+  // Same dispatch: an active video player first, else the music engine. Also
+  // makes remote media buttons visible to the keytrace diagnostic.
+  const MEDIA_KEY_ACTIONS = {
+    MediaPlayPause: 'playpause',
+    MediaPlay: 'play',
+    MediaPause: 'pause',
+    MediaStop: 'pause',
+    MediaFastForward: 'seekforward',
+    MediaRewind: 'seekbackward',
+    MediaTrackNext: 'nexttrack',
+    MediaTrackPrevious: 'previoustrack',
+  };
+  document.addEventListener('keydown', (e) => {
+    const action = MEDIA_KEY_ACTIONS[e.key];
+    if (!action) return;
+    e.preventDefault();
+    if (videoBridge(action)) return;
+    switch (action) {
+      case 'playpause': toggle(); break;
+      case 'play': doPlay(); break;
+      case 'pause': doPause(); break;
+      case 'seekforward': seekTo(curTime() + 10); break;
+      case 'seekbackward': seekTo(Math.max(0, curTime() - 10)); break;
+      case 'nexttrack': playNext(); break;
+      case 'previoustrack': playPrev(); break;
+    }
+  });
 
   // A [data-play] click takes you to the now-playing page, which autoloads the
   // queue from the href's params (the Turbo-permanent <audio> survives the swap).

@@ -578,3 +578,25 @@ test('mute ads: off by default, hidden without commercial segments, toggle persi
   env = await boot({ sessionData: session({ skip_segments: [{ start: 10, end: 30, kind: 'intro' }] }) });
   assert.strictEqual(env.document.getElementById('muteAdsBtn').hidden, true, 'no commercials → hidden');
 });
+
+test('hardware media keys: the video page installs the bridge — FF/RW drive the scan, play commits, teardown clears it', async () => {
+  const env = await boot();
+  const doc = env.document;
+  const mc = env.window.hesperaMediaControl;
+  assert.strictEqual(typeof mc, 'function', 'bridge installed on a video page');
+
+  assert.strictEqual(mc('seekforward'), true, 'FF consumed');
+  const pill = doc.getElementById('mediaScanPill');
+  assert.strictEqual(pill.hidden, false, 'FF starts the DVR scan');
+  assert.strictEqual(pill.querySelector('.media-scan-speed').textContent, '2×');
+
+  assert.strictEqual(mc('play'), true, 'play consumed');
+  assert.strictEqual(pill.hidden, true, 'play commits and ends the scan');
+  assert.ok(doc.getElementById('tvTransport').classList.contains('playing'), 'video resumed');
+  assert.strictEqual(env.window.navigator.mediaSession.playbackState, 'playing', 'video play drives playbackState');
+
+  assert.strictEqual(mc('nexttrack'), true, 'episode actions consumed even with no adjacent file (never falls through to music)');
+
+  doc.dispatchEvent(new env.window.Event('turbo:before-cache'));
+  assert.strictEqual(env.window.hesperaMediaControl, null, 'teardown returns the media keys to the music engine');
+});
