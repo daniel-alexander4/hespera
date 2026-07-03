@@ -58,8 +58,13 @@ func New(db *sql.DB) *Service {
 }
 
 // pruneOldJobs deletes terminal scan_jobs older than jobRetention. The cutoff is
-// formatted in Go with the same RFC3339Nano layout finishJob writes to ended_at,
-// so the string comparison is chronological (both are UTC, same layout).
+// formatted in Go with the same RFC3339Nano layout finishJob writes to ended_at
+// (both UTC), so the string comparison is chronological to ~1s precision. It is
+// NOT exact at sub-second granularity: RFC3339Nano trims trailing zeros, so a
+// whole-second stamp ("…05Z") sorts lexicographically *after* a fractional one
+// in the same second ("…05.5Z", since '.' < 'Z'). Against a 30-day retention a
+// ≤1s boundary error is immaterial — but don't copy this comparison idiom for
+// tight windowing.
 func (s *Service) pruneOldJobs() {
 	cutoff := time.Now().UTC().Add(-jobRetention).Format(time.RFC3339Nano)
 	res, err := s.db.Exec(
@@ -196,6 +201,14 @@ func (s *Service) runJob(req JobRequest) {
 		s.unregisterCancel(req.JobID)
 		cancel()
 	}()
+	// Close the cancel race: RequestCancel sets cancel_requested=1 in the DB
+	// *before* poking the in-memory cancel func, so a cancel landing between
+	// the status='running' UPDATE above and registerCancel found no func to
+	// poke (lost signal — the executor would run to completion). Re-checking
+	// the flag once after registering covers that window completely.
+	if s.cancelRequested(req.JobID) {
+		cancel()
+	}
 	// Isolate executor panics: an unrecovered panic here would kill the only
 	// worker goroutine and silently freeze the queue. Registered after the
 	// cancel defer so it runs first (LIFO) and marks the job failed before
