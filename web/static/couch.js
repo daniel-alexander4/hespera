@@ -2,10 +2,10 @@
 // The input scheme (arrows move a focus ring, Enter/OK activates natively,
 // Backspace/Escape walks back up the UI) works identically on the desktop and
 // from a TV remote that emits standard key events (e.g. a Flirc dongle or BT
-// remote). Couch mode (<html data-couch="1">, set by the layout bootstrap from
-// ?couch=1 / localStorage) is a pure DISPLAY profile — bigger type, hidden
-// topbar (tv.css) — plus the one input nicety that only makes sense there:
-// auto-focusing a starting element after each render (focusFirst).
+// remote). There is ONE mode: only the display scale varies (html[data-scale],
+// set by the layout bootstrap from the display's physical size). The one input
+// nicety keyed to the tv scale class is auto-focusing a starting element after
+// each render (focusFirst) — on a desk it would steal focus for no benefit.
 //
 // Back walks up the hierarchy in stages, like a TV remote's back button:
 // dismiss an open overlay/menu → pull focus out of a subtab panel onto its
@@ -22,7 +22,7 @@
 // mouse-only affordances (the grid-pager chevrons) without showing them to
 // remote/keyboard users.
 (() => {
-  const isCouch = () => document.documentElement.getAttribute('data-couch') === '1';
+  const isTVScale = () => document.documentElement.getAttribute('data-scale') === 'tv';
 
   const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -158,15 +158,15 @@
     // Enter / OK is left to native behavior (activates links and buttons).
   });
 
-  // Couch-only: land focus somewhere sensible after each render so the remote
-  // always has a starting point. On the desktop this would steal focus on every
-  // page load for no benefit — there, the first arrow press engages navigation
-  // instead (move()'s no-active branch focuses the first candidate). turbo:load
+  // TV-scale only: land focus somewhere sensible after each render so the
+  // remote always has a starting point. On the desktop this would steal focus
+  // on every page load for no benefit — there, the first arrow press engages
+  // navigation instead (move()'s no-active branch focuses it). turbo:load
   // fires on the initial load and after every Turbo visit; the keydown listener
   // above is added once and queries the live DOM, so it keeps working across
   // visits without re-binding.
   const focusFirst = () => {
-    if (!isCouch()) return;
+    if (!isTVScale()) return;
     const all = candidates();
     if (!all.length) return;
     // Prefer the first in-content control over the breadcrumb, so a page doesn't

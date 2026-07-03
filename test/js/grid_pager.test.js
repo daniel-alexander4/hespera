@@ -18,7 +18,7 @@ function cards(n, page) {
 }
 
 function fixture({ page = 1, total = 3, q = '', couch = true } = {}) {
-  return `<!DOCTYPE html><html${couch ? ' data-couch="1"' : ''}><body>
+  return `<!DOCTYPE html><html${couch ? ' data-scale="tv"' : ''}><body>
     <div class="subtab-panel">
       <div class="band-albums-grid" data-grid-pager data-page="${page}" data-total-pages="${total}" data-q="${q}">
         ${cards(4, page)}

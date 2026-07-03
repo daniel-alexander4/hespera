@@ -11,11 +11,12 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { loadController } = require('./harness');
 
-// Boot couch.js in a fresh window. `couch` toggles <html data-couch>, `body` is
+// Boot couch.js in a fresh window. `couch` toggles the tv scale class (the
+// focusFirst gate), `body` is
 // the page content, and we stub Turbo.visit + spy history.back to observe where
 // a Back press sends the user.
 function boot({ body = '', url = 'http://localhost/music/album/1', couch = true } = {}) {
-  const html = `<!DOCTYPE html><html${couch ? ' data-couch="1"' : ''}><body>${body}</body></html>`;
+  const html = `<!DOCTYPE html><html${couch ? ' data-scale="tv"' : ''}><body>${body}</body></html>`;
   const visited = [];
   const env = loadController('couch.js', {
     html,
@@ -75,7 +76,7 @@ test('Backspace inside a text field edits text, never navigates', () => {
   assert.strictEqual(env.backCalls.length, 0);
 });
 
-test('navigation is always on — Back works without data-couch', () => {
+test('navigation is always on — Back works without the tv scale class', () => {
   const env = boot({ body: breadcrumb(['/', '/music']), couch: false });
   pressKey(env, 'Escape');
   assert.deepStrictEqual(env.visited, ['/music']);
