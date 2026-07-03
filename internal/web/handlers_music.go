@@ -1807,6 +1807,7 @@ func (h *Handler) streamTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("X-Content-Type-Options", "nosniff") // media bytes come from user files
 	http.ServeContent(w, r, filepath.Base(clean), st.ModTime(), f)
 }
 
