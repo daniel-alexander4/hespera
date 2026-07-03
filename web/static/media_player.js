@@ -478,8 +478,11 @@ function initMediaPlayer() {
   function resetSkip() {
     skippedAuto.clear();
     activeSkip = null;
+    endAdMute(true); // a session reload mid-ad must not strand the player muted
+    adMuteOverridden.clear();
     if (skipBtn) skipBtn.hidden = true;
     if (skipAutoBtn) skipAutoBtn.hidden = skipSegments.length === 0;
+    if (muteAdsBtn) muteAdsBtn.hidden = !skipSegments.some((s) => s.kind === 'commercial');
   }
   function doSkip(seg) { seekToAbs(seg.end); if (skipBtn) skipBtn.hidden = true; activeSkip = null; }
   function updateSkip() {
@@ -493,6 +496,49 @@ function initMediaPlayer() {
   if (skipAutoBtn) skipAutoBtn.addEventListener('click', () => { skipAuto = !skipAuto; try { localStorage.setItem('skip_auto', skipAuto ? '1' : '0'); } catch (e) {} reflectSkipAuto(); updateSkip(); });
   reflectSkipAuto();
   video.addEventListener('timeupdate', updateSkip);
+
+  // --- mute ads --- the gentler sibling of Auto-skip: with the #muteAdsBtn
+  //     toggle on (localStorage, per-device, revealed only when the file has
+  //     commercial segments), audio mutes while playback is inside a commercial
+  //     and restores on exit. The mute is applied to the element only — the
+  //     persisted tv_muted/tv_volume preference is never written by this path,
+  //     so a transient ad-mute can't corrupt the user's saved state (the mute
+  //     glyph/slider follow via volumechange → reflectVolume). A user who
+  //     unmutes mid-ad wins: that segment is marked overridden and never
+  //     fought — no re-mute, and no "restore" unmute it didn't ask for. A user
+  //     muted before the ad is left alone entirely (nothing to restore).
+  const muteAdsBtn = document.getElementById('muteAdsBtn');
+  const adMuteOverridden = new Set(); // segment ids the user unmuted inside
+  let adMuteActive = false; // we muted; exit restores, an override just forgets
+  let muteAds = false;
+  try { muteAds = localStorage.getItem('mute_ads') === '1'; } catch (e) {}
+  function reflectMuteAds() { if (muteAdsBtn) { muteAdsBtn.classList.toggle('is-on', muteAds); muteAdsBtn.setAttribute('aria-pressed', muteAds ? 'true' : 'false'); } }
+  function endAdMute(restore) {
+    if (!adMuteActive) return;
+    adMuteActive = false;
+    if (restore) video.muted = false;
+  }
+  function updateAdMute() {
+    const seg = segmentAt(currentAbsTime());
+    if (!seg || seg.kind !== 'commercial') { endAdMute(true); return; }
+    if (adMuteActive && !video.muted) { // user unmuted mid-ad — their call, don't fight
+      adMuteActive = false;
+      adMuteOverridden.add(segId(seg));
+      return;
+    }
+    if (muteAds && !adMuteActive && !video.muted && !adMuteOverridden.has(segId(seg))) {
+      adMuteActive = true;
+      video.muted = true;
+    }
+  }
+  if (muteAdsBtn) muteAdsBtn.addEventListener('click', () => {
+    muteAds = !muteAds;
+    try { localStorage.setItem('mute_ads', muteAds ? '1' : '0'); } catch (e) {}
+    reflectMuteAds();
+    if (muteAds) updateAdMute(); else endAdMute(true); // mid-ad toggle acts immediately
+  });
+  reflectMuteAds();
+  video.addEventListener('timeupdate', updateAdMute);
 
   // --- custom seek bar (B2) --- native <video controls> is dropped (its scrubber
   //     can't seek the progressive remux/burn-in streams — video.seekable==[0,0]),
