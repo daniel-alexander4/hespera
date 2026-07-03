@@ -138,10 +138,11 @@ func typeDemotion(primaryType string, secondaryTypes []string) float64 {
 // eligible candidates the highest *actual* ScoreCandidate wins, so the penalty
 // still steers the pick toward the canonical album that carries cover art.
 //
-// This is a strict superset of BestCandidate's matches at the threshold: every
-// candidate that cleared `ScoreCandidate >= matchThreshold` is still eligible
-// (its demotion is >= 0), and the winner among eligibles is the same ranking —
-// only near-threshold secondary editions are rescued from a spurious unmatch.
+// This is a strict superset of a plain `ScoreCandidate >= matchThreshold`
+// gate: every candidate that cleared it is still eligible (its demotion is
+// >= 0), and the winner among eligibles is the same highest-actual-score
+// ranking — only near-threshold secondary editions are rescued from a
+// spurious unmatch.
 func BestMatchCandidate(candidates []Candidate, localTitle, localArtist string, localYear int) (Candidate, float64, bool) {
 	bestIdx := -1
 	bestScore := 0.0
@@ -156,24 +157,6 @@ func BestMatchCandidate(candidates []Candidate, localTitle, localArtist string, 
 	}
 	if bestIdx == -1 {
 		return Candidate{}, 0, false
-	}
-	return candidates[bestIdx], bestScore, true
-}
-
-// BestCandidate picks the highest-scoring candidate. Returns the candidate,
-// its score, and whether any candidate was found.
-func BestCandidate(candidates []Candidate, localTitle, localArtist string, localYear int) (Candidate, float64, bool) {
-	if len(candidates) == 0 {
-		return Candidate{}, 0, false
-	}
-	bestIdx := 0
-	bestScore := ScoreCandidate(candidates[0], localTitle, localArtist, localYear)
-	for i := 1; i < len(candidates); i++ {
-		s := ScoreCandidate(candidates[i], localTitle, localArtist, localYear)
-		if s > bestScore {
-			bestScore = s
-			bestIdx = i
-		}
 	}
 	return candidates[bestIdx], bestScore, true
 }
