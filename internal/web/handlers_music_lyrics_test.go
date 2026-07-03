@@ -214,3 +214,44 @@ func TestMusicLyricsFetchBadRequest(t *testing.T) {
 		t.Fatalf("track_id=0 should be 400, got %d", rr.Code)
 	}
 }
+
+// TestMusicLyricsFetchForceBypassesDisabled pins the per-song toggle's
+// contract: force=1 (an explicit user gesture from the transport's Lyrics
+// button) fetches lyrics for that one track even while the global
+// lyrics_enabled default is off; without force the gate still holds.
+func TestMusicLyricsFetchForceBypassesDisabled(t *testing.T) {
+	h, db := newTestHandler(t) // lyrics_enabled stays default-off
+	id := insertMusicTrack(t, db, "My Song", "The Band", "The Album")
+
+	var hits int64
+	getBody := `{"id":42,"trackName":"My Song","artistName":"The Band","albumName":"The Album","syncedLyrics":"[00:01.00] hello","plainLyrics":"hello"}`
+	srv := fakeLRCLIB(t, &hits, getBody, "[]")
+	orig := lrcLibBaseURL
+	lrcLibBaseURL = srv.URL
+	defer func() { lrcLibBaseURL = orig }()
+
+	// Plain request: gate holds, provider untouched.
+	if _, data := postLyrics(t, h, id); data["synced_lyrics"] != nil && data["synced_lyrics"] != "" {
+		t.Fatalf("gate should hold without force, got %v", data["synced_lyrics"])
+	}
+	if atomic.LoadInt64(&hits) != 0 {
+		t.Fatalf("no-force request hit the provider (hits=%d)", atomic.LoadInt64(&hits))
+	}
+
+	// force=1: fetches and returns synced lyrics despite the disabled default.
+	body := "track_id=" + url.QueryEscape(strconv.FormatInt(id, 10)) + "&force=1"
+	req := httptest.NewRequest(http.MethodPost, "/music/lyrics/fetch", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	h.musicLyricsFetch(rr, req)
+	var out struct {
+		Data map[string]any `json:"data"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if s, _ := out.Data["synced_lyrics"].(string); !strings.Contains(s, "hello") {
+		t.Fatalf("force=1 should return synced lyrics, got %v", out.Data)
+	}
+	if atomic.LoadInt64(&hits) == 0 {
+		t.Fatal("force=1 should have queried the provider")
+	}
+}

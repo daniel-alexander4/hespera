@@ -490,13 +490,15 @@ body::before {
 /* Dialogue-boost toggle "on" state — a solid accent fill so it's unmistakably
    active (the default .btn-primary tint is near-invisible against the player
    overlay). The accent ring keeps it readable over the dark overlay gradient. */
-#tvBoostBtn.is-on {
+#tvBoostBtn.is-on,
+#player-lyrics-btn.is-on {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--text-on-accent);
   box-shadow: 0 0 0 2px var(--accent-bg);
 }
-#tvBoostBtn.is-on:hover {
+#tvBoostBtn.is-on:hover,
+#player-lyrics-btn.is-on:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: var(--text-on-accent);
