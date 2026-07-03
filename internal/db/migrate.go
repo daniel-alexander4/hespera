@@ -333,6 +333,14 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "music_tracks", "popularity", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// loudness_lufs is the track's integrated loudness (EBU R128, from ffmpeg's
+	// loudnorm analysis), filled by the music_loudness job chained after music
+	// scans and used for playback volume leveling. 0 = not yet analyzed (real
+	// music never measures exactly 0.0 LUFS; the analyzer nudges such a result);
+	// the scanner resets it on a size/mtime change like integrity_status.
+	if err := ensureColumn(db, "music_tracks", "loudness_lufs", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// similar_json caches the ListenBrainz similar-artists list (a []SimilarArtist)
 	// for the artist page; similar_fetched_at gates the lazy one-time fetch so a
 	// cache-miss view doesn't re-enqueue on every render.

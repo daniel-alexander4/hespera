@@ -85,8 +85,25 @@ type trackRow struct {
 	DiscNo        int
 	MIME          string
 	IsCompilation bool
-	Flagged       bool   // unrepairable corruption (integrity_status='flagged')
-	FlagDetail    string // integrity_detail — the human-readable reason
+	Flagged       bool    // unrepairable corruption (integrity_status='flagged')
+	FlagDetail    string  // integrity_detail — the human-readable reason
+	LoudnessLUFS  float64 // integrated loudness (0 = not yet analyzed) — volume leveling
+}
+
+// levelGainDB converts a track's measured loudness into the playback gain (dB)
+// that levels it to the -18 LUFS target, clamped to ±12 dB so a mismeasured
+// outlier can't blast or vanish. 0 (unanalyzed) applies no gain.
+func levelGainDB(lufs float64) float64 {
+	if lufs == 0 {
+		return 0
+	}
+	gain := -18 - lufs
+	if gain > 12 {
+		gain = 12
+	} else if gain < -12 {
+		gain = -12
+	}
+	return gain
 }
 
 type discSection struct {
@@ -1569,7 +1586,7 @@ const popularIncludeAllMaxTracks = 4
 // queue; callers append their own WHERE/ORDER/LIMIT. Column order matches
 // queryPlayerTracks' scan.
 const playerTrackSelect = `
-SELECT t.id, t.album_id, al.title, al.year, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream')
+SELECT t.id, t.album_id, al.title, al.year, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream'), t.loudness_lufs
 FROM music_tracks t
 JOIN music_albums al ON al.id=t.album_id
 JOIN music_artists ar ON ar.id=t.artist_id`
@@ -1686,11 +1703,12 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type queueTrackJSON struct {
-		ID      int64  `json:"id"`
-		AlbumID int64  `json:"albumId"`
-		Album   string `json:"album"`
-		Title   string `json:"title"`
-		Artist  string `json:"artist"`
+		ID      int64   `json:"id"`
+		AlbumID int64   `json:"albumId"`
+		Album   string  `json:"album"`
+		Title   string  `json:"title"`
+		Artist  string  `json:"artist"`
+		GainDB  float64 `json:"gainDb"` // volume-leveling gain toward the -18 LUFS target (0 = unanalyzed)
 	}
 	out := struct {
 		Title   string           `json:"title"`
@@ -1698,7 +1716,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		Tracks  []queueTrackJSON `json:"tracks"`
 	}{Title: q.Title, BackURL: q.BackURL, Tracks: make([]queueTrackJSON, 0, len(q.Tracks))}
 	for _, t := range q.Tracks {
-		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist})
+		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist, GainDB: levelGainDB(t.LoudnessLUFS)})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -1715,7 +1733,7 @@ func (h *Handler) queryPlayerTracks(ctx context.Context, query string, args ...a
 	tracks := make([]trackRow, 0, 32)
 	for rows.Next() {
 		var t trackRow
-		if err := rows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME); err != nil {
+		if err := rows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME, &t.LoudnessLUFS); err != nil {
 			return nil, err
 		}
 		t.ArtistDisplay = t.Artist

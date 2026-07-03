@@ -670,6 +670,12 @@ func (h *Handler) librariesScan(w http.ResponseWriter, r *http.Request) {
 			_, _ = h.jobs.Enqueue("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
 				return integrity.CheckLibrary(ctx, h.db, h.cfg.MediaRoot, "music_tracks", iJID, iLibID, repair)
 			})
+			// Chain the loudness analysis for volume leveling (new/changed tracks
+			// only — loudness_lufs=0). Runs last: a container repair rewrites the
+			// file, and its scanner-reset loudness re-measures here.
+			_, _ = h.jobs.Enqueue("music_loudness", libID, "system", func(ctx context.Context, lJID, lLibID int64) error {
+				return scanner.AnalyzeLoudness(ctx, lJID, lLibID)
+			})
 			return nil
 		})
 	case "tv":

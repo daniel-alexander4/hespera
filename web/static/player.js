@@ -245,6 +245,48 @@
     renderView(); // empty state if the now-playing page is open
   };
 
+  // --- Volume leveling --- each queue track carries gainDb (server-computed
+  // from its measured LUFS toward the -18 target; 0 until analyzed). A Web
+  // Audio GainNode on the permanent element applies it per track — the
+  // media_player.js boost pattern: createMediaElementSource once, and the
+  // whole graph is source→gain→destination from creation, so a suspended
+  // context passes audio through untouched rather than silencing it.
+  let levelCtx = null, levelGain = null;
+  const levelSetup = () => {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || levelCtx) return;
+    try {
+      levelCtx = new AC();
+      const srcNode = levelCtx.createMediaElementSource(audio);
+      levelGain = levelCtx.createGain();
+      srcNode.connect(levelGain);
+      levelGain.connect(levelCtx.destination);
+      levelCtx.addEventListener('statechange', applyLevelGain);
+    } catch (e) { levelCtx = null; levelGain = null; }
+  };
+  function applyLevelGain() {
+    if (!levelGain || currentPos < 0 || currentPos >= queue.length) return;
+    const db = (tracks[queue[currentPos]] || {}).gainDb || 0;
+    levelGain.gain.value = Math.pow(10, db / 20);
+  }
+
+  // --- Near-gapless --- warm the next track's stream into the browser cache
+  // while the current one plays, so the src-swap at 'ended' doesn't wait on a
+  // cold request. (True sample-accurate gapless would need Web Audio buffer
+  // scheduling — a different player; this removes the network share of the gap.)
+  let preloader = null;
+  const preloadNext = () => {
+    const nextIdx = currentPos + 1;
+    if (nextIdx >= queue.length) { preloader = null; return; }
+    const t = tracks[queue[nextIdx]];
+    if (!t) return;
+    try {
+      preloader = new Audio();
+      preloader.preload = 'auto';
+      preloader.src = '/stream/track/' + t.id;
+    } catch (e) { preloader = null; }
+  };
+
   // --- Core transport ---
   const playAt = (pos) => {
     if (pos < 0 || pos >= queue.length) return;
@@ -254,6 +296,9 @@
     const t = tracks[queue[currentPos]];
     audio.src = '/stream/track/' + t.id;
     audio.play().catch(() => {});
+    levelSetup();
+    applyLevelGain();
+    preloadNext();
     setMediaMetadata(t);
     updateHeader();
     loadKaraokeForTrack(t);
