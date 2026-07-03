@@ -1253,11 +1253,11 @@ html.using-mouse .grid-pager-btn,
      240-unit square, cover-cropped and centered (body::before), with the
      reflection bottom at 179/240 = 74.6% of the image — on a landscape
      viewport that's 24.6vw + 50vh from the top. Subtract a little less than
-     the cover's top offset (topbar + main padding + back-button row ≈ 7.3rem)
-     so the bottom edge lands just past the reflection ("at least down to");
+     the cover's top offset (topbar + page margins ≈ 4rem — the back button is
+     overlay chrome, not flow) so the bottom lands just past the reflection;
      floor at the old 440px so small windows never regress, cap so it can't
      run under the bottom transport. Square cover → width is the height knob. */
-  width: clamp(31.4286rem, calc(24.6vw + 50vh - 6.5rem), calc(100vh - 13rem));
+  width: clamp(31.4286rem, calc(24.6vw + 50vh - 3.5rem), calc(100vh - 13rem));
   max-width: 100%;
 }
 /* Scale the info hierarchy up with the bigger cover. */
@@ -1406,6 +1406,23 @@ html.using-mouse .grid-pager-btn,
   box-shadow: 0 -2px 14px rgba(0, 0, 0, 0.28);
   transition: transform 0.28s ease;
 }
+/* Floating "Back to Music" — top-left overlay chrome on the now-playing page,
+   collapsing in sync with the transport (one idle system drives both). 4rem
+   top clears the sticky topbar when windowed and the overlay topbar when
+   revealed in fullscreen. */
+.player-back {
+  position: fixed;
+  top: 4rem;
+  left: 1rem;
+  z-index: 90;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+.player-back.collapsed {
+  transform: translateY(-0.75rem);
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Collapsed → the bar slides fully off the bottom of the screen and leaves no
    trace (no shadow, not interactable); activity slides it back. */
 .player-transport.collapsed {
