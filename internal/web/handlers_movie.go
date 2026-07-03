@@ -21,6 +21,7 @@ import (
 	"hespera/internal/music"
 	"hespera/internal/pathguard"
 	"hespera/internal/tmdb"
+	"hespera/internal/tvscan"
 )
 
 // movieRow is one card in the movies browse grid / dashboard carousels.
@@ -355,6 +356,27 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		tmdbID,
 	).Scan(&flaggedCount, &flagDetail)
 
+	// Local extras (trailers/featurettes/…): ownership is path-derived — the
+	// extras living in the movie folder(s) of this title's copies.
+	var extras []extraRow
+	if dirRows, exErr := h.db.QueryContext(r.Context(),
+		"SELECT abs_path FROM movie_files WHERE tmdb_id=? AND match_status='matched'", tmdbID,
+	); exErr == nil {
+		var dirs []string
+		seen := map[string]bool{}
+		for dirRows.Next() {
+			var p string
+			if dirRows.Scan(&p) == nil {
+				if d := filepath.Dir(filepath.Clean(p)); !seen[d] {
+					seen[d] = true
+					dirs = append(dirs, d)
+				}
+			}
+		}
+		dirRows.Close()
+		extras = h.extrasUnderDirs(r.Context(), "movie_files", "movie_playback_progress", dirs)
+	}
+
 	// Lazy cast backfill: a film matched before cast-fetch existed (or whose
 	// match-time fetch failed) gets its cast on first view, gated by the
 	// movie:%d:cast marker so it enqueues at most once. Mirrors tvSeriesDetail.
@@ -383,6 +405,7 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		"Flagged":     flaggedCount > 0,
 		"FlagDetail":  flagDetail,
 		"Cast":        cast,
+		"Extras":      extras,
 	})
 }
 
@@ -658,12 +681,20 @@ func (h *Handler) moviePlayer(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var tmdbID int
+	var tmdbID, isExtra int
+	var absPath, extraTitle string
+	var libraryID int64
 	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT tmdb_id FROM movie_files WHERE id=?", fileID,
-	).Scan(&tmdbID); err != nil {
+		"SELECT tmdb_id, is_extra, extra_title, abs_path, library_id FROM movie_files WHERE id=?", fileID,
+	).Scan(&tmdbID, &isExtra, &extraTitle, &absPath, &libraryID); err != nil {
 		http.NotFound(w, r)
 		return
+	}
+
+	if isExtra == 1 {
+		// An extra carries no match: resolve the owning film from the path — the
+		// movie folder containing its extras dir, then any matched copy under it.
+		tmdbID = h.movieExtraOwner(r.Context(), libraryID, absPath)
 	}
 
 	title, year := "", ""
@@ -681,13 +712,44 @@ func (h *Handler) moviePlayer(w http.ResponseWriter, r *http.Request) {
 		title = "Movie"
 	}
 
+	pageTitle, showExtraTitle := title, ""
+	if isExtra == 1 {
+		if extraTitle == "" {
+			extraTitle = "Extra"
+		}
+		showExtraTitle = extraTitle
+		pageTitle = fmt.Sprintf("%s — %s", title, extraTitle)
+	}
+
 	h.render(w, "movie_player.html", map[string]any{
-		"Title":      title,
+		"Title":      pageTitle,
 		"MovieTitle": title,
 		"Year":       year,
 		"TMDBID":     tmdbID,
 		"FileID":     fileID,
+		"ExtraTitle": showExtraTitle,
 	})
+}
+
+// movieExtraOwner resolves an extra's owning film: the movie folder containing
+// its extras dir, then the tmdb_id of any matched copy in that folder. 0 when
+// the owner is unknown (unmatched or oddly placed).
+func (h *Handler) movieExtraOwner(ctx context.Context, libraryID int64, absPath string) int {
+	root := h.libraryRootPath(ctx, libraryID)
+	if root == "" {
+		return 0
+	}
+	owner, ok := tvscan.ExtrasOwnerDir(absPath, root)
+	if !ok {
+		return 0
+	}
+	prefix := owner + string(os.PathSeparator)
+	var tmdbID int
+	_ = h.db.QueryRowContext(ctx, `
+SELECT tmdb_id FROM movie_files
+WHERE library_id = ? AND match_status = 'matched' AND tmdb_id != 0 AND substr(abs_path, 1, ?) = ?
+LIMIT 1`, libraryID, len(prefix), prefix).Scan(&tmdbID)
+	return tmdbID
 }
 
 // moviesMatchSkip marks an unmatched (title, year) group as skipped so it drops

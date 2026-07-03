@@ -65,6 +65,12 @@ func run(ctx context.Context, db *sql.DB, mediaRoot, table string, jobID, librar
 	} else {
 		query += " AND integrity_status=''"
 	}
+	// Extras (bonus content) are excluded: the corrupt/degraded pills and the
+	// report page speak about titles, and auto-repair shouldn't rewrite bonus
+	// files in MEDIA_ROOT. music_tracks has no extras concept (no column).
+	if table != "music_tracks" {
+		query += " AND is_extra=0"
+	}
 	rows, err := db.QueryContext(ctx, query, libraryID)
 	if err != nil {
 		return fmt.Errorf("integrity query %s: %w", table, err)

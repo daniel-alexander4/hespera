@@ -369,14 +369,102 @@ func TestIsJunkFile(t *testing.T) {
 }
 
 func TestIsJunkDirName(t *testing.T) {
-	for _, d := range []string{"Sample", "samples", "Extras", "Trailers", "Featurettes"} {
+	for _, d := range []string{"Sample", "samples"} {
 		if !IsJunkDirName(d) {
 			t.Errorf("IsJunkDirName(%q) = false, want true", d)
 		}
 	}
-	for _, d := range []string{"Breaking Bad", "Season 1", "Extra Life", "Trailer Park Boys"} {
+	// Extras-type dirs are NOT junk anymore — they classify playable extras.
+	for _, d := range []string{"Breaking Bad", "Season 1", "Extra Life", "Trailer Park Boys", "Extras", "Trailers", "Featurettes"} {
 		if IsJunkDirName(d) {
 			t.Errorf("IsJunkDirName(%q) = true, want false", d)
+		}
+	}
+}
+
+func TestExtrasDirCategory(t *testing.T) {
+	cases := map[string]string{
+		"Extras":            "Extra",
+		"featurettes":       "Featurette",
+		"Trailers":          "Trailer",
+		"Behind The Scenes": "Behind the Scenes",
+		"Deleted Scenes":    "Deleted Scene",
+		"Interviews":        "Interview",
+		"Shorts":            "Short",
+	}
+	for name, want := range cases {
+		got, ok := ExtrasDirCategory(name)
+		if !ok || got != want {
+			t.Errorf("ExtrasDirCategory(%q) = %q,%v, want %q,true", name, got, ok, want)
+		}
+	}
+	for _, name := range []string{"Sample", "Season 1", "Scenes", "Other", "Extra Life"} {
+		if _, ok := ExtrasDirCategory(name); ok {
+			t.Errorf("ExtrasDirCategory(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestClassifyExtra(t *testing.T) {
+	root := "/media/tv"
+	cases := []struct {
+		path        string
+		rootIsTitle bool
+		wantCat     string
+		wantOK      bool
+	}{
+		// Nested under a show folder → extra.
+		{"/media/tv/Show/Extras/making of.mkv", false, "Extra", true},
+		{"/media/tv/Show/Trailers/teaser.mkv", false, "Trailer", true},
+		{"/media/tv/Show/Season 1/Extras/gag reel.mkv", false, "Extra", true},
+		{"/media/tv/Show/Behind The Scenes/day one.mkv", false, "Behind the Scenes", true},
+		// Top-level under the library root → a real title named like the dir.
+		{"/media/tv/Extras/S01E01.mkv", false, "", false},
+		{"/media/tv/Trailers/pilot.mkv", false, "", false},
+		// Per-series scoped walk: the root IS the show folder, first level counts.
+		{"/media/tv/Extras/clip.mkv", true, "Extra", true},
+		// Regular episode paths.
+		{"/media/tv/Show/Season 1/S01E01.mkv", false, "", false},
+		{"/media/tv/Show/episode.mkv", false, "", false},
+	}
+	for _, c := range cases {
+		cat, ok := ClassifyExtra(c.path, root, c.rootIsTitle)
+		if ok != c.wantOK || cat != c.wantCat {
+			t.Errorf("ClassifyExtra(%q, rootIsTitle=%v) = %q,%v, want %q,%v", c.path, c.rootIsTitle, cat, ok, c.wantCat, c.wantOK)
+		}
+	}
+}
+
+func TestExtraTitle(t *testing.T) {
+	cases := map[string]string{
+		"/x/Show/Extras/Making.of.the.Show.mkv":       "Making of the Show",
+		"/x/Show/Extras/[group] deleted_scene_01.mkv": "deleted scene 01",
+		"/x/Show/Extras/interview.mkv":                "interview",
+	}
+	for path, want := range cases {
+		if got := ExtraTitle(path); got != want {
+			t.Errorf("ExtraTitle(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestExtrasOwnerDir(t *testing.T) {
+	root := "/media/tv"
+	cases := []struct {
+		path      string
+		wantOwner string
+		wantOK    bool
+	}{
+		{"/media/tv/Show/Extras/x.mkv", "/media/tv/Show", true},
+		{"/media/tv/Show/Season 1/Extras/x.mkv", "/media/tv/Show", true}, // season dir rolls up to the show
+		{"/media/tv/Show/Trailers/x.mkv", "/media/tv/Show", true},
+		{"/media/tv/Extras/x.mkv", "", false}, // top-level: a real title, no owner
+		{"/media/tv/Show/Season 1/S01E01.mkv", "", false},
+	}
+	for _, c := range cases {
+		owner, ok := ExtrasOwnerDir(c.path, root)
+		if ok != c.wantOK || owner != c.wantOwner {
+			t.Errorf("ExtrasOwnerDir(%q) = %q,%v, want %q,%v", c.path, owner, ok, c.wantOwner, c.wantOK)
 		}
 	}
 }

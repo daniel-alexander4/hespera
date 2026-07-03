@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"hespera/internal/config"
 	isodb "hespera/internal/db"
 )
 
@@ -53,7 +54,7 @@ func TestUpsertTVFile(t *testing.T) {
 			Confidence:     0.72,
 			Method:         "sxe",
 		}
-		err := s.upsertTVFile(ctx, libID, "/media/tv/breaking.bad.s01e01.mkv", "mkv", 1024, 1700000000, "{}", ident)
+		err := s.upsertTVFile(ctx, libID, "/media/tv/breaking.bad.s01e01.mkv", "mkv", 1024, 1700000000, "{}", ident, extraFields{})
 		if err != nil {
 			t.Fatalf("upsertTVFile: %v", err)
 		}
@@ -116,7 +117,7 @@ func TestUpsertTVFile(t *testing.T) {
 		libID := seedLibrary(t, db, "tv2", "tv", "/media/tv")
 		s := &Scanner{DB: db}
 
-		err := s.upsertTVFile(ctx, libID, "/media/tv/unknown.mkv", "mkv", 512, 1700000000, "{}", nil)
+		err := s.upsertTVFile(ctx, libID, "/media/tv/unknown.mkv", "mkv", 512, 1700000000, "{}", nil, extraFields{})
 		if err != nil {
 			t.Fatalf("upsertTVFile nil: %v", err)
 		}
@@ -154,10 +155,10 @@ func TestUpsertTVFile(t *testing.T) {
 		ident := &EpisodeIdentity{ShowTitle: "Show", SeasonNumber: 1, EpisodeNumbers: []int{1}, Confidence: 0.72, Method: "sxe"}
 		path := "/media/tv/show.s01e01.mkv"
 
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident, extraFields{}); err != nil {
 			t.Fatalf("first upsert: %v", err)
 		}
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", ident); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", ident, extraFields{}); err != nil {
 			t.Fatalf("second upsert: %v", err)
 		}
 
@@ -181,7 +182,7 @@ func TestUpsertTVFile(t *testing.T) {
 
 		path := "/media/tv/bb.s01e01.mkv"
 		ident := &EpisodeIdentity{ShowTitle: "Breaking Bad", SeasonNumber: 1, EpisodeNumbers: []int{1}, Confidence: 0.72, Method: "sxe"}
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident, extraFields{}); err != nil {
 			t.Fatalf("initial upsert: %v", err)
 		}
 
@@ -197,7 +198,7 @@ func TestUpsertTVFile(t *testing.T) {
 
 		// Rescan with different identity data.
 		newIdent := &EpisodeIdentity{ShowTitle: "Different Show", SeasonNumber: 2, EpisodeNumbers: []int{5}, Confidence: 0.72, Method: "sxe"}
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", newIdent); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", newIdent, extraFields{}); err != nil {
 			t.Fatalf("rescan upsert: %v", err)
 		}
 
@@ -225,7 +226,7 @@ func TestUpsertTVFile(t *testing.T) {
 
 		path := "/media/tv/skip.s01e01.mkv"
 		ident := &EpisodeIdentity{ShowTitle: "Skipped Show", SeasonNumber: 1, EpisodeNumbers: []int{1}, Confidence: 0.72, Method: "sxe"}
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident, extraFields{}); err != nil {
 			t.Fatalf("initial upsert: %v", err)
 		}
 
@@ -233,7 +234,7 @@ func TestUpsertTVFile(t *testing.T) {
 			WHERE file_id = (SELECT id FROM tv_series_files WHERE library_id=? AND abs_path=?)`, libID, path)
 
 		newIdent := &EpisodeIdentity{ShowTitle: "Other", SeasonNumber: 3, EpisodeNumbers: []int{9}, Confidence: 0.72, Method: "sxe"}
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", newIdent); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", newIdent, extraFields{}); err != nil {
 			t.Fatalf("rescan upsert: %v", err)
 		}
 
@@ -257,12 +258,12 @@ func TestUpsertTVFile(t *testing.T) {
 
 		path := "/media/tv/fix.s01e01.mkv"
 		ident := &EpisodeIdentity{ShowTitle: "Old Title", SeasonNumber: 1, EpisodeNumbers: []int{1}, Confidence: 0.55, Method: "sxe"}
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", ident, extraFields{}); err != nil {
 			t.Fatalf("initial upsert: %v", err)
 		}
 
 		newIdent := &EpisodeIdentity{ShowTitle: "New Title", SeasonNumber: 2, EpisodeNumbers: []int{3}, Confidence: 0.72, Method: "sxe"}
-		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", newIdent); err != nil {
+		if err := s.upsertTVFile(ctx, libID, path, "mkv", 2048, 1700001000, "{}", newIdent, extraFields{}); err != nil {
 			t.Fatalf("rescan upsert: %v", err)
 		}
 
@@ -291,7 +292,7 @@ func TestUpsertIdentityRefreshesUnchangedUnmatched(t *testing.T) {
 	path := "/media/tv/Monty Pythons Flying Circus/s1/1x01 Whither Canada.mkv"
 	if err := s.upsertTVFile(ctx, libID, path, "mkv", 1024, 1700000000, "{}", &EpisodeIdentity{
 		ShowTitle: "", SeasonNumber: 1, EpisodeNumbers: []int{1}, Confidence: 0.55, Method: "x_format",
-	}); err != nil {
+	}, extraFields{}); err != nil {
 		t.Fatalf("seed upsert: %v", err)
 	}
 
@@ -389,4 +390,87 @@ func TestPruneMissingFiles(t *testing.T) {
 			t.Fatalf("count = %d, want 1 (outside-root file should NOT be pruned)", count)
 		}
 	})
+}
+
+// A full scan ingests extras-dir files as playable extras: flagged, titled from
+// the filename, blank placeholder identity (never enters matching) — while a
+// top-level dir of the same name stays a real title, and sample dirs stay
+// skipped entirely.
+func TestScanTVExtras(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	root := t.TempDir()
+
+	mustWrite := func(rel string) string {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	episode := mustWrite("Show/Season 1/show.s01e01.mkv")
+	extra := mustWrite("Show/Extras/Making.of.the.Show.mkv")
+	seasonExtra := mustWrite("Show/Season 1/Trailers/teaser.mkv")
+	topLevel := mustWrite("Extras/extras.s01e01.mkv") // a show literally named "Extras"
+	sample := mustWrite("Show/Sample/clip.mkv")
+
+	libID := seedLibrary(t, db, "tvx", "tv", root)
+	s := &Scanner{Cfg: config.Config{MediaRoot: root}, DB: db}
+	if err := s.ScanTV(ctx, 0, libID); err != nil {
+		t.Fatalf("ScanTV: %v", err)
+	}
+
+	type row struct {
+		isExtra  int
+		title    string
+		category string
+		identT   string
+		status   string
+	}
+	get := func(path string) (row, bool) {
+		var r row
+		err := db.QueryRow(`
+SELECT f.is_extra, f.extra_title, f.extra_category, i.guessed_title, i.status
+FROM tv_series_files f JOIN tv_series_identities i ON i.file_id=f.id
+WHERE f.abs_path=?`, path).Scan(&r.isExtra, &r.title, &r.category, &r.identT, &r.status)
+		return r, err == nil
+	}
+
+	if r, ok := get(episode); !ok || r.isExtra != 0 || r.identT != "Show" {
+		t.Fatalf("episode row = %+v ok=%v, want regular row with identity", r, ok)
+	}
+	if r, ok := get(extra); !ok || r.isExtra != 1 || r.title != "Making of the Show" || r.category != "Extra" || r.identT != "" || r.status != "unmatched" {
+		t.Fatalf("extra row = %+v ok=%v, want is_extra=1 titled placeholder", r, ok)
+	}
+	if r, ok := get(seasonExtra); !ok || r.isExtra != 1 || r.category != "Trailer" {
+		t.Fatalf("season extra row = %+v ok=%v, want is_extra=1 Trailer", r, ok)
+	}
+	if r, ok := get(topLevel); !ok || r.isExtra != 0 {
+		t.Fatalf("top-level 'Extras' show row = %+v ok=%v, want regular row", r, ok)
+	}
+	if _, ok := get(sample); ok {
+		t.Fatalf("sample-dir file was ingested, want skipped")
+	}
+
+	// The count walk must agree with the ingest walk (progress totals).
+	if n := CountEligibleVideoFiles(root); n != 4 {
+		t.Fatalf("CountEligibleVideoFiles = %d, want 4", n)
+	}
+
+	// A stale matched identity on an extra (pre-feature row, or hand-matched)
+	// is reset to the blank placeholder by the post-walk pass on the next scan.
+	if _, err := db.Exec(`
+UPDATE tv_series_identities SET status='matched', provider='tmdb', series_id='42', guessed_title='Show'
+WHERE file_id = (SELECT id FROM tv_series_files WHERE abs_path=?)`, extra); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ScanTV(ctx, 0, libID); err != nil {
+		t.Fatalf("rescan: %v", err)
+	}
+	if r, ok := get(extra); !ok || r.status != "unmatched" || r.identT != "" {
+		t.Fatalf("extra identity after rescan = %+v ok=%v, want blank unmatched placeholder", r, ok)
+	}
 }

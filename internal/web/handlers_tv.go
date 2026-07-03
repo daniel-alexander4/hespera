@@ -512,6 +512,25 @@ SELECT f.library_id FROM tv_series_files f
 JOIN tv_series_identities i ON i.file_id = f.id
 WHERE i.series_id = ? AND i.status = 'matched' LIMIT 1`, seriesID).Scan(&libraryID)
 
+	// Local extras (trailers/featurettes/…): ownership is path-derived — the
+	// extras living under this series' show folder(s), same folder mapping the
+	// per-series scan uses.
+	var extras []extraRow
+	if pathRows, exErr := h.db.QueryContext(r.Context(), `
+SELECT f.abs_path FROM tv_series_files f
+JOIN tv_series_identities i ON i.file_id = f.id
+WHERE i.series_id = ? AND i.status = 'matched'`, seriesID); exErr == nil {
+		var paths []string
+		for pathRows.Next() {
+			var p string
+			if pathRows.Scan(&p) == nil {
+				paths = append(paths, p)
+			}
+		}
+		pathRows.Close()
+		extras = h.extrasUnderDirs(r.Context(), "tv_series_files", "tv_playback_progress", tvscan.ShowDirsForFiles(paths))
+	}
+
 	// Cast strip. Loaded from cache; if this series' cast was never fetched
 	// (e.g. it matched before this feature, or has none), enqueue a background
 	// fetch so it populates on the next view — the handler never blocks on it.
@@ -555,6 +574,7 @@ WHERE i.series_id = ? AND i.status = 'matched' LIMIT 1`, seriesID).Scan(&library
 		"Cast":           cast,
 		"BackdropVer":    backdropVer,
 		"LibraryID":      libraryID,
+		"Extras":         extras,
 	})
 }
 
@@ -1598,43 +1618,55 @@ func (h *Handler) tvPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load file + identity info.
-	var absPath, container, seriesID, epCSV string
-	var seasonNum int
+	var absPath, container, seriesID, epCSV, extraTitle string
+	var seasonNum, isExtra int
+	var libraryID int64
 	err = h.db.QueryRowContext(r.Context(), `
-SELECT f.abs_path, f.container, i.series_id, i.season_number, i.episode_numbers_csv
+SELECT f.abs_path, f.container, f.is_extra, f.extra_title, f.library_id, i.series_id, i.season_number, i.episode_numbers_csv
 FROM tv_series_files f
 JOIN tv_series_identities i ON i.file_id = f.id
 WHERE f.id = ?
-`, fileID).Scan(&absPath, &container, &seriesID, &seasonNum, &epCSV)
+`, fileID).Scan(&absPath, &container, &isExtra, &extraTitle, &libraryID, &seriesID, &seasonNum, &epCSV)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
+	epName, ownerName := "", ""
+	if isExtra == 1 {
+		// An extra carries no identity: resolve the owning series from the path —
+		// the show folder containing its extras dir, then any matched file under it.
+		seriesID, epName, ownerName = h.tvExtraContext(r.Context(), libraryID, absPath, extraTitle)
+	}
+
 	// Show/episode names from cache.
 	showName, _, _ := h.loadShowMetaSummary(r.Context(), seriesID)
+	if showName == "" && ownerName != "" {
+		showName = ownerName // unmatched show folder: its name beats "Unknown Series"
+	}
 	if showName == "" {
 		showName = "Unknown Series"
 	}
 
-	epName := ""
-	epNums := strings.Split(epCSV, ",")
-	if len(epNums) > 0 {
-		epNum, _ := strconv.Atoi(strings.TrimSpace(epNums[0]))
-		if epNum > 0 {
-			epKey := fmt.Sprintf("show:%s:season:%d:episode:%d", seriesID, seasonNum, epNum)
-			var epPayload string
-			if h.db.QueryRowContext(r.Context(),
-				"SELECT payload_json FROM tv_series_metadata_cache WHERE entity_key=? AND lang='en'",
-				epKey,
-			).Scan(&epPayload) == nil {
-				var ep tmdb.TVEpisode
-				if json.Unmarshal([]byte(epPayload), &ep) == nil {
-					epName = ep.Name
+	if isExtra != 1 {
+		epNums := strings.Split(epCSV, ",")
+		if len(epNums) > 0 {
+			epNum, _ := strconv.Atoi(strings.TrimSpace(epNums[0]))
+			if epNum > 0 {
+				epKey := fmt.Sprintf("show:%s:season:%d:episode:%d", seriesID, seasonNum, epNum)
+				var epPayload string
+				if h.db.QueryRowContext(r.Context(),
+					"SELECT payload_json FROM tv_series_metadata_cache WHERE entity_key=? AND lang='en'",
+					epKey,
+				).Scan(&epPayload) == nil {
+					var ep tmdb.TVEpisode
+					if json.Unmarshal([]byte(epPayload), &ep) == nil {
+						epName = ep.Name
+					}
 				}
-			}
-			if epName == "" {
-				epName = fmt.Sprintf("Episode %d", epNum)
+				if epName == "" {
+					epName = fmt.Sprintf("Episode %d", epNum)
+				}
 			}
 		}
 	}
@@ -1648,10 +1680,13 @@ WHERE f.id = ?
 	).Scan(&position, &duration, &completed)
 
 	// Prev/next navigation. At the season's last episode, Up Next rolls into
-	// the next local season's first episode.
-	prevFileID, nextFileID := h.findAdjacentEpisode(r.Context(), seriesID, seasonNum, epCSV, fileID)
-	if nextFileID == 0 {
-		nextFileID = h.nextSeasonFirstEpisode(r.Context(), seriesID, seasonNum)
+	// the next local season's first episode. Extras stand alone — no Up Next.
+	var prevFileID, nextFileID int64
+	if isExtra != 1 {
+		prevFileID, nextFileID = h.findAdjacentEpisode(r.Context(), seriesID, seasonNum, epCSV, fileID)
+		if nextFileID == 0 {
+			nextFileID = h.nextSeasonFirstEpisode(r.Context(), seriesID, seasonNum)
+		}
 	}
 
 	h.render(w, "tv_player.html", map[string]any{
@@ -1662,6 +1697,7 @@ WHERE f.id = ?
 		"ShowName":             showName,
 		"EpName":               epName,
 		"EpCSV":                epCSV,
+		"IsExtra":              isExtra == 1,
 		"Position":             position,
 		"Duration":             duration,
 		"Completed":            completed,
@@ -1670,6 +1706,33 @@ WHERE f.id = ?
 		"Container":            container,
 		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "",
 	})
+}
+
+// tvExtraContext resolves an extra's owning series id (may be "" when the
+// containing show was never matched), its display name (the filename-derived
+// extra title), and the owning folder's basename as a show-name fallback. The
+// owner is the title folder containing the extras dir; the series id comes
+// from any matched file under it.
+func (h *Handler) tvExtraContext(ctx context.Context, libraryID int64, absPath, extraTitle string) (seriesID, epName, ownerName string) {
+	epName = extraTitle
+	if epName == "" {
+		epName = "Extra"
+	}
+	root := h.libraryRootPath(ctx, libraryID)
+	if root == "" {
+		return "", epName, ""
+	}
+	owner, ok := tvscan.ExtrasOwnerDir(absPath, root)
+	if !ok {
+		return "", epName, ""
+	}
+	prefix := owner + string(os.PathSeparator)
+	_ = h.db.QueryRowContext(ctx, `
+SELECT i.series_id FROM tv_series_files f
+JOIN tv_series_identities i ON i.file_id = f.id
+WHERE f.library_id = ? AND i.status = 'matched' AND i.series_id != '' AND substr(f.abs_path, 1, ?) = ?
+LIMIT 1`, libraryID, len(prefix), prefix).Scan(&seriesID)
+	return seriesID, epName, filepath.Base(owner)
 }
 
 // firstEpNum parses the first episode number from an episode_numbers_csv

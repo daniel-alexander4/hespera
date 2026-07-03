@@ -64,8 +64,9 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 			return walkErr
 		}
 		if d.IsDir() {
-			// Skip sample/extras subdirectories, but only when nested — a top-level
-			// folder of that name is a real library entry.
+			// Skip sample subdirectories, but only when nested — a top-level folder
+			// of that name is a real library entry. Extras-type dirs (Trailers/
+			// Featurettes/…) are walked: their files ingest as playable extras.
 			if p != cleanRoot && tvscan.IsJunkDirName(d.Name()) {
 				if rel, relErr := filepath.Rel(cleanRoot, p); relErr == nil && strings.ContainsRune(rel, filepath.Separator) {
 					return fs.SkipDir
@@ -95,18 +96,28 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 
 		// Identify from the path. Pure parsing (no I/O), so it runs every scan —
 		// including for unchanged files below — letting a re-scan reconverge titles
-		// as the parsing improves.
-		ident := ParseMovie(resolvedPath, cleanRoot)
+		// as the parsing improves. An extras-dir file is never title-parsed
+		// (guessed_title stays '', keeping it out of matching/review); its display
+		// title derives from the filename instead.
+		var ident *MovieIdentity
+		var extraTitle string
+		extraCategory, isExtra := tvscan.ClassifyExtra(p, cleanRoot, false)
+		if isExtra {
+			extraTitle = tvscan.ExtraTitle(resolvedPath)
+		} else {
+			ident = ParseMovie(resolvedPath, cleanRoot)
+		}
 
 		// Unchanged-file fast path: skip the expensive probe but still refresh the
-		// derived title/year.
+		// derived title/year (and extras classification — rows predating the
+		// extras feature carry is_extra=0 until this runs).
 		var existingID, existingSize, existingMtime int64
 		err = s.DB.QueryRowContext(ctx,
 			"SELECT id, file_size_bytes, mtime_unix FROM movie_files WHERE library_id=? AND abs_path=?",
 			libraryID, resolvedPath,
 		).Scan(&existingID, &existingSize, &existingMtime)
 		if err == nil && existingSize == fileSize && existingMtime == mtimeUnix {
-			if err := s.refreshIdentity(ctx, existingID, ident); err != nil {
+			if err := s.refreshIdentity(ctx, existingID, ident, extraCategory, extraTitle); err != nil {
 				scanErrors++
 				slog.Warn("moviescan identity refresh", "path", resolvedPath, "err", err)
 			}
@@ -128,7 +139,7 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 			streamInfoJSON = string(b)
 		}
 
-		if err := s.upsertMovieFile(ctx, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, ident); err != nil {
+		if err := s.upsertMovieFile(ctx, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, ident, extraCategory, extraTitle); err != nil {
 			scanErrors++
 			slog.Warn("moviescan file error", "path", resolvedPath, "err", err)
 		}
@@ -148,6 +159,10 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 		slog.Warn("moviescan completed with errors", "library_id", libraryID, "files_scanned", processed, "errors", scanErrors)
 	}
 
+	if err := s.resetExtraMatches(ctx, libraryID); err != nil {
+		return err
+	}
+
 	if err := s.relinkMovedFiles(ctx, libraryID, cleanRoot); err != nil {
 		return err
 	}
@@ -158,12 +173,13 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 // (match_status/tmdb_id/confidence/source/matched_at) are deliberately NOT in the
 // statement, so they default to unmatched on insert and are preserved untouched
 // on conflict — only the matcher writes them. guessed_title/year are refreshed
-// every scan so improved parsing reconverges.
-func (s *Scanner) upsertMovieFile(ctx context.Context, libraryID int64, resolvedPath, container string, fileSize, mtimeUnix int64, streamInfoJSON string, ident *MovieIdentity) error {
+// every scan so improved parsing reconverges. extraCategory != "" marks a
+// playable extra (guessed_title is ” for those — see the walk).
+func (s *Scanner) upsertMovieFile(ctx context.Context, libraryID int64, resolvedPath, container string, fileSize, mtimeUnix int64, streamInfoJSON string, ident *MovieIdentity, extraCategory, extraTitle string) error {
 	title, year := identFields(ident)
 	_, err := s.DB.ExecContext(ctx, `
-INSERT INTO movie_files (library_id, abs_path, container, file_size_bytes, mtime_unix, stream_info_json, guessed_title, year)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO movie_files (library_id, abs_path, container, file_size_bytes, mtime_unix, stream_info_json, guessed_title, year, is_extra, extra_title, extra_category)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(library_id, abs_path) DO UPDATE SET
   container=excluded.container,
   file_size_bytes=excluded.file_size_bytes,
@@ -171,28 +187,54 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
   stream_info_json=excluded.stream_info_json,
   guessed_title=excluded.guessed_title,
   year=excluded.year,
+  is_extra=excluded.is_extra,
+  extra_title=excluded.extra_title,
+  extra_category=excluded.extra_category,
   -- a changed file (new size or mtime) invalidates its integrity status so the
   -- next integrity_check re-examines (and re-repairs) it.
   integrity_status=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE integrity_status END,
   updated_at=datetime('now')
-`, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, title, year)
+`, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, title, year, boolToInt(extraCategory != ""), extraTitle, extraCategory)
 	if err != nil {
 		return fmt.Errorf("upsert movie_files: %w", err)
 	}
 	return nil
 }
 
-// refreshIdentity updates only the derived title/year for an unchanged file, so
-// a re-scan picks up better parsing without a probe. Match columns are untouched.
-func (s *Scanner) refreshIdentity(ctx context.Context, fileID int64, ident *MovieIdentity) error {
+// refreshIdentity updates only the derived title/year + extras classification
+// for an unchanged file, so a re-scan picks up better parsing without a probe.
+// Match columns are untouched.
+func (s *Scanner) refreshIdentity(ctx context.Context, fileID int64, ident *MovieIdentity, extraCategory, extraTitle string) error {
 	title, year := identFields(ident)
 	if _, err := s.DB.ExecContext(ctx,
-		"UPDATE movie_files SET guessed_title=?, year=? WHERE id=?",
-		title, year, fileID,
+		"UPDATE movie_files SET guessed_title=?, year=?, is_extra=?, extra_title=?, extra_category=? WHERE id=?",
+		title, year, boolToInt(extraCategory != ""), extraTitle, extraCategory, fileID,
 	); err != nil {
 		return fmt.Errorf("refresh movie identity: %w", err)
 	}
 	return nil
+}
+
+// resetExtraMatches blanks the match columns of every extras file. Ingest
+// never title-parses an extra, but rows can predate their dir being recognized
+// as an extras container (files scanned as unmatched noise, or even matched) —
+// a blank match keeps them out of every title-level query (copies, counts,
+// CW, mark-watched). One idempotent statement per scan.
+func (s *Scanner) resetExtraMatches(ctx context.Context, libraryID int64) error {
+	if _, err := s.DB.ExecContext(ctx, `
+UPDATE movie_files SET tmdb_id=0, match_status='', match_confidence=0, match_source='', matched_at=''
+WHERE library_id=? AND is_extra=1 AND (match_status<>'' OR tmdb_id<>0)
+`, libraryID); err != nil {
+		return fmt.Errorf("reset extra matches: %w", err)
+	}
+	return nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func identFields(ident *MovieIdentity) (string, int) {
