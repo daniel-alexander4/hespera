@@ -16,6 +16,7 @@ import (
 	"hespera/internal/jobs"
 	"hespera/internal/match"
 	"hespera/internal/moviescan"
+	"hespera/internal/photoscan"
 	"hespera/internal/pathguard"
 	"hespera/internal/scan"
 	"hespera/internal/tmdb"
@@ -789,6 +790,24 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// Chain trickplay sprite generation — the movie twin.
 			_, _ = h.jobs.Enqueue("movie_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return h.generateTrickplayMissing(ctx, "movie_files", tJID, tLibID)
+			})
+			return nil
+		})
+	case "photos":
+		photoScanner := photoscan.New(h.cfg, h.db)
+		jobID, err = h.jobs.Enqueue("photoscan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
+			if err := photoScanner.ScanPhotos(ctx, jID, libID); err != nil {
+				return err
+			}
+			// Chain a reprobe of clips whose scan-time probe failed — the
+			// movie/TV twin (a late success also recovers the clip's real
+			// capture time for the By Date view).
+			_, _ = h.jobs.Enqueue("photo_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
+				return photoScanner.ReprobeMissing(ctx, pJID, pLibID)
+			})
+			// Chain grid-thumbnail generation (missing-only: new/changed files).
+			_, _ = h.jobs.Enqueue("photo_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+				return photoScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
 			})
 			return nil
 		})
