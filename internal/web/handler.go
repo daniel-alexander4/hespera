@@ -17,6 +17,7 @@ import (
 
 	"hespera"
 	"hespera/internal/config"
+	"hespera/internal/display"
 	"hespera/internal/jobs"
 	"hespera/internal/tmdb"
 )
@@ -35,6 +36,11 @@ type Deps struct {
 	// button → POST /shutdown). main wires it to the same path as a SIGTERM; nil
 	// (e.g. in tests) disables the endpoint.
 	Quit func()
+	// AppMode is true when the server runs on the same machine as the app
+	// window (the default launch shape). Gates display-scale auto-detection:
+	// in server mode the client is a remote browser, and matching it against
+	// the *server's* displays would be wrong.
+	AppMode bool
 }
 
 type Handler struct {
@@ -55,6 +61,11 @@ type Handler struct {
 	// keyed by e.g. "cast:123"/"person:456", so a cache-miss page view enqueues
 	// at most one job per entity while it's queued/running.
 	metaFetch sync.Map
+	// appMode + displayClassAt drive display-scale auto-detection (see
+	// Deps.AppMode). displayClassAt is a field so tests can stub the xrandr
+	// lookup.
+	appMode        bool
+	displayClassAt func(ctx context.Context, x, y int) string
 }
 
 func New(d Deps) (*Handler, error) {
@@ -175,9 +186,11 @@ func New(d Deps) (*Handler, error) {
 		jobs:      jobs.New(d.DB),
 		startedAt: time.Now().UTC(),
 		quit:      d.Quit,
+		appMode:   d.AppMode,
 		tmdbValidate: func(ctx context.Context, key string) (bool, error) {
 			return tmdb.NewClient(key).ValidateKey(ctx)
 		},
+		displayClassAt: display.ClassAt,
 	}
 
 	go h.pruneTVCacheLoop()

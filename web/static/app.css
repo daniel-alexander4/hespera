@@ -35,6 +35,13 @@
 html {
   font-size: 14px;
 }
+/* Auto display scale (html[data-scale], set by the layout boot script from the
+   window's display physical size — see /display/scale). One UI, rem-based
+   throughout, so the root font-size is the single scale knob: desktop <27" is
+   the 14px default above, large 27-45" reads comfortably at arm's-length-plus,
+   tv >45" is across-the-room (the former couch-mode 24px). */
+html[data-scale="large"] { font-size: 18px; }
+html[data-scale="tv"] { font-size: 24px; scroll-behavior: smooth; }
 /* Reset */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -61,10 +68,9 @@ a:hover {
 }
 
 /* Keyboard focus ring — the remote/keyboard nav layer (couch.js) is always on,
-   so keyboard focus must be visible on the desktop too. :focus-visible keeps
-   it off mouse clicks; couch mode's larger ring (tv.css) overrides it there.
-   Component-tuned rules (.input:focus, .media-scrubber, …) stay authoritative
-   on their own elements. */
+   so keyboard focus must be visible everywhere. :focus-visible keeps it off
+   mouse clicks. Component-tuned rules (.input:focus, .media-scrubber, …) stay
+   authoritative on their own elements. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -236,8 +242,8 @@ html.is-fullscreen [data-app-fullscreen] .fs-exit { display: flex; }
 /* In app full screen the sticky topbar becomes a fixed overlay (content reclaims
    its 3rem and fills the screen) that auto-hides — the JS toggles .topbar-hidden
    on the root after ~2.5s of inactivity, revealed on mouse/keyboard activity.
-   Windowed (no .is-fullscreen) is unaffected; couch mode's `.topbar{display:none}`
-   in tv.css loads later and still wins, so there's no overlay there. */
+   Windowed (no .is-fullscreen) is unaffected. On a TV this overlay IS the
+   topbar behavior — full-screen hides it, remote keys reveal it. */
 html.is-fullscreen .topbar {
   position: fixed;
   left: 0;

@@ -89,11 +89,18 @@ func main() {
 	var quitOnce sync.Once
 	quitFunc := func() { quitOnce.Do(func() { close(quit) }) }
 
+	// App mode (the default) means the app window runs on this machine — which
+	// also enables display-scale auto-detection (the handler may match the
+	// window against this machine's displays). Resolved here because both the
+	// handler and the listen/launch logic below branch on it.
+	appMode := os.Getenv("HESPERA_NO_BROWSER") == ""
+
 	h, err := web.New(web.Deps{
 		Cfg:     cfg,
 		DB:      dbConn,
 		Version: version,
 		Quit:    quitFunc,
+		AppMode: appMode,
 	})
 	if err != nil {
 		slog.Error("web handler initialization failed", "err", err)
@@ -109,11 +116,10 @@ func main() {
 		slog.Info("management socket listening", "path", config.ManagementSocketPath(cfg.DataDir))
 	}
 
-	// App mode (the default) opens a chromeless browser window and binds a random
-	// loopback port — Hespera runs as a single-machine app. HESPERA_NO_BROWSER
-	// opts out (server/headless/Docker), keeping the env-configured listen
-	// address. An explicit HESPERA_LISTEN is always honored.
-	appMode := os.Getenv("HESPERA_NO_BROWSER") == ""
+	// App mode opens a chromeless browser window and binds a random loopback
+	// port — Hespera runs as a single-machine app. HESPERA_NO_BROWSER opts out
+	// (server/headless/Docker), keeping the env-configured listen address. An
+	// explicit HESPERA_LISTEN is always honored.
 	listenAddr := cfg.Listen
 	if appMode && os.Getenv("HESPERA_LISTEN") == "" {
 		listenAddr = "127.0.0.1:0"
