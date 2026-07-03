@@ -287,6 +287,7 @@ func TestPruneCache(t *testing.T) {
 	// stale one (older than buildTimeout) must be swept, an in-flight one kept.
 	withTemp := mk("withtemp", 5*time.Minute, 10)
 	staleTemp := filepath.Join(withTemp, ".seg00000.ts.tmp")
+	staleAudTemp := filepath.Join(withTemp, ".seg00002.ts.tmp.aud.tmp") // two-pass audio-warm temp
 	freshTemp := filepath.Join(withTemp, ".seg00001.ts.tmp")
 	writeTemp := func(p string, age time.Duration) {
 		if err := os.WriteFile(p, []byte("xx"), 0o644); err != nil {
@@ -295,8 +296,9 @@ func TestPruneCache(t *testing.T) {
 		when := time.Now().Add(-age)
 		_ = os.Chtimes(p, when, when)
 	}
-	writeTemp(staleTemp, 3*time.Hour) // > buildTimeout (2h) → swept
-	writeTemp(freshTemp, time.Minute) // in-flight build → kept
+	writeTemp(staleTemp, 3*time.Hour)    // > buildTimeout (2h) → swept
+	writeTemp(staleAudTemp, 3*time.Hour) // audio-warm temp of a killed build → swept
+	writeTemp(freshTemp, time.Minute)    // in-flight build → kept
 
 	// maxAge expires "old"; the stale .ts.tmp orphan is swept (its dir survives);
 	// budget=0 leaves the rest.
@@ -305,6 +307,7 @@ func TestPruneCache(t *testing.T) {
 	}
 	assertGone(t, old)
 	assertGone(t, staleTemp)
+	assertGone(t, staleAudTemp)
 	assertExists(t, freshTemp)
 	assertExists(t, withTemp)
 	assertExists(t, fresh)

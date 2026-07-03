@@ -525,18 +525,21 @@ func PruneCache(root string, maxBytes int64, maxAge time.Duration) error {
 	return nil
 }
 
-// removeStaleSegTemps deletes orphaned segment temp files (.segNNNNN.ts.tmp) left
-// inside an asset dir by a hard-killed build (SIGKILL/OOM between the temp write
-// and the atomic rename, so the in-goroutine os.Remove never ran). Only files
-// older than buildTimeout are swept — comfortably past segBuildTimeout, so an
-// in-flight build's temp is never deleted out from under it.
+// removeStaleSegTemps deletes orphaned segment temp files (.segNNNNN.ts.tmp
+// and the two-pass audio-warm .segNNNNN.ts.tmp.aud.tmp) left inside an asset
+// dir by a hard-killed build (SIGKILL/OOM between the temp write and the
+// atomic rename, so the in-goroutine os.Remove never ran). Matched by the
+// ".seg" prefix + ".tmp" suffix so every temp shape a build creates is
+// covered; real segments (segNNNNN.ts, no leading dot) never match. Only
+// files older than buildTimeout are swept — comfortably past segBuildTimeout,
+// so an in-flight build's temp is never deleted out from under it.
 func removeStaleSegTemps(dir string, now time.Time) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".ts.tmp") {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), ".seg") || !strings.HasSuffix(e.Name(), ".tmp") {
 			continue
 		}
 		info, err := e.Info()
