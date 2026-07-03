@@ -145,7 +145,7 @@ test('arrows inside a select stay native (no preventDefault)', () => {
   assert.strictEqual(e.defaultPrevented, false);
 });
 
-test('focusFirst lands on the active subtab at tv scale (Recent when arriving from the topbar)', () => {
+test('focusFirst lands on the active subtab under remote/keyboard modality (Recent from the topbar)', () => {
   const env = boot({
     body:
       breadcrumb(['/']) +
@@ -157,12 +157,24 @@ test('focusFirst lands on the active subtab at tv scale (Recent when arriving fr
   env.document.dispatchEvent(new env.window.Event('turbo:load'));
   assert.strictEqual(env.document.activeElement.textContent, 'Recent', 'ring lands on the active subtab, not the first control');
 
-  // Not at tv scale: no focus stealing on load.
-  const desk = boot({
+  // Modality, not scale: a remote on a `large` (or desktop) display still gets
+  // the subtab anchor — using-mouse is absent when the visit was key-driven.
+  const remote = boot({
     body: '<div class="subtabs"><button class="subtab active" data-tab="recent">Recent</button></div>',
     url: 'http://localhost/music',
     couch: false,
   });
-  desk.document.dispatchEvent(new desk.window.Event('turbo:load'));
-  assert.strictEqual(desk.document.activeElement, desk.document.body, 'desktop scale never steals focus');
+  remote.document.dispatchEvent(new remote.window.Event('turbo:load'));
+  assert.strictEqual(remote.document.activeElement.textContent, 'Recent', 'keyboard modality gets the anchor at any scale');
+
+  // A mouse-driven visit (using-mouse persists on <html> across body swaps) is
+  // never focus-stolen below tv scale.
+  const mouse = boot({
+    body: '<div class="subtabs"><button class="subtab active" data-tab="recent">Recent</button></div>',
+    url: 'http://localhost/music',
+    couch: false,
+  });
+  mouse.document.dispatchEvent(new mouse.window.MouseEvent('mousemove', { bubbles: true }));
+  mouse.document.dispatchEvent(new mouse.window.Event('turbo:load'));
+  assert.strictEqual(mouse.document.activeElement, mouse.document.body, 'mouse modality never steals focus');
 });

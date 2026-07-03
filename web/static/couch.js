@@ -176,14 +176,18 @@
   // above is added once and queries the live DOM, so it keeps working across
   // visits without re-binding.
   const focusFirst = () => {
-    if (!isTVScale()) return;
     // A page with a subtab bar (Music / TV / Movies) lands the ring on its
     // active tab — selecting a main tab from the topbar starts you on "Recent",
-    // not whatever control happens to be first in the content. This runs before
-    // subtabs.js restores a remembered tab (couch.js loads first), so the
-    // server-rendered default tab is what gets the ring.
+    // not whatever control happens to be first in the content. Gated on input
+    // MODALITY, not display scale: "using a remote" is true on a 32″ TV at the
+    // `large` scale too, and using-mouse persists on <html> across Turbo body
+    // swaps, so a mouse-driven visit is never focus-stolen while any
+    // keyboard/remote-driven one gets its anchor. This runs before subtabs.js
+    // restores a remembered tab (couch.js loads first), so the server-rendered
+    // default tab is what gets the ring.
     const tab = document.querySelector('.subtab.active') || document.querySelector('.subtab');
-    if (tab) { tab.focus(); return; }
+    if (tab && !html.classList.contains('using-mouse')) { tab.focus(); return; }
+    if (!isTVScale()) return;
     const all = candidates();
     if (!all.length) return;
     // Prefer the first in-content control over the breadcrumb, so a page doesn't
