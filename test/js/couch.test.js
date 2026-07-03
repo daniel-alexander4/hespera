@@ -136,13 +136,90 @@ test('mouse movement sets using-mouse; a handled key clears it', () => {
   assert.ok(!env.document.documentElement.classList.contains('using-mouse'));
 });
 
-test('arrows inside a select stay native (no preventDefault)', () => {
+// --- Engage protocol: Enter captures a select/range/[data-couch-capture]
+// control's arrows, Enter/Back/blur release. Unengaged controls are transparent.
+
+function pressOn(env, el, key) {
+  const e = new env.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  el.dispatchEvent(e);
+  return e;
+}
+
+test('an unengaged select is transparent: arrows are consumed for focus moves, not option cycling', () => {
   const env = boot({ body: '<select id="s"><option>a</option><option>b</option></select><a href="/x">x</a>' });
   const sel = env.document.getElementById('s');
   sel.focus();
-  const e = new env.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
-  sel.dispatchEvent(e);
-  assert.strictEqual(e.defaultPrevented, false);
+  const e = pressOn(env, sel, 'ArrowDown');
+  assert.strictEqual(e.defaultPrevented, true, 'couch takes the arrow (focus move), not the select');
+  assert.strictEqual(sel.hasAttribute('data-couch-engaged'), false);
+});
+
+test('Enter toggles engagement on a select; engaged arrows stay native', () => {
+  const env = boot({ body: '<select id="s"><option>a</option><option>b</option></select>' });
+  const sel = env.document.getElementById('s');
+  sel.focus();
+  pressOn(env, sel, 'Enter');
+  assert.strictEqual(sel.hasAttribute('data-couch-engaged'), true, 'Enter engages');
+  const arrow = pressOn(env, sel, 'ArrowDown');
+  assert.strictEqual(arrow.defaultPrevented, false, 'engaged: the control owns the arrows');
+  pressOn(env, sel, 'Enter');
+  assert.strictEqual(sel.hasAttribute('data-couch-engaged'), false, 'Enter again releases');
+});
+
+test('Back on an engaged control releases it without navigating; the next Back navigates', () => {
+  const env = boot({ body: breadcrumb(['/', '/music']) + '<input id="v" type="range" min="0" max="1" />' });
+  const range = env.document.getElementById('v');
+  range.focus();
+  pressOn(env, range, 'Enter');
+  assert.strictEqual(range.hasAttribute('data-couch-engaged'), true, 'range engages via Enter');
+  pressOn(env, range, 'Escape');
+  assert.strictEqual(range.hasAttribute('data-couch-engaged'), false, 'Back releases');
+  assert.strictEqual(env.visited.length, 0, 'the releasing press does not navigate');
+  pressOn(env, range, 'Escape');
+  assert.deepStrictEqual(env.visited, ['/music'], 'once released, Back climbs as usual');
+});
+
+test('a [data-couch-capture] widget joins the protocol', () => {
+  const env = boot({ body: '<div id="w" tabindex="0" data-couch-capture></div>' });
+  const w = env.document.getElementById('w');
+  w.focus();
+  const before = pressOn(env, w, 'ArrowLeft');
+  assert.strictEqual(before.defaultPrevented, true, 'unengaged: couch takes the arrow');
+  pressOn(env, w, 'Enter');
+  assert.strictEqual(w.hasAttribute('data-couch-engaged'), true);
+  const after = pressOn(env, w, 'ArrowLeft');
+  assert.strictEqual(after.defaultPrevented, false, 'engaged: the widget owns the arrows');
+});
+
+test('leaving an engaged control releases it (focusout)', () => {
+  const env = boot({ body: '<select id="s"><option>a</option></select><a id="x" href="/x">x</a>' });
+  const sel = env.document.getElementById('s');
+  sel.focus();
+  pressOn(env, sel, 'Enter');
+  assert.strictEqual(sel.hasAttribute('data-couch-engaged'), true);
+  env.document.getElementById('x').focus();
+  assert.strictEqual(sel.hasAttribute('data-couch-engaged'), false, 'blur released it');
+});
+
+test('Enter on a checkbox toggles it instead of submitting the enclosing form', () => {
+  const env = boot({ body: '<form><input id="c" type="checkbox" /><button type="submit">Save</button></form>' });
+  const box = env.document.getElementById('c');
+  box.focus();
+  const e = pressOn(env, box, 'Enter');
+  assert.strictEqual(box.checked, true, 'Enter toggled the checkbox');
+  assert.strictEqual(e.defaultPrevented, true, 'implicit form submission suppressed');
+  pressOn(env, box, 'Enter');
+  assert.strictEqual(box.checked, false, 'Enter toggles both ways');
+});
+
+test('arrows in a text input stay native (caret), and in a checkbox they move focus', () => {
+  const env = boot({ body: '<input id="t" type="text" /><input id="c" type="checkbox" />' });
+  const text = env.document.getElementById('t');
+  text.focus();
+  assert.strictEqual(pressOn(env, text, 'ArrowLeft').defaultPrevented, false, 'text input keeps its caret arrows');
+  const box = env.document.getElementById('c');
+  box.focus();
+  assert.strictEqual(pressOn(env, box, 'ArrowLeft').defaultPrevented, true, 'checkbox arrows are focus moves, not dead keys');
 });
 
 test('focusFirst lands on the active subtab under remote/keyboard modality (Recent from the topbar)', () => {

@@ -46,10 +46,11 @@ function boot() {
 
 const press = (env, k) =>
   env.document.querySelector('.era-track').dispatchEvent(new env.window.KeyboardEvent('keydown', { key: k, bubbles: true }));
-// Enter engages adjust mode (focused ≠ engaged — an unengaged track lets arrows
-// bubble to couch.js so a remote can pass by).
-const engage = (env) => press(env, 'Enter');
-const isEngaged = (env) => env.document.querySelector('.era-picker').classList.contains('era-engaged');
+// Engage/release is couch.js's shared protocol (data-couch-engaged attribute);
+// couch.js isn't loaded in this harness, so tests set the attribute directly —
+// era_slider only gates its arrow handling on it.
+const engage = (env) => env.document.querySelector('.era-track').setAttribute('data-couch-engaged', '');
+const isEngaged = (env) => env.document.querySelector('.era-track').hasAttribute('data-couch-engaged');
 const state = (env) => ({
   from: Number(env.document.querySelector('.era-from').textContent),
   to: Number(env.document.querySelector('.era-to').textContent),
@@ -137,35 +138,15 @@ test('unengaged: arrows bubble to couch and never adjust (focus can pass by)', (
   assert.strictEqual(isEngaged(env), false);
 });
 
-test('Enter engages adjust mode; Enter again releases (never plays)', () => {
+test('Enter and Back bubble to couch.js (which owns engage/release) and never play', () => {
   const env = boot();
-  press(env, 'Enter');
-  assert.strictEqual(isEngaged(env), true, 'first Enter engages');
-  press(env, 'Enter');
-  assert.strictEqual(isEngaged(env), false, 'second Enter releases');
-  assert.strictEqual(env.playClicks(), 0, 'Enter no longer clicks Play (the buttons do)');
-  assert.strictEqual(env.shuffleClicks(), 0);
-});
-
-test('Back releases engagement without reaching couch; the next Back bubbles', () => {
-  const env = boot();
-  engage(env);
   const before = env.couch();
+  press(env, 'Enter');
   press(env, 'Escape');
-  assert.strictEqual(isEngaged(env), false, 'Escape released adjust mode');
-  assert.strictEqual(env.couch(), before, 'the releasing press was consumed');
-  press(env, 'Escape');
-  assert.strictEqual(env.couch(), before + 1, 'once released, Back bubbles to couch');
-});
-
-test('blur releases engagement', () => {
-  const env = boot();
-  const track = env.document.querySelector('.era-track');
-  track.focus();
-  engage(env);
-  assert.strictEqual(isEngaged(env), true);
-  track.dispatchEvent(new env.window.FocusEvent('blur'));
-  assert.strictEqual(isEngaged(env), false, 'leaving the track releases adjust mode');
+  assert.strictEqual(env.couch(), before + 2, 'Enter/Back reach the document (couch owns the protocol)');
+  assert.strictEqual(env.playClicks(), 0, 'Enter never clicks Play (the buttons do)');
+  assert.strictEqual(env.shuffleClicks(), 0);
+  assert.strictEqual(isEngaged(env), false, 'era_slider itself never engages on keys');
 });
 
 test('a non-arrow key passes through to couch even while engaged', () => {

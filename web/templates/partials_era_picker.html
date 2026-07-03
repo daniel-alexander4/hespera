@@ -7,7 +7,7 @@
 {{define "era-picker"}}
 <div class="era-picker" data-min="{{.MinYear}}" data-max="{{.MaxYear}}" data-lib="{{.LibraryID}}">
   <div class="era-readout"><span class="era-from"></span> – <span class="era-to"></span></div>
-  <div class="era-track" tabindex="0" role="slider" aria-label="Shuffle era: year range" aria-valuemin="{{.MinYear}}" aria-valuemax="{{.MaxYear}}">
+  <div class="era-track" tabindex="0" role="slider" data-couch-capture aria-label="Shuffle era: year range" aria-valuemin="{{.MinYear}}" aria-valuemax="{{.MaxYear}}">
     <div class="era-tape"></div>
     <div class="era-window">
       <span class="era-handle era-handle-l" data-edge="l"></span>

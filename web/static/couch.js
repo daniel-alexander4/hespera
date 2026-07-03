@@ -115,17 +115,57 @@
     if (!html.classList.contains('using-mouse')) html.classList.add('using-mouse');
   }, { passive: true });
 
+  // ---- Engage protocol (capture/uncapture) ----------------------------------
+  // Any control that wants the arrow keys for itself — a <select> cycling
+  // options, an <input type=range> (volume, music seek), or a custom slider
+  // tagged [data-couch-capture] (era picker, video scrubber) — would otherwise
+  // be a one-way door: arrows adjust it forever and focus can never leave. So
+  // capture is EXPLICIT: a merely-focused control is transparent (arrows move
+  // focus straight past it); Enter engages it (data-couch-engaged, styled with
+  // an accent glow), arrows then act on the control, and Enter/Back or leaving
+  // it releases. Custom widgets read the same attribute to gate their own
+  // keydown handlers, so couch.js owns the whole protocol.
+  const isEngageable = (el) => !!el && !!el.tagName &&
+    (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'range') ||
+      (el.matches && el.matches('[data-couch-capture]')));
+  const isEngaged = (el) => !!el && !!el.hasAttribute && el.hasAttribute('data-couch-engaged');
+  const release = (el) => el.removeAttribute('data-couch-engaged');
+  // Leaving an engaged control by any means (click elsewhere, Turbo swap,
+  // widget blur-after-pick) releases it.
+  document.addEventListener('focusout', (e) => {
+    if (isEngaged(e.target)) release(e.target);
+  });
+
   document.addEventListener('keydown', (e) => {
     const target = e.target;
-    // Arrows must keep editing text and cycling <select> options; back keys are
-    // exempted from text fields only (Escape on a focused select is still Back).
-    const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    // Arrows must keep editing text; back keys are exempted from text fields
+    // only. Text-ENTRY inputs only — a range/checkbox is an INPUT too, but has
+    // no caret and takes the engage protocol / normal focus moves instead.
+    const TEXT_TYPES = new Set(['text', 'search', 'password', 'email', 'url', 'tel', 'number']);
+    const typing = target && (target.tagName === 'TEXTAREA' || target.isContentEditable ||
+      (target.tagName === 'INPUT' && TEXT_TYPES.has(target.type)));
 
     if (e.key in DIRS) {
-      if (typing || (target && target.tagName === 'SELECT')) return; // native arrows
+      if (typing) return; // native arrows (caret / spinner)
+      if (isEngageable(target) && isEngaged(target)) return; // engaged: the control owns the arrows
       html.classList.remove('using-mouse');
-      e.preventDefault();
+      e.preventDefault(); // also stops an unengaged select/range from adjusting
       move(DIRS[e.key]);
+      return;
+    }
+    if (e.key === 'Enter' && isEngageable(target)) {
+      html.classList.remove('using-mouse');
+      e.preventDefault(); // keep Enter from submitting an enclosing form
+      if (isEngaged(target)) release(target);
+      else target.setAttribute('data-couch-engaged', '');
+      return;
+    }
+    // Enter toggles a checkbox like OK on a remote would — natively it triggers
+    // the enclosing form's implicit submission instead (Space toggles, but a
+    // remote has no Space).
+    if (e.key === 'Enter' && target && target.tagName === 'INPUT' && (target.type === 'checkbox' || target.type === 'radio')) {
+      e.preventDefault();
+      target.click();
       return;
     }
     // A focused text input is otherwise a one-way door for a remote (arrows move
@@ -136,6 +176,13 @@
       html.classList.remove('using-mouse');
       e.preventDefault();
       target.blur();
+      return;
+    }
+    // Back on an engaged control releases it; the NEXT press moves/navigates.
+    if (BACK_KEYS.has(e.key) && isEngaged(target)) {
+      html.classList.remove('using-mouse');
+      e.preventDefault();
+      release(target);
       return;
     }
     if (BACK_KEYS.has(e.key) && !typing) {
