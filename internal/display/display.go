@@ -4,17 +4,26 @@
 // which is what makes this a clean read instead of a browser guess: X11's
 // xrandr reports every connected output's virtual-desktop rectangle AND its
 // physical dimensions in millimetres (from EDID) — a 65" TV and a 24"
-// monitor at the same 1080p are trivially distinguishable. Best-effort and
-// Linux/X11-shaped: any failure (no xrandr, Wayland without physical info,
-// unparseable output) yields "unknown" and the UI keeps its default scale.
+// monitor at the same 1080p are trivially distinguishable. When xrandr
+// yields nothing usable (pure Wayland with no XWayland, or a compositor
+// that reports no physical mm), the /sys/class/drm EDID fallback reads each
+// connected connector's physical size straight from the kernel — sizes but
+// no positions (no display server tells a Wayland client where its window
+// is), so a single connected display classifies and several stay unknown.
+// Best-effort throughout: any failure yields "unknown" and the UI keeps its
+// default scale.
 package display
 
 import (
+	"bytes"
 	"context"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // Scale classes, keyed off the display's physical diagonal. Thresholds:
@@ -74,11 +83,12 @@ var reConnected = regexp.MustCompile(`(?m)^(\S+) connected(?: primary)? (\d+)x(\
 
 // Displays returns the connected outputs that carry physical-size info.
 // Outputs reporting 0mm (projectors, absent EDID) are skipped — no physical
-// info means no scale decision.
+// info means no scale decision. When xrandr fails or reports no usable
+// output, the DRM sysfs fallback supplies sizes without geometry.
 func Displays(ctx context.Context) ([]Display, error) {
 	out, err := xrandrQuery(ctx)
 	if err != nil {
-		return nil, err
+		return drmDisplays(), nil // pure Wayland / no X server: sysfs fallback
 	}
 	var ds []Display
 	for _, m := range reConnected.FindAllStringSubmatch(string(out), -1) {
@@ -94,7 +104,54 @@ func Displays(ctx context.Context) ([]Display, error) {
 		}
 		ds = append(ds, d)
 	}
+	if len(ds) == 0 {
+		return drmDisplays(), nil // XWayland that reports no physical mm
+	}
 	return ds, nil
+}
+
+// drmRoot is the sysfs DRM directory — a variable so tests can point it at a
+// fabricated tree (and so the xrandr-failure tests stay hermetic on dev boxes
+// with real connectors).
+var drmRoot = "/sys/class/drm"
+
+// edidMagic is the fixed 8-byte EDID header.
+var edidMagic = []byte{0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00}
+
+// drmDisplays is the Wayland/no-X fallback: enumerate connected (and, where
+// the attribute is readable, enabled — a lid-closed laptop's panel is
+// connected but disabled) connectors under drmRoot and take each physical
+// size from EDID bytes 21/22 (cm; sysfs binary attrs stat as 0 bytes but read
+// fully). Positions are unknowable without a display server, so the returned
+// Displays carry zero geometry — ClassAt's containment test never matches
+// them, its sole-display branch classifies the single-connector case (the
+// HTPC-on-one-TV deployment this path exists for), and several connectors
+// stay honestly unknown.
+func drmDisplays() []Display {
+	dirs, err := filepath.Glob(filepath.Join(drmRoot, "card*-*"))
+	if err != nil {
+		return nil
+	}
+	var ds []Display
+	for _, dir := range dirs {
+		status, err := os.ReadFile(filepath.Join(dir, "status"))
+		if err != nil || strings.TrimSpace(string(status)) != "connected" {
+			continue
+		}
+		if en, err := os.ReadFile(filepath.Join(dir, "enabled")); err == nil && strings.TrimSpace(string(en)) == "disabled" {
+			continue
+		}
+		edid, err := os.ReadFile(filepath.Join(dir, "edid"))
+		if err != nil || len(edid) < 23 || !bytes.Equal(edid[:8], edidMagic) {
+			continue
+		}
+		mmw, mmh := int(edid[21])*10, int(edid[22])*10
+		if mmw == 0 || mmh == 0 {
+			continue // undefined size (projector) — no scale decision
+		}
+		ds = append(ds, Display{Name: filepath.Base(dir), MMW: mmw, MMH: mmh})
+	}
+	return ds
 }
 
 // ClassAt returns the scale class for the display containing the
