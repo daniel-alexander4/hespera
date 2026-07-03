@@ -108,28 +108,28 @@ func TestScoreCandidate(t *testing.T) {
 	}
 }
 
-func TestBestCandidate(t *testing.T) {
+func TestBestMatchCandidatePicksHighestScorer(t *testing.T) {
 	candidates := []Candidate{
 		{Title: "Thriller", ArtistName: "Michael Jackson", PrimaryType: "Album", MBScore: 60, Year: 1982},
 		{Title: "Abbey Road", ArtistName: "The Beatles", PrimaryType: "Album", MBScore: 100, Year: 1969},
 		{Title: "Let It Be", ArtistName: "The Beatles", PrimaryType: "Album", MBScore: 80, Year: 1970},
 	}
 
-	best, score, ok := BestCandidate(candidates, "Abbey Road", "The Beatles", 1969)
+	best, score, ok := BestMatchCandidate(candidates, "Abbey Road", "The Beatles", 1969)
 	if !ok {
-		t.Fatal("BestCandidate returned !ok")
+		t.Fatal("BestMatchCandidate returned !ok")
 	}
 	if best.Title != "Abbey Road" {
-		t.Fatalf("BestCandidate title = %q, want %q", best.Title, "Abbey Road")
+		t.Fatalf("BestMatchCandidate title = %q, want %q", best.Title, "Abbey Road")
 	}
 	if score < 70 {
-		t.Fatalf("BestCandidate score = %.1f, want >= 70", score)
+		t.Fatalf("BestMatchCandidate score = %.1f, want >= 70", score)
 	}
 
 	// Empty candidates.
-	_, _, ok = BestCandidate(nil, "x", "y", 0)
+	_, _, ok = BestMatchCandidate(nil, "x", "y", 0)
 	if ok {
-		t.Fatal("BestCandidate returned ok for nil candidates")
+		t.Fatal("BestMatchCandidate returned ok for nil candidates")
 	}
 }
 
@@ -162,11 +162,11 @@ func TestTypeBonus(t *testing.T) {
 	}
 }
 
-// TestBestCandidateStudioOverAltEditions mirrors the real Painkiller case: the
+// TestBestMatchCandidateStudioOverAltEditions mirrors the real Painkiller case: the
 // studio album and several art-less alt editions (single, live, compilation)
 // all tie on MusicBrainz score, and the studio album must win so the matcher
 // selects the release-group that actually has cover art.
-func TestBestCandidateStudioOverAltEditions(t *testing.T) {
+func TestBestMatchCandidateStudioOverAltEditions(t *testing.T) {
 	studio := Candidate{ReleaseGroupID: "studio", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", MBScore: 100, Year: 1990}
 	candidates := []Candidate{
 		{ReleaseGroupID: "single", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Single", MBScore: 100, Year: 1990},
@@ -175,33 +175,33 @@ func TestBestCandidateStudioOverAltEditions(t *testing.T) {
 		{ReleaseGroupID: "ep", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "EP", MBScore: 100, Year: 1990},
 		{ReleaseGroupID: "comp", Title: "Painkiller", ArtistName: "Judas Priest", PrimaryType: "Album", SecondaryTypes: []string{"Compilation"}, MBScore: 100, Year: 1990},
 	}
-	best, _, ok := BestCandidate(candidates, "Painkiller", "Judas Priest", 1990)
+	best, _, ok := BestMatchCandidate(candidates, "Painkiller", "Judas Priest", 1990)
 	if !ok || best.ReleaseGroupID != "studio" {
-		t.Fatalf("BestCandidate = %q (ok=%v), want studio", best.ReleaseGroupID, ok)
+		t.Fatalf("BestMatchCandidate = %q (ok=%v), want studio", best.ReleaseGroupID, ok)
 	}
 }
 
-// TestBestCandidateAliasMatch mirrors the real Hell Bent for Leather case: the
+// TestBestMatchCandidateAliasMatch mirrors the real Hell Bent for Leather case: the
 // album is filed in MusicBrainz under its UK title "Killing Machine" with the US
 // title "Hell Bent for Leather" only as an alias, while a same-named 1978 Single
 // matches the local title exactly. With aliases populated, the album must win
 // over the single; without them, the single would win.
-func TestBestCandidateAliasMatch(t *testing.T) {
+func TestBestMatchCandidateAliasMatch(t *testing.T) {
 	single := Candidate{ReleaseGroupID: "single", Title: "Hell Bent for Leather", ArtistName: "Judas Priest", PrimaryType: "Single", MBScore: 94, Year: 1978}
 	album := Candidate{ReleaseGroupID: "album", Title: "Killing Machine", ArtistName: "Judas Priest", PrimaryType: "Album", MBScore: 100, Year: 1978, Aliases: []string{"Hell Bent for Leather"}}
 
-	best, _, ok := BestCandidate([]Candidate{single, album}, "Hell Bent for Leather", "Judas Priest", 1978)
+	best, _, ok := BestMatchCandidate([]Candidate{single, album}, "Hell Bent for Leather", "Judas Priest", 1978)
 	if !ok || best.ReleaseGroupID != "album" {
-		t.Fatalf("with alias: BestCandidate = %q (ok=%v), want album", best.ReleaseGroupID, ok)
+		t.Fatalf("with alias: BestMatchCandidate = %q (ok=%v), want album", best.ReleaseGroupID, ok)
 	}
 
 	// Without the alias, the same-named single wins — confirming the alias is
 	// what flips the selection.
 	albumNoAlias := album
 	albumNoAlias.Aliases = nil
-	best, _, _ = BestCandidate([]Candidate{single, albumNoAlias}, "Hell Bent for Leather", "Judas Priest", 1978)
+	best, _, _ = BestMatchCandidate([]Candidate{single, albumNoAlias}, "Hell Bent for Leather", "Judas Priest", 1978)
 	if best.ReleaseGroupID != "single" {
-		t.Fatalf("without alias: BestCandidate = %q, want single", best.ReleaseGroupID)
+		t.Fatalf("without alias: BestMatchCandidate = %q, want single", best.ReleaseGroupID)
 	}
 }
 
@@ -297,10 +297,10 @@ func TestCandidatesAboveThreshold(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("expected at least the studio candidate above threshold")
 	}
-	// First element matches BestCandidate's pick (the clean studio album).
-	best, _, _ := BestCandidate(candidates, "Painkiller", "Judas Priest", 1990)
+	// First element matches BestMatchCandidate's pick (the clean studio album).
+	best, _, _ := BestMatchCandidate(candidates, "Painkiller", "Judas Priest", 1990)
 	if got[0].Candidate.ReleaseGroupID != best.ReleaseGroupID {
-		t.Fatalf("first = %q, want BestCandidate %q", got[0].Candidate.ReleaseGroupID, best.ReleaseGroupID)
+		t.Fatalf("first = %q, want BestMatchCandidate %q", got[0].Candidate.ReleaseGroupID, best.ReleaseGroupID)
 	}
 	if got[0].Candidate.ReleaseGroupID != "studio" {
 		t.Fatalf("first = %q, want studio", got[0].Candidate.ReleaseGroupID)
