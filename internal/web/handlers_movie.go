@@ -717,6 +717,58 @@ WHERE lower(guessed_title)=lower(?) AND year=? AND match_status IN ('', 'unmatch
 	http.Redirect(w, r, "/movies/match/review", http.StatusSeeOther)
 }
 
+// movieMarkWatched sets or clears a film's watched flag without playback —
+// the movie twin of tvMarkWatched, applied to every matched copy of the
+// tmdb_id (the page represents the title, not one file). Redirects back to
+// the movie page.
+func (h *Handler) movieMarkWatched(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		httpError(w, 400, "bad request", "parse form failed", "handler", "movieMarkWatched", "err", err)
+		return
+	}
+	tmdbID, err := strconv.Atoi(strings.TrimSpace(r.FormValue("tmdb")))
+	if err != nil || tmdbID <= 0 {
+		http.Error(w, "invalid tmdb id", 400)
+		return
+	}
+	watched := r.FormValue("watched") == "1"
+
+	rows, err := h.db.QueryContext(r.Context(),
+		"SELECT id FROM movie_files WHERE tmdb_id = ? AND match_status = 'matched'", tmdbID)
+	if err != nil {
+		httpError(w, 500, "internal server error", "db query failed", "handler", "movieMarkWatched", "err", err)
+		return
+	}
+	defer rows.Close()
+	var fileIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			httpError(w, 500, "internal server error", "row scan failed", "handler", "movieMarkWatched", "err", err)
+			return
+		}
+		fileIDs = append(fileIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "movieMarkWatched", "err", err)
+		return
+	}
+	if len(fileIDs) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := markWatched(r.Context(), h.db, "movie_playback_progress", fileIDs, watched); err != nil {
+		httpError(w, 500, "internal server error", "db upsert failed", "handler", "movieMarkWatched", "err", err)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/movie/%d", tmdbID), http.StatusSeeOther)
+}
+
 // movieUnmatch resets a matched film back to unmatched so it reappears in the
 // review list for re-matching — fixing a mis-match without a full library
 // re-Match. The music analogue is musicAlbumUnmatch. Keyed by tmdb_id (a film

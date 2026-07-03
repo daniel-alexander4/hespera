@@ -78,6 +78,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/tv/player", h.tvPlayer)
 	mux.HandleFunc("/person/", h.personDetail)
 	mux.HandleFunc("/tv/playback-progress", h.tvPlaybackProgress)
+	mux.HandleFunc("/tv/mark-watched", h.tvMarkWatched)
 	mux.HandleFunc("/tv/playback-session", h.tvPlaybackSession)
 	mux.HandleFunc("/tv/subtitles/search", h.tvSubtitlesSearch)
 	mux.HandleFunc("/tv/subtitles/fetch", h.tvSubtitlesFetch)
@@ -94,6 +95,7 @@ func (h *Handler) Router() http.Handler {
 	// of the TV stream handlers over movie_files + movie_playback_progress).
 	mux.HandleFunc("/movie/playback-session", h.moviePlaybackSession)
 	mux.HandleFunc("/movie/playback-progress", h.moviePlaybackProgress)
+	mux.HandleFunc("/movie/mark-watched", h.movieMarkWatched)
 	mux.HandleFunc("/stream/movie/", h.streamMovieDirect)
 	mux.HandleFunc("/stream/movie-remux/", h.streamMovieRemux)
 	mux.HandleFunc("/stream/movie-burnin/", h.streamMovieBurnIn)
