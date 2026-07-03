@@ -39,19 +39,22 @@
 {{if .ContinueWatching}}
 <h3 class="section-title">Continue Watching</h3>
 <div class="home-carousel-row">
+  {{/* Continue-Watching cards play on click — the card IS the continue action
+       (browse lives on the TV/Movies pages). TV falls back to the season page
+       when no unwatched target resolves. */}}
   {{range .ContinueWatching}}
   {{if eq .Kind "movie"}}
-  <a href="/movie/{{.TMDBID}}" class="band-album-card band-album-card--poster">
+  <a href="{{if .FileID}}/movie/player?file={{.FileID}}{{else}}/movie/{{.TMDBID}}{{end}}" class="band-album-card band-album-card--poster">
     <div class="band-album-art">
       <img src="/art/movie/poster/{{.TMDBID}}" alt="{{.Title}}" loading="lazy" />
     </div>
     <div class="band-album-meta">
       <div class="artist-card-name">{{.Title}}</div>
-      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+      <div class="artist-card-stats">{{if .Year}}{{.Year}} · {{end}}Resume</div>
     </div>
   </a>
   {{else}}
-  <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNumber}}" class="band-album-card band-album-card--poster">
+  <a href="{{if .NextFileID}}/tv/player?file={{.NextFileID}}{{else}}/tv/season/?series={{.SeriesID}}&season={{.SeasonNumber}}{{end}}" class="band-album-card band-album-card--poster">
     <div class="band-album-art">
       {{if .HasPoster}}
       <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Title}}" loading="lazy" />
@@ -61,7 +64,7 @@
     </div>
     <div class="band-album-meta">
       <div class="artist-card-name">{{.Title}}</div>
-      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+      <div class="artist-card-stats">{{if .NextFileID}}Play next · S{{.SeasonNumber}}{{else if .Year}}{{.Year}}{{end}}</div>
     </div>
   </a>
   {{end}}

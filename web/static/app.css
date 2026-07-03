@@ -1704,6 +1704,26 @@ html.using-mouse .grid-pager-btn,
 .media-skip-btn:focus-visible { background: rgba(0, 0, 0, 0.92); border-color: #fff; }
 .tv-player-video-wrap.controls-hidden .media-skip-btn { bottom: 1.5rem; }
 
+/* Up Next countdown card — shown at episode end (media_player.js), same corner
+   as the skip button. A couch overlay: Back dismisses it via the Cancel button
+   (data-couch-dismiss), and focus starts on Play now. */
+.media-upnext {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 6rem;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 8px;
+}
+.media-upnext-label { font-weight: 600; }
+.media-upnext[hidden] { display: none; }
+
 /* Controls overlay the video's lower edge and auto-hide on inactivity (driven by
    media_player.js's .controls-hidden toggle), so they're reachable in fullscreen
    without exiting. The gradient backdrop keeps them readable over any frame. */

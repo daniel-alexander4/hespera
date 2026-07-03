@@ -90,6 +90,8 @@ func stubAssetsFS() fs.FS {
 			`{{if .FlaggedCount}}<span class="badge badge-warn">{{.FlaggedCount}} corrupt</span>{{end}}</div>{{end}}{{end}}`,
 		"templates/movie_detail.html": `{{define "content"}}<h1>{{.MovieTitle}}</h1>` +
 			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}{{end}}`,
+		"templates/tv_player.html": `{{define "content"}}<video data-file-id="{{.FileID}}" ` +
+			`data-prev-file="{{.PrevFileID}}" data-next-file="{{.NextFileID}}"></video>{{end}}`,
 		"templates/music_album.html": `{{define "content"}}{{range .DiscTracks}}{{range .Tracks}}<li>{{.Title}}` +
 			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}</li>{{end}}{{end}}{{end}}`,
 	}
