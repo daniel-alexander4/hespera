@@ -161,7 +161,6 @@
       if (reload) reload.addEventListener('click', () => window.location.reload());
       const quit = document.querySelector('[data-app-quit]');
       if (quit) quit.addEventListener('click', async () => {
-        if (!window.confirm('Quit Hespera? The app will close.')) return;
         try { await fetch('/shutdown', { method: 'POST' }); } catch (_) { /* server is stopping */ }
         document.body.innerHTML =
           '<div style="display:flex;align-items:center;justify-content:center;min-height:90vh;color:#a6adc8;font:1.1rem system-ui,sans-serif;">Hespera has shut down — you can close this window.</div>';
