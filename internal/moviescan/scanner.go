@@ -46,14 +46,8 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 		return fmt.Errorf("root_path must be under %s (got %s)", mediaRoot, cleanRoot)
 	}
 
-	// Count video files for progress.
-	totalFiles := 0
-	_ = filepath.WalkDir(cleanRoot, func(_ string, d fs.DirEntry, _ error) error {
-		if d != nil && !d.IsDir() && video.IsVideoExt(filepath.Ext(d.Name())) {
-			totalFiles++
-		}
-		return nil
-	})
+	// Count the video files the ingest walk will actually process.
+	totalFiles := tvscan.CountEligibleVideoFiles(cleanRoot)
 	if totalFiles > 0 {
 		_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", totalFiles, jobID)
 	}
@@ -117,7 +111,7 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 				slog.Warn("moviescan identity refresh", "path", resolvedPath, "err", err)
 			}
 			processed++
-			if processed%50 == 0 {
+			if processed%50 == 0 || processed == totalFiles {
 				_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", processed, jobID)
 			}
 			return nil

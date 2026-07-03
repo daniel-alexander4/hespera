@@ -83,17 +83,44 @@ func (s *Scanner) tvLibraryRoot(ctx context.Context, libraryID int64) (cleanRoot
 }
 
 // scanTVRoots walks each root (pre-validated), ingests every video file, then
+// CountEligibleVideoFiles walks root counting the video files a scan will
+// actually ingest — the same junk-dir SkipDir and junk-file rules as the
+// ingest walks, so a job's progress_total matches what gets processed
+// (counting sample clips and nested Extras/Sample dirs inflated the total and
+// the progress bar stalled short of 100%). Shared by the TV and movie
+// scanners.
+func CountEligibleVideoFiles(root string) int {
+	n := 0
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d == nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != root && IsJunkDirName(d.Name()) {
+				if rel, relErr := filepath.Rel(root, p); relErr == nil && strings.ContainsRune(rel, filepath.Separator) {
+					return fs.SkipDir
+				}
+			}
+			return nil
+		}
+		if !video.IsVideoExt(filepath.Ext(p)) {
+			return nil
+		}
+		if IsJunkFile(strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))) {
+			return nil
+		}
+		n++
+		return nil
+	})
+	return n
+}
+
 // runs the move-relink + prune passes scoped to each root. ScanTV passes the
 // single library root; ScanTVDirs passes a series' show folder(s).
 func (s *Scanner) scanTVRoots(ctx context.Context, jobID, libraryID int64, roots []string) error {
 	totalFiles := 0
 	for _, r := range roots {
-		_ = filepath.WalkDir(r, func(_ string, d fs.DirEntry, _ error) error {
-			if d != nil && !d.IsDir() && video.IsVideoExt(filepath.Ext(d.Name())) {
-				totalFiles++
-			}
-			return nil
-		})
+		totalFiles += CountEligibleVideoFiles(r)
 	}
 	if totalFiles > 0 {
 		_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_total=? WHERE id=?", totalFiles, jobID)

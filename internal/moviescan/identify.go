@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"hespera/internal/tvscan"
 	"time"
 )
 
@@ -40,11 +42,6 @@ var movieJunkTokens = map[string]bool{
 	"imax": true, "hdr": true, "hdr10": true, "dts": true, "ac3": true, "aac": true,
 	"atmos": true, "truehd": true, "ddp5": true, "5": true, "1": true,
 }
-
-var (
-	reLeadingTag  = regexp.MustCompile(`^\s*[\[\{][^\]\}]*[\]\}]\s*`)
-	reLeadingSite = regexp.MustCompile(`(?i)^\s*www\.[^\s]+\s*-\s*`)
-)
 
 // ParseMovie derives a MovieIdentity from a file path. It first parses the
 // filename; if that yields no usable title or no year, it falls back to the
@@ -123,14 +120,7 @@ func cleanTitlePart(part, whole string) string {
 // cleanTitle strips leading scene noise (www.site - / [group] / {id}), normalizes
 // separators to spaces, and drops scene/quality/edition tokens.
 func cleanTitle(raw string) string {
-	s := reLeadingSite.ReplaceAllString(raw, "")
-	for {
-		ns := reLeadingTag.ReplaceAllString(s, "")
-		if ns == s {
-			break
-		}
-		s = ns
-	}
+	s := tvscan.StripLeadingNoise(raw)
 
 	r := strings.NewReplacer(".", " ", "_", " ", "-", " ")
 	s = r.Replace(s)
