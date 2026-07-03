@@ -39,7 +39,6 @@ function fixture({ kind = 'tv', fileId = 7, prevFile = 0, nextFile = 0, osEnable
         <span id="mediaCur"></span><span id="mediaDur"></span>
       </div>
       <span id="playbackMode"></span>
-      <button id="subsSearchBtn" hidden></button>
     </div>
     <div id="subs-modal" class="hidden"><span id="subs-status"></span><ul id="subs-results"></ul><button id="subs-close-btn"></button></div>
   </body></html>`;
@@ -115,21 +114,53 @@ test('buildSelects populates audio + subtitle pickers and labels burn-in subs', 
   assert.strictEqual(sub.options[2].textContent, 'eng · Forced · burn-in'); // bitmap flagged
 });
 
-test('OpenSubtitles search button shows only with a key and no text track', async () => {
+test('the subtitles dropdown ends with "Search subtitles…" whenever a key is configured', async () => {
   const withText = await boot({
     fixtureOpts: { osEnabled: '1' },
     sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }] }),
   });
-  assert.strictEqual(withText.document.getElementById('subsSearchBtn').hidden, true, 'text track present → no search offer');
+  let sub = withText.document.getElementById('subSelect');
+  assert.strictEqual(sub.options[sub.options.length - 1].value, 'search', 'key + text track → search option offered');
 
-  const noText = await boot({
-    fixtureOpts: { osEnabled: '1' },
-    sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: false }] }),
-  });
-  assert.strictEqual(noText.document.getElementById('subsSearchBtn').hidden, false, 'only burn-in subs → offer search');
+  const noSubs = await boot({ fixtureOpts: { osEnabled: '1' }, sessionData: session({ subtitle_tracks: [] }) });
+  sub = noSubs.document.getElementById('subSelect');
+  assert.strictEqual(noSubs.document.getElementById('subPick').hidden, false, 'key + no tracks → dropdown still shown');
+  assert.strictEqual(sub.options.length, 2, 'Off + search only');
+  assert.strictEqual(sub.options[1].value, 'search');
 
   const noKey = await boot({ fixtureOpts: { osEnabled: '0' }, sessionData: session({ subtitle_tracks: [] }) });
-  assert.strictEqual(noKey.document.getElementById('subsSearchBtn').hidden, true, 'no key → never offer');
+  assert.strictEqual(noKey.document.getElementById('subPick').hidden, true, 'no key + no tracks → no dropdown');
+  const noKeySubs = await boot({
+    fixtureOpts: { osEnabled: '0' },
+    sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }] }),
+  });
+  sub = noKeySubs.document.getElementById('subSelect');
+  assert.notStrictEqual(sub.options[sub.options.length - 1].value, 'search', 'no key → never offered');
+});
+
+test('picking "Search subtitles…" opens the dialog and restores the previous selection', async () => {
+  const env = await boot({
+    fixtureOpts: { osEnabled: '1' },
+    sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }] }),
+  });
+  const doc = env.document;
+  const sub = doc.getElementById('subSelect');
+
+  // Activate the text sub first, so "previous selection" is non-trivial.
+  sub.value = '1';
+  sub.dispatchEvent(new env.window.Event('change'));
+  await flush();
+
+  const sessionCalls = env.fetch.calls.filter((c) => c.url.indexOf('/tv/playback-session') >= 0).length;
+  sub.value = 'search';
+  sub.dispatchEvent(new env.window.Event('change'));
+  await flush();
+
+  assert.ok(!doc.getElementById('subs-modal').classList.contains('hidden'), 'dialog opened');
+  assert.strictEqual(sub.value, '1', 'selection restored — the action never switches subtitles');
+  const after = env.fetch.calls.filter((c) => c.url.indexOf('/tv/playback-session') >= 0).length;
+  assert.strictEqual(after, sessionCalls, 'no playback-session reload from the action option');
+  assert.ok(env.fetch.calls.some((c) => c.url.indexOf('/tv/subtitles/search') >= 0), 'search endpoint queried');
 });
 
 test('fmtTime renders the scrubber duration/current labels (incl. hours)', async () => {
