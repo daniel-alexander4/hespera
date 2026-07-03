@@ -167,7 +167,7 @@ func (s *Scanner) ScanMovies(ctx context.Context, jobID, libraryID int64) error 
 // every scan so improved parsing reconverges.
 func (s *Scanner) upsertMovieFile(ctx context.Context, libraryID int64, resolvedPath, container string, fileSize, mtimeUnix int64, streamInfoJSON string, ident *MovieIdentity) error {
 	title, year := identFields(ident)
-	res, err := s.DB.ExecContext(ctx, `
+	_, err := s.DB.ExecContext(ctx, `
 INSERT INTO movie_files (library_id, abs_path, container, file_size_bytes, mtime_unix, stream_info_json, guessed_title, year)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(library_id, abs_path) DO UPDATE SET
@@ -184,9 +184,6 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
 `, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, title, year)
 	if err != nil {
 		return fmt.Errorf("upsert movie_files: %w", err)
-	}
-	if id, err := res.LastInsertId(); err == nil && id > 0 {
-		return nil
 	}
 	return nil
 }

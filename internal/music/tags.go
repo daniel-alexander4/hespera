@@ -18,9 +18,6 @@ import (
 	"github.com/dhowden/tag"
 )
 
-// AudioExtensions lists supported audio file extensions.
-const AudioExtensions = ".mp3,.flac,.m4a,.mp4,.ogg,.opus,.wav,.aac"
-
 // IsAudioExt returns true if ext (including dot) is a supported audio extension.
 func IsAudioExt(ext string) bool {
 	switch strings.ToLower(ext) {
