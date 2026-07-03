@@ -4,8 +4,8 @@ A local app for your **Music, TV, and Movies**, with automatic metadata
 matching. Written in Go: a single static binary that opens a chromeless app
 window on your machine (loopback-only — a single-machine app, not a network
 server). SQLite storage, server-rendered HTML, no external services required to
-run. A Docker server mode is also available if you want to reach it from other
-devices.
+run. A headless server mode is also available if you want to reach it from
+other devices.
 
 Licensed under the [GNU GPL v3](LICENSE); third-party attributions in
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
@@ -78,8 +78,7 @@ macOS/Windows).
 
 `HESPERA_NO_BROWSER=1` runs **server mode** instead: no window, binds
 `HESPERA_LISTEN` (default `127.0.0.1:8080` — loopback only). To reach it from
-other devices, opt in explicitly with `HESPERA_LISTEN=:8080`. This is what the
-Docker image uses (inside a container the published port is the opt-in).
+other devices, opt in explicitly with `HESPERA_LISTEN=:8080`.
 
 ### Security posture
 
@@ -102,11 +101,3 @@ table in [`CLAUDE.md`](CLAUDE.md#configuration-environment-variables) for the
 full list (listen address, data dir, media root, optional API keys for TMDB /
 OpenSubtitles / etc., ffmpeg concurrency, HLS cache limits).
 
-## Docker
-
-A `Dockerfile` and `docker-compose.yml` are still provided if you prefer a
-container (the image bundles ffmpeg):
-
-```sh
-docker compose up --build
-```

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Locally-hosted media app in Go: Music, TV, Movies with automatic metadata matching. SQLite storage, server-rendered HTML templates with vanilla CSS/JS. **Distributed as self-contained cross-platform binaries** (Linux/macOS/Windows × amd64/arm64) — the `web/` UI assets are embedded via `//go:embed` (`embed.go`, `hespera.WebFS()`), so a binary finds its templates/static regardless of the working directory; a Docker image is still provided. **Runs as a single-machine app by default**: launching the binary opens a chromeless app-mode browser window (`internal/browser`, nib-ported) bound to a **random loopback port** (a single-machine app has no access-control layer — loopback needs none). `HESPERA_NO_BROWSER=1` is server mode (Docker/headless — no window, honors `HESPERA_LISTEN`). The desktop `.deb` ships a `.desktop` entry + icon (`Exec=hespera --replace`; `internal/singleton` `/proc`-scans to replace a running instance so a relaunch doesn't collide on the port). The topbar carries **reload** + **full-screen** + **power** buttons: the full-screen button toggles the real Fullscreen API on the app root (`documentElement`) — and while app-full-screen the topbar becomes an **auto-hiding overlay** (reveal on mouse/keyboard, hide after ~2.5s, mirroring the media-player controls; the JS is a window-guarded IIFE in `layout.html`, delegated so it survives Turbo swaps). Gated on `html.is-fullscreen`, which is set **only** when `document.fullscreenElement === documentElement` so the per-video full-screen (kept as-is) never triggers the topbar overlay; on a TV this overlay IS the topbar behavior (full-screen hides it, remote keys reveal it — there is no couch mode). On a page with its own play controls (the music now-playing `#player-transport`, or a TV/movie `[data-media-kind]` video → the JS sets `html.has-play-controls` on `turbo:load`), the full-screen topbar overlay is **suppressed entirely** (the play controls are the only chrome); windowed player pages keep the topbar. power → `POST /shutdown` (same-origin-guarded; `web.Deps.Quit` → main's `quit` channel → same graceful path as SIGTERM) quits the app. `browser.Open` launches the app window in a **dedicated profile** (`DataDir/browser`, so the launched process owns its window) and main SIGTERMs it on quit to close the window; the client also calls `window.close()`. Four direct deps: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`. Licensed **GPL-3.0** (`LICENSE`); third-party attributions in `THIRD_PARTY_LICENSES.md` + **verbatim license texts** in `third_party/licenses/` (embedded via `embed.go`, served at `/about/licenses`, shipped in the `.deb`), kept current by `TestThirdPartyLicensesCurrent` + `TestThirdPartyLicenseTexts` (`cmd/hespera`) — they fail the build if a `go.mod` module is missing from the notice or has no committed text, so **adding a dependency requires updating both** (regeneration: `third_party/licenses/README.md`).
+Locally-hosted media app in Go: Music, TV, Movies with automatic metadata matching. SQLite storage, server-rendered HTML templates with vanilla CSS/JS. **Distributed as self-contained cross-platform binaries** (Linux/macOS/Windows × amd64/arm64) — the `web/` UI assets are embedded via `//go:embed` (`embed.go`, `hespera.WebFS()`), so a binary finds its templates/static regardless of the working directory. **Runs as a single-machine app by default**: launching the binary opens a chromeless app-mode browser window (`internal/browser`, nib-ported) bound to a **random loopback port** (a single-machine app has no access-control layer — loopback needs none). `HESPERA_NO_BROWSER=1` is server mode (headless — no window, honors `HESPERA_LISTEN`). The desktop `.deb` ships a `.desktop` entry + icon (`Exec=hespera --replace`; `internal/singleton` `/proc`-scans to replace a running instance so a relaunch doesn't collide on the port). The topbar carries **reload** + **full-screen** + **power** buttons: the full-screen button toggles the real Fullscreen API on the app root (`documentElement`) — and while app-full-screen the topbar becomes an **auto-hiding overlay** (reveal on mouse/keyboard, hide after ~2.5s, mirroring the media-player controls; the JS is a window-guarded IIFE in `layout.html`, delegated so it survives Turbo swaps). Gated on `html.is-fullscreen`, which is set **only** when `document.fullscreenElement === documentElement` so the per-video full-screen (kept as-is) never triggers the topbar overlay; on a TV this overlay IS the topbar behavior (full-screen hides it, remote keys reveal it — there is no couch mode). On a page with its own play controls (the music now-playing `#player-transport`, or a TV/movie `[data-media-kind]` video → the JS sets `html.has-play-controls` on `turbo:load`), the full-screen topbar overlay is **suppressed entirely** (the play controls are the only chrome); windowed player pages keep the topbar. power → `POST /shutdown` (same-origin-guarded; `web.Deps.Quit` → main's `quit` channel → same graceful path as SIGTERM) quits the app. `browser.Open` launches the app window in a **dedicated profile** (`DataDir/browser`, so the launched process owns its window) and main SIGTERMs it on quit to close the window; the client also calls `window.close()`. Four direct deps: `dhowden/tag`, `modernc.org/sqlite`, `bogem/id3v2/v2`, `gcottom/audiometa/v3`. Licensed **GPL-3.0** (`LICENSE`); third-party attributions in `THIRD_PARTY_LICENSES.md` + **verbatim license texts** in `third_party/licenses/` (embedded via `embed.go`, served at `/about/licenses`, shipped in the `.deb`), kept current by `TestThirdPartyLicensesCurrent` + `TestThirdPartyLicenseTexts` (`cmd/hespera`) — they fail the build if a `go.mod` module is missing from the notice or has no committed text, so **adding a dependency requires updating both** (regeneration: `third_party/licenses/README.md`).
 
 ## Build & Run Commands
 
@@ -20,8 +20,6 @@ make dist / make install    # Makefile wrappers
 # the .deb (build/nfpm.yaml) ships hespera+hescli to /usr/bin and declares ffmpeg.
 # There is no service: the binary runs on demand as the invoking user (see the daemon note below).
 
-# Build and run with Docker (still supported; bundles ffmpeg)
-docker compose up --build
 
 # Tests: all / one package / one test
 go test ./...
@@ -47,10 +45,10 @@ make bump-patch / bump-minor / bump-major   # Makefile wrappers
 > part of the change's commit (use `./bump.sh <part>`); Y/Z are chosen by the
 > change's size, X is never bumped automatically.
 
-> **Binary vs Docker distribution.** The standalone binary runs as the invoking
+> **Distribution shape.** The standalone binary runs as the invoking
 > user (no container, no root, **no systemd service**) and, by default, **opens an
 > app window** (`browser.Open`) on a random loopback port — a single-machine app,
-> not a LAN server. `HESPERA_NO_BROWSER=1` opts into server mode (Docker/headless).
+> not a LAN server. `HESPERA_NO_BROWSER=1` opts into server mode (headless).
 > Three consequences baked into the code: (1) `config` defaults `DataDir` to a
 > per-user dir (`os.UserConfigDir()/hespera`) and validates paths with
 > `filepath.IsAbs` (not a `/`-prefix), so Windows works; `main` `MkdirAll`s the
@@ -67,9 +65,7 @@ make bump-patch / bump-minor / bump-major   # Makefile wrappers
 > untouched). It applies at the next launch (the Settings form says "applies on
 > restart"), keeping the security boundary resolved at construction, not per
 > request. A saved-but-invalid media folder warns and falls back to the
-> env/default rather than failing to boot. Docker is unaffected — its compose sets
-> `HESPERA_NO_BROWSER`/`HESPERA_LISTEN`/`HESPERA_DATA_DIR`/`MEDIA_ROOT`
-> explicitly.
+> env/default rather than failing to boot.
 
 ## Architecture
 
@@ -177,7 +173,7 @@ make bump-patch / bump-minor / bump-major   # Makefile wrappers
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | HESPERA_NO_BROWSER | (unset) | Set (any value) → **server mode**: don't open an app window, honor `HESPERA_LISTEN`. Unset → **app mode**: open a chromeless window on a random loopback port |
-| HESPERA_LISTEN | 127.0.0.1:8080 | HTTP listen address — **loopback by default** (no-auth posture: LAN exposure in server mode is an explicit opt-in, `HESPERA_LISTEN=:8080`). In app mode an unset value binds `127.0.0.1:0` (random loopback); an explicit value is always honored. The Docker image sets `:8080` in-container (the published port is the opt-in there) |
+| HESPERA_LISTEN | 127.0.0.1:8080 | HTTP listen address — **loopback by default** (no-auth posture: LAN exposure in server mode is an explicit opt-in, `HESPERA_LISTEN=:8080`). In app mode an unset value binds `127.0.0.1:0` (random loopback); an explicit value is always honored |
 | HESPERA_DATA_DIR | os.UserConfigDir()/hespera | Data directory (per-user default) |
 | HESPERA_DB_PATH | {DATA_DIR}/hespera.sqlite | Database path |
 | HESPERA_MEDIA_ROOT | home dir | Media root directory (the pathguard containment root). Settings → Libraries → "Media folder" overrides it (`app_settings.media_root`, applies on restart) |
@@ -193,6 +189,3 @@ make bump-patch / bump-minor / bump-major   # Makefile wrappers
 | HESPERA_TV_HLS_CACHE_MAX_BYTES | 20GiB | HLS cache size budget (`DataDir/cache/tv-hls`) |
 | HESPERA_TV_CACHE_MAX_AGE | 72h | HLS cache entry max age |
 
-### Docker
-
-Multi-stage: Go 1.23 builder (`CGO_ENABLED=0 -trimpath -ldflags="-s -w"`) → Ubuntu 24.04 runtime with ffmpeg/openssh-client/ca-certificates. Non-root (UID 65532). Port 8080.
