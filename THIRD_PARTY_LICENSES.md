@@ -6,6 +6,14 @@ distributed under its own license, retained here as required. Every license
 named here (MIT, BSD-2/3-Clause, the SQLite public-domain blessing) is
 compatible with redistribution under GPLv3.
 
+The **verbatim license text** of every module below is committed under
+[`third_party/licenses/`](third_party/licenses/) (one directory per module
+path), embedded into the binaries (`embed.go`) and served at
+`/about/licenses`, and shipped in the `.deb` under
+`/usr/share/doc/hespera/licenses`. `TestThirdPartyLicenseTexts` fails the
+build when a go.mod module has no text there; regeneration instructions are
+in that directory's README.
+
 > This file is checked against `go.mod` by a test
 > (`TestThirdPartyLicensesCurrent`): every module in `go.mod`'s `require`
 > blocks — **direct and indirect** (i.e. everything that compiles into the
