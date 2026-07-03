@@ -37,7 +37,8 @@ html[data-couch="1"] .main {
 }
 
 /* Visible focus ring — the single most important couch-mode affordance.
-   app.css has no focus-visible system today, so this is net-new and scoped. */
+   app.css carries a subtler always-on :focus-visible ring (keyboard nav runs
+   on the desktop too); this bigger couch ring overrides it at TV distance. */
 html[data-couch="1"] :focus,
 html[data-couch="1"] :focus-visible {
   outline: 4px solid var(--accent-hover);

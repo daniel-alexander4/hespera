@@ -1,9 +1,11 @@
-// Tests for web/static/couch.js — the 10-foot "couch mode" remote layer. jsdom
-// drives the real IIFE through dispatched keydown events. These cover the Back
-// button's semantic-parent navigation (read the breadcrumb / data-couch-parent,
-// history fallback, typing guard, broadened keycodes). What jsdom can't model —
-// the visible()/overlay-dismiss path and spatial arrow focus both need real
-// layout (getBoundingClientRect) — stays in the Playwright/manual smoke.
+// Tests for web/static/couch.js — the remote/keyboard navigation layer (always
+// on; couch mode is display-only). jsdom drives the real IIFE through
+// dispatched keydown events. These cover the Back button's staged walk-up
+// (overlay/menu guards, subtab-panel → menu bar, semantic parent, history
+// fallback, typing guard, broadened keycodes) and the always-on behavior.
+// What jsdom can't model — the visible()/overlay-dismiss path and spatial
+// arrow focus both need real layout (getBoundingClientRect) — stays in the
+// Playwright/manual smoke.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -73,9 +75,57 @@ test('Backspace inside a text field edits text, never navigates', () => {
   assert.strictEqual(env.backCalls.length, 0);
 });
 
-test('couch.js is inert when data-couch is off', () => {
+test('navigation is always on — Back works without data-couch', () => {
   const env = boot({ body: breadcrumb(['/', '/music']), couch: false });
+  pressKey(env, 'Escape');
+  assert.deepStrictEqual(env.visited, ['/music']);
+});
+
+test('Back from inside a subtab panel focuses the menu bar, second press climbs', () => {
+  const env = boot({
+    body:
+      breadcrumb(['/']) +
+      '<div class="subtabs"><button class="subtab active" data-tab="artists">Artists</button></div>' +
+      '<div id="tab-artists" class="subtab-panel active"><a id="card" href="/music/artist/1">card</a></div>',
+    url: 'http://localhost/music',
+  });
+  const card = env.document.getElementById('card');
+  card.focus();
+  pressKey(env, 'Escape', card);
+  assert.strictEqual(env.visited.length, 0, 'first press must not navigate');
+  assert.strictEqual(env.document.activeElement.className, 'subtab active');
+  pressKey(env, 'Escape', env.document.activeElement);
+  assert.deepStrictEqual(env.visited, ['/'], 'second press climbs to the parent');
+});
+
+test('Back yields to native fullscreen (Escape exits fullscreen, no navigation)', () => {
+  const env = boot({ body: breadcrumb(['/', '/music']) });
+  Object.defineProperty(env.document, 'fullscreenElement', { configurable: true, value: env.document.documentElement });
   pressKey(env, 'Escape');
   assert.strictEqual(env.visited.length, 0);
   assert.strictEqual(env.backCalls.length, 0);
+});
+
+test('Back yields to an open topbar dropdown menu', () => {
+  const env = boot({ body: breadcrumb(['/', '/music']) + '<div data-menu data-open="1"><a href="/settings">s</a></div>' });
+  pressKey(env, 'Escape');
+  assert.strictEqual(env.visited.length, 0);
+  assert.strictEqual(env.backCalls.length, 0);
+});
+
+test('mouse movement sets using-mouse; a handled key clears it', () => {
+  const env = boot({ body: breadcrumb(['/', '/music']) });
+  env.document.dispatchEvent(new env.window.MouseEvent('mousemove', { bubbles: true }));
+  assert.ok(env.document.documentElement.classList.contains('using-mouse'));
+  pressKey(env, 'Escape');
+  assert.ok(!env.document.documentElement.classList.contains('using-mouse'));
+});
+
+test('arrows inside a select stay native (no preventDefault)', () => {
+  const env = boot({ body: '<select id="s"><option>a</option><option>b</option></select><a href="/x">x</a>' });
+  const sel = env.document.getElementById('s');
+  sel.focus();
+  const e = new env.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+  sel.dispatchEvent(e);
+  assert.strictEqual(e.defaultPrevented, false);
 });
