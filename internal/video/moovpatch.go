@@ -126,11 +126,11 @@ func patchMoovDurations(moov []byte, durSec float64) {
 			body := off + hdr
 			switch typ {
 			case "mvhd":
-				movieTimescale = setFullBoxDuration(moov, body, durSec, true)
+				movieTimescale = setFullBoxDuration(moov, body, off+int(size), durSec)
 			case "mdhd":
-				setFullBoxDuration(moov, body, durSec, true)
+				setFullBoxDuration(moov, body, off+int(size), durSec)
 			case "tkhd":
-				setTkhdDuration(moov, body, durSec, movieTimescale)
+				setTkhdDuration(moov, body, off+int(size), durSec, movieTimescale)
 			case "moov", "trak", "mdia", "edts":
 				walk(body, off+int(size))
 			}
@@ -141,9 +141,14 @@ func patchMoovDurations(moov []byte, durSec float64) {
 }
 
 // setFullBoxDuration patches an mvhd/mdhd (creation, modification, timescale,
-// duration layout). Returns the box's timescale. ownTS is always true here (both
-// box types carry a timescale); kept for clarity. No-op on a zero timescale.
-func setFullBoxDuration(b []byte, body int, durSec float64, ownTS bool) uint32 {
+// duration layout). Returns the box's timescale. end is the box's own end
+// offset — all reads and writes are bounded to it so a truncated/degenerate
+// box is a no-op rather than an OOB read or a write into a sibling box.
+// No-op on a zero timescale.
+func setFullBoxDuration(b []byte, body, end int, durSec float64) uint32 {
+	if body >= end { // degenerate header-only box: no version byte to read
+		return 0
+	}
 	ver := b[body]
 	var tsOff, durOff int
 	if ver == 1 {
@@ -151,7 +156,7 @@ func setFullBoxDuration(b []byte, body int, durSec float64, ownTS bool) uint32 {
 	} else {
 		tsOff, durOff = body+12, body+16
 	}
-	if (ver == 1 && durOff+8 > len(b)) || (ver == 0 && durOff+4 > len(b)) {
+	if (ver == 1 && durOff+8 > end) || (ver == 0 && durOff+4 > end) {
 		return 0
 	}
 	ts := binary.BigEndian.Uint32(b[tsOff : tsOff+4])
@@ -163,9 +168,13 @@ func setFullBoxDuration(b []byte, body int, durSec float64, ownTS bool) uint32 {
 }
 
 // setTkhdDuration patches a tkhd, which has no own timescale and uses the movie
-// timescale. No-op if the movie timescale is unknown.
-func setTkhdDuration(b []byte, body int, durSec float64, movieTS uint32) {
+// timescale. end is the box's own end offset (see setFullBoxDuration). No-op if
+// the movie timescale is unknown.
+func setTkhdDuration(b []byte, body, end int, durSec float64, movieTS uint32) {
 	if movieTS == 0 {
+		return
+	}
+	if body >= end { // degenerate header-only box: no version byte to read
 		return
 	}
 	ver := b[body]
@@ -173,7 +182,7 @@ func setTkhdDuration(b []byte, body int, durSec float64, movieTS uint32) {
 	if ver == 1 {
 		durOff = body + 28 // v1: creation(8)+mod(8)+trackID(4)+reserved(4)
 	}
-	if (ver == 1 && durOff+8 > len(b)) || (ver == 0 && durOff+4 > len(b)) {
+	if (ver == 1 && durOff+8 > end) || (ver == 0 && durOff+4 > end) {
 		return
 	}
 	writeDuration(b, durOff, ver, durSec, movieTS)
