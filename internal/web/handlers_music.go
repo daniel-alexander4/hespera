@@ -979,53 +979,13 @@ func (h *Handler) musicAlbumArtUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Derive the MIME from the bytes themselves — never trust the client-supplied
-	// content-type or filename. Gate on both the image check and the format
-	// allowlist (jpeg/png/webp); this rejects SVG/GIF/BMP and non-images.
-	detected := http.DetectContentType(data)
-	if err := music.VerifyImage(detected, data); err != nil {
-		http.Error(w, "file is not a valid image", http.StatusBadRequest)
+	outPath, err := h.writeManualArtImage("manual-album", albumID, data)
+	if errors.Is(err, errInvalidImage) {
+		http.Error(w, "unsupported or invalid image (use JPEG, PNG, or WebP)", http.StatusBadRequest)
 		return
 	}
-	ext, err := music.ArtFileExt(detected)
 	if err != nil {
-		http.Error(w, "unsupported image format (use JPEG, PNG, or WebP)", http.StatusBadRequest)
-		return
-	}
-
-	thumbDir := filepath.Join(h.cfg.DataDir, "thumbs", "music")
-	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
-		httpError(w, 500, "internal server error", "mkdir thumbs failed", "handler", "musicAlbumArtUpload", "err", err)
-		return
-	}
-	// Stable per-album filename so a re-upload self-overwrites (no orphan, no
-	// concurrent-write race). Distinct key prefix avoids colliding with the
-	// embedded-art file for the same album.
-	sum := sha1.Sum([]byte(fmt.Sprintf("manual-album-%d", albumID)))
-	outPath := filepath.Join(thumbDir, hex.EncodeToString(sum[:])+ext)
-
-	// Write to a temp file then rename, so a concurrent GET never sees a
-	// half-written image.
-	tmp, err := os.CreateTemp(thumbDir, "art-*")
-	if err != nil {
-		httpError(w, 500, "internal server error", "create temp failed", "handler", "musicAlbumArtUpload", "err", err)
-		return
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		_ = os.Remove(tmpName)
-		httpError(w, 500, "internal server error", "write art failed", "handler", "musicAlbumArtUpload", "err", err)
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		httpError(w, 500, "internal server error", "close art failed", "handler", "musicAlbumArtUpload", "err", err)
-		return
-	}
-	if err := os.Rename(tmpName, outPath); err != nil {
-		_ = os.Remove(tmpName)
-		httpError(w, 500, "internal server error", "publish art failed", "handler", "musicAlbumArtUpload", "err", err)
+		httpError(w, 500, "internal server error", "write album art failed", "handler", "musicAlbumArtUpload", "err", err)
 		return
 	}
 
@@ -1065,7 +1025,7 @@ func (h *Handler) musicAlbumArtClear(w http.ResponseWriter, r *http.Request) {
 }
 
 // errInvalidImage marks a 400-class image-validation failure (vs a 500-class
-// filesystem error) from writeArtistArtImage.
+// filesystem error) from writeManualArtImage.
 var errInvalidImage = errors.New("invalid image")
 
 // musicArtistArt is the artist-image picker. GET renders candidate images from
@@ -1194,7 +1154,7 @@ func (h *Handler) musicArtistArtPOST(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	outPath, err := h.writeArtistArtImage(artistID, data)
+	outPath, err := h.writeManualArtImage("manual-artist", artistID, data)
 	if err != nil {
 		if errors.Is(err, errInvalidImage) {
 			http.Error(w, "file is not a valid image (use JPEG, PNG, or WebP)", http.StatusBadRequest)
@@ -1230,10 +1190,15 @@ func (h *Handler) fetchRemoteImage(ctx context.Context, rawURL string) ([]byte, 
 	return io.ReadAll(io.LimitReader(resp.Body, maxAlbumArtBytes))
 }
 
-// writeArtistArtImage validates image bytes (MIME from content; jpeg/png/webp)
-// and writes them to a stable per-artist file under thumbs/music (temp+rename).
-// Returns errInvalidImage for validation failures (400-class).
-func (h *Handler) writeArtistArtImage(artistID int64, data []byte) (string, error) {
+// writeManualArtImage validates manually-supplied image bytes (MIME derived
+// from the content itself — never the client-supplied type/filename;
+// jpeg/png/webp only) and writes them to a stable per-entity file under
+// thumbs/music (temp+rename, so a concurrent GET never sees a half-written
+// image and a re-upload self-overwrites with no orphan). keyPrefix
+// ("manual-album"/"manual-artist") keeps the filename distinct from the
+// embedded/fetched art for the same id. Returns errInvalidImage for
+// validation failures (400-class).
+func (h *Handler) writeManualArtImage(keyPrefix string, id int64, data []byte) (string, error) {
 	detected := http.DetectContentType(data)
 	if err := music.VerifyImage(detected, data); err != nil {
 		return "", errInvalidImage
@@ -1246,7 +1211,7 @@ func (h *Handler) writeArtistArtImage(artistID int64, data []byte) (string, erro
 	if err := os.MkdirAll(thumbDir, 0o755); err != nil {
 		return "", err
 	}
-	sum := sha1.Sum([]byte(fmt.Sprintf("manual-artist-%d", artistID)))
+	sum := sha1.Sum([]byte(fmt.Sprintf("%s-%d", keyPrefix, id)))
 	outPath := filepath.Join(thumbDir, hex.EncodeToString(sum[:])+ext)
 	tmp, err := os.CreateTemp(thumbDir, "art-*")
 	if err != nil {
