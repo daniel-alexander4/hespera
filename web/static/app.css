@@ -2156,9 +2156,10 @@ code {
 
 /* Shuffle-era range picker (era_slider.js): a transparent "lens" window that
    slides + resizes over a measuring-tape of years (ticks + decade numbers drawn
-   behind it, visible through the glass). Remote-navigable — the .era-track is
-   focusable and the JS captures arrows (◀▶ slide, ▲▼ span) so couch.js doesn't
-   steal them. */
+   behind it, visible through the glass). Remote-navigable via an ENGAGE mode:
+   a merely-focused track lets arrows bubble to couch.js (focus can pass by);
+   Enter engages adjust mode (◀▶ slide, ▲▼ span; Enter/Back releases), shown by
+   the .era-engaged glow below. */
 /* Readout on its own top row (flex:100%), then the track and the Play/Shuffle
    controls share the next line — the track grows, the buttons sit to its right.
    On a narrow container the controls wrap below the track (flex-wrap). */
@@ -2169,6 +2170,18 @@ code {
   border: 1px solid var(--surface-card); border-radius: 8px; cursor: pointer; touch-action: none;
 }
 .era-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Engaged (adjust) mode — unmistakably different from mere focus: the track
+   itself lights up and the lens glows, so "arrows now adjust" reads from the
+   couch. */
+.era-engaged .era-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.era-engaged .era-window {
+  box-shadow: 0 0 0 2px var(--accent-bg), 0 0 12px var(--accent);
+}
 
 /* The measuring tape: tick marks rise from a baseline, full-year numbers sit
    below it. pointer-events:none so all drags fall through to track/window/handles. */
