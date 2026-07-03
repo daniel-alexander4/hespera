@@ -345,6 +345,16 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		backdropVer = artVersion(fa)
 	}
 
+	// Integrity badge: the page represents the title, which may be backed by
+	// several file copies — flag it when ANY matched copy carries unrepairable
+	// corruption, with the first copy's reason as the tooltip.
+	var flaggedCount int
+	var flagDetail string
+	_ = h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*), COALESCE(MIN(integrity_detail),'') FROM movie_files WHERE tmdb_id=? AND match_status='matched' AND integrity_status='flagged'",
+		tmdbID,
+	).Scan(&flaggedCount, &flagDetail)
+
 	// Lazy cast backfill: a film matched before cast-fetch existed (or whose
 	// match-time fetch failed) gets its cast on first view, gated by the
 	// movie:%d:cast marker so it enqueues at most once. Mirrors tvSeriesDetail.
@@ -370,6 +380,8 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		"FileID":      fileID,
 		"ResumePct":   resumePct,
 		"Completed":   completed,
+		"Flagged":     flaggedCount > 0,
+		"FlagDetail":  flagDetail,
 		"Cast":        cast,
 	})
 }
