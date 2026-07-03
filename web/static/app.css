@@ -577,8 +577,10 @@ body::before {
 }
 
 /* Grid pager — the artist/movie/TV browse grids page in place (grid_pager.js):
-   a remote flips by moving off the grid's right/left edge; these ‹ › chevrons,
-   fixed to the screen edges, are the mouse path + a discovery hint. */
+   the remote/keyboard flips by moving off any grid edge (wrapping). These ‹ ›
+   chevrons, fixed to the screen edges, are the mouse path — hidden until the
+   mouse is the active input (html.using-mouse, tracked by couch.js), so
+   remote/keyboard users never see them. */
 .grid-pager-btn {
   position: fixed;
   top: 50%;
@@ -593,15 +595,20 @@ body::before {
   border-radius: 8px;
   background: var(--surface-card);
   color: var(--page-fg);
-  opacity: 0.85;
+  opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s, border-color 0.15s;
+}
+html.using-mouse .grid-pager-btn,
+.grid-pager-btn:focus-visible {
+  opacity: 0.85;
+  pointer-events: auto;
 }
 .grid-pager-btn:hover { opacity: 1; border-color: var(--accent); }
 .grid-pager-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
 .grid-pager-prev { left: 0.5rem; }
 .grid-pager-next { right: 0.5rem; }
 .grid-pager-btn .icon { width: 1.4rem; height: 1.4rem; }
-.grid-pager .is-hidden { display: none; }
 .grid-pager-info {
   position: fixed;
   bottom: 0.75rem;

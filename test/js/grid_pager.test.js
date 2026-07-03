@@ -2,9 +2,10 @@
 // jsdom drives the real controller through DOM effects (chevron clicks, edge
 // keydowns) with a stub fetch returning per-page card HTML. The geometry edge
 // test (atEdge via getBoundingClientRect) is degenerate in jsdom — every rect is
-// 0×0, so a card never has a neighbour "to the right" and every press reads as an
-// edge; that's enough to prove the keydown→advance wiring, but the real
-// rightmost-column detection stays in the Playwright/manual smoke.
+// 0×0, so a card never has a neighbour further along and every press reads as an
+// edge; that's enough to prove the keydown→advance wiring in all four
+// directions, but the real column/row detection stays in the Playwright/manual
+// smoke.
 
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -16,15 +17,15 @@ function cards(n, page) {
   return h;
 }
 
-function fixture({ page = 1, total = 3, q = '' } = {}) {
-  return `<!DOCTYPE html><html data-couch="1"><body>
+function fixture({ page = 1, total = 3, q = '', couch = true } = {}) {
+  return `<!DOCTYPE html><html${couch ? ' data-couch="1"' : ''}><body>
     <div class="subtab-panel">
       <div class="band-albums-grid" data-grid-pager data-page="${page}" data-total-pages="${total}" data-q="${q}">
         ${cards(4, page)}
       </div>
       <nav class="grid-pager" data-total-pages="${total}">
-        <a class="grid-pager-btn grid-pager-prev${page <= 1 ? ' is-hidden' : ''}" href="/x?page=${page - 1}">L</a>
-        <a class="grid-pager-btn grid-pager-next${page >= total ? ' is-hidden' : ''}" href="/x?page=${page + 1}">R</a>
+        <a class="grid-pager-btn grid-pager-prev" href="/x?page=${page - 1}">L</a>
+        <a class="grid-pager-btn grid-pager-next" href="/x?page=${page + 1}">R</a>
         <span class="grid-pager-info">Page ${page} of ${total}</span>
       </nav>
     </div>
@@ -51,8 +52,10 @@ function boot(opts = {}) {
 
 const grid = (env) => env.document.querySelector('.band-albums-grid');
 const info = (env) => env.document.querySelector('.grid-pager-info').textContent;
-const hidden = (env, which) => env.document.querySelector('.grid-pager-' + which).classList.contains('is-hidden');
 const clickChevron = (env, which) => env.document.querySelector('.grid-pager-' + which).click();
+const pressArrow = (env, key) => {
+  grid(env).dispatchEvent(new env.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+};
 
 test('prefetches the next page on init', async () => {
   const env = boot({ page: 1, total: 3 });
@@ -67,18 +70,16 @@ test('the next chevron swaps the grid in place and updates the indicator', async
   assert.ok(grid(env).innerHTML.includes('p2c0'), 'grid shows page-2 cards');
   assert.strictEqual(grid(env).dataset.page, '2');
   assert.strictEqual(info(env), 'Page 2 of 3');
-  assert.strictEqual(hidden(env, 'prev'), false);
-  assert.strictEqual(hidden(env, 'next'), false);
 });
 
-test('first page hides prev; last page hides next', async () => {
-  const env = boot({ page: 1, total: 2 });
-  assert.strictEqual(hidden(env, 'prev'), true);
-  clickChevron(env, 'next');
+test('paging wraps at both ends', async () => {
+  const env = boot({ page: 2, total: 2 });
+  clickChevron(env, 'next'); // last page → wraps to 1
+  await flush();
+  assert.strictEqual(info(env), 'Page 1 of 2');
+  clickChevron(env, 'prev'); // page 1 → wraps to last
   await flush();
   assert.strictEqual(info(env), 'Page 2 of 2');
-  assert.strictEqual(hidden(env, 'next'), true);
-  assert.strictEqual(hidden(env, 'prev'), false);
 });
 
 test('a page is fetched once then served from cache', async () => {
@@ -94,12 +95,37 @@ test('a page is fetched once then served from cache', async () => {
   assert.strictEqual(page2Fetches, 1, 'page 2 fetched exactly once');
 });
 
-test('an edge ArrowRight advances the grid', async () => {
-  const env = boot({ page: 1, total: 3 });
+test('an edge ArrowRight advances and focuses the first new card — couch off too', async () => {
+  const env = boot({ page: 1, total: 3, couch: false });
   grid(env).querySelector('.band-album-card').focus();
-  grid(env).dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  pressArrow(env, 'ArrowRight');
   await flush();
   assert.strictEqual(grid(env).dataset.page, '2');
+  assert.strictEqual(env.document.activeElement.textContent, 'p2c0', 'keyboard flip moves focus');
+});
+
+test('edge ArrowDown advances; edge ArrowUp retreats (wrapping)', async () => {
+  const env = boot({ page: 1, total: 3 });
+  grid(env).querySelector('.band-album-card').focus();
+  pressArrow(env, 'ArrowDown');
+  await flush();
+  assert.strictEqual(grid(env).dataset.page, '2');
+  grid(env).querySelector('.band-album-card').focus();
+  pressArrow(env, 'ArrowUp');
+  await flush();
+  assert.strictEqual(grid(env).dataset.page, '1');
+  grid(env).querySelector('.band-album-card').focus();
+  pressArrow(env, 'ArrowUp'); // page 1 → wraps to last
+  await flush();
+  assert.strictEqual(grid(env).dataset.page, '3');
+});
+
+test('a chevron click never steals focus', async () => {
+  const env = boot({ page: 1, total: 3 });
+  const before = env.document.activeElement;
+  clickChevron(env, 'next');
+  await flush();
+  assert.strictEqual(env.document.activeElement, before, 'mouse flip leaves focus alone');
 });
 
 test('carries the search query into fragment fetches', async () => {
