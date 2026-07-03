@@ -168,7 +168,7 @@ type ScoredCandidate struct {
 }
 
 // CandidatesAboveThreshold returns every candidate scoring >= matchThreshold,
-// sorted by score descending. The first element matches BestCandidate's pick.
+// sorted by score descending. The first element matches BestMatchCandidate's pick.
 // Used to broaden cover-art search beyond the single best match.
 func CandidatesAboveThreshold(candidates []Candidate, localTitle, localArtist string, localYear int) []ScoredCandidate {
 	var out []ScoredCandidate

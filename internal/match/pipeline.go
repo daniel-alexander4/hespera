@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/ratelimit"
 	"hespera/internal/thumbgc"
 )
 
@@ -32,7 +33,7 @@ func New(db *sql.DB, dataDir, fanartKey, audiodbKey, lastfmKey string) *Matcher 
 	// One shared limiter so MusicBrainz and Cover Art Archive requests stay
 	// within a single 1 req/sec MetaBrainz-family budget. The backfill providers
 	// are separate hosts with their own limiters (built inside their clients).
-	limiter := newRateLimiter(time.Second)
+	limiter := ratelimit.New(time.Second)
 	return &Matcher{
 		db:      db,
 		dataDir: dataDir,

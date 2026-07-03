@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"hespera/internal/ratelimit"
 )
 
 func TestLBTopRecordings(t *testing.T) {
@@ -18,7 +20,7 @@ func TestLBTopRecordings(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewLBClient(newRateLimiter(0))
+	c := NewLBClient(ratelimit.New(0))
 	c.baseURL = srv.URL
 
 	recs, ok := c.TopRecordings(context.Background(), "mbid-1")
@@ -57,7 +59,7 @@ func TestLBSimilarArtists(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewLBClient(newRateLimiter(0))
+	c := NewLBClient(ratelimit.New(0))
 	c.labsURL = srv.URL
 
 	got, ok := c.SimilarArtists(context.Background(), "mb-ref")
@@ -89,7 +91,7 @@ func TestLBTopRecordingsHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewLBClient(newRateLimiter(0))
+	c := NewLBClient(ratelimit.New(0))
 	c.baseURL = srv.URL
 	if _, ok := c.TopRecordings(context.Background(), "mbid-1"); ok {
 		t.Fatal("404 should be a miss (ok=false), not a match")

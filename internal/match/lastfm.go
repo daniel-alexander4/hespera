@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"hespera/internal/ratelimit"
 )
 
 // LastfmClient fetches an artist's most-played tracks (with global play counts)
@@ -18,7 +20,7 @@ type LastfmClient struct {
 	client  *http.Client
 	apiKey  string
 	baseURL string
-	limiter *rateLimiter
+	limiter *ratelimit.Limiter
 }
 
 // NewLastfmClient returns a client, or nil when apiKey is empty (the blend is
@@ -32,7 +34,7 @@ func NewLastfmClient(apiKey string) *LastfmClient {
 		apiKey:  apiKey,
 		baseURL: "https://ws.audioscrobbler.com/2.0/",
 		// Last.fm allows several req/s per key; keep it gentle (own host budget).
-		limiter: newRateLimiter(250 * time.Millisecond),
+		limiter: ratelimit.New(250 * time.Millisecond),
 	}
 }
 
@@ -52,7 +54,7 @@ func (c *LastfmClient) TopTracks(ctx context.Context, artist string) (map[string
 	if c == nil || artist == "" {
 		return nil, false
 	}
-	c.limiter.wait()
+	_ = c.limiter.Wait(ctx)
 	q := url.Values{}
 	q.Set("method", "artist.gettoptracks")
 	q.Set("artist", artist)
