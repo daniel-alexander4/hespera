@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -138,8 +140,9 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-ss", ss, "-i", src, "-t", strconv.FormatFloat(durSec, 'f', -1, 64),
 		"-map", "0:v:0", "-map", audioMap(audioOrdinal),
-		"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'",
-		"-fps_mode", "cfr",
+	}
+	args = append(args, segScaleArgs(maxHeight)...)
+	args = append(args,
 		// Cap the encoder threads so each on-demand segment doesn't burst across
 		// every core. Unthrottled, libx264 grabs ~all cores and finishes a 6s
 		// segment in ~1.3s, then idles — a tall CPU spike every segment, worse when
@@ -148,19 +151,12 @@ func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audio
 		// finishing a 6s segment in ~1.7s (well under realtime), so seek latency and
 		// buffer-ahead are unaffected. (Bump segEncodeVersion when changing this.)
 		"-threads", "3",
-		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
-		// No B-frames. Each segment is encoded independently and placed on the
-		// timeline with -output_ts_offset; with B-frames the reorder makes the
-		// segment's first DTS land ~1 reorder-depth *before* its boundary, so
-		// adjacent segments overlap in DTS and Chrome's MediaSource rejects the
-		// append ("Parsed buffers not in DTS sequence" → MediaError 3, playback
-		// never starts — worst on a mid-timeline resume). With -bf 0, DTS==PTS.
-		// Negligible compression cost; standard for segmented on-demand transcode.
-		// (Bump segEncodeVersion when changing this.)
-		"-bf", "0",
+	)
+	args = append(args, segX264Args...)
+	args = append(args,
 		"-force_key_frames", "expr:eq(n,0)",
 		"-c:a", "aac", "-b:a", "160k",
-	}
+	)
 	args = append(args, audioFilterArgs(srcChannels)...)
 	return append(args,
 		// -avoid_negative_ts disabled is load-bearing, NOT cosmetic. mpegts's
@@ -243,23 +239,45 @@ func audioWarmArgs(src, out string, start, dur float64, audioOrdinal, srcChannel
 // segment, placed on the timeline at start.
 func segmentMuxArgs(src, audioTmp, out string, start, dur float64, maxHeight int) []string {
 	ss := strconv.FormatFloat(start, 'f', -1, 64)
-	return []string{
+	args := []string{
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-ss", strconv.FormatFloat(segWarmupLead, 'f', -1, 64), "-i", audioTmp,
 		"-ss", ss, "-i", src, "-t", strconv.FormatFloat(dur, 'f', -1, 64),
 		"-map", "0:a:0", "-map", "1:v:0",
 		"-c:a", "copy",
-		"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'",
-		"-fps_mode", "cfr",
-		"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
-		"-bf", "0",
+	}
+	args = append(args, segScaleArgs(maxHeight)...)
+	args = append(args, segX264Args...)
+	return append(args,
 		"-threads", "3", // match SegmentArgs: cap the per-segment encode CPU spike
 		"-force_key_frames", "expr:eq(n,0)",
 		"-avoid_negative_ts", "disabled",
 		"-output_ts_offset", ss, "-muxdelay", "0", "-muxpreload", "0",
 		"-f", "mpegts", out,
-	}
+	)
 }
+
+// segScaleArgs and segX264Args are the video-encode fragments shared verbatim
+// by SegmentArgs (seg0 / single-pass) and segmentMuxArgs (interior pass 2).
+// They exist so the two builders can never drift apart on the flags that must
+// stay identical across a segment boundary — a one-sided edit would desync
+// seg0 from seg1 in ways segEncodeVersion can't catch. -threads 3 and
+// -force_key_frames stay at each call site (their historical argv positions
+// differ; keeping them in place keeps the argv byte-identical).
+func segScaleArgs(maxHeight int) []string {
+	return []string{"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")'", "-fps_mode", "cfr"}
+}
+
+// segX264Args: the encoder settings proper. No B-frames — each segment is
+// encoded independently and placed on the timeline with -output_ts_offset;
+// with B-frames the reorder makes the segment's first DTS land ~1
+// reorder-depth *before* its boundary, so adjacent segments overlap in DTS and
+// Chrome's MediaSource rejects the append ("Parsed buffers not in DTS
+// sequence" → MediaError 3, playback never starts — worst on a mid-timeline
+// resume). With -bf 0, DTS==PTS. Negligible compression cost; standard for
+// segmented on-demand transcode. (Bump segEncodeVersion when changing any of
+// these.)
+var segX264Args = []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-bf", "0"}
 
 // VODPlaylist synthesises the complete VOD HLS manifest for a source of the
 // given duration: every hls_time segment listed up front, finalised with
@@ -391,7 +409,26 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 		delete(segBuilds, key)
 		segBuildsMu.Unlock()
 	}()
-	finish := func(err error) { b.err = err; close(b.ready) }
+	finished := false
+	finish := func(err error) {
+		if finished {
+			return
+		}
+		finished = true
+		b.err = err
+		close(b.ready)
+	}
+	// This goroutine is spawned from a request handler, so net/http's
+	// per-request recovery does not cover it — an unrecovered panic here would
+	// crash the whole process AND leave every joined caller blocked on
+	// b.ready. Convert a panic into a build failure instead (the finished
+	// guard makes finish safe to call from the recover path).
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("segment build panicked", "index", index, "panic", r, "stack", string(debug.Stack()))
+			finish(fmt.Errorf("segment %d build panicked: %v", index, r))
+		}
+	}()
 
 	start := float64(index * hlsSegmentSeconds)
 	dur := float64(hlsSegmentSeconds)

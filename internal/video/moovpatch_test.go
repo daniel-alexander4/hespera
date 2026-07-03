@@ -148,3 +148,28 @@ func TestMoovPatcherPassthroughWithoutMoov(t *testing.T) {
 		t.Fatal("stream without a moov must pass through unchanged")
 	}
 }
+
+// TestPatchMoovDurationsDegenerateBoxes pins the bounds hardening: a
+// header-only mvhd (no body → no version byte) must not panic, and a truncated
+// mvhd whose duration field would land past its own box end must not write
+// into the following sibling box.
+func TestPatchMoovDurationsDegenerateBoxes(t *testing.T) {
+	t.Run("header-only box does not panic", func(t *testing.T) {
+		moov := box("moov", box("mvhd", nil))
+		patchMoovDurations(moov, 42) // would index past the slice unguarded
+	})
+
+	t.Run("truncated box does not write into its sibling", func(t *testing.T) {
+		// v0 mvhd with only flags+creation+mod+timescale (16 bytes): its
+		// duration offset (body+16) sits exactly at the box end, inside the
+		// sibling "free" box that follows.
+		short := box("mvhd", concat(make([]byte, 12), be32(1000)))
+		sibling := box("free", []byte{0xAA, 0xBB, 0xCC, 0xDD})
+		moov := box("moov", concat(short, sibling))
+		want := append([]byte(nil), moov...)
+		patchMoovDurations(moov, 42)
+		if !bytes.Equal(moov, want) {
+			t.Fatalf("truncated box patched bytes outside itself")
+		}
+	})
+}
