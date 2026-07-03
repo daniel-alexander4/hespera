@@ -65,6 +65,16 @@ a:hover {
   color: var(--link-hover-color);
 }
 
+/* Keyboard focus ring — the remote/keyboard nav layer (couch.js) is always on,
+   so keyboard focus must be visible on the desktop too. :focus-visible keeps
+   it off mouse clicks; couch mode's larger ring (tv.css) overrides it there.
+   Component-tuned rules (.input:focus, .media-scrubber, …) stay authoritative
+   on their own elements. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Topbar */
 .topbar {
   display: flex;
