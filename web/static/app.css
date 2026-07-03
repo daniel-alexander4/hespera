@@ -1169,6 +1169,12 @@ html.using-mouse .grid-pager-btn,
   /* Clear the fixed transport overlay pinned to the bottom of the viewport. */
   padding-bottom: 8rem;
 }
+/* In the no-lyrics layout the reflection-deep cover already ends above the
+   transport's resting position, so the full 8rem clearance only manufactures
+   a needless scrollbar — keep a token gap instead. */
+.player-page:has(.player-now.no-lyrics) {
+  padding-bottom: 1rem;
+}
 /* Now-playing column: the cover+controls grid on top, lyrics centered below it. */
 .player-now {
   display: flex;
@@ -1235,14 +1241,27 @@ html.using-mouse .grid-pager-btn,
   display: none;
 }
 .player-now.no-lyrics .player-main-grid {
-  grid-template-columns: 31.4286rem 1fr; /* 440px @14 */
-  max-width: 65.7143rem; /* 920px @14 */
+  grid-template-columns: auto 1fr; /* the cover's own (viewport-derived) size drives the column */
+  max-width: min(100%, 110rem);
 }
 .player-now.no-lyrics .player-cover img,
 .player-now.no-lyrics .album-art-ph.big {
-  width: 31.4286rem; /* 440px @14 */
+  /* With no lyrics card the cover owns the page: size it so its bottom edge
+     reaches the background artwork's sun-reflection bottom. The bg SVG is a
+     240-unit square, cover-cropped and centered (body::before), with the
+     reflection bottom at 179/240 = 74.6% of the image — on a landscape
+     viewport that's 24.6vw + 50vh from the top. Subtract a little less than
+     the cover's top offset (topbar + main padding + back-button row ≈ 7.3rem)
+     so the bottom edge lands just past the reflection ("at least down to");
+     floor at the old 440px so small windows never regress, cap so it can't
+     run under the bottom transport. Square cover → width is the height knob. */
+  width: clamp(31.4286rem, calc(24.6vw + 50vh - 6.5rem), calc(100vh - 13rem));
   max-width: 100%;
 }
+/* Scale the info hierarchy up with the bigger cover. */
+.player-now.no-lyrics .player-title { font-size: 3rem; }
+.player-now.no-lyrics .player-artist { font-size: 1.8rem; }
+.player-now.no-lyrics .player-album { font-size: 1.15rem; }
 .player-audio {
   width: 100%;
   margin: 0.5rem 0;
