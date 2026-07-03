@@ -20,10 +20,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /bin/hespera /bin/hescli /usr/local/bin/
-COPY web/ /app/web/
-# Ensure assets are world-readable (dirs traversable) regardless of the host
-# umask at build time, so the non-root runtime user can serve them.
-RUN chmod -R a+rX /app/web
+# No web/ copy: the UI assets are embedded in the binary (//go:embed).
 
 WORKDIR /app
 

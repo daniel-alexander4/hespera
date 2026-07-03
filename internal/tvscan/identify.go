@@ -362,18 +362,24 @@ var (
 	reLeadingSite = regexp.MustCompile(`(?i)^\s*www\.[^\s]+\s*-\s*`)
 )
 
-func cleanTitle(raw string) string {
-	s := raw
-	// Strip leading scene noise (a www.site - prefix, then any [group]/{id} tags)
-	// before separator normalization, while the brackets are still intact.
+// StripLeadingNoise removes leading scene-release noise from a
+// filename-derived title: a "www.site -" prefix, then any run of leading
+// [group]/{id} tags. Applied before separator normalization, while the
+// brackets are still intact. Shared with moviescan's cleanTitle (same noise,
+// same order) so the two strippers can't drift.
+func StripLeadingNoise(s string) string {
 	s = reLeadingSite.ReplaceAllString(s, "")
 	for {
 		ns := reLeadingTag.ReplaceAllString(s, "")
 		if ns == s {
-			break
+			return s
 		}
 		s = ns
 	}
+}
+
+func cleanTitle(raw string) string {
+	s := StripLeadingNoise(raw)
 
 	// Replace dots, underscores, hyphens with spaces.
 	r := strings.NewReplacer(".", " ", "_", " ", "-", " ")

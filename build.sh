@@ -6,8 +6,8 @@
 # server — the assets are embedded, so each binary is fully self-contained),
 # plus a .deb for linux amd64/arm64 when nfpm is installed
 # (go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest). The .deb also
-# carries the `hescli` admin stub and declares ffmpeg/openssh-client as
-# dependencies so apt pulls them.
+# carries the `hescli` admin stub and declares ffmpeg as a dependency so apt
+# pulls it.
 set -euo pipefail
 cd "$(dirname "$0")"
 
