@@ -118,7 +118,7 @@ func main() {
 
 	// App mode opens a chromeless browser window and binds a random loopback
 	// port — Hespera runs as a single-machine app. HESPERA_NO_BROWSER opts out
-	// (server/headless/Docker), keeping the env-configured listen address. An
+	// (server/headless), keeping the env-configured listen address. An
 	// explicit HESPERA_LISTEN is always honored.
 	listenAddr := cfg.Listen
 	if appMode && os.Getenv("HESPERA_LISTEN") == "" {
