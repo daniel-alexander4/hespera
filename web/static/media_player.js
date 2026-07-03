@@ -704,6 +704,12 @@ function initMediaPlayer() {
     label.className = 'media-scrub-preview-time';
     el.appendChild(img);
     el.appendChild(label);
+    // The FF/RW scan indicator (#mediaScanPill, server-rendered in the scrubber
+    // for its inline SVG icons) joins the preview cluster, so during a scan the
+    // direction + speed ride the playhead with the frame + timestamp — the
+    // Plex/Roku trick-mode look — instead of floating as a static popup.
+    const pill = document.getElementById('mediaScanPill');
+    if (pill) el.appendChild(pill);
     scrubber.appendChild(el);
     return { el, img, label };
   })();
@@ -766,17 +772,18 @@ function initMediaPlayer() {
 
   // --- FF/RW scan (DVR-style) --- the rewind/fast-forward buttons drive a
   //     *virtual* playhead, not the video: the first press pauses playback in
-  //     place and scans at 1× (one timeline-second per real second); repeat
-  //     presses cycle 2× → 3× → 1×; the opposite direction restarts at 1× that
-  //     way. The scrubber fill and the trickplay preview track the scan
-  //     position, and a floating pill under the bar shows direction + speed.
+  //     place and scans at 2× (timeline seconds per real second); repeat
+  //     presses cycle 8× → 32× → 2× (Roku's few-but-fast trick-mode tiers);
+  //     the opposite direction restarts at 2×. The scrubber fill and the
+  //     trickplay preview track the scan position, with the direction + speed
+  //     indicator riding the playhead inside the preview cluster.
   //     Play (button or video-frame click) commits the single real seek — the
   //     drag-release pattern, timer-driven — so a scan costs the server nothing
   //     until it lands and works identically on the seekable and progressive
   //     paths (browsers have no reverse playback, and a per-step progressive
   //     seek would reload the stream every step; the virtual playhead sidesteps
   //     both). The overlay stays pinned throughout because the video is paused.
-  const SCAN_SPEEDS = [1, 2, 3]; // timeline seconds per real second, per press
+  const SCAN_SPEEDS = [2, 8, 32]; // timeline seconds per real second, per press
   const scanPill = document.getElementById('mediaScanPill');
   let scanDir = 0, scanTier = 0, scanPos = 0, scanTimer = null, scanLast = 0;
   function scanActive() { return scanDir !== 0; }
@@ -809,10 +816,11 @@ function initMediaPlayer() {
       scanLoadPreview();
       scanLast = performance.now();
       scanTimer = setInterval(scanTick, 200);
+      scanTick(); // dt≈0: no movement, but the preview cluster appears at the playhead immediately
     } else if (scanDir === dir) {
-      scanTier = (scanTier + 1) % SCAN_SPEEDS.length; // 1× → 2× → 3× → 1×
+      scanTier = (scanTier + 1) % SCAN_SPEEDS.length; // 2× → 8× → 32× → 2×
     } else {
-      scanDir = dir; scanTier = 0; // opposite direction restarts at 1×
+      scanDir = dir; scanTier = 0; // opposite direction restarts at 2×
     }
     renderScanPill();
   }
