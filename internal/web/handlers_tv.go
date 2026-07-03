@@ -1158,6 +1158,7 @@ func (h *Handler) tvArt(w http.ResponseWriter, r *http.Request) {
 	ct := artMIMEFromExt(clean)
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Content-Type-Options", "nosniff") // match the other art handlers
 	_, _ = io.Copy(w, f)
 }
 

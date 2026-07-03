@@ -59,10 +59,16 @@ func main() {
 	// Create the data dir on first run — the binary runs as the invoking user
 	// (no container pre-creating /var/lib/hespera), so the default per-user dir
 	// won't exist yet and SQLite can't create its file in a missing directory.
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+	// 0700: the dir holds the SQLite DB (incl. app_settings API keys), the
+	// dedicated browser profile, and the management socket — no other local
+	// user has business in it. The Chmod tightens pre-existing installs too
+	// (MkdirAll never changes an existing dir's mode); best-effort, same as
+	// the management socket's own 0600.
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		slog.Error("create data dir failed", "dir", cfg.DataDir, "err", err)
 		os.Exit(1)
 	}
+	_ = os.Chmod(cfg.DataDir, 0o700)
 
 	dbConn, err := db.Open(cfg.DBPath)
 	if err != nil {
