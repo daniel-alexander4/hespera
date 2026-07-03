@@ -739,7 +739,11 @@ function initMediaPlayer() {
   scrubber.addEventListener('pointerup', hidePreview);
   scrubber.addEventListener('pointercancel', hidePreview);
 
+  // Arrow seeking only while engaged (couch.js's [data-couch-capture] protocol:
+  // Enter captures, Enter/Back/blur release) — an unengaged scrubber stays
+  // transparent so the remote's arrows move focus past it.
   scrubber.addEventListener('keydown', (e) => {
+      if (!scrubber.hasAttribute('data-couch-engaged')) return;
       if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); seekBy(10); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); seekBy(-10); }
     });
@@ -858,10 +862,9 @@ function initMediaPlayer() {
       savedVol = v > 0 ? v : savedVol;
       try { localStorage.setItem('tv_volume', String(v)); localStorage.setItem('tv_muted', video.muted ? '1' : '0'); } catch (e) {}
     });
-    // Keep couch.js directional nav from also consuming Left/Right on the slider.
-    volSlider.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
-    });
+    // Arrow handling is couch.js's engage protocol: an unengaged range input is
+    // transparent (arrows move focus past it); Enter captures it, then the
+    // native range arrows adjust the volume.
   }
   if (muteBtn) {
     muteBtn.addEventListener('click', () => {

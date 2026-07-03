@@ -76,6 +76,16 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* Engaged (captured) control — couch.js's engage protocol: Enter on a focused
+   <select>, <input type=range>, or [data-couch-capture] slider captures the
+   arrows for that control until Enter/Back/blur releases it. The glow (beyond
+   the plain focus ring) is what says "arrows now adjust this" from the couch. */
+[data-couch-engaged] {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 10px var(--accent);
+}
+
 /* Topbar */
 .topbar {
   display: flex;
@@ -2158,8 +2168,8 @@ code {
    slides + resizes over a measuring-tape of years (ticks + decade numbers drawn
    behind it, visible through the glass). Remote-navigable via an ENGAGE mode:
    a merely-focused track lets arrows bubble to couch.js (focus can pass by);
-   Enter engages adjust mode (◀▶ slide, ▲▼ span; Enter/Back releases), shown by
-   the .era-engaged glow below. */
+   Enter engages adjust mode (◀▶ slide, ▲▼ span; Enter/Back releases) — the
+   shared [data-couch-engaged] protocol, with the lens glow below on top. */
 /* Readout on its own top row (flex:100%), then the track and the Play/Shuffle
    controls share the next line — the track grows, the buttons sit to its right.
    On a narrow container the controls wrap below the track (flex-wrap). */
@@ -2170,16 +2180,14 @@ code {
   border: 1px solid var(--surface-card); border-radius: 8px; cursor: pointer; touch-action: none;
 }
 .era-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-/* Engaged (adjust) mode — unmistakably different from mere focus: the track
-   itself lights up and the lens glows, so "arrows now adjust" reads from the
-   couch. */
-.era-engaged .era-track {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+/* Engaged (adjust) mode — the shared [data-couch-engaged] glow plus an
+   era-specific tint: the track lights up and the lens glows, so "arrows now
+   adjust" reads from the couch. */
+.era-track[data-couch-engaged] {
   border-color: var(--accent);
   background: var(--accent-bg);
 }
-.era-engaged .era-window {
+.era-picker:has(.era-track[data-couch-engaged]) .era-window {
   box-shadow: 0 0 0 2px var(--accent-bg), 0 0 12px var(--accent);
 }
 

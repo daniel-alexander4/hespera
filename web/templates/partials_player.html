@@ -5,7 +5,7 @@
      native currentTime seek; on progressive paths a single ?start= reload. */}}
 {{define "media-seekbar"}}
 <div class="media-seek">
-  <div class="media-scrubber" id="mediaScrubber" tabindex="0" role="slider"
+  <div class="media-scrubber" id="mediaScrubber" tabindex="0" role="slider" data-couch-capture
        aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <div class="media-scrubber-fill" id="mediaScrubberFill"></div>
     <div class="media-scrubber-thumb" id="mediaScrubberThumb"></div>
