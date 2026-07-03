@@ -56,6 +56,11 @@ func main() {
 
 	video.SetConcurrency(cfg.FFmpegConcurrentLimit, cfg.FFmpegAcquireTimeout)
 	video.SetSegmentConcurrency(cfg.HLSSegmentConcurrency)
+	if eff := video.SetEncoder(context.Background(), cfg.HLSEncoder); eff != cfg.HLSEncoder {
+		slog.Warn("hls encoder fell back", "requested", cfg.HLSEncoder, "using", eff)
+	} else if eff == "vaapi" {
+		slog.Info("hls segments will use the vaapi hardware encoder")
+	}
 
 	// Create the data dir on first run — the binary runs as the invoking user
 	// (no container pre-creating /var/lib/hespera), so the default per-user dir

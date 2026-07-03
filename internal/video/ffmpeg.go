@@ -136,23 +136,29 @@ func BurnInArgs(src string, subOrdinal, audioOrdinal, maxHeight int, startSec fl
 // makes seeking work, regardless of how far into the file the segment sits.
 func SegmentArgs(src, outPath string, startSec, durSec float64, maxHeight, audioOrdinal, srcChannels int) []string {
 	ss := strconv.FormatFloat(startSec, 'f', -1, 64)
-	args := []string{
-		"-hide_banner", "-loglevel", "error", "-y",
+	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
+	args = append(args, segPreInputArgs()...) // VAAPI device, before any input
+	args = append(args,
 		"-ss", ss, "-i", src, "-t", strconv.FormatFloat(durSec, 'f', -1, 64),
 		"-map", "0:v:0", "-map", audioMap(audioOrdinal),
-	}
-	args = append(args, segScaleArgs(maxHeight)...)
-	args = append(args,
-		// Cap the encoder threads so each on-demand segment doesn't burst across
-		// every core. Unthrottled, libx264 grabs ~all cores and finishes a 6s
-		// segment in ~1.3s, then idles — a tall CPU spike every segment, worse when
-		// hls.js prefetches two at once (concurrent encodes oversubscribe the box).
-		// -threads 3 keeps each encode to ~3 cores (~28% lower peak) while still
-		// finishing a 6s segment in ~1.7s (well under realtime), so seek latency and
-		// buffer-ahead are unaffected. (Bump segEncodeVersion when changing this.)
-		"-threads", "3",
 	)
-	args = append(args, segX264Args...)
+	if hlsEncoder == "vaapi" {
+		args = append(args, segVAAPIScaleArgs(maxHeight)...)
+		args = append(args, segVAAPIArgs...)
+	} else {
+		args = append(args, segScaleArgs(maxHeight)...)
+		args = append(args,
+			// Cap the encoder threads so each on-demand segment doesn't burst across
+			// every core. Unthrottled, libx264 grabs ~all cores and finishes a 6s
+			// segment in ~1.3s, then idles — a tall CPU spike every segment, worse when
+			// hls.js prefetches two at once (concurrent encodes oversubscribe the box).
+			// -threads 3 keeps each encode to ~3 cores (~28% lower peak) while still
+			// finishing a 6s segment in ~1.7s (well under realtime), so seek latency and
+			// buffer-ahead are unaffected. (Bump segEncodeVersion when changing this.)
+			"-threads", "3",
+		)
+		args = append(args, segX264Args...)
+	}
 	args = append(args,
 		"-force_key_frames", "expr:eq(n,0)",
 		"-c:a", "aac", "-b:a", "160k",
@@ -239,17 +245,23 @@ func audioWarmArgs(src, out string, start, dur float64, audioOrdinal, srcChannel
 // segment, placed on the timeline at start.
 func segmentMuxArgs(src, audioTmp, out string, start, dur float64, maxHeight int) []string {
 	ss := strconv.FormatFloat(start, 'f', -1, 64)
-	args := []string{
-		"-hide_banner", "-loglevel", "error", "-y",
+	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
+	args = append(args, segPreInputArgs()...) // VAAPI device, before any input
+	args = append(args,
 		"-ss", strconv.FormatFloat(segWarmupLead, 'f', -1, 64), "-i", audioTmp,
 		"-ss", ss, "-i", src, "-t", strconv.FormatFloat(dur, 'f', -1, 64),
 		"-map", "0:a:0", "-map", "1:v:0",
 		"-c:a", "copy",
+	)
+	if hlsEncoder == "vaapi" {
+		args = append(args, segVAAPIScaleArgs(maxHeight)...)
+		args = append(args, segVAAPIArgs...)
+	} else {
+		args = append(args, segScaleArgs(maxHeight)...)
+		args = append(args, segX264Args...)
+		args = append(args, "-threads", "3") // match SegmentArgs: cap the per-segment encode CPU spike
 	}
-	args = append(args, segScaleArgs(maxHeight)...)
-	args = append(args, segX264Args...)
 	return append(args,
-		"-threads", "3", // match SegmentArgs: cap the per-segment encode CPU spike
 		"-force_key_frames", "expr:eq(n,0)",
 		"-avoid_negative_ts", "disabled",
 		"-output_ts_offset", ss, "-muxdelay", "0", "-muxpreload", "0",
@@ -278,6 +290,63 @@ func segScaleArgs(maxHeight int) []string {
 // segmented on-demand transcode. (Bump segEncodeVersion when changing any of
 // these.)
 var segX264Args = []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-bf", "0"}
+
+// hlsEncoder selects the segment video encoder: "software" (libx264, the
+// default) or "vaapi" (h264_vaapi on hlsVAAPIDevice, opt-in via
+// HESPERA_HLS_ENCODER). Set once at startup by SetEncoder, which capability-
+// probes VAAPI and falls back to software — a broken driver must degrade, not
+// break playback. The encoder is folded into hlsKey, so segments from
+// different encoders never mix (and switching back and forth can't poison the
+// cache). The burn-in path stays libx264 regardless: its subtitle overlay is a
+// software filter, so the GPU would gain little there.
+var hlsEncoder = "software"
+
+const hlsVAAPIDevice = "/dev/dri/renderD128"
+
+// segPreInputArgs: encoder flags that must precede the inputs (the VAAPI
+// device has to exist before any filter references it). Empty for software,
+// keeping that argv byte-identical.
+func segPreInputArgs() []string {
+	if hlsEncoder == "vaapi" {
+		return []string{"-vaapi_device", hlsVAAPIDevice}
+	}
+	return nil
+}
+
+// segVAAPIScaleArgs keeps the same proven software scale expression (cheap on
+// CPU next to the encode), then uploads to the GPU for the encoder.
+func segVAAPIScaleArgs(maxHeight int) []string {
+	return []string{"-vf", "scale=-2:'min(ih," + strconv.Itoa(maxHeight) + ")',format=nv12,hwupload", "-fps_mode", "cfr"}
+}
+
+// segVAAPIArgs: CQP 23 ≈ x264 crf 21; -bf 0 for the same DTS==PTS segment-
+// boundary requirement segX264Args documents. -threads is meaningless on the
+// GPU and omitted.
+var segVAAPIArgs = []string{"-c:v", "h264_vaapi", "-rc_mode", "CQP", "-qp", "23", "-bf", "0"}
+
+// SetEncoder selects the HLS segment encoder at startup. "vaapi" is verified
+// with a one-frame test encode against the device; any failure logs a WARN and
+// falls back to software. Returns the effective encoder.
+func SetEncoder(ctx context.Context, name string) string {
+	if name != "vaapi" {
+		hlsEncoder = "software"
+		return hlsEncoder
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(probeCtx, "ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-vaapi_device", hlsVAAPIDevice,
+		"-f", "lavfi", "-i", "color=black:size=320x180:rate=25:duration=0.2",
+		"-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-f", "null", "-")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		slog.Warn("vaapi encoder unavailable — falling back to software",
+			"device", hlsVAAPIDevice, "err", err, "detail", tail(string(out), 200))
+		hlsEncoder = "software"
+		return hlsEncoder
+	}
+	hlsEncoder = "vaapi"
+	return hlsEncoder
+}
 
 // VODPlaylist synthesises the complete VOD HLS manifest for a source of the
 // given duration: every hls_time segment listed up front, finalised with
@@ -496,7 +565,7 @@ func runSegBuild(b *segBuild, key, dir, src string, maxHeight, index int, totalD
 const segEncodeVersion = 5
 
 func hlsKey(src string, modTime time.Time, size int64, maxHeight, audioOrdinal int) string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d|v%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal, segEncodeVersion)))
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%d|%d|%s|v%d", src, modTime.UnixNano(), size, maxHeight, audioOrdinal, hlsEncoder, segEncodeVersion)))
 	return hex.EncodeToString(h[:8])
 }
 

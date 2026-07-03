@@ -476,3 +476,63 @@ func TestStreamFFmpegCanceledIsNotError(t *testing.T) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
+
+// setEncoderForTest flips the package encoder var and restores it — the VAAPI
+// argv shape must never leak into the software tests above (which pin the
+// byte-identical libx264 argv).
+func setEncoderForTest(t *testing.T, name string) {
+	t.Helper()
+	prev := hlsEncoder
+	hlsEncoder = name
+	t.Cleanup(func() { hlsEncoder = prev })
+}
+
+func TestSegmentArgsVAAPI(t *testing.T) {
+	setEncoderForTest(t, "vaapi")
+	got := strings.Join(SegmentArgs("/m/ep.mkv", "/tmp/seg.ts", 60, 6, 720, 0, 2), " ")
+	for _, want := range []string{
+		"-vaapi_device /dev/dri/renderD128",
+		"scale=-2:'min(ih,720)',format=nv12,hwupload",
+		"-c:v h264_vaapi", "-qp 23", "-bf 0",
+		"-force_key_frames expr:eq(n,0)",
+		"-avoid_negative_ts disabled",
+		"-output_ts_offset 60",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("vaapi SegmentArgs missing %q:\n%s", want, got)
+		}
+	}
+	for _, banned := range []string{"libx264", "-threads", "-crf", "-preset"} {
+		if strings.Contains(got, banned) {
+			t.Fatalf("vaapi SegmentArgs must not carry %q:\n%s", banned, got)
+		}
+	}
+	// The device flag must precede the first input.
+	if strings.Index(got, "-vaapi_device") > strings.Index(got, "-i /m/ep.mkv") {
+		t.Fatalf("vaapi device must come before the input:\n%s", got)
+	}
+}
+
+func TestSegmentMuxArgsVAAPI(t *testing.T) {
+	setEncoderForTest(t, "vaapi")
+	got := strings.Join(segmentMuxArgs("/m/ep.mkv", "/tmp/a.aud.tmp", "/tmp/seg.ts", 60, 6, 720), " ")
+	for _, want := range []string{"-vaapi_device", "hwupload", "-c:v h264_vaapi", "-bf 0", "-c:a copy", "-output_ts_offset 60"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("vaapi segmentMuxArgs missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "libx264") {
+		t.Fatalf("vaapi segmentMuxArgs must not carry libx264:\n%s", got)
+	}
+}
+
+func TestHLSKeySeparatesEncoders(t *testing.T) {
+	now := time.Now()
+	setEncoderForTest(t, "software")
+	soft := hlsKey("/m/ep.mkv", now, 100, 720, 0)
+	setEncoderForTest(t, "vaapi")
+	hard := hlsKey("/m/ep.mkv", now, 100, 720, 0)
+	if soft == hard {
+		t.Fatal("cache keys must differ per encoder — segments from different encoders can never mix")
+	}
+}

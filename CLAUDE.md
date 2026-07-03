@@ -184,6 +184,7 @@ make bump-patch / bump-minor / bump-major   # Makefile wrappers
 | HESPERA_OPENSUBTITLES_USER_AGENT | Hespera v1.0 | OpenSubtitles consumer User-Agent (`AppName vX.Y`); must be registered with OpenSubtitles or requests 403. Settings/`app_settings` override |
 | HESPERA_LASTFM_API_KEY | | Optional Last.fm API key — blends Last.fm play counts into Shuffle Most Popular (fills tracks ListenBrainz has no count for; read-only, key only — no shared secret). Settings override |
 | HESPERA_FFMPEG_CONCURRENCY | 4 | Max concurrent ffmpeg/ffprobe processes (probe, remux, on-demand HLS segment transcodes) |
+| HESPERA_HLS_ENCODER | software | HLS segment video encoder: `software` (libx264) or `vaapi` (opt-in hardware encode via `/dev/dri/renderD128`; capability-probed at startup with a 1-frame test encode, WARN + software fallback on failure; encoder identity is folded into the HLS cache key so segments never mix). Burn-in stays libx264 (software overlay filter) |
 | HESPERA_HLS_SEGMENT_CONCURRENCY | 1 | Max concurrent on-demand HLS **segment** transcodes — a sub-cap under `FFMPEG_CONCURRENCY` that serialises hls.js prefetch bursts so they don't peg every core (the per-segment CPU spike). 1 = one encode at a time |
 | HESPERA_FFMPEG_ACQUIRE_TIMEOUT | 2s | How long foreground ffmpeg work waits for a slot |
 | HESPERA_TV_HLS_CACHE_MAX_BYTES | 20GiB | HLS cache size budget (`DataDir/cache/tv-hls`) |
