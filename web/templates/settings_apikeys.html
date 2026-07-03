@@ -154,4 +154,24 @@
     <a href="/settings" class="btn">Back</a>
   </div>
 </form>
+
+<form method="post" action="/settings/api-keys" class="form-card">
+  <input type="hidden" name="keytrace_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="keytrace_enabled" value="1"{{if .KeytraceEnabled}} checked{{end}} />
+      Key-input tracing (diagnostic)
+    </label>
+    <small class="form-help">
+      Off (default). On: every key press the app receives — including from a TV remote —
+      is logged to <code>keytrace.jsonl</code> in the data folder, with what Hespera did in
+      response (focus moves, navigation). Use to diagnose a remote whose buttons don't do
+      what you expect, then turn it back off. Takes effect on the next full page load.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
 {{end}}
