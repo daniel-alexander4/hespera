@@ -19,9 +19,6 @@
   <script>
     (() => {
       try {
-        const fontSize = String(localStorage.getItem('iso_theme_font_size') || 'compact').trim();
-        if (fontSize) document.documentElement.setAttribute('data-font-size', fontSize);
-
         // Couch mode: ?couch=1 enables (and is remembered), ?couch=0 clears.
         const couchParam = new URLSearchParams(location.search).get('couch');
         let couch = localStorage.getItem('iso_couch') === '1';
