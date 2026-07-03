@@ -87,6 +87,13 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// In-place paging (grid_pager.js) fetches just the series card grid —
+	// short-circuit before the "Recent" sub-tab queries it doesn't use.
+	if r.URL.Query().Get("grid") == "1" {
+		h.renderFragment(w, "tv_home.html", "tv-cards", series)
+		return
+	}
+
 	// "Recent" sub-tab content — non-fatal so the page still renders if these fail.
 	recentlyWatched, err := h.recentTVSeries(r.Context(), tvRecentlyWatchedQuery, 18)
 	if err != nil {
@@ -95,12 +102,6 @@ func (h *Handler) tvSeriesList(w http.ResponseWriter, r *http.Request) {
 	recentlyAdded, err := h.recentTVSeries(r.Context(), tvRecentlyAddedQuery, 18)
 	if err != nil {
 		slog.Warn("load recently-added tv failed", "handler", "tvSeriesList", "err", err)
-	}
-
-	// In-place paging (grid_pager.js) fetches just the series card grid.
-	if r.URL.Query().Get("grid") == "1" {
-		h.renderFragment(w, "tv_home.html", "tv-cards", series)
-		return
 	}
 
 	h.render(w, "tv_home.html", map[string]any{

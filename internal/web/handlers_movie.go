@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -54,13 +55,21 @@ func (h *Handler) moviesHome(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, "internal server error", "load movie list failed", "handler", "moviesHome", "err", err)
 		return
 	}
-	continueWatching, _ := h.loadMovieContinueWatching(r.Context(), 18)
-	recentlyAdded, _ := h.loadMovieRecentlyAdded(r.Context(), 18)
-
-	// In-place paging (grid_pager.js) fetches just the movie card grid.
+	// In-place paging (grid_pager.js) fetches just the movie card grid —
+	// short-circuit before the "Recent" sub-tab queries it doesn't use.
 	if r.URL.Query().Get("grid") == "1" {
 		h.renderFragment(w, "movies_home.html", "movie-cards", movies)
 		return
+	}
+
+	// "Recent" sub-tab content — non-fatal so the page still renders if these fail.
+	continueWatching, err := h.loadMovieContinueWatching(r.Context(), 18)
+	if err != nil {
+		slog.Warn("load movie continue-watching failed", "handler", "moviesHome", "err", err)
+	}
+	recentlyAdded, err := h.loadMovieRecentlyAdded(r.Context(), 18)
+	if err != nil {
+		slog.Warn("load recently-added movies failed", "handler", "moviesHome", "err", err)
 	}
 
 	h.render(w, "movies_home.html", map[string]any{

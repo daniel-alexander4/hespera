@@ -159,18 +159,6 @@ func (h *Handler) musicHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	recentlyPlayed, err := h.loadRecentlyPlayedArtists(r.Context(), libraryID, 18)
-	if err != nil {
-		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
-		return
-	}
-
-	recentlyAddedAlbums, err := h.loadRecentlyAddedAlbums(r.Context(), libraryID, 18)
-	if err != nil {
-		httpError(w, 500, "internal server error", "load recently added albums failed", "handler", "musicHome", "err", err)
-		return
-	}
-
 	// Artists (paginated — this tab is the primary artist browse; a ?q= filters
 	// it by name). The artist EXISTS-an-album predicate + optional name filter is
 	// shared by the COUNT and the page query.
@@ -226,6 +214,25 @@ WHERE a.library_id=?
 		return
 	}
 
+	// In-place paging (grid_pager.js) fetches just the artist card grid —
+	// short-circuit before the Recent-tab and compilation queries it doesn't use.
+	if r.URL.Query().Get("grid") == "1" {
+		h.renderFragment(w, "music_home.html", "artist-cards", artists)
+		return
+	}
+
+	recentlyPlayed, err := h.loadRecentlyPlayedArtists(r.Context(), libraryID, 18)
+	if err != nil {
+		httpError(w, 500, "internal server error", "db query failed", "handler", "musicHome", "err", err)
+		return
+	}
+
+	recentlyAddedAlbums, err := h.loadRecentlyAddedAlbums(r.Context(), libraryID, 18)
+	if err != nil {
+		httpError(w, 500, "internal server error", "load recently added albums failed", "handler", "musicHome", "err", err)
+		return
+	}
+
 	// Compilations: a capped preview on the home tab — the full, paginated list
 	// lives at /music/compilations. Fetch one extra to know whether to show the
 	// "see all" link.
@@ -260,12 +267,6 @@ LIMIT ?
 	}
 	if err := compRows.Err(); err != nil {
 		httpError(w, 500, "internal server error", "rows iteration failed", "handler", "musicHome", "err", err)
-		return
-	}
-
-	// In-place paging (grid_pager.js) fetches just the artist card grid.
-	if r.URL.Query().Get("grid") == "1" {
-		h.renderFragment(w, "music_home.html", "artist-cards", artists)
 		return
 	}
 
