@@ -34,6 +34,7 @@ function fixture({ kind = 'tv', fileId = 7, prevFile = 0, nextFile = 0, osEnable
           <button id="tvReloadBtn"></button>
           <button id="tvFullscreenBtn"></button>
           <button id="skipAutoBtn" hidden></button>
+          <button id="muteAdsBtn" hidden></button>
         </div>
         <div id="mediaScrubber"><div id="mediaScrubberFill"></div><div id="mediaScrubberThumb"></div>
           <div class="media-scan-pill" id="mediaScanPill" hidden><span class="media-scan-rw"></span><span class="media-scan-ff"></span><span class="media-scan-speed"></span></div>
@@ -461,4 +462,75 @@ test('FF/RW scan: rewind moves backward; a scrubber drag cancels without seeking
   doc.getElementById('mediaScrubber').dispatchEvent(new env.window.Event('pointerdown', { bubbles: true }));
   assert.strictEqual(doc.getElementById('mediaScanPill').hidden, true, 'drag cancels the scan');
   assert.strictEqual(video.currentTime, 50, 'no seek committed by the canceled scan');
+});
+
+test('mute ads: mutes inside a commercial, restores on exit, never touches saved prefs', async () => {
+  const env = await boot({
+    storage: { mute_ads: '1' },
+    sessionData: session({ skip_segments: [{ start: 10, end: 30, kind: 'commercial' }, { start: 100, end: 120, kind: 'intro' }] }),
+  });
+  const doc = env.document;
+  const video = doc.getElementById('tvVideo');
+  const btn = doc.getElementById('muteAdsBtn');
+  assert.strictEqual(btn.hidden, false, 'toggle revealed — file has a commercial segment');
+  assert.strictEqual(btn.getAttribute('aria-pressed'), 'true', 'stored preference reflected');
+
+  video.currentTime = 15;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, true, 'muted inside the commercial');
+  video.currentTime = 40;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, false, 'restored past the commercial');
+
+  // Intros/recaps keep their audio — only kind=commercial mutes.
+  video.currentTime = 105;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, false, 'intro segment never mutes');
+
+  // The transient ad-mute must never write the persisted mute preference.
+  assert.strictEqual(env.window.localStorage.getItem('tv_muted'), null, 'tv_muted untouched');
+});
+
+test('mute ads: a user muted before the ad stays muted; a mid-ad unmute is not fought', async () => {
+  const seg = { start: 10, end: 30, kind: 'commercial' };
+  // Muted-before-ad: nothing to restore, stays muted after.
+  let env = await boot({ storage: { mute_ads: '1', tv_muted: '1' }, sessionData: session({ skip_segments: [seg] }) });
+  let video = env.document.getElementById('tvVideo');
+  video.currentTime = 15;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  video.currentTime = 40;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, true, 'user mute survives the ad untouched');
+
+  // Mid-ad unmute (via the mute button) wins: no re-mute, no exit "restore".
+  env = await boot({ storage: { mute_ads: '1' }, sessionData: session({ skip_segments: [seg] }) });
+  video = env.document.getElementById('tvVideo');
+  video.currentTime = 15;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, true);
+  env.document.getElementById('tvMuteBtn').click(); // deliberate unmute inside the ad
+  assert.strictEqual(video.muted, false);
+  video.currentTime = 20;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, false, 'override respected — not re-muted');
+  video.currentTime = 40;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, false, 'no phantom restore at exit');
+});
+
+test('mute ads: off by default, hidden without commercial segments, toggle persists', async () => {
+  // Default off: inside an ad, nothing happens.
+  let env = await boot({ sessionData: session({ skip_segments: [{ start: 10, end: 30, kind: 'commercial' }] }) });
+  let video = env.document.getElementById('tvVideo');
+  video.currentTime = 15;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(video.muted, false, 'toggle off → no auto-mute');
+  // Clicking the toggle mid-ad enables + mutes immediately, and persists.
+  env.document.getElementById('muteAdsBtn').click();
+  assert.strictEqual(video.muted, true, 'enabling mid-ad acts immediately');
+  assert.strictEqual(env.window.localStorage.getItem('mute_ads'), '1');
+
+  // No commercial segments (intro only) → toggle stays hidden.
+  env = await boot({ sessionData: session({ skip_segments: [{ start: 10, end: 30, kind: 'intro' }] }) });
+  assert.strictEqual(env.document.getElementById('muteAdsBtn').hidden, true, 'no commercials → hidden');
 });
