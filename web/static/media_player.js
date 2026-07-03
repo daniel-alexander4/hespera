@@ -344,6 +344,28 @@ function initMediaPlayer() {
     subSelect.blur();
   });
 
+  // --- playback speed --- pure client-side (video.playbackRate; browsers
+  // pitch-correct by default), persisted per device (tv_speed). Reapplied on
+  // loadedmetadata so progressive ?start= reloads and hls re-attaches keep the
+  // chosen rate.
+  const speedSelect = document.getElementById('speedSelect');
+  let speed = 1;
+  try { speed = parseFloat(localStorage.getItem('tv_speed')) || 1; } catch (e) {}
+  const applySpeed = () => { try { video.playbackRate = speed; } catch (e) {} };
+  if (speedSelect) {
+    const known = Array.from(speedSelect.options).some((o) => parseFloat(o.value) === speed);
+    if (known) speedSelect.value = String(speed);
+    else speed = 1; // a stale/garbage stored value never silently plays at an off-menu rate
+    speedSelect.addEventListener('change', () => {
+      speed = parseFloat(speedSelect.value) || 1;
+      try { localStorage.setItem('tv_speed', String(speed)); } catch (e) {}
+      applySpeed();
+      speedSelect.blur();
+    });
+  }
+  video.addEventListener('loadedmetadata', applySpeed);
+  applySpeed();
+
   // --- transport controls (focusable, so a TV remote in couch mode can seek;
   //     the native <video controls> scrubber isn't remote-reachable) ---
   const transport = document.getElementById('tvTransport');
