@@ -279,7 +279,16 @@ func (s *Scanner) relinkMovedFiles(ctx context.Context, libraryID int64, root st
 // (fromID) onto the new row (toID): the match identity (only when matched — an
 // unmatched row re-derives from the new filename) and playback progress.
 func (s *Scanner) transferFileState(ctx context.Context, fromID, toID int64) error {
-	if _, err := s.DB.ExecContext(ctx, `
+	// One transaction so a failure on the second write doesn't leave the
+	// identity transferred while the playback progress still hangs off the
+	// about-to-be-pruned orphan (pruning cascade-deletes it, losing the
+	// resume position the relink pass exists to preserve).
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transfer: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
 UPDATE movie_files AS dst SET
   tmdb_id = src.tmdb_id,
   match_status = src.match_status,
@@ -291,7 +300,7 @@ WHERE dst.id = ? AND src.id = ? AND src.match_status IN ('matched', 'skipped')
 `, toID, fromID); err != nil {
 		return fmt.Errorf("transfer movie identity: %w", err)
 	}
-	if _, err := s.DB.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 INSERT INTO movie_playback_progress (file_id, position_seconds, duration_seconds, completed, updated_at)
 SELECT ?, position_seconds, duration_seconds, completed, updated_at
 FROM movie_playback_progress WHERE file_id = ?
@@ -303,7 +312,7 @@ ON CONFLICT(file_id) DO UPDATE SET
 `, toID, fromID); err != nil {
 		return fmt.Errorf("transfer movie playback progress: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Scanner) pruneMissingFiles(ctx context.Context, libraryID int64, root string) error {
