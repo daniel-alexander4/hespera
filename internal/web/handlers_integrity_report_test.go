@@ -49,7 +49,7 @@ func TestIntegrityReportPage(t *testing.T) {
 		"audio gap 3.9s",
 		"Replace the file from another source", // flagged mitigation
 		"fills the missing audio with silence", // degraded mitigation
-		"Doctor Who — S01E1",                   // resolved title (guessed_title fallback)
+		"Doctor Who — S01E01",                   // resolved title (guessed_title fallback)
 		"/tv/season/?series=42&amp;season=2",   // owning-page link
 		"/m/tv/Show/s1/e1.mkv",                 // path shown
 		"1.2 MiB",                              // humanBytes

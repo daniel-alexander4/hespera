@@ -161,7 +161,7 @@ ORDER BY i.series_id, i.season_number, i.episode_numbers_csv, f.abs_path`, libID
 			name = filepath.Base(row.Path)
 		}
 		if t.seasonNumber >= 0 && t.epsCSV != "" {
-			row.Title = fmt.Sprintf("%s — S%02dE%s", name, t.seasonNumber, t.epsCSV)
+			row.Title = fmt.Sprintf("%s — S%02dE%s", name, t.seasonNumber, padEpisodesCSV(t.epsCSV))
 		} else {
 			row.Title = name
 		}
@@ -296,4 +296,16 @@ func (h *Handler) integrityStatusCounts(ctx context.Context, status string) map[
 		rows.Close()
 	}
 	return out
+}
+
+// padEpisodesCSV zero-pads each episode number in a stored CSV ("2" → "02",
+// "1,2" → "01-02") for the SxxEyy display convention.
+func padEpisodesCSV(csv string) string {
+	parts := strings.Split(csv, ",")
+	for i, p := range parts {
+		if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+			parts[i] = fmt.Sprintf("%02d", n)
+		}
+	}
+	return strings.Join(parts, "-")
 }
