@@ -46,6 +46,10 @@ function boot() {
 
 const press = (env, k) =>
   env.document.querySelector('.era-track').dispatchEvent(new env.window.KeyboardEvent('keydown', { key: k, bubbles: true }));
+// Enter engages adjust mode (focused ≠ engaged — an unengaged track lets arrows
+// bubble to couch.js so a remote can pass by).
+const engage = (env) => press(env, 'Enter');
+const isEngaged = (env) => env.document.querySelector('.era-picker').classList.contains('era-engaged');
 const state = (env) => ({
   from: Number(env.document.querySelector('.era-from').textContent),
   to: Number(env.document.querySelector('.era-to').textContent),
@@ -69,6 +73,7 @@ test('inits to the most recent decade and syncs the Play/Shuffle hrefs', () => {
 
 test('a single-year range shows a one-year-wide band (not a zero-width collapse)', () => {
   const env = boot();
+  engage(env);
   for (let i = 0; i < 20; i += 1) press(env, 'ArrowDown'); // narrow to one year
   const s = state(env);
   assert.strictEqual(s.from, s.to, 'collapsed to a single year');
@@ -78,8 +83,9 @@ test('a single-year range shows a one-year-wide band (not a zero-width collapse)
   assert.ok(Math.abs(w - oneBand) < 0.01, 'window is exactly one year-band wide (' + oneBand.toFixed(3) + '%): ' + s.width);
 });
 
-test('ArrowLeft slides the window and couch never sees the arrow', () => {
+test('ArrowLeft slides the window (engaged) and couch never sees the arrow', () => {
   const env = boot();
+  engage(env);
   const before = env.couch();
   press(env, 'ArrowLeft');
   const s = state(env);
@@ -91,6 +97,7 @@ test('ArrowLeft slides the window and couch never sees the arrow', () => {
 
 test('ArrowUp widens the span; ArrowDown narrows it', () => {
   const env = boot(); // from=MAX-9, to=MAX
+  engage(env);
   press(env, 'ArrowUp');
   let s = state(env);
   assert.strictEqual(s.from, MAX - 10, 'widened: from -1');
@@ -103,6 +110,7 @@ test('ArrowUp widens the span; ArrowDown narrows it', () => {
 
 test('sliding is clamped at the timeline edge', () => {
   const env = boot(); // to already at MAX
+  engage(env);
   press(env, 'ArrowRight');
   const s = state(env);
   assert.strictEqual(s.to, MAX, 'cannot slide past the latest year');
@@ -111,18 +119,59 @@ test('sliding is clamped at the timeline edge', () => {
 
 test('narrowing never collapses below a single year', () => {
   const env = boot();
+  engage(env);
   for (let i = 0; i < 20; i += 1) press(env, 'ArrowDown'); // over-narrow
   const s = state(env);
   assert.ok(s.to >= s.from, 'from never crosses to');
   assert.ok(s.to - s.from <= 1, 'collapses to a single year, not inverted: ' + JSON.stringify(s));
 });
 
-test('Enter plays; a non-arrow key passes through to couch', () => {
+test('unengaged: arrows bubble to couch and never adjust (focus can pass by)', () => {
+  const env = boot();
+  const s0 = state(env);
+  const before = env.couch();
+  press(env, 'ArrowLeft');
+  press(env, 'ArrowDown');
+  assert.strictEqual(env.couch(), before + 2, 'arrows reached the couch focus mover');
+  assert.deepStrictEqual(state(env), s0, 'range unchanged — the track was transparent');
+  assert.strictEqual(isEngaged(env), false);
+});
+
+test('Enter engages adjust mode; Enter again releases (never plays)', () => {
   const env = boot();
   press(env, 'Enter');
-  assert.strictEqual(env.playClicks(), 1, 'Enter clicked the Play link');
-  assert.strictEqual(env.shuffleClicks(), 0, 'Enter did not click Shuffle');
+  assert.strictEqual(isEngaged(env), true, 'first Enter engages');
+  press(env, 'Enter');
+  assert.strictEqual(isEngaged(env), false, 'second Enter releases');
+  assert.strictEqual(env.playClicks(), 0, 'Enter no longer clicks Play (the buttons do)');
+  assert.strictEqual(env.shuffleClicks(), 0);
+});
+
+test('Back releases engagement without reaching couch; the next Back bubbles', () => {
+  const env = boot();
+  engage(env);
+  const before = env.couch();
+  press(env, 'Escape');
+  assert.strictEqual(isEngaged(env), false, 'Escape released adjust mode');
+  assert.strictEqual(env.couch(), before, 'the releasing press was consumed');
+  press(env, 'Escape');
+  assert.strictEqual(env.couch(), before + 1, 'once released, Back bubbles to couch');
+});
+
+test('blur releases engagement', () => {
+  const env = boot();
+  const track = env.document.querySelector('.era-track');
+  track.focus();
+  engage(env);
+  assert.strictEqual(isEngaged(env), true);
+  track.dispatchEvent(new env.window.FocusEvent('blur'));
+  assert.strictEqual(isEngaged(env), false, 'leaving the track releases adjust mode');
+});
+
+test('a non-arrow key passes through to couch even while engaged', () => {
+  const env = boot();
+  engage(env);
   const before = env.couch();
   press(env, 'a'); // an unhandled key must bubble (not captured)
-  assert.strictEqual(env.couch(), before + 1, 'non-arrow keys still reach couch');
+  assert.strictEqual(env.couch(), before + 1, 'unhandled keys still reach couch');
 });

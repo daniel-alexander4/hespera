@@ -3,10 +3,13 @@
 //
 // A draggable, resizable window over a year timeline: drag the body to slide the
 // range, drag an edge to resize it (a wider window spans a decade+, a narrow one
-// a few years). Remote/keyboard friendly: with the track focused, ◀▶ slide the
-// window and ▲▼ grow/shrink its span from the centre, Enter plays. The keydown
-// handler stops propagation so couch.js (which moves the focus ring on arrows via
-// a document-level listener) doesn't hijack the arrows while the track is focused.
+// a few years). Remote/keyboard: focused ≠ engaged — a merely-focused track is
+// TRANSPARENT to arrows (they bubble to couch.js's focus mover, so a remote can
+// pass straight by to the content below; a slider that eats all four arrows is a
+// one-way door). Enter engages adjust mode (accent glow): ◀▶ slide the window,
+// ▲▼ grow/shrink its span from the centre, Enter or Back releases. Playing is
+// the Play/Shuffle buttons beside the track. Engaged keys stop propagation so
+// couch.js neither moves focus on the arrows nor navigates on the releasing Back.
 //
 // Pure client-side: it keeps the Play and Shuffle `[data-play]` links' hrefs in
 // sync with the chosen range (/music/player?source=era&from=&to=, Shuffle adding
@@ -111,19 +114,41 @@
       render();
     }
 
+    // Engaged = adjust mode. Released by Enter/Back/blur; a pointer interaction
+    // engages too, so click-then-arrows keeps working for mouse users.
+    let engaged = false;
+    const setEngaged = (on) => {
+      engaged = on;
+      picker.classList.toggle('era-engaged', on);
+    };
+
     track.addEventListener('keydown', (e) => {
+      if (!engaged) {
+        // Transparent: arrows/Back bubble to couch.js so focus can move past.
+        if (e.key === 'Enter' || e.key === ' ') {
+          setEngaged(true);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       switch (e.key) {
         case 'ArrowLeft': slide(-1); break;
         case 'ArrowRight': slide(1); break;
         case 'ArrowUp': resize(1); break; // widen
         case 'ArrowDown': resize(-1); break; // narrow
         case 'Enter':
-        case ' ': (play || shuffle).click(); break;
-        default: return; // let every other key (Tab, Back, …) through
+        case ' ':
+        case 'Escape':
+        case 'Backspace':
+        case 'BrowserBack':
+        case 'GoBack': setEngaged(false); break; // release; the NEXT press moves/navigates
+        default: return; // let every other key (Tab, …) through
       }
       e.preventDefault();
-      e.stopPropagation(); // keep the arrows/Enter here, not in couch.js's focus mover
+      e.stopPropagation(); // keep adjust keys (and the releasing Back) out of couch.js
     });
+    track.addEventListener('blur', () => setEngaged(false));
 
     // Pointer: drag an edge handle to resize, the window body to slide, or click
     // bare track to jump the nearest edge. Geometry needs layout, so this path is
@@ -166,6 +191,7 @@
       }
       if (track.setPointerCapture) track.setPointerCapture(e.pointerId);
       track.focus();
+      setEngaged(true); // a pointer interaction engages, so click-then-arrows works
       e.preventDefault();
     });
     track.addEventListener('pointermove', (e) => { if (drag) applyDrag(e.clientX); });
