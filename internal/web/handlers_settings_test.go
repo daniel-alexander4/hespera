@@ -23,7 +23,7 @@ func TestOpenSubtitlesCombinedForm(t *testing.T) {
 	post := func(key, ua string) {
 		t.Helper()
 		body := strings.NewReader(url.Values{"opensubtitles_api_key": {key}, "opensubtitles_user_agent": {ua}}.Encode())
-		req := httptest.NewRequest(http.MethodPost, "/settings/integrations", body)
+		req := httptest.NewRequest(http.MethodPost, "/settings", body)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -69,8 +69,22 @@ func TestSettingsHandlers(t *testing.T) {
 		}
 	})
 
-	t.Run("POST /settings 405", func(t *testing.T) {
+	t.Run("POST /settings with no known form field redirects back", func(t *testing.T) {
+		// POST is the accordion forms' dispatch; an unrecognized body just
+		// bounces to the page rather than erroring.
 		req := httptest.NewRequest(http.MethodPost, "/settings", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rec.Code)
+		}
+		if loc := rec.Header().Get("Location"); loc != "/settings" {
+			t.Fatalf("Location = %q, want /settings", loc)
+		}
+	})
+
+	t.Run("PUT /settings 405", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPut, "/settings", nil)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
@@ -125,7 +139,7 @@ func TestLastfmKeyForm(t *testing.T) {
 	ctx := context.Background()
 	post := func(vals url.Values) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "/settings/integrations", strings.NewReader(vals.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(vals.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)

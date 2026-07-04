@@ -404,6 +404,49 @@ body::before {
   box-shadow: 0 0 0 1px rgba(61, 143, 99, 0.3);
   color: var(--page-fg);
 }
+/* Expandable settings subject cards (native <details> accordion on /settings).
+   The summary is the card face; the body holds the subject's forms. */
+.settings-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+.settings-card > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 1.25rem;
+  border-radius: 10px;
+}
+.settings-card > summary::-webkit-details-marker { display: none; }
+.settings-card > summary::after {
+  content: "▸";
+  float: right;
+  color: var(--text-soft);
+  transition: transform 0.15s;
+}
+.settings-card[open] > summary::after { transform: rotate(90deg); }
+.settings-card > summary:hover,
+.settings-card > summary:focus-visible {
+  outline-offset: -2px;
+}
+.settings-card > summary:hover { color: var(--page-fg); }
+.settings-card:hover { border-color: var(--accent); }
+.settings-card > summary h3 {
+  display: inline;
+  font-size: 1rem;
+}
+.settings-card > summary p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 0.35rem;
+}
+.settings-card-body {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid var(--border-default);
+}
+.settings-card-body .form-card { margin-top: 1rem; }
+.settings-links { margin-top: 1.5rem; }
 .card h3 {
   font-size: 1rem;
   margin-bottom: 0.35rem;
