@@ -168,6 +168,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/settings/tags", h.settingsTagEditor)
 	mux.HandleFunc("/settings/about", h.settingsAbout)
 	mux.HandleFunc("/about/licenses", h.aboutLicenses)
+	mux.HandleFunc("/about/health", h.aboutHealth)
 
 	// Hespera has no authentication (a single-user media app). The CSRF guard —
 	// which used to live in the auth middleware — wraps the mux unconditionally so

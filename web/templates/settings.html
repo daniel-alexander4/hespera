@@ -423,7 +423,40 @@
   </summary>
   <div class="settings-card-body">
 
+  {{/* System health: version checks for Hespera + the two external programs it
+       leans on. Filled by about_health.js when this card opens — the Hespera
+       row reuses /update/check (the topbar pill's data), the ffmpeg/chrome rows
+       come from /about/health. */}}
+  <div class="about-health" id="about-health" data-current="{{appVersion}}">
+    <h2>System</h2>
+    <div class="about-health-row" data-health="hespera">
+      <div class="about-health-line">
+        <span class="about-health-label">Hespera</span>
+        <span class="badge about-health-badge">checking…</span>
+        <span class="about-health-version"></span>
+      </div>
+      <p class="form-help about-health-detail">The app itself. Keeping it current brings the latest fixes and features.</p>
+    </div>
+    <div class="about-health-row" data-health="ffmpeg">
+      <div class="about-health-line">
+        <span class="about-health-label">ffmpeg</span>
+        <span class="badge about-health-badge">checking…</span>
+        <span class="about-health-version"></span>
+      </div>
+      <p class="form-help about-health-detail"></p>
+    </div>
+    <div class="about-health-row" data-health="chrome">
+      <div class="about-health-line">
+        <span class="about-health-label">Browser</span>
+        <span class="badge about-health-badge">checking…</span>
+        <span class="about-health-version"></span>
+      </div>
+      <p class="form-help about-health-detail"></p>
+    </div>
+  </div>
+
   <div class="about-attributions">
+    <h2>Attributions</h2>
     <p class="form-help">Hespera is built on data and software from the projects below. All third-party attributions live here.</p>
 
     <h2>The Movie Database (TMDB)</h2>
