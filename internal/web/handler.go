@@ -89,11 +89,9 @@ func New(d Deps) (*Handler, error) {
 
 	pages := []string{
 		"home.html",
-		"libraries.html",
 		"integrity_report.html",
 		"libraries_new.html",
 		"settings.html",
-		"settings_jobs.html",
 		"music_home.html",
 		"music_artist.html",
 		"music_artist_external.html",
@@ -109,7 +107,6 @@ func New(d Deps) (*Handler, error) {
 		"music_track_edit.html",
 		"music_duplicates.html",
 		"settings_tags.html",
-		"settings_about.html",
 		"tv_home.html",
 		"tv_series.html",
 		"tv_season.html",

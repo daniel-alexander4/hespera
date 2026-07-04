@@ -71,12 +71,12 @@ func TestIntegrityReportPage(t *testing.T) {
 		t.Fatalf("bad id: %d, want 400", rec.Code)
 	}
 
-	// Libraries page: the corrupt pill links to the report and counts only
-	// flagged; the degraded link appears alongside.
+	// Settings page (Libraries card): the corrupt pill links to the report and
+	// counts only flagged; the degraded link appears alongside.
 	rec = httptest.NewRecorder()
-	h.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/libraries", nil))
+	h.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings", nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("libraries: %d", rec.Code)
+		t.Fatalf("settings: %d", rec.Code)
 	}
 	lb := rec.Body.String()
 	if !strings.Contains(lb, `href="/libraries/integrity-report?id=7"`) {

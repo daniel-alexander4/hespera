@@ -97,12 +97,15 @@ func TestSettingsAbout(t *testing.T) {
 	h, _ := newTestHandler(t)
 	router := h.Router()
 
-	t.Run("GET /settings/about 200", func(t *testing.T) {
+	t.Run("GET /settings/about redirects to the About card", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/settings/about", nil)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rec.Code)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rec.Code)
+		}
+		if loc := rec.Header().Get("Location"); loc != "/settings?open=about" {
+			t.Fatalf("Location = %q, want /settings?open=about", loc)
 		}
 	})
 
@@ -122,12 +125,12 @@ func TestSettingsAbout(t *testing.T) {
 // package-relative path.
 func TestAboutPageTMDBNotice(t *testing.T) {
 	const notice = "This product uses the TMDB API but is not endorsed or certified by TMDB."
-	b, err := os.ReadFile(filepath.Join("..", "..", "web", "templates", "settings_about.html"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "web", "templates", "settings.html"))
 	if err != nil {
-		t.Fatalf("read settings_about.html: %v", err)
+		t.Fatalf("read settings.html: %v", err)
 	}
 	if !strings.Contains(string(b), notice) {
-		t.Fatalf("settings_about.html must contain the verbatim TMDB notice: %q", notice)
+		t.Fatalf("settings.html (the About card) must contain the verbatim TMDB notice: %q", notice)
 	}
 }
 
@@ -204,15 +207,21 @@ func TestSettingsJobsFragment(t *testing.T) {
 		}
 	})
 
-	t.Run("jobs page renders the row and the fragment template", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/settings/jobs", nil)
+	t.Run("the settings page renders the jobs row; the old URL redirects", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/settings", nil)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
 		if !strings.Contains(rec.Body.String(), "tvscan") {
-			t.Fatalf("jobs page missing the tvscan row")
+			t.Fatalf("settings page missing the tvscan jobs row")
+		}
+		req = httptest.NewRequest(http.MethodGet, "/settings/jobs?x=1", nil)
+		rec = httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if loc := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || loc != "/settings?open=jobs&x=1" {
+			t.Fatalf("old jobs URL: code=%d Location=%q, want 303 → /settings?open=jobs&x=1", rec.Code, loc)
 		}
 	})
 }
@@ -221,12 +230,15 @@ func TestLibraryHandlers(t *testing.T) {
 	h, db := newTestHandler(t)
 	router := h.Router()
 
-	t.Run("GET /libraries 200", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/libraries", nil)
+	t.Run("GET /libraries redirects to the Libraries card, params preserved", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/libraries?saved=mediaroot", nil)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rec.Code)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rec.Code)
+		}
+		if loc := rec.Header().Get("Location"); loc != "/settings?open=libraries&saved=mediaroot" {
+			t.Fatalf("Location = %q, want the saved flash to survive the hop", loc)
 		}
 	})
 
