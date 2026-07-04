@@ -76,6 +76,7 @@ make build        # local ./bin/hespera + ./bin/hescli (quick dev build)
 make dist         # cross-compile all platforms + .deb packages into dist/
 make install      # build, package, and install on this Debian/Ubuntu machine
 make test         # go test ./...
+make release      # build + publish dist/ as GitHub release v<VERSION> (needs gh + nfpm)
 ```
 
 `build.sh` produces one cgo-free static `hespera` binary per OS/arch in `dist/`,

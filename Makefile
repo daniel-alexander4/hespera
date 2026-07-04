@@ -2,7 +2,7 @@
 # install.sh remain the source of truth; this just gives the usual `make`
 # entry points.
 
-.PHONY: dist install build test test-js clean bump-patch bump-minor bump-major
+.PHONY: dist release install build test test-js clean bump-patch bump-minor bump-major
 
 # Build the local server + admin binaries into ./bin (quick dev build).
 build:
@@ -12,6 +12,11 @@ build:
 # Cross-compile every platform + build the .deb packages into dist/.
 dist:
 	./build.sh
+
+# Build everything, push main, and publish dist/ as GitHub release v<VERSION>
+# (the channel the in-app update pill checks). Needs gh + nfpm + a clean tree.
+release:
+	./build.sh --publish
 
 # Install the prebuilt .deb for this machine (Debian/Ubuntu) — run `make dist` first.
 install:
