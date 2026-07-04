@@ -1,6 +1,6 @@
 # Hespera
 
-A local app for your **Music, TV, and Movies**, with automatic metadata
+A local app for your **Music, TV, Movies, and Photos**, with automatic metadata
 matching. Written in Go: a single static binary that opens a chromeless app
 window on your machine (loopback-only — a single-machine app, not a network
 server). SQLite storage, server-rendered HTML, no external services required to
@@ -9,6 +9,27 @@ other devices.
 
 Licensed under the [GNU GPL v3](LICENSE); third-party attributions in
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
+
+## Features
+
+- **Music** — MusicBrainz matching with Cover Art Archive covers, artist bios
+  and images, synced karaoke-style lyrics (LRCLIB), persistent playlists and
+  one-click instant mixes, shuffle by era or popularity, duplicate detection,
+  and a per-track tag editor that writes back to your files.
+- **TV & Movies** — TMDB matching (posters, backdrops, cast, collections,
+  related titles), direct play when your browser can handle the file and
+  **seekable on-demand HLS transcoding** when it can't, embedded +
+  on-demand OpenSubtitles subtitles, **skip-intro detected by audio
+  fingerprinting**, scrub-preview thumbnails, per-episode screen-capture
+  thumbnails, Up Next auto-advance, and watched/resume tracking.
+- **Photos** — a capture-date timeline built from EXIF (with a folders view
+  and year filters); home-video clips play through the same engine as TV.
+- **Library care** — a filesystem watcher auto-scans new media, corruption
+  detection with lossless container auto-repair, and loudness leveling.
+- **Couch-friendly** — the whole UI drives with arrow keys or a TV remote,
+  scales itself to the physical display size, and honors hardware media keys.
+- **Local-first** — one binary, SQLite, your files stay yours: no accounts,
+  no telemetry, and external services are used only to *fetch* metadata.
 
 ## Install
 
@@ -167,8 +188,28 @@ playback.
 
 ### Configuration
 
-All configuration is via `HESPERA_`-prefixed environment variables. See the
-table in [`CLAUDE.md`](CLAUDE.md#configuration-environment-variables) for the
-full list (listen address, data dir, media root, optional API keys for TMDB /
-OpenSubtitles / etc., ffmpeg concurrency, HLS cache limits).
+Day-to-day settings (media folder, API keys, feature toggles, subtitle
+defaults) live in the in-app **Settings** page. Environment variables cover
+the rest — all `HESPERA_`-prefixed:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `HESPERA_NO_BROWSER` | (unset) | Set → **server mode**: no app window, honors `HESPERA_LISTEN`. Unset → app mode (chromeless window on a random loopback port) |
+| `HESPERA_LISTEN` | `127.0.0.1:8080` | Server-mode listen address — loopback by default; LAN exposure is an explicit opt-in (`:8080`) |
+| `HESPERA_DATA_DIR` | per-user config dir | Database, caches, artwork |
+| `HESPERA_DB_PATH` | `<data dir>/hespera.sqlite` | Database path |
+| `HESPERA_MEDIA_ROOT` | home dir | Media root (the path-containment boundary; also settable in Settings → Libraries) |
+| `HESPERA_TMDB_API_KEY` | | TMDB key for TV/movie matching (also settable in Settings) |
+| `HESPERA_FANARTTV_API_KEY` | | Optional fanart.tv key — artist image backfill |
+| `HESPERA_THEAUDIODB_API_KEY` | | Optional TheAudioDB key — artist bio/image backfill |
+| `HESPERA_LASTFM_API_KEY` | | Optional Last.fm key — popularity blend for shuffles |
+| `HESPERA_OPENSUBTITLES_API_KEY` | | Optional OpenSubtitles key — on-demand subtitle search |
+| `HESPERA_OPENSUBTITLES_USER_AGENT` | `Hespera v1.0` | OpenSubtitles registered consumer UA |
+| `HESPERA_FFMPEG_CONCURRENCY` | 4 | Max concurrent ffmpeg/ffprobe processes |
+| `HESPERA_HLS_ENCODER` | `software` | HLS video encoder: `software` (libx264) or `vaapi` (opt-in hardware encode) |
+| `HESPERA_HLS_SEGMENT_CONCURRENCY` | 1 | Max concurrent HLS segment transcodes (keeps prefetch bursts off every core) |
+| `HESPERA_FFMPEG_ACQUIRE_TIMEOUT` | 2s | How long foreground ffmpeg work waits for a slot |
+| `HESPERA_TV_HLS_CACHE_MAX_BYTES` | 20GiB | HLS transcode cache budget |
+| `HESPERA_TV_CACHE_MAX_AGE` | 72h | HLS cache entry max age |
+| `HESPERA_TRICKPLAY_CACHE_MAX_BYTES` | 10GiB | Scrub-preview sprite cache budget |
 
