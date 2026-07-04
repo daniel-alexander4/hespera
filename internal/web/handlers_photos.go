@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/pathguard"
 	"hespera/internal/photoscan"
 )
 
@@ -149,12 +150,13 @@ func (h *Handler) photosHome(w http.ResponseWriter, r *http.Request) {
 
 	switch f.Tab {
 	case "folders":
-		folders, err := h.loadPhotoFolders(ctx, f)
+		folders, nav, err := h.loadPhotoFolders(ctx, f, pageParam(r))
 		if err != nil {
 			httpError(w, 500, "internal server error", "load photo folders failed", "handler", "photosHome", "err", err)
 			return
 		}
 		data["Folders"] = folders
+		data["Page"] = nav
 	default:
 		kindOnly := ""
 		if f.Tab == "videos" {
@@ -235,24 +237,31 @@ func monthLabel(takenAt string) string {
 	return t.Format("January 2006")
 }
 
-func (h *Handler) loadPhotoFolders(ctx context.Context, f photoFilters) ([]photoFolder, error) {
+func (h *Handler) loadPhotoFolders(ctx context.Context, f photoFilters, page int) ([]photoFolder, pageNav, error) {
 	cond, args := f.where("")
+	var total int
+	if err := h.db.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT dir_rel) FROM photos WHERE "+cond, args...).Scan(&total); err != nil {
+		return nil, pageNav{}, err
+	}
+	nav, offset := paginate(page, total, "/photos")
+	nav.Query = template.URL(f.query(""))
 	rows, err := h.db.QueryContext(ctx, `
 SELECT dir_rel, COUNT(*), MIN(id) FROM photos WHERE `+cond+`
-GROUP BY dir_rel ORDER BY dir_rel`, args...)
+GROUP BY dir_rel ORDER BY dir_rel LIMIT ? OFFSET ?`, append(args, listPageSize, offset)...)
 	if err != nil {
-		return nil, err
+		return nil, pageNav{}, err
 	}
 	defer rows.Close()
 	var out []photoFolder
 	for rows.Next() {
 		var pf photoFolder
 		if err := rows.Scan(&pf.Dir, &pf.Count, &pf.CoverID); err != nil {
-			return nil, err
+			return nil, pageNav{}, err
 		}
 		out = append(out, pf)
 	}
-	return out, rows.Err()
+	return out, nav, rows.Err()
 }
 
 func (h *Handler) loadPhotoYears(ctx context.Context) ([]string, error) {
@@ -324,6 +333,10 @@ func (h *Handler) photoView(w http.ResponseWriter, r *http.Request) {
 		"ID":          id,
 		"IsVideo":     kind == "video",
 		"Displayable": browserDisplayable(container),
+		// The clip Play link carries the filter context into the player so
+		// |< / >| step within the list the user was browsing (template.URL —
+		// same autoescaper reason as CtxQuery).
+		"Ctx":         template.URL(ctxQ),
 		"Name":        filepath.Base(absPath),
 		"When":        when,
 		"Dir":         dirRel,
@@ -361,16 +374,10 @@ func (h *Handler) photoNeighbors(ctx context.Context, f photoFilters, id int64, 
 	return q(before, beforeOrd), q(after, afterOrd)
 }
 
-// browserDisplayable reports whether the browser can render the format
-// natively — those serve the original; the rest get a cached webp rendition.
-func browserDisplayable(container string) bool {
-	switch container {
-	case "jpg", "jpeg", "png", "gif", "webp", "avif", "bmp":
-		return true
-	default:
-		return false
-	}
-}
+// browserDisplayable — photoscan.BrowserDisplayable owns the format set (the
+// thumb job's eager rendition pass keys off the same list; photoMIMEs below
+// must cover exactly these).
+func browserDisplayable(container string) bool { return photoscan.BrowserDisplayable(container) }
 
 var photoMIMEs = map[string]string{
 	"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
@@ -395,9 +402,17 @@ func (h *Handler) photoArt(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Containment before serving a DB-stored path — the same defense-in-depth
+	// guard tvArt/personArt apply (a corrupted row must not read outside the
+	// data dir).
+	clean, err := pathguard.ResolveExistingUnderRoot(h.cfg.DataDir, thumb)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=86400")
-	http.ServeFile(w, r, thumb)
+	http.ServeFile(w, r, clean)
 }
 
 // photoFull serves the viewer's full-size image: the original file for

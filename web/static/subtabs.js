@@ -32,13 +32,19 @@
     tabs.forEach((tab) => {
       tab.addEventListener('click', () => {
         activate(tab);
-        try { localStorage.setItem(storeKey(), tab.getAttribute('data-tab')); } catch (_) { /* private mode */ }
+        // Server-tabbed pages (/photos) have link subtabs with no data-tab —
+        // nothing client-side to remember there.
+        const dt = tab.getAttribute('data-tab');
+        if (!dt) return;
+        try { localStorage.setItem(storeKey(), dt); } catch (_) { /* private mode */ }
       });
     });
 
-    // Restore the remembered tab — unless the URL pins one (?page=).
+    // Restore the remembered tab — unless the URL pins one (?page= deep-links
+    // a tab's pager state; ?tab= is a server-tabbed page where the URL, not
+    // localStorage, owns the active tab).
     const params = new URLSearchParams(location.search);
-    if (params.has('page')) return;
+    if (params.has('page') || params.has('tab')) return;
     let saved = null;
     try { saved = localStorage.getItem(storeKey()); } catch (_) { /* private mode */ }
     if (!saved) return;

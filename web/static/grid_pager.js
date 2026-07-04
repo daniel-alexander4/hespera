@@ -33,13 +33,16 @@
 
     const panel = grid.closest('.subtab-panel') || grid.parentElement || document;
     const nav = panel.querySelector('.grid-pager');
-    const key = (p) => base + '|' + p;
     // Carry the page's own query params (the photos tabs/filters) into the
-    // fragment URLs so a filtered grid pages within its filter.
+    // fragment URLs so a filtered grid pages within its filter — and into the
+    // cache key, so tabs/filters sharing a pathname (the /photos tabs) never
+    // serve each other's cached pages.
     const params = new URLSearchParams(location.search);
     params.delete('page');
     params.set('grid', '1');
-    const url = (p) => base + '?' + params.toString() + '&page=' + p;
+    const q = params.toString();
+    const key = (p) => base + '|' + q + '|' + p;
+    const url = (p) => base + '?' + q + '&page=' + p;
     const wrapNext = () => (page >= total ? 1 : page + 1);
     const wrapPrev = () => (page <= 1 ? total : page - 1);
     let navigating = false;

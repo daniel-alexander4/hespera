@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -682,7 +684,7 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 }
 
 // errUnsupportedLibraryType marks a scan request against a library type with
-// no scanner (photos/home_videos today).
+// no scanner (home_videos today).
 var errUnsupportedLibraryType = errors.New("scanning not supported for this library type")
 
 // EnqueueLibraryScan enqueues the full scan chain for a library — scan →
@@ -983,14 +985,32 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	var name string
-	if err := h.db.QueryRowContext(r.Context(), "SELECT name FROM libraries WHERE id=?", id).Scan(&name); err != nil {
+	var name, libType string
+	if err := h.db.QueryRowContext(r.Context(), "SELECT name, type FROM libraries WHERE id=?", id).Scan(&name, &libType); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
 		}
 		httpError(w, 500, "internal server error", "db query failed", "handler", "librariesDelete", "err", err)
 		return
+	}
+	// Photos thumbs/renditions are id-keyed files only a scan's prune pass
+	// deletes — and a deleted library can never be scanned again, so collect
+	// the ids now and reap the files after the row delete (best-effort; a
+	// leftover is unreferenced but would eat disk forever). The other library
+	// types' art is column-referenced and swept by thumbgc.
+	var photoIDs []int64
+	if libType == "photos" {
+		rows, err := h.db.QueryContext(r.Context(), "SELECT id FROM photos WHERE library_id=?", id)
+		if err == nil {
+			for rows.Next() {
+				var pid int64
+				if rows.Scan(&pid) == nil {
+					photoIDs = append(photoIDs, pid)
+				}
+			}
+			rows.Close()
+		}
 	}
 	if _, err := h.db.ExecContext(r.Context(), "DELETE FROM libraries WHERE id=?", id); err != nil {
 		if requestWantsJSON(r) {
@@ -999,6 +1019,11 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		httpError(w, 500, "internal server error", "db delete failed", "handler", "librariesDelete", "err", err)
 		return
+	}
+	for _, pid := range photoIDs {
+		for _, fn := range photoscan.ThumbFileNames(pid) {
+			_ = os.Remove(filepath.Join(h.cfg.DataDir, "thumbs", "photos", fn))
+		}
 	}
 	if requestWantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")

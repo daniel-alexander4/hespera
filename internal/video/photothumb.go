@@ -23,10 +23,22 @@ func PhotoThumb(ctx context.Context, src, dst string, maxDim, orientation int, i
 	defer cancel()
 	release, err := acquire(ctx)
 	if err != nil {
-		return fmt.Errorf("photo thumb acquire slot: %w", err)
+		// ErrBusy so the thumb job leaves the row pending (retried next run)
+		// instead of recording a saturated gate as a permanent file failure.
+		return fmt.Errorf("photo thumb acquire slot: %w: %v", ErrBusy, err)
 	}
 	defer release()
 
+	err = photoThumbOnce(ctx, src, dst, maxDim, orientation, isVideo, isVideo)
+	if err != nil && isVideo && ctx.Err() == nil {
+		// A clip shorter than the lead-in seeks past EOF and grabs no frame —
+		// retry from the first frame rather than marking it unavailable.
+		err = photoThumbOnce(ctx, src, dst, maxDim, orientation, true, false)
+	}
+	return err
+}
+
+func photoThumbOnce(ctx context.Context, src, dst string, maxDim, orientation int, isVideo, leadIn bool) error {
 	var vf []string
 	if !isVideo {
 		vf = append(vf, orientationFilters(orientation)...)
@@ -34,7 +46,7 @@ func PhotoThumb(ctx context.Context, src, dst string, maxDim, orientation int, i
 	vf = append(vf, fmt.Sprintf("scale=w=%d:h=%d:force_original_aspect_ratio=decrease", maxDim, maxDim))
 
 	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
-	if isVideo {
+	if leadIn {
 		args = append(args, "-ss", "1") // skip a camcorder's black lead-in frame
 	}
 	args = append(args,

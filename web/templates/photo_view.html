@@ -7,7 +7,7 @@
      data-prev="{{.PrevHref}}" data-next="{{.NextHref}}">
   <div class="photo-view-stage">
     {{if .IsVideo}}
-    <a href="/photo/player?file={{.ID}}" class="photo-view-play btn btn-primary">{{template "icon-play"}} Play video</a>
+    <a href="/photo/player?file={{.ID}}{{if .Ctx}}&{{.Ctx}}{{end}}" class="photo-view-play btn btn-primary">{{template "icon-play"}} Play video</a>
     {{else}}
     <img class="photo-view-img" src="/photos/full/{{.ID}}" alt="{{.Name}}" />
     {{end}}

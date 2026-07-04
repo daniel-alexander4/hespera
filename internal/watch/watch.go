@@ -95,7 +95,7 @@ func (s *Service) refreshLoop() {
 // "add a library" auto-scans its current content too. The initial boot sync
 // never bumps: relaunching the app must not re-chain every library.
 func (s *Service) syncRoots(bumpAdded bool) {
-	rows, err := s.db.Query("SELECT id, root_path FROM libraries WHERE type IN ('music','tv','movies')")
+	rows, err := s.db.Query("SELECT id, root_path FROM libraries WHERE type IN ('music','tv','movies','photos')")
 	if err != nil {
 		slog.Warn("watch: list libraries", "err", err)
 		return
@@ -277,6 +277,6 @@ func (s *Service) scanActive(libID int64) bool {
 	_ = s.db.QueryRow(`
 SELECT COUNT(*) FROM scan_jobs
 WHERE library_id = ? AND status IN ('queued','running')
-  AND job_type IN ('scan','tvscan','moviescan')`, libID).Scan(&n)
+  AND job_type IN ('scan','tvscan','moviescan','photoscan')`, libID).Scan(&n)
 	return n > 0
 }

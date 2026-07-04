@@ -12,9 +12,12 @@ function initJobStatus() {
   if (!rowEls.length) return;
 
   const VERB = {
-    scan: 'Scanning', tvscan: 'Scanning', moviescan: 'Scanning',
+    scan: 'Scanning', tvscan: 'Scanning', moviescan: 'Scanning', photoscan: 'Scanning',
     music_match: 'Matching', tv_match: 'Matching', movie_match: 'Matching',
-    tag_writeback: 'Writing tags', tv_probe: 'Verifying',
+    tag_writeback: 'Writing tags',
+    tv_probe: 'Verifying', movie_probe: 'Verifying', photo_probe: 'Verifying',
+    photo_thumb: 'Generating thumbnails',
+    tv_trickplay: 'Generating trickplay', movie_trickplay: 'Generating trickplay',
     integrity_check: 'Checking integrity', integrity_deep: 'Checking integrity',
   };
   const ACTIVE = new Set(['queued', 'running']);
