@@ -1026,7 +1026,7 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		collectReap("SELECT id FROM photos WHERE library_id=?", "photos", photoscan.ThumbFileNames)
 	case "tv":
 		collectReap("SELECT id FROM tv_series_files WHERE library_id=?", "episodes",
-			func(rid int64) []string { return []string{tvscan.EpisodeThumbFileName(rid)} })
+			tvscan.EpisodeThumbRelPaths)
 	}
 	if _, err := h.db.ExecContext(r.Context(), "DELETE FROM libraries WHERE id=?", id); err != nil {
 		if requestWantsJSON(r) {

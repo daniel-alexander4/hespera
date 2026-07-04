@@ -102,8 +102,10 @@ func stubAssetsFS() fs.FS {
 			`data-prev-file="{{.PrevFileID}}" data-next-file="{{.NextFileID}}"></video>{{end}}`,
 		"templates/music_album.html": `{{define "content"}}{{range .DiscTracks}}{{range .Tracks}}<li>{{.Title}}` +
 			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}</li>{{end}}{{end}}{{end}}`,
-		// Integrity report wiring: both severity sections + the per-row fields.
+		// Integrity report wiring: both severity sections + the per-row fields
+		// + the cap-with-count notice.
 		"templates/integrity_report.html": `{{define "content"}}` +
+			`{{if gt .Total .Shown}}<p>Showing the first {{.Shown}} of {{.Total}} damaged files.</p>{{end}}` +
 			`{{if .Flagged}}<h2>Corrupt — needs replacement ({{len .Flagged}})</h2>{{end}}` +
 			`{{if .Degraded}}<h2>Degraded — playable with known defects ({{len .Degraded}})</h2>{{end}}` +
 			`{{range .Flagged}}{{template "irow" .}}{{end}}{{range .Degraded}}{{template "irow" .}}{{end}}{{end}}` +

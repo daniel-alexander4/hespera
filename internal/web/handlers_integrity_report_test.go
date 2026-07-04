@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,7 +50,7 @@ func TestIntegrityReportPage(t *testing.T) {
 		"audio gap 3.9s",
 		"Replace the file from another source", // flagged mitigation
 		"fills the missing audio with silence", // degraded mitigation
-		"Doctor Who — S01E01",                   // resolved title (guessed_title fallback)
+		"Doctor Who — S01E01",                  // resolved title (guessed_title fallback)
 		"/tv/season/?series=42&amp;season=2",   // owning-page link
 		"/m/tv/Show/s1/e1.mkv",                 // path shown
 		"1.2 MiB",                              // humanBytes
@@ -87,5 +88,44 @@ func TestIntegrityReportPage(t *testing.T) {
 	}
 	if !strings.Contains(lb, "1 degraded") {
 		t.Fatal("degraded link missing")
+	}
+}
+
+// TestIntegrityReportCapped pins the cap-with-count guard: under mass
+// corruption (every file flagged — e.g. a dead mount) the page renders at
+// most integrityReportCap rows plus an honest total, instead of an O(library)
+// row load and DOM render in one request.
+func TestIntegrityReportCapped(t *testing.T) {
+	h, db := newTestHandler(t)
+	if _, err := db.Exec(`INSERT INTO libraries (id, name, type, root_path) VALUES (8, 'TV', 'tv', ?)`, h.cfg.MediaRoot); err != nil {
+		t.Fatalf("seed library: %v", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < integrityReportCap+5; i++ {
+		if _, err := tx.Exec(
+			`INSERT INTO tv_series_files (library_id, abs_path, integrity_status, integrity_detail, file_size_bytes) VALUES (8, ?, 'flagged', 'bitstream corruption', 1)`,
+			fmt.Sprintf("/m/tv/S/e%03d.mkv", i)); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/libraries/integrity-report?id=8", nil)
+	rec := httptest.NewRecorder()
+	h.Router().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("report: %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if want := fmt.Sprintf("Showing the first %d of %d damaged files.", integrityReportCap, integrityReportCap+5); !strings.Contains(body, want) {
+		t.Fatalf("report missing cap notice %q", want)
+	}
+	if got := strings.Count(body, `class="irow"`); got != integrityReportCap {
+		t.Fatalf("rendered %d rows, want %d", got, integrityReportCap)
 	}
 }

@@ -39,6 +39,9 @@ func TestFromEnvDefaults(t *testing.T) {
 	if cfg.FFmpegConcurrentLimit != 4 {
 		t.Fatalf("expected FFmpegConcurrentLimit=4, got %d", cfg.FFmpegConcurrentLimit)
 	}
+	if cfg.TrickplayCacheMaxBytes != 10<<30 {
+		t.Fatalf("expected TrickplayCacheMaxBytes=10GiB, got %d", cfg.TrickplayCacheMaxBytes)
+	}
 }
 
 func TestFromEnvCustom(t *testing.T) {

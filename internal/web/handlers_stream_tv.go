@@ -45,8 +45,11 @@ func (h *Handler) pruneTVCacheOnce() {
 	_ = video.PruneCache(h.tvHLSCacheRoot(), h.cfg.TVHLSCacheMaxBytes, h.cfg.TVCacheMaxAge)
 	// The trickplay sprite cache is a sibling root the sweep must visit
 	// explicitly (PruneCache only knows the one root it's handed). Sprites are
-	// tiny and rebuildable; a fixed byte cap + the same max-age suffice.
-	_ = video.PruneCache(h.trickplayCacheRoot(), trickplayCacheMaxBytes, h.cfg.TVCacheMaxAge)
+	// durable and content-keyed, so NO age TTL (maxAge 0) — a TTL would evict
+	// sets the next scan immediately regenerates. Size-cap eviction is LRU
+	// (serving touches the dir); dead sets are reclaimed by the trickplay
+	// job's orphan sweep, not by age.
+	_ = video.PruneCache(h.trickplayCacheRoot(), h.cfg.TrickplayCacheMaxBytes, 0)
 }
 
 type tvFileSource struct {
