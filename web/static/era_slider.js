@@ -28,6 +28,10 @@
     const max = parseInt(picker.dataset.max, 10);
     const lib = picker.dataset.lib || '';
     if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) return;
+    // The tape below builds one tick per year, so an absurd span (a garbage
+    // year tag leaking through) would allocate DOM until the browser dies.
+    // The server clamps years to a plausible window; this is the belt.
+    if (max - min > 300) return;
     const span = max - min;
     // Years are bands, not points: the track is divided into (span + 1) equal
     // year-bands, so a single-year selection (from==to) is one band wide — a
