@@ -1920,26 +1920,30 @@ html.using-mouse .grid-pager-btn,
 
 /* Subtitles are painted by media_player.js into this overlay (the sidecar track is
    kept mode='hidden' so the browser never paints — and never strands — cue boxes).
-   Sits above the controls bar; drops lower when the controls auto-hide. */
+   Sits above the controls bar; drops lower when the controls auto-hide. The
+   --cap-* custom properties are the Settings → Playback appearance knobs,
+   inlined by the player templates on .tv-player-video-wrap; the var() fallbacks
+   are the pre-settings look, so absent values render identically. The position
+   raise composes with both the normal and controls-hidden offsets. */
 .media-captions {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 6rem;
+  bottom: calc(6rem + var(--cap-raise, 0rem));
   padding: 0 5%;
   text-align: center;
   pointer-events: none;
   z-index: 2;
   transition: bottom 0.25s ease;
 }
-.tv-player-video-wrap.controls-hidden .media-captions { bottom: 1.5rem; }
+.tv-player-video-wrap.controls-hidden .media-captions { bottom: calc(1.5rem + var(--cap-raise, 0rem)); }
 .media-caption-line {
   display: inline-block;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--cap-bg, rgba(0, 0, 0, 0.6));
   color: #fff;
   padding: 0.1em 0.45em;
   border-radius: 4px;
-  font-size: clamp(1rem, 2.6vw, 1.9rem);
+  font-size: calc(clamp(1rem, 2.6vw, 1.9rem) * var(--cap-scale, 1));
   line-height: 1.35;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   white-space: pre-wrap;

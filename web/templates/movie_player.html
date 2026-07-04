@@ -5,7 +5,7 @@
     {{if .ExtraTitle}}<h2>{{.ExtraTitle}}</h2>{{else if .Year}}<h2>{{.Year}}</h2>{{end}}
   </div>
 
-  <div class="tv-player-video-wrap" id="tvPlayerWrap">
+  <div class="tv-player-video-wrap" id="tvPlayerWrap" style="{{.CaptionVars}}">
     <video id="tvVideo" class="tv-video" autoplay
            data-media-kind="movie"
            data-file-id="{{.FileID}}"
