@@ -111,10 +111,23 @@
 </div>
 {{end}}
 
+{{if .Collection}}
+<h2>Part of {{.CollectionName}}</h2>
+{{template "movie-title-cards" .Collection}}
+{{end}}
+
 {{if .Similar}}
 <h2>More Like This</h2>
+{{template "movie-title-cards" .Similar}}
+{{end}}
+{{end}}
+
+{{/* One film-card strip: owned titles link into the library with local art,
+     the rest hotlink a TMDB poster and open themoviedb.org. Used by both the
+     collection (franchise) and More Like This sections. */}}
+{{define "movie-title-cards"}}
 <div class="home-carousel-row">
-  {{range .Similar}}
+  {{range .}}
   {{if .Owned}}
   <a href="/movie/{{.ID}}" class="band-album-card band-album-card--poster">
     <div class="band-album-art"><img src="/art/movie/poster/{{.ID}}" alt="{{.Title}}" loading="lazy" /></div>
@@ -136,5 +149,4 @@
   {{end}}
   {{end}}
 </div>
-{{end}}
 {{end}}

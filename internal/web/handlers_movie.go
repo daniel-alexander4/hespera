@@ -389,26 +389,43 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 	// "More Like This" — cached related titles, lazily fetched on first view.
 	similar := h.movieSimilarRows(r.Context(), tmdbID)
 
+	// Franchise strip: the film's TMDB collection, lazily backfilled (the job
+	// also refreshes the movie blob, whose pre-field copies lack
+	// belongs_to_collection — so the strip appears one view after the fetch).
+	var collectionName string
+	var collection []filmographyRow
+	if movie.BelongsToCollection != nil {
+		collectionName = movie.BelongsToCollection.Name
+		collection = h.movieCollectionRows(r.Context(), movie.BelongsToCollection.ID, tmdbID)
+	}
+	if !h.movieCollectionFetched(r.Context(), tmdbID) {
+		id := tmdbID
+		h.enqueueMovieMetaFetch(r.Context(), fmt.Sprintf("movie-collection:%d", id), "movie_collection_fetch",
+			func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchMovieCollection(ctx, id) })
+	}
+
 	h.render(w, "movie_detail.html", map[string]any{
-		"Breadcrumb":  []crumb{bcHome, bcMovies},
-		"Title":       movie.Title,
-		"TMDBID":      tmdbID,
-		"MovieTitle":  movie.Title,
-		"Year":        year,
-		"Overview":    movie.Overview,
-		"Genres":      movie.Genres,
-		"Runtime":     movie.Runtime,
-		"Tagline":     movie.Tagline,
-		"HasBackdrop": movie.BackdropPath != "",
-		"BackdropVer": backdropVer,
-		"FileID":      fileID,
-		"ResumePct":   resumePct,
-		"Completed":   completed,
-		"Flagged":     flaggedCount > 0,
-		"FlagDetail":  flagDetail,
-		"Cast":        cast,
-		"Similar":     similar,
-		"Extras":      extras,
+		"Breadcrumb":     []crumb{bcHome, bcMovies},
+		"Title":          movie.Title,
+		"TMDBID":         tmdbID,
+		"MovieTitle":     movie.Title,
+		"Year":           year,
+		"Overview":       movie.Overview,
+		"Genres":         movie.Genres,
+		"Runtime":        movie.Runtime,
+		"Tagline":        movie.Tagline,
+		"HasBackdrop":    movie.BackdropPath != "",
+		"BackdropVer":    backdropVer,
+		"FileID":         fileID,
+		"ResumePct":      resumePct,
+		"Completed":      completed,
+		"Flagged":        flaggedCount > 0,
+		"FlagDetail":     flagDetail,
+		"Cast":           cast,
+		"Similar":        similar,
+		"CollectionName": collectionName,
+		"Collection":     collection,
+		"Extras":         extras,
 	})
 }
 

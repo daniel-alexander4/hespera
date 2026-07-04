@@ -65,3 +65,42 @@ func TestBuildRelatedRows(t *testing.T) {
 		t.Errorf("empty blob rows = %+v", got)
 	}
 }
+
+// TestMovieCollectionRows: the franchise strip excludes the film itself and
+// runs the same owned split as More Like This.
+func TestMovieCollectionRows(t *testing.T) {
+	h, db := newTestHandler(t)
+	ctx := context.Background()
+
+	if _, err := db.Exec("INSERT INTO libraries(name,type,root_path) VALUES('Movies','movies','/m')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO movie_files(library_id,abs_path,tmdb_id,match_status) VALUES(1,'/m/f2.mkv',11,'matched')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO movie_metadata_cache(entity_key,lang,payload_json,fetched_at)
+		VALUES('collection:500','en','[
+			{"id":10,"title":"Self","poster_path":"/a.jpg","release_date":"1999-01-01"},
+			{"id":11,"title":"Owned Sequel","poster_path":"/b.jpg","release_date":"2003-01-01"},
+			{"id":12,"title":"Missing Threequel","poster_path":"/c.jpg","release_date":"2007-01-01"}
+		]',datetime('now'))`); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := h.movieCollectionRows(ctx, 500, 10)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2 (self excluded)", len(rows))
+	}
+	if rows[0].ID != 11 || !rows[0].Owned {
+		t.Errorf("owned sequel: %+v", rows[0])
+	}
+	if rows[1].ID != 12 || rows[1].Owned || rows[1].PosterURL != tmdbPosterBase+"/c.jpg" {
+		t.Errorf("un-owned threequel: %+v", rows[1])
+	}
+
+	// Absent blob (job not run yet) renders nothing.
+	if got := h.movieCollectionRows(ctx, 999, 10); got != nil {
+		t.Errorf("absent blob rows = %+v", got)
+	}
+}
