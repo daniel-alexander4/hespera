@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -211,12 +212,20 @@ func (h *Handler) Shutdown() {
 
 // shutdown quits the whole app (the topbar power button). It responds first, then
 // triggers the graceful shutdown so the client gets a reply before the server
-// stops. POST-only and same-origin (a destructive action): a cross-site page's
+// stops. POST-only, same-origin (a destructive action): a cross-site page's
 // fetch carries a foreign Origin and is rejected; same-origin navigations that
-// omit Origin never reach this POST endpoint.
+// omit Origin never reach this POST endpoint. And loopback-only: on a
+// LAN-serving deployment every household device's topbar has this button, and
+// one tap must not power off the server for everyone — quitting is reserved
+// for the machine Hespera runs on (a reverse proxy on that machine forwards
+// from loopback, so its authenticated users keep the button by design).
 func (h *Handler) shutdown(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err != nil || !net.ParseIP(host).IsLoopback() {
+		http.Error(w, "shutdown is only available on the machine Hespera runs on", http.StatusForbidden)
 		return
 	}
 	if origin := r.Header.Get("Origin"); origin != "" {

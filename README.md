@@ -80,6 +80,44 @@ macOS/Windows).
 `HESPERA_LISTEN` (default `127.0.0.1:8080` — loopback only). To reach it from
 other devices, opt in explicitly with `HESPERA_LISTEN=:8080`.
 
+### Serving your household
+
+To let other devices in the house use Hespera (phones, laptops, a TV
+browser), run server mode on the machine that holds the media, started at
+boot by a systemd **user** unit:
+
+```ini
+# ~/.config/systemd/user/hespera.service
+[Unit]
+Description=Hespera media server
+
+[Service]
+Environment=HESPERA_NO_BROWSER=1
+Environment=HESPERA_LISTEN=:8080
+ExecStart=/usr/bin/hespera
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload && systemctl --user enable --now hespera
+loginctl enable-linger $USER          # keep it running when logged out
+sudo ufw allow from 192.168.1.0/24 to any port 8080 proto tcp   # your LAN subnet
+```
+
+Devices then browse `http://<hostname>:8080`. Phones and laptops get the
+right UI scale automatically; a TV browser can pin the 10-foot scale once
+with `?scale=tv` (it persists per browser). On the server's own screen, the
+same instance is just a browser tab away at `http://localhost:8080`.
+
+Notes for shared use: Hespera has one household-wide state — watched marks,
+resume positions, and playlists are shared by everyone (there are no user
+profiles); the security posture below applies (trusted network only); and
+the topbar power button only works from the server machine itself, so a
+phone can't shut the family server down.
+
 ### Security posture
 
 Hespera has **no authentication layer, by design** — it is a single-machine
