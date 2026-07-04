@@ -15,31 +15,26 @@ import (
 // this fails the build instead, the same shape as TestThirdPartyLicensesCurrent
 // guards the license notice against go.mod.
 //
-// The templates are the enumeration point for the web side because a
-// web-editable setting must, by definition, have a form input on one of the
-// settings pages (Integrations / Features / Subtitles). The
-// `integrity_present`/`lyrics_present` hidden fields are submission sentinels
-// (an unchecked checkbox posts nothing), not settings, and are filtered out.
+// The template is the enumeration point for the web side because a
+// web-editable setting must, by definition, have a form input inside one of
+// the settings page's accordion cards. The `integrity_present`/`lyrics_present`
+// hidden fields are submission sentinels (an unchecked checkbox posts
+// nothing), not settings, and are filtered out. The `name="settings"` on the
+// <details> accordion elements is filtered too — an HTML grouping attribute,
+// not a form field.
 func TestManagedSettingsCoverSettingsForms(t *testing.T) {
-	settingsTemplates := []string{
-		"settings_integrations.html",
-		"settings_features.html",
-		"settings_subtitles.html",
+	tpl, err := os.ReadFile("../../web/templates/settings.html")
+	if err != nil {
+		t.Fatalf("read settings.html: %v", err)
 	}
 	nameAttr := regexp.MustCompile(`name="([^"]+)"`)
 	formKeys := map[string]bool{}
-	for _, name := range settingsTemplates {
-		tpl, err := os.ReadFile("../../web/templates/" + name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
+	for _, m := range nameAttr.FindAllStringSubmatch(string(tpl), -1) {
+		name := m[1]
+		if strings.HasSuffix(name, "_present") || name == "settings" {
+			continue
 		}
-		for _, m := range nameAttr.FindAllStringSubmatch(string(tpl), -1) {
-			name := m[1]
-			if strings.HasSuffix(name, "_present") { // checkbox-submission sentinels
-				continue
-			}
-			formKeys[name] = true
-		}
+		formKeys[name] = true
 	}
 
 	registryKeys := map[string]bool{}

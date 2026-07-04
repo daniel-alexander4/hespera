@@ -15,7 +15,7 @@ func TestSettingsAPIKeysPerKeyForms(t *testing.T) {
 	router := h.Router()
 
 	save := func(field, val string) {
-		if rec := postForm(t, router, "/settings/integrations", url.Values{field: {val}}); rec.Code != http.StatusSeeOther {
+		if rec := postForm(t, router, "/settings", url.Values{field: {val}}); rec.Code != http.StatusSeeOther {
 			t.Fatalf("POST %s=%q: status %d, want 303", field, val, rec.Code)
 		}
 	}

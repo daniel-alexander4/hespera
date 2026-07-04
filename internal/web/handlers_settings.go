@@ -22,15 +22,169 @@ import (
 	"hespera/internal/tvscan"
 )
 
+// settings renders the Settings page — an accordion of expandable subject
+// cards (Integrations / Features / Subtitles) whose forms live inline, plus
+// link cards for the page-sized tools (Libraries, Job Status, controls cheat
+// sheet, About). GET loads every subject's data; POST is the single dispatch
+// for all the accordion forms — each branch redirects back with
+// ?open=<subject> so the card just saved re-opens (deep links use the same
+// param). Values still live in app_settings via saveAPIKey + the effective*
+// getters; keys are never rendered back or logged.
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	ctx := r.Context()
+	switch r.Method {
+	case http.MethodGet:
+		tmdbCfg, tmdbSrc, tmdbMask := h.keyStatus(ctx, "tmdb_api_key", h.cfg.TMDBAPIKey, h.effectiveTMDBKey(ctx))
+		fanCfg, fanSrc, fanMask := h.keyStatus(ctx, "fanarttv_api_key", h.cfg.FanartTVAPIKey, h.effectiveFanartKey(ctx))
+		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
+		lfmCfg, lfmSrc, lfmMask := h.keyStatus(ctx, "lastfm_api_key", h.cfg.LastfmAPIKey, h.effectiveLastfmKey(ctx))
+		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
+		h.render(w, "settings.html", map[string]any{
+			"Breadcrumb":              []crumb{bcHome},
+			"Title":                   "Settings",
+			"TMDBConfigured":          tmdbCfg,
+			"TMDBSource":              tmdbSrc,
+			"TMDBMasked":              tmdbMask,
+			"FanartConfigured":        fanCfg,
+			"FanartSource":            fanSrc,
+			"FanartMasked":            fanMask,
+			"AudioDBConfigured":       adbCfg,
+			"AudioDBSource":           adbSrc,
+			"AudioDBMasked":           adbMask,
+			"LastfmConfigured":        lfmCfg,
+			"LastfmSource":            lfmSrc,
+			"LastfmMasked":            lfmMask,
+			"OpenSubtitlesConfigured": osCfg,
+			"OpenSubtitlesSource":     osSrc,
+			"OpenSubtitlesMasked":     osMask,
+			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
+			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
+			"WatchEnabled":            h.effectiveWatchEnabled(ctx),
+			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
+			"UpdateCheckEnabled":      h.effectiveUpdateCheckEnabled(ctx),
+			"DefaultAudioLang":        h.effectiveDefaultAudioLang(ctx),
+			"DefaultSubtitleLang":     h.effectiveDefaultSubtitleLang(ctx),
+			"SubtitlesDefaultOn":      h.effectiveSubtitlesDefaultOn(ctx),
+			"SubtitleSize":            h.effectiveSubtitleSize(ctx),
+			"SubtitleBg":              h.effectiveSubtitleBg(ctx),
+			"SubtitlePosition":        h.effectiveSubtitlePosition(ctx),
+			"Open":                    r.URL.Query().Get("open"),
+			"Saved":                   r.URL.Query().Get("saved"),
+			"Valid":                   r.URL.Query().Get("valid"),
+		})
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			httpError(w, 400, "bad request", "parse form failed", "handler", "settings", "err", err)
+			return
+		}
+		// Each key has its own form, so exactly one field is present per submit;
+		// a blank value for that field clears it. This avoids one form's empty
+		// fields wiping the other keys.
+		if _, ok := r.Form["tmdb_api_key"]; ok {
+			key := strings.TrimSpace(r.FormValue("tmdb_api_key"))
+			if err := h.saveAPIKey(ctx, "tmdb_api_key", key); err != nil {
+				httpError(w, 500, "internal server error", "save api key failed", "handler", "settings", "err", err)
+				return
+			}
+			if key == "" {
+				http.Redirect(w, r, "/settings?open=integrations&saved=cleared", http.StatusSeeOther)
+				return
+			}
+			valid := "unknown"
+			if h.tmdbValidate != nil {
+				if ok, verr := h.tmdbValidate(ctx, key); verr == nil {
+					if ok {
+						valid = "1"
+					} else {
+						valid = "0"
+					}
+				}
+			}
+			http.Redirect(w, r, "/settings?open=integrations&saved=1&valid="+valid, http.StatusSeeOther)
+			return
+		}
+		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "lastfm_api_key"} {
+			if _, ok := r.Form[field]; ok {
+				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
+					httpError(w, 500, "internal server error", "save api key failed", "handler", "settings", "err", err)
+					return
+				}
+				http.Redirect(w, r, "/settings?open=integrations&saved=1", http.StatusSeeOther)
+				return
+			}
+		}
+		// OpenSubtitles key + User-Agent share one form, so save both together.
+		// The UA (not a secret) always takes its submitted value (blank → default);
+		// the key is saved only when non-blank, so editing the UA never wipes a
+		// stored key (no way to distinguish "blank to clear" from "blank to keep"
+		// in a combined form — keep wins as the safe choice).
+		if _, ok := r.Form["opensubtitles_api_key"]; ok {
+			if err := h.saveAPIKey(ctx, "opensubtitles_user_agent", strings.TrimSpace(r.FormValue("opensubtitles_user_agent"))); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settings", "err", err)
+				return
+			}
+			if key := strings.TrimSpace(r.FormValue("opensubtitles_api_key")); key != "" {
+				if err := h.saveAPIKey(ctx, "opensubtitles_api_key", key); err != nil {
+					httpError(w, 500, "internal server error", "save api key failed", "handler", "settings", "err", err)
+					return
+				}
+			}
+			http.Redirect(w, r, "/settings?open=integrations&saved=1", http.StatusSeeOther)
+			return
+		}
+		for _, tg := range featureToggles {
+			if _, ok := r.Form[tg.sentinel]; !ok {
+				continue
+			}
+			spec, found := lookupSetting(tg.key)
+			if !found {
+				httpError(w, 500, "internal server error", "toggle missing from registry", "handler", "settings", "key", tg.key)
+				return
+			}
+			val := spec.OffStored
+			if r.FormValue(tg.key) == "1" {
+				val = spec.OnStored
+			}
+			if err := h.saveAPIKey(ctx, tg.key, val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settings", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings?open=features&saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["playback_present"]; ok {
+			// One form saves everything together: two language preferences
+			// (sanitized; blank or invalid clears → no preference), the
+			// appearance enums (stored as submitted; effective* validates at
+			// read time via enumOr, so garbage degrades to the default), and
+			// the default-OFF subtitles-on opt-in.
+			for _, f := range []string{"default_audio_lang", "default_subtitle_lang"} {
+				if err := h.saveAPIKey(ctx, f, sanitizeLangSetting(r.FormValue(f))); err != nil {
+					httpError(w, 500, "internal server error", "save setting failed", "handler", "settings", "err", err)
+					return
+				}
+			}
+			for _, f := range []string{"subtitle_size", "subtitle_bg", "subtitle_position"} {
+				if err := h.saveAPIKey(ctx, f, strings.TrimSpace(r.FormValue(f))); err != nil {
+					httpError(w, 500, "internal server error", "save setting failed", "handler", "settings", "err", err)
+					return
+				}
+			}
+			val := ""
+			if r.FormValue("subtitles_default_on") == "1" {
+				val = "1"
+			}
+			if err := h.saveAPIKey(ctx, "subtitles_default_on", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settings", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings?open=subtitles&saved=1", http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
 	}
-	h.render(w, "settings.html", map[string]any{
-		"Breadcrumb": []crumb{bcHome},
-		"Title":      "Settings",
-	})
 }
 
 // settingsAbout renders the static About & Attributions page — the single place
@@ -233,109 +387,7 @@ func (h *Handler) saveAPIKey(ctx context.Context, dbKey, value string) error {
 	return err
 }
 
-// settingsIntegrations renders (GET) and persists (POST) the external-service
-// credentials (Settings → Integrations): the API keys plus the OpenSubtitles
-// User-Agent. A stored value overrides the env default; an empty submission
-// clears it (reverting to env). The raw key is never rendered back or logged.
-// POST is protected by the same same-origin CSRF as every other route.
-func (h *Handler) settingsIntegrations(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	switch r.Method {
-	case http.MethodGet:
-		tmdbCfg, tmdbSrc, tmdbMask := h.keyStatus(ctx, "tmdb_api_key", h.cfg.TMDBAPIKey, h.effectiveTMDBKey(ctx))
-		fanCfg, fanSrc, fanMask := h.keyStatus(ctx, "fanarttv_api_key", h.cfg.FanartTVAPIKey, h.effectiveFanartKey(ctx))
-		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
-		lfmCfg, lfmSrc, lfmMask := h.keyStatus(ctx, "lastfm_api_key", h.cfg.LastfmAPIKey, h.effectiveLastfmKey(ctx))
-		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
-		h.render(w, "settings_integrations.html", map[string]any{
-			"Breadcrumb":              []crumb{bcHome, bcSettings},
-			"Title":                   "Integrations",
-			"TMDBConfigured":          tmdbCfg,
-			"TMDBSource":              tmdbSrc,
-			"TMDBMasked":              tmdbMask,
-			"FanartConfigured":        fanCfg,
-			"FanartSource":            fanSrc,
-			"FanartMasked":            fanMask,
-			"AudioDBConfigured":       adbCfg,
-			"AudioDBSource":           adbSrc,
-			"AudioDBMasked":           adbMask,
-			"LastfmConfigured":        lfmCfg,
-			"LastfmSource":            lfmSrc,
-			"LastfmMasked":            lfmMask,
-			"OpenSubtitlesConfigured": osCfg,
-			"OpenSubtitlesSource":     osSrc,
-			"OpenSubtitlesMasked":     osMask,
-			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
-			"Saved":                   r.URL.Query().Get("saved"),
-			"Valid":                   r.URL.Query().Get("valid"),
-		})
-	case http.MethodPost:
-		if err := r.ParseForm(); err != nil {
-			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsIntegrations", "err", err)
-			return
-		}
-		// Each key has its own form, so exactly one field is present per submit;
-		// a blank value for that field clears it. This avoids one form's empty
-		// fields wiping the other keys.
-		if _, ok := r.Form["tmdb_api_key"]; ok {
-			key := strings.TrimSpace(r.FormValue("tmdb_api_key"))
-			if err := h.saveAPIKey(ctx, "tmdb_api_key", key); err != nil {
-				httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsIntegrations", "err", err)
-				return
-			}
-			if key == "" {
-				http.Redirect(w, r, "/settings/integrations?saved=cleared", http.StatusSeeOther)
-				return
-			}
-			valid := "unknown"
-			if h.tmdbValidate != nil {
-				if ok, verr := h.tmdbValidate(ctx, key); verr == nil {
-					if ok {
-						valid = "1"
-					} else {
-						valid = "0"
-					}
-				}
-			}
-			http.Redirect(w, r, "/settings/integrations?saved=1&valid="+valid, http.StatusSeeOther)
-			return
-		}
-		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "lastfm_api_key"} {
-			if _, ok := r.Form[field]; ok {
-				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
-					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsIntegrations", "err", err)
-					return
-				}
-				http.Redirect(w, r, "/settings/integrations?saved=1", http.StatusSeeOther)
-				return
-			}
-		}
-		// OpenSubtitles key + User-Agent share one form, so save both together.
-		// The UA (not a secret) always takes its submitted value (blank → default);
-		// the key is saved only when non-blank, so editing the UA never wipes a
-		// stored key (no way to distinguish "blank to clear" from "blank to keep"
-		// in a combined form — keep wins as the safe choice).
-		if _, ok := r.Form["opensubtitles_api_key"]; ok {
-			if err := h.saveAPIKey(ctx, "opensubtitles_user_agent", strings.TrimSpace(r.FormValue("opensubtitles_user_agent"))); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsIntegrations", "err", err)
-				return
-			}
-			if key := strings.TrimSpace(r.FormValue("opensubtitles_api_key")); key != "" {
-				if err := h.saveAPIKey(ctx, "opensubtitles_api_key", key); err != nil {
-					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsIntegrations", "err", err)
-					return
-				}
-			}
-			http.Redirect(w, r, "/settings/integrations?saved=1", http.StatusSeeOther)
-			return
-		}
-		http.Redirect(w, r, "/settings/integrations", http.StatusSeeOther)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-// featureToggles maps each Features-page form (its *_present sentinel) to its
+// featureToggles maps each Features-card form (its *_present sentinel) to its
 // app_settings key. The stored on/off values come from the managedSettings
 // registry (lookupSetting), so the web form and hescli can never disagree on
 // what "on" is stored as (default-ON toggles clear the row for on and store
@@ -345,111 +397,6 @@ var featureToggles = []struct{ sentinel, key string }{
 	{"watch_present", "watch_enabled"},
 	{"lyrics_present", "lyrics_enabled"},
 	{"update_present", "update_check_enabled"},
-}
-
-// settingsFeatures renders (GET) and persists (POST) the feature toggles
-// (Settings → Features).
-func (h *Handler) settingsFeatures(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	switch r.Method {
-	case http.MethodGet:
-		h.render(w, "settings_features.html", map[string]any{
-			"Breadcrumb":          []crumb{bcHome, bcSettings},
-			"Title":               "Features",
-			"IntegrityAutoRepair": h.effectiveIntegrityAutoRepair(ctx),
-			"WatchEnabled":        h.effectiveWatchEnabled(ctx),
-			"LyricsEnabled":       h.effectiveLyricsEnabled(ctx),
-			"UpdateCheckEnabled":  h.effectiveUpdateCheckEnabled(ctx),
-			"Saved":               r.URL.Query().Get("saved"),
-		})
-	case http.MethodPost:
-		if err := r.ParseForm(); err != nil {
-			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsFeatures", "err", err)
-			return
-		}
-		for _, tg := range featureToggles {
-			if _, ok := r.Form[tg.sentinel]; !ok {
-				continue
-			}
-			spec, found := lookupSetting(tg.key)
-			if !found {
-				httpError(w, 500, "internal server error", "toggle missing from registry", "handler", "settingsFeatures", "key", tg.key)
-				return
-			}
-			val := spec.OffStored
-			if r.FormValue(tg.key) == "1" {
-				val = spec.OnStored
-			}
-			if err := h.saveAPIKey(ctx, tg.key, val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsFeatures", "err", err)
-				return
-			}
-			http.Redirect(w, r, "/settings/features?saved=1", http.StatusSeeOther)
-			return
-		}
-		http.Redirect(w, r, "/settings/features", http.StatusSeeOther)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-// settingsSubtitles renders (GET) and persists (POST) the playback defaults
-// (Settings → Subtitles): the subtitles-on default, subtitle language and
-// appearance, plus the default audio language (it shares the form — the one
-// playback preference that isn't subtitles).
-func (h *Handler) settingsSubtitles(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	switch r.Method {
-	case http.MethodGet:
-		h.render(w, "settings_subtitles.html", map[string]any{
-			"Breadcrumb":          []crumb{bcHome, bcSettings},
-			"Title":               "Subtitles",
-			"DefaultAudioLang":    h.effectiveDefaultAudioLang(ctx),
-			"DefaultSubtitleLang": h.effectiveDefaultSubtitleLang(ctx),
-			"SubtitlesDefaultOn":  h.effectiveSubtitlesDefaultOn(ctx),
-			"SubtitleSize":        h.effectiveSubtitleSize(ctx),
-			"SubtitleBg":          h.effectiveSubtitleBg(ctx),
-			"SubtitlePosition":    h.effectiveSubtitlePosition(ctx),
-			"Saved":               r.URL.Query().Get("saved"),
-		})
-	case http.MethodPost:
-		if err := r.ParseForm(); err != nil {
-			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsSubtitles", "err", err)
-			return
-		}
-		if _, ok := r.Form["playback_present"]; ok {
-			// One form saves everything together: two language preferences
-			// (sanitized; blank or invalid clears → no preference), the
-			// appearance enums (stored as submitted; effective* validates at
-			// read time via enumOr, so garbage degrades to the default), and
-			// the default-OFF subtitles-on opt-in.
-			for _, f := range []string{"default_audio_lang", "default_subtitle_lang"} {
-				if err := h.saveAPIKey(ctx, f, sanitizeLangSetting(r.FormValue(f))); err != nil {
-					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsSubtitles", "err", err)
-					return
-				}
-			}
-			for _, f := range []string{"subtitle_size", "subtitle_bg", "subtitle_position"} {
-				if err := h.saveAPIKey(ctx, f, strings.TrimSpace(r.FormValue(f))); err != nil {
-					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsSubtitles", "err", err)
-					return
-				}
-			}
-			val := ""
-			if r.FormValue("subtitles_default_on") == "1" {
-				val = "1"
-			}
-			if err := h.saveAPIKey(ctx, "subtitles_default_on", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsSubtitles", "err", err)
-				return
-			}
-			http.Redirect(w, r, "/settings/subtitles?saved=1", http.StatusSeeOther)
-			return
-		}
-		http.Redirect(w, r, "/settings/subtitles", http.StatusSeeOther)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
 }
 
 func (h *Handler) settingsJobs(w http.ResponseWriter, r *http.Request) {

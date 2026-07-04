@@ -59,11 +59,11 @@ func TestSettingsAPIKeys(t *testing.T) {
 		h, db := newTestHandler(t)
 		h.tmdbValidate = func(ctx context.Context, key string) (bool, error) { return true, nil }
 
-		rr := postForm(t, h.Router(), "/settings/integrations", apiKeyForm("  my-key  "))
+		rr := postForm(t, h.Router(), "/settings", apiKeyForm("  my-key  "))
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("code = %d, want 303", rr.Code)
 		}
-		if loc := rr.Header().Get("Location"); loc != "/settings/integrations?saved=1&valid=1" {
+		if loc := rr.Header().Get("Location"); loc != "/settings?open=integrations&saved=1&valid=1" {
 			t.Fatalf("Location = %q", loc)
 		}
 		var v string
@@ -78,8 +78,8 @@ func TestSettingsAPIKeys(t *testing.T) {
 	t.Run("POST saves even when TMDB rejects the key", func(t *testing.T) {
 		h, db := newTestHandler(t)
 		h.tmdbValidate = func(ctx context.Context, key string) (bool, error) { return false, nil }
-		rr := postForm(t, h.Router(), "/settings/integrations", apiKeyForm("bad-key"))
-		if loc := rr.Header().Get("Location"); loc != "/settings/integrations?saved=1&valid=0" {
+		rr := postForm(t, h.Router(), "/settings", apiKeyForm("bad-key"))
+		if loc := rr.Header().Get("Location"); loc != "/settings?open=integrations&saved=1&valid=0" {
 			t.Fatalf("Location = %q, want valid=0", loc)
 		}
 		var v string
@@ -94,8 +94,8 @@ func TestSettingsAPIKeys(t *testing.T) {
 		if _, err := db.Exec("INSERT INTO app_settings (key, value) VALUES ('tmdb_api_key', 'old')"); err != nil {
 			t.Fatal(err)
 		}
-		rr := postForm(t, h.Router(), "/settings/integrations", apiKeyForm(""))
-		if loc := rr.Header().Get("Location"); loc != "/settings/integrations?saved=cleared" {
+		rr := postForm(t, h.Router(), "/settings", apiKeyForm(""))
+		if loc := rr.Header().Get("Location"); loc != "/settings?open=integrations&saved=cleared" {
 			t.Fatalf("Location = %q, want saved=cleared", loc)
 		}
 		var n int
@@ -107,9 +107,9 @@ func TestSettingsAPIKeys(t *testing.T) {
 
 	t.Run("GET renders", func(t *testing.T) {
 		h, _ := newTestHandler(t)
-		req := httptest.NewRequest(http.MethodGet, "/settings/integrations", nil)
+		req := httptest.NewRequest(http.MethodGet, "/settings", nil)
 		rr := httptest.NewRecorder()
-		h.settingsIntegrations(rr, req)
+		h.settings(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("GET code = %d, want 200", rr.Code)
 		}
@@ -117,9 +117,9 @@ func TestSettingsAPIKeys(t *testing.T) {
 
 	t.Run("PUT rejected", func(t *testing.T) {
 		h, _ := newTestHandler(t)
-		req := httptest.NewRequest(http.MethodPut, "/settings/integrations", nil)
+		req := httptest.NewRequest(http.MethodPut, "/settings", nil)
 		rr := httptest.NewRecorder()
-		h.settingsIntegrations(rr, req)
+		h.settings(rr, req)
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("PUT code = %d, want 405", rr.Code)
 		}
