@@ -146,7 +146,12 @@
       if (reload) reload.addEventListener('click', () => window.location.reload());
       const quit = document.querySelector('[data-app-quit]');
       if (quit) quit.addEventListener('click', async () => {
-        try { await fetch('/shutdown', { method: 'POST' }); } catch (_) { /* server is stopping */ }
+        try {
+          // Refused (403) on a remote device — quitting is loopback-only on a
+          // LAN-serving setup. Keep the page; the server is not stopping.
+          const res = await fetch('/shutdown', { method: 'POST' });
+          if (!res.ok) return;
+        } catch (_) { /* server is stopping */ }
         document.body.innerHTML =
           '<div style="display:flex;align-items:center;justify-content:center;min-height:90vh;color:#a6adc8;font:1.1rem system-ui,sans-serif;">Hespera has shut down — you can close this window.</div>';
         window.close(); // closes the chromeless app window; the message remains if the browser blocks it
