@@ -867,6 +867,24 @@ html.using-mouse .grid-pager-btn,
   aspect-ratio: 1;
   overflow: hidden;
   background: var(--surface-panel);
+  position: relative;
+}
+/* Count chip overlaid on card art (season cards: episodes in the season).
+   Inset from the corner so the card's border-radius + overflow clip never
+   shave it. */
+.card-count-badge {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(17, 17, 27, 0.78); /* crust, translucent over art */
+  color: var(--page-fg);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
 }
 .band-album-art img {
   width: 100%;
@@ -1721,9 +1739,21 @@ html.using-mouse .grid-pager-btn,
   gap: 1rem;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--border-default);
+  position: relative;
 }
 .tv-episode-row.tv-episode-completed {
   opacity: 0.6;
+}
+/* Plex-style unwatched mark: accent triangle in the row's top-right corner.
+   Only rows with a playable file that isn't watched carry it. */
+.tv-episode-row.tv-episode-unwatched::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 0.7rem 0.7rem 0;
+  border-color: transparent var(--accent) transparent transparent;
 }
 .tv-episode-watched {
   color: var(--badge-success-fg);

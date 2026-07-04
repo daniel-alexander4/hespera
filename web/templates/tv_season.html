@@ -25,7 +25,7 @@
 {{else}}
 <div class="tv-episode-list">
   {{range .Episodes}}
-  <div class="tv-episode-row{{if .Completed}} tv-episode-completed{{end}}{{if .Missing}} tv-episode-missing{{end}}">
+  <div class="tv-episode-row{{if .Completed}} tv-episode-completed{{else if .FileID}} tv-episode-unwatched{{end}}{{if .Missing}} tv-episode-missing{{end}}">
     <div class="tv-episode-number">{{.EpisodeNumber}}</div>
     <div class="tv-episode-info">
       <div class="tv-episode-name">
