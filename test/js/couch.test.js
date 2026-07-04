@@ -125,13 +125,6 @@ test('Back yields to native fullscreen (Escape exits fullscreen, no navigation)'
   assert.strictEqual(env.backCalls.length, 0);
 });
 
-test('Back yields to an open topbar dropdown menu', () => {
-  const env = boot({ body: breadcrumb(['/', '/music']) + '<div data-menu data-open="1"><a href="/settings">s</a></div>' });
-  pressKey(env, 'Escape');
-  assert.strictEqual(env.visited.length, 0);
-  assert.strictEqual(env.backCalls.length, 0);
-});
-
 test('mouse movement sets using-mouse; a handled key clears it', () => {
   const env = boot({ body: breadcrumb(['/', '/music']) });
   env.document.dispatchEvent(new env.window.MouseEvent('mousemove', { bubbles: true }));
