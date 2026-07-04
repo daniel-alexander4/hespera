@@ -162,6 +162,10 @@ func (h *Handler) loadHomeStats(ctx context.Context, musicLib int64) homeStats {
 }
 
 func (h *Handler) healthz(w http.ResponseWriter, r *http.Request) {
+	// X-Hespera identifies this as a Hespera instance — the desktop launcher's
+	// attach probe requires it, so a reused port running some other app that
+	// happens to answer 200 "ok" is never attached to.
+	w.Header().Set("X-Hespera", h.version)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))

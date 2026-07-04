@@ -39,19 +39,42 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.Info("starting", "version", version)
 
-	// --replace (passed by the desktop launcher) SIGTERMs any other running
-	// instance so a relaunch from the menu takes over cleanly. The app binds a
-	// random loopback port, so this never has to wait for the old port to free.
-	if hasFlag("--replace") || hasFlag("-replace") {
-		if n := singleton.ReplaceOthers(); n > 0 {
-			slog.Info("replaced running instance", "count", n)
-		}
-	}
-
 	cfg := config.FromEnv()
 	if err := cfg.Validate(); err != nil {
 		slog.Error("config validation failed", "err", err)
 		os.Exit(1)
+	}
+
+	// Attach-first: if a Hespera instance is already running against this data
+	// dir (typically the headless service — HESPERA_NO_BROWSER=1 under systemd),
+	// a desktop launch must not start a second instance or --replace-kill the
+	// service out from under the household. Instead, open the same chromeless
+	// app window onto the running instance and exit. The window is the same
+	// Chromium app-mode chrome as a normal launch (same dedicated profile).
+	if os.Getenv("HESPERA_NO_BROWSER") == "" {
+		if url := runningAppURL(cfg.DataDir); url != "" {
+			slog.Info("attaching to running instance", "url", url)
+			if c, err := browser.Open(url, filepath.Join(cfg.DataDir, "browser")); err != nil {
+				slog.Error("could not open app window — browse to it manually", "url", url, "err", err)
+				os.Exit(1)
+			} else {
+				// The running instance owns the lifecycle; this launcher just
+				// opened a window onto it and is done.
+				_ = c.Process.Release()
+			}
+			return
+		}
+	}
+
+	// --replace (passed by the desktop launcher) SIGTERMs any other running
+	// instance so a relaunch from the menu takes over cleanly — reached only
+	// when the attach probe found nothing healthy, so a live service is never
+	// killed by a desktop click. The app binds a random loopback port, so this
+	// never has to wait for the old port to free.
+	if hasFlag("--replace") || hasFlag("-replace") {
+		if n := singleton.ReplaceOthers(); n > 0 {
+			slog.Info("replaced running instance", "count", n)
+		}
 	}
 
 	video.SetConcurrency(cfg.FFmpegConcurrentLimit, cfg.FFmpegAcquireTimeout)
@@ -167,6 +190,12 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+
+	// Record this instance's URL so a later desktop launch attaches to it
+	// (both modes — the headless service is exactly what the desktop icon
+	// should connect to). Removed on clean shutdown below.
+	writeAppURL(cfg.DataDir, appURL(boundAddr))
+	defer removeAppURL(cfg.DataDir, appURL(boundAddr))
 
 	var browserCmd *exec.Cmd
 	if appMode {
