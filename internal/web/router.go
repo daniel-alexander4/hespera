@@ -151,7 +151,9 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/settings/jobs/fragment", h.settingsJobsFragment)
 	mux.HandleFunc("/settings/jobs/cancel", h.settingsJobsCancel)
 	mux.HandleFunc("/settings/tags", h.settingsTagEditor)
-	mux.HandleFunc("/settings/api-keys", h.settingsAPIKeys)
+	mux.HandleFunc("/settings/integrations", h.settingsIntegrations)
+	mux.HandleFunc("/settings/features", h.settingsFeatures)
+	mux.HandleFunc("/settings/subtitles", h.settingsSubtitles)
 	mux.HandleFunc("/settings/about", h.settingsAbout)
 	mux.HandleFunc("/about/licenses", h.aboutLicenses)
 

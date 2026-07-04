@@ -233,12 +233,12 @@ func (h *Handler) saveAPIKey(ctx context.Context, dbKey, value string) error {
 	return err
 }
 
-// settingsAPIKeys renders (GET) and persists (POST) user-configurable API keys.
-// Today the only key is TMDB. A stored value overrides the env default; an empty
-// submission clears it (reverting to env). The raw key is never rendered back or
-// logged. POST is protected by the same auth + same-origin CSRF as every other
-// /settings route.
-func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
+// settingsIntegrations renders (GET) and persists (POST) the external-service
+// credentials (Settings → Integrations): the API keys plus the OpenSubtitles
+// User-Agent. A stored value overrides the env default; an empty submission
+// clears it (reverting to env). The raw key is never rendered back or logged.
+// POST is protected by the same same-origin CSRF as every other route.
+func (h *Handler) settingsIntegrations(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	switch r.Method {
 	case http.MethodGet:
@@ -247,9 +247,9 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
 		lfmCfg, lfmSrc, lfmMask := h.keyStatus(ctx, "lastfm_api_key", h.cfg.LastfmAPIKey, h.effectiveLastfmKey(ctx))
 		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
-		h.render(w, "settings_apikeys.html", map[string]any{
+		h.render(w, "settings_integrations.html", map[string]any{
 			"Breadcrumb":              []crumb{bcHome, bcSettings},
-			"Title":                   "API Keys",
+			"Title":                   "Integrations",
 			"TMDBConfigured":          tmdbCfg,
 			"TMDBSource":              tmdbSrc,
 			"TMDBMasked":              tmdbMask,
@@ -266,23 +266,12 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesSource":     osSrc,
 			"OpenSubtitlesMasked":     osMask,
 			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
-			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
-			"WatchEnabled":            h.effectiveWatchEnabled(ctx),
-			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
-			"KeytraceEnabled":         h.effectiveKeytraceEnabled(ctx),
-			"UpdateCheckEnabled":      h.effectiveUpdateCheckEnabled(ctx),
-			"DefaultAudioLang":        h.effectiveDefaultAudioLang(ctx),
-			"DefaultSubtitleLang":     h.effectiveDefaultSubtitleLang(ctx),
-			"SubtitlesDefaultOn":      h.effectiveSubtitlesDefaultOn(ctx),
-			"SubtitleSize":            h.effectiveSubtitleSize(ctx),
-			"SubtitleBg":              h.effectiveSubtitleBg(ctx),
-			"SubtitlePosition":        h.effectiveSubtitlePosition(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
-			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsAPIKeys", "err", err)
+			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsIntegrations", "err", err)
 			return
 		}
 		// Each key has its own form, so exactly one field is present per submit;
@@ -291,11 +280,11 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		if _, ok := r.Form["tmdb_api_key"]; ok {
 			key := strings.TrimSpace(r.FormValue("tmdb_api_key"))
 			if err := h.saveAPIKey(ctx, "tmdb_api_key", key); err != nil {
-				httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
+				httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsIntegrations", "err", err)
 				return
 			}
 			if key == "" {
-				http.Redirect(w, r, "/settings/api-keys?saved=cleared", http.StatusSeeOther)
+				http.Redirect(w, r, "/settings/integrations?saved=cleared", http.StatusSeeOther)
 				return
 			}
 			valid := "unknown"
@@ -308,16 +297,16 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1&valid="+valid, http.StatusSeeOther)
+			http.Redirect(w, r, "/settings/integrations?saved=1&valid="+valid, http.StatusSeeOther)
 			return
 		}
 		for _, field := range []string{"fanarttv_api_key", "audiodb_api_key", "lastfm_api_key"} {
 			if _, ok := r.Form[field]; ok {
 				if err := h.saveAPIKey(ctx, field, strings.TrimSpace(r.FormValue(field))); err != nil {
-					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
+					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsIntegrations", "err", err)
 					return
 				}
-				http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+				http.Redirect(w, r, "/settings/integrations?saved=1", http.StatusSeeOther)
 				return
 			}
 		}
@@ -328,87 +317,123 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 		// in a combined form — keep wins as the safe choice).
 		if _, ok := r.Form["opensubtitles_api_key"]; ok {
 			if err := h.saveAPIKey(ctx, "opensubtitles_user_agent", strings.TrimSpace(r.FormValue("opensubtitles_user_agent"))); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsIntegrations", "err", err)
 				return
 			}
 			if key := strings.TrimSpace(r.FormValue("opensubtitles_api_key")); key != "" {
 				if err := h.saveAPIKey(ctx, "opensubtitles_api_key", key); err != nil {
-					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsAPIKeys", "err", err)
+					httpError(w, 500, "internal server error", "save api key failed", "handler", "settingsIntegrations", "err", err)
 					return
 				}
 			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			http.Redirect(w, r, "/settings/integrations?saved=1", http.StatusSeeOther)
 			return
 		}
-		if _, ok := r.Form["integrity_present"]; ok {
-			// Default-ON kill-switch: store an explicit '0' to persist an off;
-			// clear the row (→ absent → on) when checked, keeping the DB clean.
-			val := "0"
-			if r.FormValue("integrity_autorepair") == "1" {
-				val = ""
-			}
-			if err := h.saveAPIKey(ctx, "integrity_autorepair", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/integrations", http.StatusSeeOther)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// featureToggles maps each Features-page form (its *_present sentinel) to its
+// app_settings key. The stored on/off values come from the managedSettings
+// registry (lookupSetting), so the web form and hescli can never disagree on
+// what "on" is stored as (default-ON toggles clear the row for on and store
+// '0' for off; default-OFF ones store '1' for on and clear for off).
+var featureToggles = []struct{ sentinel, key string }{
+	{"integrity_present", "integrity_autorepair"},
+	{"watch_present", "watch_enabled"},
+	{"lyrics_present", "lyrics_enabled"},
+	{"keytrace_present", "keytrace_enabled"},
+	{"update_present", "update_check_enabled"},
+}
+
+// settingsFeatures renders (GET) and persists (POST) the feature toggles
+// (Settings → Features).
+func (h *Handler) settingsFeatures(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	switch r.Method {
+	case http.MethodGet:
+		h.render(w, "settings_features.html", map[string]any{
+			"Breadcrumb":          []crumb{bcHome, bcSettings},
+			"Title":               "Features",
+			"IntegrityAutoRepair": h.effectiveIntegrityAutoRepair(ctx),
+			"WatchEnabled":        h.effectiveWatchEnabled(ctx),
+			"LyricsEnabled":       h.effectiveLyricsEnabled(ctx),
+			"KeytraceEnabled":     h.effectiveKeytraceEnabled(ctx),
+			"UpdateCheckEnabled":  h.effectiveUpdateCheckEnabled(ctx),
+			"Saved":               r.URL.Query().Get("saved"),
+		})
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsFeatures", "err", err)
 			return
 		}
-		if _, ok := r.Form["watch_present"]; ok {
-			// Default-ON kill-switch, same shape as integrity_autorepair.
-			val := "0"
-			if r.FormValue("watch_enabled") == "1" {
-				val = ""
+		for _, tg := range featureToggles {
+			if _, ok := r.Form[tg.sentinel]; !ok {
+				continue
 			}
-			if err := h.saveAPIKey(ctx, "watch_enabled", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+			spec, found := lookupSetting(tg.key)
+			if !found {
+				httpError(w, 500, "internal server error", "toggle missing from registry", "handler", "settingsFeatures", "key", tg.key)
 				return
 			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			val := spec.OffStored
+			if r.FormValue(tg.key) == "1" {
+				val = spec.OnStored
+			}
+			if err := h.saveAPIKey(ctx, tg.key, val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsFeatures", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/features?saved=1", http.StatusSeeOther)
 			return
 		}
-		if _, ok := r.Form["lyrics_present"]; ok {
-			// Default-OFF opt-in: store '1' when enabled, clear the row (→ off) otherwise.
-			val := ""
-			if r.FormValue("lyrics_enabled") == "1" {
-				val = "1"
-			}
-			if err := h.saveAPIKey(ctx, "lyrics_enabled", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
-			return
-		}
-		if _, ok := r.Form["keytrace_present"]; ok {
-			// Default-OFF opt-in diagnostic, same shape as lyrics_enabled.
-			val := ""
-			if r.FormValue("keytrace_enabled") == "1" {
-				val = "1"
-			}
-			if err := h.saveAPIKey(ctx, "keytrace_enabled", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/features", http.StatusSeeOther)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// settingsSubtitles renders (GET) and persists (POST) the playback defaults
+// (Settings → Subtitles): the subtitles-on default, subtitle language and
+// appearance, plus the default audio language (it shares the form — the one
+// playback preference that isn't subtitles).
+func (h *Handler) settingsSubtitles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	switch r.Method {
+	case http.MethodGet:
+		h.render(w, "settings_subtitles.html", map[string]any{
+			"Breadcrumb":          []crumb{bcHome, bcSettings},
+			"Title":               "Subtitles",
+			"DefaultAudioLang":    h.effectiveDefaultAudioLang(ctx),
+			"DefaultSubtitleLang": h.effectiveDefaultSubtitleLang(ctx),
+			"SubtitlesDefaultOn":  h.effectiveSubtitlesDefaultOn(ctx),
+			"SubtitleSize":        h.effectiveSubtitleSize(ctx),
+			"SubtitleBg":          h.effectiveSubtitleBg(ctx),
+			"SubtitlePosition":    h.effectiveSubtitlePosition(ctx),
+			"Saved":               r.URL.Query().Get("saved"),
+		})
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			httpError(w, 400, "bad request", "parse form failed", "handler", "settingsSubtitles", "err", err)
 			return
 		}
 		if _, ok := r.Form["playback_present"]; ok {
-			// The three playback defaults share one form (the OpenSubtitles
-			// key+UA precedent), saved together: two language preferences
-			// (sanitized; blank or invalid clears → no preference) and the
-			// default-OFF subtitles-on opt-in.
+			// One form saves everything together: two language preferences
+			// (sanitized; blank or invalid clears → no preference), the
+			// appearance enums (stored as submitted; effective* validates at
+			// read time via enumOr, so garbage degrades to the default), and
+			// the default-OFF subtitles-on opt-in.
 			for _, f := range []string{"default_audio_lang", "default_subtitle_lang"} {
 				if err := h.saveAPIKey(ctx, f, sanitizeLangSetting(r.FormValue(f))); err != nil {
-					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsSubtitles", "err", err)
 					return
 				}
 			}
-			// Appearance enums stored as submitted; effective* validates at read
-			// time (enumOr), so a hostile/garbage value degrades to the default.
 			for _, f := range []string{"subtitle_size", "subtitle_bg", "subtitle_position"} {
 				if err := h.saveAPIKey(ctx, f, strings.TrimSpace(r.FormValue(f))); err != nil {
-					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsSubtitles", "err", err)
 					return
 				}
 			}
@@ -417,26 +442,13 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				val = "1"
 			}
 			if err := h.saveAPIKey(ctx, "subtitles_default_on", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsSubtitles", "err", err)
 				return
 			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			http.Redirect(w, r, "/settings/subtitles?saved=1", http.StatusSeeOther)
 			return
 		}
-		if _, ok := r.Form["update_present"]; ok {
-			// Default-OFF opt-in automatic update check, same shape as lyrics_enabled.
-			val := ""
-			if r.FormValue("update_check_enabled") == "1" {
-				val = "1"
-			}
-			if err := h.saveAPIKey(ctx, "update_check_enabled", val); err != nil {
-				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
-				return
-			}
-			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
-			return
-		}
-		http.Redirect(w, r, "/settings/api-keys", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/subtitles", http.StatusSeeOther)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
