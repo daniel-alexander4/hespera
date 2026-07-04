@@ -631,7 +631,9 @@ func (s *Scanner) pruneMissingFiles(ctx context.Context, libraryID int64, root s
 	// Best-effort episode-thumb cleanup after the rows are gone — a leftover
 	// file is harmless (nothing references it) and unreferenced-by-construction.
 	for _, id := range staleIDs {
-		_ = os.Remove(filepath.Join(s.episodeThumbsDir(), EpisodeThumbFileName(id)))
+		for _, rel := range EpisodeThumbRelPaths(id) {
+			_ = os.Remove(filepath.Join(s.episodeThumbsDir(), rel))
+		}
 	}
 	return nil
 }

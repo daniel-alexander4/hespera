@@ -32,6 +32,11 @@ type Config struct {
 	HLSEncoder         string
 	TVHLSCacheMaxBytes int64
 	TVCacheMaxAge      time.Duration
+	// TrickplayCacheMaxBytes bounds the seek-preview sprite cache. Unlike the
+	// HLS cache, sprites are durable (content-keyed, regenerated only when the
+	// file changes), so they get a size cap but no age TTL — eviction is LRU
+	// via serve-time touches.
+	TrickplayCacheMaxBytes int64
 }
 
 func FromEnv() Config {
@@ -73,6 +78,9 @@ func FromEnv() Config {
 		TVCacheMaxAge: parseDurationDefault(
 			os.Getenv("HESPERA_TV_CACHE_MAX_AGE"), 72*time.Hour,
 		),
+		TrickplayCacheMaxBytes: parsePositiveInt64Default(
+			os.Getenv("HESPERA_TRICKPLAY_CACHE_MAX_BYTES"), 10<<30,
+		),
 	}
 }
 
@@ -108,6 +116,9 @@ func (c Config) Validate() error {
 	}
 	if c.TVCacheMaxAge < 0 {
 		return errors.New("HESPERA_TV_CACHE_MAX_AGE must be >= 0")
+	}
+	if c.TrickplayCacheMaxBytes < 0 {
+		return errors.New("HESPERA_TRICKPLAY_CACHE_MAX_BYTES must be >= 0")
 	}
 	return nil
 }

@@ -19,6 +19,12 @@ import (
 // was checked, a plain-language mitigation, and a link to the owning
 // season/movie/album page.
 
+// integrityReportCap bounds the report to a renderable page (the review-list
+// cap-with-count pattern): under mass corruption — a dead mount flagging every
+// file — an uncapped report would load and render O(library) rows in one
+// request. The count still shows the true damage size.
+const integrityReportCap = 200
+
 // integrityReportRow is one damaged file on the report.
 type integrityReportRow struct {
 	Title      string // resolved display title (series SxE / film / artist — track)
@@ -68,12 +74,16 @@ func (h *Handler) librariesIntegrityReport(w http.ResponseWriter, r *http.Reques
 	}
 
 	var rows []integrityReportRow
+	var table string
 	switch libType {
 	case "tv":
+		table = "tv_series_files"
 		rows, err = h.integrityReportTV(r.Context(), libID)
 	case "movies":
+		table = "movie_files"
 		rows, err = h.integrityReportMovies(r.Context(), libID)
 	case "music":
+		table = "music_tracks"
 		rows, err = h.integrityReportMusic(r.Context(), libID)
 	default:
 		http.Error(w, "library type has no integrity data", http.StatusBadRequest)
@@ -82,6 +92,12 @@ func (h *Handler) librariesIntegrityReport(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		httpError(w, 500, "internal server error", "integrity report failed", "handler", "librariesIntegrityReport", "err", err)
 		return
+	}
+	var total int
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM "+table+" WHERE library_id=? AND integrity_status IN ('flagged','degraded')",
+		libID).Scan(&total); err != nil {
+		total = len(rows)
 	}
 
 	var flagged, degraded []integrityReportRow
@@ -99,6 +115,8 @@ func (h *Handler) librariesIntegrityReport(w http.ResponseWriter, r *http.Reques
 		"LibraryName": libName,
 		"Flagged":     flagged,
 		"Degraded":    degraded,
+		"Shown":       len(rows),
+		"Total":       total,
 	})
 }
 
@@ -112,7 +130,7 @@ SELECT f.abs_path, f.file_size_bytes, f.integrity_status, f.integrity_detail, f.
 FROM tv_series_files f
 LEFT JOIN tv_series_identities i ON i.file_id = f.id
 WHERE f.library_id=? AND f.integrity_status IN ('flagged','degraded')
-ORDER BY i.series_id, i.season_number, i.episode_numbers_csv, f.abs_path`, libID)
+ORDER BY i.series_id, i.season_number, i.episode_numbers_csv, f.abs_path LIMIT `+strconv.Itoa(integrityReportCap), libID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +198,7 @@ SELECT abs_path, file_size_bytes, integrity_status, integrity_detail, integrity_
        tmdb_id, match_status, guessed_title, year
 FROM movie_files
 WHERE library_id=? AND integrity_status IN ('flagged','degraded')
-ORDER BY guessed_title, abs_path`, libID)
+ORDER BY guessed_title, abs_path LIMIT `+strconv.Itoa(integrityReportCap), libID)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +268,7 @@ FROM music_tracks t
 JOIN music_artists ar ON ar.id = t.artist_id
 JOIN music_albums al ON al.id = t.album_id
 WHERE t.library_id=? AND t.integrity_status IN ('flagged','degraded')
-ORDER BY ar.name, al.title, t.disc_no, t.track_no`, libID)
+ORDER BY ar.name, al.title, t.disc_no, t.track_no LIMIT `+strconv.Itoa(integrityReportCap), libID)
 	if err != nil {
 		return nil, err
 	}

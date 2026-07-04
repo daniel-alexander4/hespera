@@ -9,6 +9,10 @@
 </div>
 {{end}}{{end}}
 
+{{if gt .Total .Shown}}
+<p class="form-help">Showing the first {{.Shown}} of {{.Total}} damaged files.</p>
+{{end}}
+
 {{if .Flagged}}
 <h2 class="section-title">Corrupt — needs replacement ({{len .Flagged}})</h2>
 <p class="form-help">Unrepairable damage: decode errors or a container auto-repair couldn't fix. These files may show artifacts or fail during playback.</p>
