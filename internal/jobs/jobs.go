@@ -175,6 +175,7 @@ func (s *Service) RequestCancel(jobID int64) error {
 }
 
 func (s *Service) worker() {
+	lowerWorkerPriority()
 	for req := range s.queue {
 		s.runJob(req)
 	}

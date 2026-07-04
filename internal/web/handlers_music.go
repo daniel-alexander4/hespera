@@ -327,11 +327,17 @@ type eraPickerData struct {
 // library has no year-tagged albums (nothing to shuffle by era → the `with
 // .EraPicker` block renders nothing). The single source for the picker's range,
 // shared by musicHome and the Home Quick-Play card.
+//
+// The span is clamped to plausible years: era_slider.js draws one tape tick PER
+// YEAR of the span, so a single mangled year tag (a real library carried
+// year=20132013) would otherwise make the client build tens of millions of DOM
+// nodes and exhaust the machine's memory. Garbage-year albums stay browsable
+// and playable — they just don't stretch the picker.
 func (h *Handler) eraPicker(ctx context.Context, libraryID int64) *eraPickerData {
 	var minY, maxY int
 	err := h.db.QueryRowContext(ctx,
-		"SELECT COALESCE(MIN(year), 0), COALESCE(MAX(year), 0) FROM music_albums WHERE library_id=? AND year>0",
-		libraryID).Scan(&minY, &maxY)
+		"SELECT COALESCE(MIN(year), 0), COALESCE(MAX(year), 0) FROM music_albums WHERE library_id=? AND year BETWEEN 1900 AND ?",
+		libraryID, time.Now().Year()+1).Scan(&minY, &maxY)
 	if err != nil || minY <= 0 || maxY <= 0 {
 		return nil
 	}
