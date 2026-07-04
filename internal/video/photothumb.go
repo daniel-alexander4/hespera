@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,16 +30,53 @@ func PhotoThumb(ctx context.Context, src, dst string, maxDim, orientation int, i
 	}
 	defer release()
 
-	err = photoThumbOnce(ctx, src, dst, maxDim, orientation, isVideo, isVideo)
+	lead := 0.0
+	if isVideo {
+		lead = 1 // skip a camcorder's black lead-in frame
+	}
+	err = photoThumbOnce(ctx, src, dst, maxDim, orientation, isVideo, lead)
 	if err != nil && isVideo && ctx.Err() == nil {
 		// A clip shorter than the lead-in seeks past EOF and grabs no frame —
 		// retry from the first frame rather than marking it unavailable.
-		err = photoThumbOnce(ctx, src, dst, maxDim, orientation, true, false)
+		err = photoThumbOnce(ctx, src, dst, maxDim, orientation, true, 0)
 	}
 	return err
 }
 
-func photoThumbOnce(ctx context.Context, src, dst string, maxDim, orientation int, isVideo, leadIn bool) error {
+// FrameGrab renders a downscaled webp of the video frame at seekSec — the TV
+// episode thumbnails. Same gate/temp/rename contract as PhotoThumb (including
+// ErrBusy on a saturated gate). A seek past EOF grabs nothing, so it falls
+// back toward the start (seekSec → 1s → 0) before giving up.
+func FrameGrab(ctx context.Context, src, dst string, maxDim int, seekSec float64) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	release, err := acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("frame grab acquire slot: %w: %v", ErrBusy, err)
+	}
+	defer release()
+
+	for _, seek := range frameGrabLadder(seekSec) {
+		if err = photoThumbOnce(ctx, src, dst, maxDim, 0, true, seek); err == nil || ctx.Err() != nil {
+			return err
+		}
+	}
+	return err
+}
+
+// frameGrabLadder is the fallback sequence of seek offsets FrameGrab tries.
+func frameGrabLadder(seekSec float64) []float64 {
+	ladder := []float64{seekSec}
+	if seekSec > 1 {
+		ladder = append(ladder, 1)
+	}
+	if seekSec > 0 {
+		ladder = append(ladder, 0)
+	}
+	return ladder
+}
+
+func photoThumbOnce(ctx context.Context, src, dst string, maxDim, orientation int, isVideo bool, seekSec float64) error {
 	var vf []string
 	if !isVideo {
 		vf = append(vf, orientationFilters(orientation)...)
@@ -46,8 +84,8 @@ func photoThumbOnce(ctx context.Context, src, dst string, maxDim, orientation in
 	vf = append(vf, fmt.Sprintf("scale=w=%d:h=%d:force_original_aspect_ratio=decrease", maxDim, maxDim))
 
 	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
-	if leadIn {
-		args = append(args, "-ss", "1") // skip a camcorder's black lead-in frame
+	if seekSec > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(seekSec, 'f', 3, 64)) // input-side fast seek (keyframe-accurate)
 	}
 	args = append(args,
 		"-i", src,

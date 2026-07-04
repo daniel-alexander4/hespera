@@ -71,6 +71,7 @@ type tvEpisodeRow struct {
 	Missing       bool   // in TMDB metadata but no file present locally
 	Flagged       bool   // file has unrepairable corruption (integrity_status='flagged')
 	FlagDetail    string // integrity_detail — the human-readable reason
+	HasThumb      bool   // a generated frame-grab thumbnail exists (thumb_path set)
 }
 
 // --- TV Series List ---
@@ -653,7 +654,7 @@ func (h *Handler) tvSeasonDetail(w http.ResponseWriter, r *http.Request) {
 	fileRows, err := h.db.QueryContext(r.Context(), `
 SELECT f.id, i.episode_numbers_csv,
        COALESCE(p.position_seconds, 0), COALESCE(p.duration_seconds, 0), COALESCE(p.completed, 0),
-       f.integrity_status, f.integrity_detail
+       f.integrity_status, f.integrity_detail, f.thumb_path
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 LEFT JOIN tv_playback_progress p ON p.file_id = f.id
@@ -673,8 +674,8 @@ ORDER BY i.episode_numbers_csv
 		var epCSV string
 		var pos, dur float64
 		var completed int
-		var integStatus, integDetail string
-		if err := fileRows.Scan(&fileID, &epCSV, &pos, &dur, &completed, &integStatus, &integDetail); err != nil {
+		var integStatus, integDetail, thumbPath string
+		if err := fileRows.Scan(&fileID, &epCSV, &pos, &dur, &completed, &integStatus, &integDetail, &thumbPath); err != nil {
 			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeasonDetail", "err", err)
 			return
 		}
@@ -706,6 +707,7 @@ ORDER BY i.episode_numbers_csv
 				Completed:     completed == 1,
 				Flagged:       integStatus == "flagged",
 				FlagDetail:    integDetail,
+				HasThumb:      thumbPath != "" && thumbPath != "unavailable",
 			}
 			if cached, ok := epCacheMap[epNum]; ok {
 				epRow.Name = cached.Name
@@ -1212,6 +1214,27 @@ func (h *Handler) tvSeriesDetectIntros(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- TV Art ---
+
+// episodeArt serves an episode file's frame-grabbed thumbnail
+// (tv_series_files.thumb_path). 404 when none exists (pending or
+// unavailable) — the season page renders its own placeholder.
+func (h *Handler) episodeArt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	id, err := pathID(r, "/art/episode/")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var thumb string
+	if err := h.db.QueryRowContext(r.Context(), "SELECT thumb_path FROM tv_series_files WHERE id=?", id).Scan(&thumb); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.serveGeneratedThumb(w, r, thumb)
+}
 
 func (h *Handler) tvArt(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

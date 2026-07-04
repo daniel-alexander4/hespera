@@ -360,8 +360,10 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
   extra_title=excluded.extra_title,
   extra_category=excluded.extra_category,
   -- a changed file (new size or mtime) invalidates its integrity status so the
-  -- next integrity_check re-examines (and re-repairs) it.
+  -- next integrity_check re-examines (and re-repairs) it, and its episode
+  -- thumbnail so the tv_thumb job regenerates the frame grab.
   integrity_status=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE integrity_status END,
+  thumb_path=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE thumb_path END,
   updated_at=datetime('now')
 `, libraryID, resolvedPath, container, fileSize, mtimeUnix, streamInfoJSON, extra.isExtra(), extra.Title, extra.Category)
 	if err != nil {
@@ -623,5 +625,13 @@ func (s *Scanner) pruneMissingFiles(ctx context.Context, libraryID int64, root s
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Best-effort episode-thumb cleanup after the rows are gone — a leftover
+	// file is harmless (nothing references it) and unreferenced-by-construction.
+	for _, id := range staleIDs {
+		_ = os.Remove(filepath.Join(s.episodeThumbsDir(), EpisodeThumbFileName(id)))
+	}
+	return nil
 }

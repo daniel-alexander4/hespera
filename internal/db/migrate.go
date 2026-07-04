@@ -433,6 +433,12 @@ func Migrate(db *sql.DB) error {
 	// Added here for DBs that created people before the column existed (the canonical
 	// CREATE TABLE carries it too); without it, personDetail's SELECT errors and the
 	// actor page can't read the stored name/bio.
+	// Episode screen-capture thumbnails: '' = pending generation (reset when
+	// the file's bytes change), 'unavailable' = grab failed, else the id-keyed
+	// file under DataDir/thumbs/episodes.
+	if err := ensureColumn(db, "tv_series_files", "thumb_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := ensureColumn(db, "people", "filmography_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}

@@ -398,13 +398,23 @@ func (h *Handler) photoArt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var thumb string
-	if err := h.db.QueryRowContext(r.Context(), "SELECT thumb_path FROM photos WHERE id=?", id).Scan(&thumb); err != nil || thumb == "" || thumb == "unavailable" {
+	if err := h.db.QueryRowContext(r.Context(), "SELECT thumb_path FROM photos WHERE id=?", id).Scan(&thumb); err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	// Containment before serving a DB-stored path — the same defense-in-depth
-	// guard tvArt/personArt apply (a corrupted row must not read outside the
-	// data dir).
+	h.serveGeneratedThumb(w, r, thumb)
+}
+
+// serveGeneratedThumb serves a DB-stored generated-thumbnail path (photo grid
+// thumbs, TV episode thumbs). 404 for the pending ''/'unavailable' states —
+// the templates render their own placeholder. Containment before serving the
+// stored path: the same defense-in-depth guard tvArt/personArt apply (a
+// corrupted row must not read outside the data dir).
+func (h *Handler) serveGeneratedThumb(w http.ResponseWriter, r *http.Request, thumb string) {
+	if thumb == "" || thumb == "unavailable" {
+		http.NotFound(w, r)
+		return
+	}
 	clean, err := pathguard.ResolveExistingUnderRoot(h.cfg.DataDir, thumb)
 	if err != nil {
 		http.NotFound(w, r)
