@@ -174,9 +174,6 @@
       // Native fullscreen owns Escape: exiting fullscreen must not also
       // navigate. Let the browser handle it untouched.
       if (document.fullscreenElement) return;
-      // An open topbar dropdown owns Escape too — layout.html's own document
-      // listener closes it; we just don't navigate on the same press.
-      if (document.querySelector('[data-menu][data-open="1"]')) return;
       html.classList.remove('using-mouse');
       e.preventDefault();
       const overlay = openOverlay();
