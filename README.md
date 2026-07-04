@@ -91,7 +91,10 @@ hespera
 ```
 
 That's it — Hespera opens an app window automatically, bound to a random
-loopback port (so it never collides with anything else). On first run, the
+loopback port (so it never collides with anything else). The window is a
+Chromium-family app-mode window (Chrome, Chromium, Edge, or Brave — on Linux
+one of these must be installed; Hespera deliberately won't hand the app
+window to a non-Chromium default browser). On first run, the
 window walks you through pointing it at your media folder and adding a library;
 you can also set the media folder under **Libraries** or with
 `HESPERA_MEDIA_ROOT`. It stores its database, caches, and downloaded artwork in
@@ -131,8 +134,11 @@ sudo ufw allow from 192.168.1.0/24 to any port 8080 proto tcp   # your LAN subne
 
 Devices then browse `http://<hostname>:8080`. Phones and laptops get the
 right UI scale automatically; a TV browser can pin the 10-foot scale once
-with `?scale=tv` (it persists per browser). On the server's own screen, the
-same instance is just a browser tab away at `http://localhost:8080`.
+with `?scale=tv` (it persists per browser). On the server's own screen,
+**just launch Hespera from the app menu as usual** — when a running instance
+is detected (the service), the launcher *attaches*: it opens the same
+chromeless app window onto it instead of starting a second copy, and exits.
+Stop the service and the icon goes back to launching a standalone app.
 
 Notes for shared use: Hespera has one household-wide state — watched marks,
 resume positions, and playlists are shared by everyone (there are no user

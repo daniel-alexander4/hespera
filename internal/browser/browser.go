@@ -2,12 +2,18 @@
 //
 // We prefer a Chromium-family browser's --app mode, which gives a dedicated,
 // address-bar-free window that looks like a native desktop app while reusing an
-// engine that's already installed. If none is found we fall back to opening the
-// URL as an ordinary tab in the default browser. (Safari has no app mode, so a
-// Safari-only Mac takes the tab fallback — by design.)
+// engine that's already installed. On macOS/Windows, if none is found we fall
+// back to opening the URL as an ordinary tab in the default browser (Safari has
+// no app mode, so a Safari-only Mac takes the tab fallback — by design; Windows
+// always has Edge, so its fallback is theoretical). On Linux there is NO
+// fallback: the app window is Chromium-family or nothing — falling back to
+// xdg-open handed the window to whatever the default browser was (Firefox, with
+// none of the app chrome), which is worse than an error telling the user to
+// install chromium or browse to the printed URL.
 package browser
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"runtime"
@@ -54,6 +60,9 @@ func Open(url, userDataDir string) (*exec.Cmd, error) {
 		// fall through to the tab fallback if the app-mode launch failed
 	}
 
+	if runtime.GOOS == "linux" {
+		return nil, errors.New("no Chromium-family browser found (install google-chrome or chromium for the app window)")
+	}
 	name, args := tabOpener(url)
 	cmd := exec.Command(name, args...)
 	return cmd, cmd.Start()
