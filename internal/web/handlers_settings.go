@@ -274,6 +274,9 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"DefaultAudioLang":        h.effectiveDefaultAudioLang(ctx),
 			"DefaultSubtitleLang":     h.effectiveDefaultSubtitleLang(ctx),
 			"SubtitlesDefaultOn":      h.effectiveSubtitlesDefaultOn(ctx),
+			"SubtitleSize":            h.effectiveSubtitleSize(ctx),
+			"SubtitleBg":              h.effectiveSubtitleBg(ctx),
+			"SubtitlePosition":        h.effectiveSubtitlePosition(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -397,6 +400,14 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			// default-OFF subtitles-on opt-in.
 			for _, f := range []string{"default_audio_lang", "default_subtitle_lang"} {
 				if err := h.saveAPIKey(ctx, f, sanitizeLangSetting(r.FormValue(f))); err != nil {
+					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+					return
+				}
+			}
+			// Appearance enums stored as submitted; effective* validates at read
+			// time (enumOr), so a hostile/garbage value degrades to the default.
+			for _, f := range []string{"subtitle_size", "subtitle_bg", "subtitle_position"} {
+				if err := h.saveAPIKey(ctx, f, strings.TrimSpace(r.FormValue(f))); err != nil {
 					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 					return
 				}

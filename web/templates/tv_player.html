@@ -5,7 +5,7 @@
     <h2>{{if .IsExtra}}{{.EpName}}{{else}}S{{.SeasonNum}} — {{.EpName}}{{end}}</h2>
   </div>
 
-  <div class="tv-player-video-wrap" id="tvPlayerWrap">
+  <div class="tv-player-video-wrap" id="tvPlayerWrap" style="{{.CaptionVars}}">
     <video id="tvVideo" class="tv-video" autoplay
            data-media-kind="tv"
            data-file-id="{{.FileID}}"

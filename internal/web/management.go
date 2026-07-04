@@ -243,6 +243,9 @@ var managedSettings = []settingSpec{
 	{Key: "default_audio_lang", Kind: kindString},
 	{Key: "default_subtitle_lang", Kind: kindString},
 	{Key: "subtitles_default_on", Kind: kindToggle, OnStored: "1", OffStored: ""},
+	{Key: "subtitle_size", Kind: kindString, Default: "normal"},
+	{Key: "subtitle_bg", Kind: kindString, Default: "translucent"},
+	{Key: "subtitle_position", Kind: kindString, Default: "normal"},
 	{Key: "media_root", Kind: kindPath, Env: "HESPERA_MEDIA_ROOT", ApplyOnRestart: true},
 }
 

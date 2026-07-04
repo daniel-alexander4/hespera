@@ -1694,6 +1694,7 @@ WHERE f.id = ?
 		"NextFileID":           nextFileID,
 		"Container":            container,
 		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "",
+		"CaptionVars":          h.captionStyleVars(r.Context()),
 	})
 }
 

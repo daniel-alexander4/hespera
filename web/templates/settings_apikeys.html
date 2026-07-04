@@ -228,6 +228,35 @@
       (no match &mdash; subtitles stay off). Blank: any text track qualifies.
     </small>
   </div>
+  <div class="form-group">
+    <label for="subtitle_size">Subtitle size</label>
+    <select id="subtitle_size" name="subtitle_size" class="input">
+      <option value="small"{{if eq .SubtitleSize "small"}} selected{{end}}>Small</option>
+      <option value="normal"{{if eq .SubtitleSize "normal"}} selected{{end}}>Normal</option>
+      <option value="large"{{if eq .SubtitleSize "large"}} selected{{end}}>Large</option>
+      <option value="xlarge"{{if eq .SubtitleSize "xlarge"}} selected{{end}}>Extra large</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="subtitle_bg">Subtitle background</label>
+    <select id="subtitle_bg" name="subtitle_bg" class="input">
+      <option value="none"{{if eq .SubtitleBg "none"}} selected{{end}}>None</option>
+      <option value="translucent"{{if eq .SubtitleBg "translucent"}} selected{{end}}>Translucent</option>
+      <option value="solid"{{if eq .SubtitleBg "solid"}} selected{{end}}>Solid</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="subtitle_position">Subtitle position</label>
+    <select id="subtitle_position" name="subtitle_position" class="input">
+      <option value="normal"{{if eq .SubtitlePosition "normal"}} selected{{end}}>Normal</option>
+      <option value="raised"{{if eq .SubtitlePosition "raised"}} selected{{end}}>Raised</option>
+      <option value="high"{{if eq .SubtitlePosition "high"}} selected{{end}}>High</option>
+    </select>
+    <small class="form-help">
+      Size, background, and position apply to text subtitles rendered by the player.
+      Image-based (burn-in) subtitles are part of the video picture and can't be restyled.
+    </small>
+  </div>
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save</button>
     <a href="/settings" class="btn">Back</a>
