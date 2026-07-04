@@ -696,8 +696,7 @@
   // Keydown fallback for media keys delivered as real key events (Chrome
   // normally consumes them for the Media Session above; other environments —
   // or Chrome with hardware-media-key handling off — deliver keydown instead).
-  // Same dispatch: an active video player first, else the music engine. Also
-  // makes remote media buttons visible to the keytrace diagnostic.
+  // Same dispatch: an active video player first, else the music engine.
   const MEDIA_KEY_ACTIONS = {
     MediaPlayPause: 'playpause',
     MediaPlay: 'play',

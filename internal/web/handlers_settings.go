@@ -344,7 +344,6 @@ var featureToggles = []struct{ sentinel, key string }{
 	{"integrity_present", "integrity_autorepair"},
 	{"watch_present", "watch_enabled"},
 	{"lyrics_present", "lyrics_enabled"},
-	{"keytrace_present", "keytrace_enabled"},
 	{"update_present", "update_check_enabled"},
 }
 
@@ -360,7 +359,6 @@ func (h *Handler) settingsFeatures(w http.ResponseWriter, r *http.Request) {
 			"IntegrityAutoRepair": h.effectiveIntegrityAutoRepair(ctx),
 			"WatchEnabled":        h.effectiveWatchEnabled(ctx),
 			"LyricsEnabled":       h.effectiveLyricsEnabled(ctx),
-			"KeytraceEnabled":     h.effectiveKeytraceEnabled(ctx),
 			"UpdateCheckEnabled":  h.effectiveUpdateCheckEnabled(ctx),
 			"Saved":               r.URL.Query().Get("saved"),
 		})
