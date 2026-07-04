@@ -3,9 +3,9 @@
 {{define "pagination"}}
 {{if gt .TotalPages 1}}
 <nav class="pagination" aria-label="Pagination">
-  {{if .HasPrev}}<a class="btn btn-sm" href="{{.BasePath}}?page={{.PrevPage}}" rel="prev">{{template "icon-rewind"}}Prev</a>{{else}}<span class="btn btn-sm" aria-disabled="true">{{template "icon-rewind"}}Prev</span>{{end}}
+  {{if .HasPrev}}<a class="btn btn-sm" href="{{.BasePath}}?{{if .Query}}{{.Query}}&{{end}}page={{.PrevPage}}" rel="prev">{{template "icon-rewind"}}Prev</a>{{else}}<span class="btn btn-sm" aria-disabled="true">{{template "icon-rewind"}}Prev</span>{{end}}
   <span class="pagination-info">Page {{.Page}} of {{.TotalPages}}</span>
-  {{if .HasNext}}<a class="btn btn-sm" href="{{.BasePath}}?page={{.NextPage}}" rel="next">Next{{template "icon-fast-forward"}}</a>{{else}}<span class="btn btn-sm" aria-disabled="true">Next{{template "icon-fast-forward"}}</span>{{end}}
+  {{if .HasNext}}<a class="btn btn-sm" href="{{.BasePath}}?{{if .Query}}{{.Query}}&{{end}}page={{.NextPage}}" rel="next">Next{{template "icon-fast-forward"}}</a>{{else}}<span class="btn btn-sm" aria-disabled="true">Next{{template "icon-fast-forward"}}</span>{{end}}
 </nav>
 {{end}}
 {{end}}

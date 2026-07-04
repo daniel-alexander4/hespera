@@ -147,6 +147,13 @@ func (s *Scanner) ScanPhotos(ctx context.Context, jobID, libraryID int64) error 
 			}
 			return nil
 		}
+		if err == nil {
+			// Bytes changed in place: the upsert resets thumb_path (the grid
+			// thumb regenerates), but the display rendition is a separate
+			// id-keyed cache file nothing else invalidates — drop it so the
+			// viewer can't keep serving the old image.
+			_ = os.Remove(filepath.Join(s.thumbsDir(), ThumbFileNames(existingID)[1]))
+		}
 
 		dirRel := "."
 		if rel, relErr := filepath.Rel(cleanRoot, filepath.Dir(resolvedPath)); relErr == nil {
@@ -270,7 +277,8 @@ func countEligibleFiles(root string) int {
 }
 
 // relinkMovedFiles carries a moved/renamed file's playback progress (clips)
-// and generated thumbnail onto its new row before prune deletes the orphan.
+// onto its new row before prune deletes the orphan. Thumbnails are id-keyed
+// and regenerate for the new row (see transferFileState) — they don't move.
 // Same-file signature = (file_size_bytes, mtime_unix), strictly 1:1.
 func (s *Scanner) relinkMovedFiles(ctx context.Context, libraryID int64, root string) error {
 	rows, err := s.DB.QueryContext(ctx,

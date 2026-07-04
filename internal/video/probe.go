@@ -3,6 +3,7 @@ package video
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -43,6 +44,12 @@ func SetSegmentConcurrency(limit int) {
 		segmentSem = make(chan struct{}, limit)
 	}
 }
+
+// ErrBusy marks an ffmpeg-gate acquire failure — a transient scheduling
+// condition (every slot momentarily occupied), not a property of the input
+// file. A caller that records a permanent per-file failure must treat an
+// errors.Is(err, ErrBusy) error as retryable instead.
+var ErrBusy = errors.New("ffmpeg gate busy")
 
 // acquire blocks for a general ffmpeg concurrency slot and returns a release
 // func. A nil semaphore (the default) means unlimited and never blocks. It

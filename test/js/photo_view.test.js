@@ -7,16 +7,18 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { loadController } = require('./harness');
 
-function boot({ prev = '', next = '' } = {}) {
+function boot({ prev = '', next = '', usingMouse = false } = {}) {
   const visited = [];
+  const actions = [];
   const env = loadController('photo_view.js', {
-    html: `<!DOCTYPE html><html><body>
+    html: `<!DOCTYPE html><html${usingMouse ? ' class="using-mouse"' : ''}><body>
       <div class="photo-view" id="photoView" tabindex="0" data-prev="${prev}" data-next="${next}"></div>
     </body></html>`,
     url: 'http://localhost/photos/view?id=5',
-    stubs: { Turbo: { visit: (u) => visited.push(u) } },
+    stubs: { Turbo: { visit: (u, o) => { visited.push(u); actions.push(o && o.action); } } },
   });
   env.visited = visited;
+  env.actions = actions;
   env.document.dispatchEvent(new env.window.Event('turbo:load'));
   return env;
 }
@@ -35,6 +37,18 @@ test('arrows navigate to the prev/next photo and are consumed before couch', () 
   assert.deepStrictEqual(env.visited, ['/photos/view?id=6&year=2019']);
   e = press(env, 'ArrowLeft');
   assert.deepStrictEqual(env.visited[1], '/photos/view?id=4&year=2019');
+});
+
+test('arrow visits REPLACE history so couch Back returns to the grid, not the photo trail', () => {
+  const env = boot({ prev: '/p', next: '/n' });
+  press(env, 'ArrowRight');
+  press(env, 'ArrowRight');
+  assert.deepStrictEqual(env.actions, ['replace', 'replace'], 'every arrow visit uses the replace action');
+});
+
+test('a mouse-driven visit is never focus-stolen (using-mouse modality)', () => {
+  const env = boot({ prev: '/p', next: '/n', usingMouse: true });
+  assert.notStrictEqual(env.document.activeElement.id, 'photoView', 'no focus steal under using-mouse');
 });
 
 test('at the first/last photo the arrow is consumed but does not navigate', () => {

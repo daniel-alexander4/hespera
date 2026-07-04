@@ -58,6 +58,7 @@
   <div class="empty-state"><p>No folders.</p></div>
   {{end}}
 </div>
+{{template "pagination" .Page}}
 {{else}}
 <div class="band-albums-grid photo-grid" data-grid-pager data-page="{{.Page.Page}}" data-total-pages="{{.Page.TotalPages}}">
   {{template "photo-cards" .}}
@@ -75,7 +76,7 @@
 {{$q := .Filters.CtxQuery}}
 {{range .Cards}}
 {{if .Header}}<h3 class="photo-date-header">{{.Header}}</h3>{{end}}
-<a href="{{if eq .Kind "video"}}/photo/player?file={{.ID}}{{else}}/photos/view?id={{.ID}}{{if $q}}&{{$q}}{{end}}{{end}}" class="band-album-card photo-card" title="{{.Name}} · {{.TakenAt}}">
+<a href="{{if eq .Kind "video"}}/photo/player?file={{.ID}}{{else}}/photos/view?id={{.ID}}{{end}}{{if $q}}&{{$q}}{{end}}" class="band-album-card photo-card" title="{{.Name}} · {{.TakenAt}}">
   <div class="band-album-art photo-thumb">
     {{if .HasThumb}}
     <img src="/art/photo/{{.ID}}" alt="{{.Name}}" loading="lazy" />

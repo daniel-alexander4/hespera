@@ -142,3 +142,43 @@ test('single-page grids wire nothing', async () => {
   await flush();
   assert.strictEqual(env.calls.length, 0, 'no prefetch when there is only one page');
 });
+
+test('the fragment cache keys on the query — tabs sharing a pathname never bleed', async () => {
+  const panel = (page, total) => `
+    <div class="subtab-panel">
+      <div class="band-albums-grid" data-grid-pager data-page="${page}" data-total-pages="${total}">
+        ${cards(4, page)}
+      </div>
+      <nav class="grid-pager" data-total-pages="${total}">
+        <a class="grid-pager-btn grid-pager-prev" href="#">L</a>
+        <a class="grid-pager-btn grid-pager-next" href="#">R</a>
+        <span class="grid-pager-info">Page ${page} of ${total}</span>
+      </nav>
+    </div>`;
+  const calls = [];
+  const fetch = async (url) => {
+    calls.push(String(url));
+    const u = new URL(String(url), 'http://localhost');
+    const tag = u.searchParams.get('tab') || 'none';
+    return { ok: true, text: async () => `<a class="band-album-card" href="#">${tag}-p${u.searchParams.get('page')}</a>` };
+  };
+  const env = loadController('grid_pager.js', {
+    html: `<!DOCTYPE html><html><body>${panel(1, 2)}</body></html>`,
+    url: 'http://localhost/photos?tab=all',
+    stubs: { fetch },
+  });
+  env.document.dispatchEvent(new env.window.Event('turbo:load'));
+  await flush(); // prefetch caches page 2 under tab=all
+
+  // Turbo swap to the Videos tab: same pathname, different query — the
+  // module-scoped cache survives; the key must not collide with tab=all.
+  env.window.history.replaceState(null, '', '/photos?tab=videos');
+  env.document.body.innerHTML = panel(1, 2);
+  env.document.dispatchEvent(new env.window.Event('turbo:load'));
+  env.document.querySelector('.grid-pager-next').click();
+  await flush();
+  assert.ok(grid(env).innerHTML.includes('videos-p2'),
+    'videos tab renders its own page 2, not the cached all-tab fragment');
+  assert.ok(calls.some((u) => u.includes('tab=videos') && u.includes('page=2')),
+    'page 2 re-fetched under tab=videos');
+});

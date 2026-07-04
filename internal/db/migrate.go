@@ -288,8 +288,12 @@ CREATE TABLE IF NOT EXISTS photos (
   UNIQUE(library_id, abs_path)
 );
 
-CREATE INDEX IF NOT EXISTS idx_photos_library_taken ON photos(library_id, taken_at);
-CREATE INDEX IF NOT EXISTS idx_photos_library_dir ON photos(library_id, dir_rel);
+-- The photos browse surfaces are one merged view across all photos libraries
+-- (no query constrains library_id): the grid orders by (taken_at, id), the
+-- viewer's prev/next is a row-value seek on the same tuple, and the Folders
+-- tab groups by dir_rel — so the indexes lead with those columns.
+CREATE INDEX IF NOT EXISTS idx_photos_taken_id ON photos(taken_at, id);
+CREATE INDEX IF NOT EXISTS idx_photos_dir ON photos(dir_rel);
 
 CREATE TABLE IF NOT EXISTS photo_playback_progress (
   file_id INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
@@ -479,6 +483,11 @@ CREATE INDEX IF NOT EXISTS idx_music_tracks_flagged ON music_tracks(library_id) 
 CREATE INDEX IF NOT EXISTS idx_tv_series_files_degraded ON tv_series_files(library_id) WHERE integrity_status='degraded';
 CREATE INDEX IF NOT EXISTS idx_movie_files_degraded ON movie_files(library_id) WHERE integrity_status='degraded';
 CREATE INDEX IF NOT EXISTS idx_music_tracks_degraded ON music_tracks(library_id) WHERE integrity_status='degraded';
+-- Superseded photos indexes: they led with library_id, which no photos query
+-- constrains (the browse is one merged view), so they served nothing. Replaced
+-- by idx_photos_taken_id / idx_photos_dir in schemaSQL.
+DROP INDEX IF EXISTS idx_photos_library_taken;
+DROP INDEX IF EXISTS idx_photos_library_dir;
 `); err != nil {
 		return err
 	}

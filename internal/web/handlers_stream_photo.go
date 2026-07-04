@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
@@ -54,15 +55,23 @@ func (h *Handler) photoPlayer(w http.ResponseWriter, r *http.Request) {
 	if t, terr := time.Parse("2006-01-02 15:04:05", takenAt); terr == nil {
 		when = t.Format("January 2, 2006")
 	}
-	// |< / >| step through adjacent clips in the Videos tab's default order
-	// (newest first) — the same neighbor resolution the photo viewer uses. A
-	// non-zero next also arms the shared Up Next auto-advance card.
-	prevID, nextID := h.photoNeighbors(r.Context(), photoFilters{Tab: "videos", Order: "desc"}, fileID, takenAt)
+	// |< / >| step through adjacent clips in the launch context — the same
+	// year/dir/order filters the grid card or viewer Play link appended to
+	// this URL (the neighbor resolution the photo viewer uses), forced
+	// video-only regardless of the launch tab (a still can't play). A bare
+	// /photo/player?file=N (old bookmark, the resume chip) degrades to all
+	// clips newest-first. A non-zero next also arms the shared Up Next card;
+	// Ctx rides the video tag so the stepping URLs keep the context.
+	f := parsePhotoFilters(r)
+	nf := f
+	nf.Tab = "videos"
+	prevID, nextID := h.photoNeighbors(r.Context(), nf, fileID, takenAt)
 	h.render(w, "photo_player.html", map[string]any{
 		"Title":       "Playing",
 		"FileID":      fileID,
 		"PrevFile":    prevID,
 		"NextFile":    nextID,
+		"Ctx":         template.URL(f.query("")),
 		"ClipTitle":   strings.TrimSuffix(filepath.Base(absPath), filepath.Ext(absPath)),
 		"When":        when,
 		"CaptionVars": h.captionStyleVars(r.Context()),

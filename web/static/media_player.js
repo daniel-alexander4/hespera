@@ -457,9 +457,14 @@ function initMediaPlayer() {
   const reloadBtn = document.getElementById('tvReloadBtn');
   if (reloadBtn) reloadBtn.addEventListener('click', () => loadFromSession(currentAud, currentSub, currentAbsTime()));
 
-  // Prev/next EPISODE (TV only): shown when the page supplied an adjacent file id
-  // (hidden on movies and at season boundaries), navigating to that episode.
-  const gotoFile = (id) => { window.location.href = '/' + video.dataset.mediaKind + '/player?file=' + id; };
+  // Prev/next file (TV episodes, photo clips): shown when the page supplied an
+  // adjacent file id (hidden on movies and at boundaries), navigating there.
+  // playerCtx (photo pages) carries the launch filters so stepping stays
+  // within the list the clip was launched from.
+  const playerCtx = video.dataset.playerCtx || '';
+  const gotoFile = (id) => {
+    window.location.href = '/' + video.dataset.mediaKind + '/player?file=' + id + (playerCtx ? '&' + playerCtx : '');
+  };
   const prevEpBtn = document.getElementById('tvPrevEpBtn');
   const nextEpBtn = document.getElementById('tvNextEpBtn');
   if (prevEpBtn && prevFile > 0) { prevEpBtn.hidden = false; prevEpBtn.addEventListener('click', () => gotoFile(prevFile)); }

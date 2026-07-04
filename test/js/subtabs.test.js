@@ -55,3 +55,18 @@ test('the memory is per path — another page is unaffected', () => {
   const env = boot({ url: 'http://localhost/tv', storage: { 'iso_subtab:/music': 'artists' } });
   assert.strictEqual(activeTab(env), 'recent');
 });
+
+test('a ?tab= URL (server-tabbed page) keeps the server-marked tab (no restore)', () => {
+  const env = boot({ url: 'http://localhost/music?tab=videos', storage: { 'iso_subtab:/music': 'artists' } });
+  assert.strictEqual(activeTab(env), 'recent');
+});
+
+test('clicking a data-tab-less subtab (server-tab link) stores nothing', () => {
+  const env = boot();
+  const link = env.document.createElement('a');
+  link.className = 'subtab';
+  env.document.querySelector('.subtabs').appendChild(link);
+  env.document.dispatchEvent(new env.window.Event('turbo:load', { bubbles: true }));
+  link.click();
+  assert.strictEqual(env.window.localStorage.getItem('iso_subtab:/music'), null, 'no "null" garbage written');
+});
