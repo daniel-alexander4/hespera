@@ -446,6 +446,29 @@ body::before {
   border-top: 1px solid var(--border-default);
 }
 .settings-card-body .form-card { margin-top: 1rem; }
+
+/* About → System health rows (Hespera / ffmpeg / Browser version checks). */
+.about-health {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-default);
+}
+.about-health-row { margin: 0.75rem 0; }
+.about-health-line {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.about-health-label {
+  min-width: 5rem;
+  font-weight: 600;
+}
+.about-health-version {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.about-health-detail { margin: 0.25rem 0 0; }
 .settings-links { margin-top: 1.5rem; }
 .card h3 {
   font-size: 1rem;

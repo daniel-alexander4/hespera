@@ -13,10 +13,15 @@
 package browser
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
+	"time"
 )
 
 // fileExists reports whether an absolute path is a regular, runnable file.
@@ -79,6 +84,54 @@ func findChromium() (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Find reports the Chromium-family browser Hespera would launch for the app
+// window — its display name (e.g. "Google Chrome", "Chromium") and executable
+// path — or ok=false when none is installed. It's the same discovery Open uses,
+// exported for the About page's health panel (which browser hosts the window).
+func Find() (name, path string, ok bool) {
+	path, ok = findChromium()
+	if !ok {
+		return "", "", false
+	}
+	return displayName(path), path, true
+}
+
+// Version runs `<browser> --version` and returns the reported version string
+// (e.g. "Google Chrome 149.0.7827.200" → "149.0.7827.200"), or "" if it can't
+// be determined. Cheap and pure (no profile, no window), so no semaphore.
+func Version(path string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	if m := browserVersionRe.FindString(string(out)); m != "" {
+		return m
+	}
+	return ""
+}
+
+var browserVersionRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)*`)
+
+// displayName derives a human name from a browser executable path. The base
+// name is stable across OSes (google-chrome, chromium, "Google Chrome" bundle).
+func displayName(path string) string {
+	base := strings.ToLower(filepath.Base(path))
+	switch {
+	case strings.Contains(base, "google chrome"), strings.Contains(base, "google-chrome"):
+		return "Google Chrome"
+	case strings.Contains(base, "chromium"):
+		return "Chromium"
+	case strings.Contains(base, "edge"), strings.Contains(base, "msedge"):
+		return "Microsoft Edge"
+	case strings.Contains(base, "brave"):
+		return "Brave"
+	default:
+		return filepath.Base(path)
+	}
 }
 
 // chromiumCandidates lists browser binaries to try, per OS.
