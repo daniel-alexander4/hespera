@@ -524,6 +524,7 @@ WHERE i.series_id = ? AND i.status = 'matched'`, seriesID); exErr == nil {
 	// (e.g. it matched before this feature, or has none), enqueue a background
 	// fetch so it populates on the next view — the handler never blocks on it.
 	var cast []castMemberRow
+	var similar []filmographyRow
 	var backdropVer string
 	if sid, err := strconv.Atoi(seriesID); err == nil && sid > 0 {
 		cast = h.loadSeriesCast(r.Context(), sid)
@@ -531,6 +532,8 @@ WHERE i.series_id = ? AND i.status = 'matched'`, seriesID); exErr == nil {
 			h.enqueueMetaFetch(r.Context(), fmt.Sprintf("cast:%d", sid), "tv_cast_fetch",
 				func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchTVCast(ctx, sid) })
 		}
+		// "More Like This" — cached related titles, lazily fetched on first view.
+		similar = h.tvSimilarRows(r.Context(), sid)
 		// Backfill a hi-res (w1280) backdrop for shows matched before the size
 		// bump — their on-disk banner is the old soft w500. Background, once.
 		if show.BackdropPath != "" && !h.metaMarkerExists(r.Context(), fmt.Sprintf("show:%d:backdrop_hires", sid)) {
@@ -561,6 +564,7 @@ WHERE i.series_id = ? AND i.status = 'matched'`, seriesID); exErr == nil {
 		"Seasons":        seasons,
 		"MissingSeasons": len(missing),
 		"Cast":           cast,
+		"Similar":        similar,
 		"BackdropVer":    backdropVer,
 		"LibraryID":      libraryID,
 		"Extras":         extras,

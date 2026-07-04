@@ -110,4 +110,31 @@
   {{end}}
 </div>
 {{end}}
+
+{{if .Similar}}
+<h2>More Like This</h2>
+<div class="home-carousel-row">
+  {{range .Similar}}
+  {{if .Owned}}
+  <a href="/movie/{{.ID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art"><img src="/art/movie/poster/{{.ID}}" alt="{{.Title}}" loading="lazy" /></div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+    </div>
+  </a>
+  {{else}}
+  <a href="https://www.themoviedb.org/movie/{{.ID}}" target="_blank" rel="noopener noreferrer" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .PosterURL}}<img src="{{.PosterURL}}" alt="{{.Title}}" loading="lazy" referrerpolicy="no-referrer" />{{else}}<div class="album-art-ph">Film</div>{{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+  {{end}}
+</div>
+{{end}}
 {{end}}

@@ -386,6 +386,8 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		h.enqueueMovieMetaFetch(r.Context(), fmt.Sprintf("movie-cast:%d", id), "movie_cast_fetch",
 			func(ctx context.Context, m *tmdb.Matcher) error { return m.FetchMovieCast(ctx, id) })
 	}
+	// "More Like This" — cached related titles, lazily fetched on first view.
+	similar := h.movieSimilarRows(r.Context(), tmdbID)
 
 	h.render(w, "movie_detail.html", map[string]any{
 		"Breadcrumb":  []crumb{bcHome, bcMovies},
@@ -405,6 +407,7 @@ func (h *Handler) movieDetail(w http.ResponseWriter, r *http.Request) {
 		"Flagged":     flaggedCount > 0,
 		"FlagDetail":  flagDetail,
 		"Cast":        cast,
+		"Similar":     similar,
 		"Extras":      extras,
 	})
 }
