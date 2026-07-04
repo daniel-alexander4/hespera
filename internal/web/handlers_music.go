@@ -290,10 +290,18 @@ LIMIT ?
 		activeMusicTab = "artists"
 	}
 
+	// "N need matching" banner — the in-context path to the match-review page
+	// (the TV/movies home pattern; the review page left the Settings menu).
+	// Same predicate the review page lists. Best-effort.
+	var unmatchedCount int
+	_ = h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM music_albums WHERE match_status = 'unmatched'").Scan(&unmatchedCount)
+
 	h.render(w, "music_home.html", map[string]any{
 		"Breadcrumb":          []crumb{bcHome},
 		"Title":               "Music",
 		"LibraryID":           libraryID,
+		"UnmatchedCount":      unmatchedCount,
 		"ActiveMusicTab":      activeMusicTab,
 		"RecentlyPlayed":      recentlyPlayed,
 		"RecentlyAddedAlbums": recentlyAddedAlbums,

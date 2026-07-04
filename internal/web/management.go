@@ -225,7 +225,7 @@ type settingSpec struct {
 }
 
 // managedSettings is the CLI-visible set of runtime settings. Toggle On/Off
-// stored values mirror settingsAPIKeys exactly: integrity_autorepair defaults ON
+// stored values mirror the settings-page forms exactly: integrity_autorepair defaults ON
 // (clears the row for on, stores '0' for off); lyrics_enabled defaults OFF
 // (stores '1' for on, clears for off).
 var managedSettings = []settingSpec{

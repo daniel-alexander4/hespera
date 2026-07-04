@@ -9,6 +9,10 @@
 </div>
 {{else}}
 
+{{if gt .UnmatchedCount 0}}
+<p class="form-help"><a href="/music/match/review" class="btn btn-sm">{{.UnmatchedCount}} album{{if ne .UnmatchedCount 1}}s{{end}} need matching →</a></p>
+{{end}}
+
 <div class="subtabs">
   <button class="subtab{{if eq .ActiveMusicTab "recent"}} active{{end}}" data-tab="recent">Recent</button>
   <button class="subtab{{if eq .ActiveMusicTab "artists"}} active{{end}}" data-tab="artists">Artists</button>

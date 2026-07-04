@@ -1,0 +1,104 @@
+{{define "content"}}
+<div class="page-header">
+  <h1>Features</h1>
+</div>
+
+{{if eq .Saved "1"}}<p class="form-help">Saved.</p>{{end}}
+
+<form method="post" action="/settings/features" class="form-card">
+  <input type="hidden" name="integrity_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="integrity_autorepair" value="1"{{if .IntegrityAutoRepair}} checked{{end}} />
+      Auto-repair corrupt media
+    </label>
+    <small class="form-help">
+      When a scan finds a video file with <strong>container corruption</strong> (bad framing that can glitch playback),
+      Hespera losslessly rewrites it (remux, no re-encode), verifies the result, and atomically replaces the original —
+      no re-encode, no quality loss. Corruption that damages the actual video data can't be repaired and is only flagged.
+      <strong>This is the one operation that writes back to your media files</strong>; turn it off to detect and flag only.
+      Run a deep check any time from the Libraries page.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
+
+<form method="post" action="/settings/features" class="form-card">
+  <input type="hidden" name="watch_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="watch_enabled" value="1"{{if .WatchEnabled}} checked{{end}} />
+      Auto-scan on library changes
+    </label>
+    <small class="form-help">
+      Watch the library folders and run the usual scan chain automatically when files
+      are added, moved, or removed — new media appears without clicking Scan.
+      Debounced, so a copy in progress doesn't trigger mid-write; a scan already
+      running is never doubled. Turn off to scan only via the Libraries page.
+    </small>
+  </div>
+  <button type="submit" class="btn btn-primary">Save</button>
+</form>
+
+<form method="post" action="/settings/features" class="form-card">
+  <input type="hidden" name="lyrics_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="lyrics_enabled" value="1"{{if .LyricsEnabled}} checked{{end}} />
+      Show synced lyrics
+    </label>
+    <small class="form-help">
+      Off (default): the now-playing page shows no lyrics and the album cover expands to fill the space.
+      On: Hespera fetches synced (karaoke) lyrics per track from the free <strong>LRCLIB</strong> service and scrolls
+      them under the cover. Tracks with no synced lyrics still hide the card. Takes effect on the next now-playing view.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
+
+<form method="post" action="/settings/features" class="form-card">
+  <input type="hidden" name="keytrace_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="keytrace_enabled" value="1"{{if .KeytraceEnabled}} checked{{end}} />
+      Key-input tracing (diagnostic)
+    </label>
+    <small class="form-help">
+      Off (default). On: every key press the app receives — including from a TV remote —
+      is logged to <code>keytrace.jsonl</code> in the data folder, with what Hespera did in
+      response (focus moves, navigation). Use to diagnose a remote whose buttons don't do
+      what you expect, then turn it back off. Takes effect on the next full page load.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
+
+<form method="post" action="/settings/features" class="form-card">
+  <input type="hidden" name="update_present" value="1" />
+  <div class="form-group">
+    <label class="form-check">
+      <input type="checkbox" name="update_check_enabled" value="1"{{if .UpdateCheckEnabled}} checked{{end}} />
+      Check for updates automatically
+    </label>
+    <small class="form-help">
+      Off (default). On: once per session the topbar version pill checks the newest
+      published release &mdash; green means you're on the latest, red means an update
+      exists (click the pill to download it). Off, the pill stays yellow (status
+      unknown); clicking it still checks on demand. Nothing installs automatically.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/settings" class="btn">Back</a>
+  </div>
+</form>
+{{end}}

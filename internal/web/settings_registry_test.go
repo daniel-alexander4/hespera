@@ -16,23 +16,30 @@ import (
 // guards the license notice against go.mod.
 //
 // The templates are the enumeration point for the web side because a
-// web-editable setting must, by definition, have a form input there. The
+// web-editable setting must, by definition, have a form input on one of the
+// settings pages (Integrations / Features / Subtitles). The
 // `integrity_present`/`lyrics_present` hidden fields are submission sentinels
 // (an unchecked checkbox posts nothing), not settings, and are filtered out.
 func TestManagedSettingsCoverSettingsForms(t *testing.T) {
-	tpl, err := os.ReadFile("../../web/templates/settings_apikeys.html")
-	if err != nil {
-		t.Fatalf("read settings_apikeys.html: %v", err)
+	settingsTemplates := []string{
+		"settings_integrations.html",
+		"settings_features.html",
+		"settings_subtitles.html",
 	}
-
 	nameAttr := regexp.MustCompile(`name="([^"]+)"`)
 	formKeys := map[string]bool{}
-	for _, m := range nameAttr.FindAllStringSubmatch(string(tpl), -1) {
-		name := m[1]
-		if strings.HasSuffix(name, "_present") { // checkbox-submission sentinels
-			continue
+	for _, name := range settingsTemplates {
+		tpl, err := os.ReadFile("../../web/templates/" + name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
 		}
-		formKeys[name] = true
+		for _, m := range nameAttr.FindAllStringSubmatch(string(tpl), -1) {
+			name := m[1]
+			if strings.HasSuffix(name, "_present") { // checkbox-submission sentinels
+				continue
+			}
+			formKeys[name] = true
+		}
 	}
 
 	registryKeys := map[string]bool{}

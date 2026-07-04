@@ -23,7 +23,7 @@ func TestOpenSubtitlesCombinedForm(t *testing.T) {
 	post := func(key, ua string) {
 		t.Helper()
 		body := strings.NewReader(url.Values{"opensubtitles_api_key": {key}, "opensubtitles_user_agent": {ua}}.Encode())
-		req := httptest.NewRequest(http.MethodPost, "/settings/api-keys", body)
+		req := httptest.NewRequest(http.MethodPost, "/settings/integrations", body)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -125,7 +125,7 @@ func TestLastfmKeyForm(t *testing.T) {
 	ctx := context.Background()
 	post := func(vals url.Values) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "/settings/api-keys", strings.NewReader(vals.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/settings/integrations", strings.NewReader(vals.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
