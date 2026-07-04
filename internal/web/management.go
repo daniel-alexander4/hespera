@@ -240,6 +240,9 @@ var managedSettings = []settingSpec{
 	{Key: "lyrics_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "keytrace_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "update_check_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
+	{Key: "default_audio_lang", Kind: kindString},
+	{Key: "default_subtitle_lang", Kind: kindString},
+	{Key: "subtitles_default_on", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "media_root", Kind: kindPath, Env: "HESPERA_MEDIA_ROOT", ApplyOnRestart: true},
 }
 

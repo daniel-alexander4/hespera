@@ -154,6 +154,34 @@ func (h *Handler) effectiveLyricsEnabled(ctx context.Context) bool {
 	return strings.TrimSpace(v) == "1"
 }
 
+// effectiveDefaultAudioLang returns the user's preferred audio language for
+// playback (a lowercase ISO-ish code, "" = no preference). Normalized at read
+// time so a value stored unvalidated (hescli config set) degrades to "no
+// preference" instead of breaking track resolution.
+func (h *Handler) effectiveDefaultAudioLang(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='default_audio_lang'").Scan(&v)
+	return sanitizeLangSetting(v)
+}
+
+// effectiveDefaultSubtitleLang returns the preferred subtitle language for the
+// subtitles-on default ("" = any text track). Read-time normalized, like
+// effectiveDefaultAudioLang.
+func (h *Handler) effectiveDefaultSubtitleLang(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='default_subtitle_lang'").Scan(&v)
+	return sanitizeLangSetting(v)
+}
+
+// effectiveSubtitlesDefaultOn reports whether subtitles auto-enable on playback
+// when the user hasn't picked a track. Default OFF (opt-in) — stored as '1'
+// when enabled, absent = off. The lyrics_enabled pattern.
+func (h *Handler) effectiveSubtitlesDefaultOn(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='subtitles_default_on'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
 // effectiveUpdateCheckEnabled reports whether the once-per-session automatic
 // update check (the topbar version pill's startup fetch) is on. Default OFF
 // (opt-in — no phone-home until the user asks for it): stored as '1' when
@@ -243,6 +271,9 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
 			"KeytraceEnabled":         h.effectiveKeytraceEnabled(ctx),
 			"UpdateCheckEnabled":      h.effectiveUpdateCheckEnabled(ctx),
+			"DefaultAudioLang":        h.effectiveDefaultAudioLang(ctx),
+			"DefaultSubtitleLang":     h.effectiveDefaultSubtitleLang(ctx),
+			"SubtitlesDefaultOn":      h.effectiveSubtitlesDefaultOn(ctx),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
 		})
@@ -353,6 +384,28 @@ func (h *Handler) settingsAPIKeys(w http.ResponseWriter, r *http.Request) {
 				val = "1"
 			}
 			if err := h.saveAPIKey(ctx, "keytrace_enabled", val); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings/api-keys?saved=1", http.StatusSeeOther)
+			return
+		}
+		if _, ok := r.Form["playback_present"]; ok {
+			// The three playback defaults share one form (the OpenSubtitles
+			// key+UA precedent), saved together: two language preferences
+			// (sanitized; blank or invalid clears → no preference) and the
+			// default-OFF subtitles-on opt-in.
+			for _, f := range []string{"default_audio_lang", "default_subtitle_lang"} {
+				if err := h.saveAPIKey(ctx, f, sanitizeLangSetting(r.FormValue(f))); err != nil {
+					httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
+					return
+				}
+			}
+			val := ""
+			if r.FormValue("subtitles_default_on") == "1" {
+				val = "1"
+			}
+			if err := h.saveAPIKey(ctx, "subtitles_default_on", val); err != nil {
 				httpError(w, 500, "internal server error", "save setting failed", "handler", "settingsAPIKeys", "err", err)
 				return
 			}

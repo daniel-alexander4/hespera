@@ -61,6 +61,11 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	aud := atoiDefault(q.Get("aud"), 0)
 	sub := atoiDefault(q.Get("sub"), 0)
+	// sub == -1 is the client's explicit "Off" (see tvPlaybackSession).
+	subExplicitOff := sub < 0
+	if subExplicitOff {
+		sub = 0
+	}
 	mode := q.Get("mode")
 	client := q.Get("client")
 
@@ -73,17 +78,34 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 	var probe video.ProbeResult
 	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
 
-	// Pin aud to the disposition-default's ordinal when the client didn't choose,
-	// so the decision and the served track agree (see tvPlaybackSession).
+	// Language-preference audio first, else pin aud to the disposition-default's
+	// ordinal when the client didn't choose, so the decision and the served track
+	// agree (see tvPlaybackSession).
 	if aud == 0 {
-		if n := defaultAudioOrdinal(&probe); n > 1 {
+		if n := preferredAudioOrdinal(&probe, h.effectiveDefaultAudioLang(r.Context())); n > 0 {
 			aud = n
+		} else if n := defaultAudioOrdinal(&probe); n > 1 {
+			aud = n
+		}
+	}
+	// Subtitles-on default: auto-enable a text subtitle on an unpinned load.
+	autoSub := false
+	if sub == 0 && !subExplicitOff && h.effectiveSubtitlesDefaultOn(r.Context()) {
+		if n := preferredTextSubOrdinal(&probe, h.effectiveDefaultSubtitleLang(r.Context())); n > 0 {
+			sub = n
+			autoSub = true
 		}
 	}
 
 	mi := playback.FromProbe(&probe, src.container, src.size, aud, sub)
 	profile, _ := playback.Profile(client, r.UserAgent())
 	out := playback.Decide(profile, mi, mode)
+	if autoSub && out.SubtitleBurnIn {
+		// A default setting must never trigger a transcode (see tvPlaybackSession).
+		sub = 0
+		mi = playback.FromProbe(&probe, src.container, src.size, aud, sub)
+		out = playback.Decide(profile, mi, mode)
+	}
 
 	streamU := movieStreamURL(out.Decision, fileID, aud)
 	protocol := string(out.Protocol)
@@ -93,17 +115,19 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := playbackSessionResponse{
-		OK:             true,
-		Decision:       string(out.Decision),
-		Protocol:       protocol,
-		URL:            streamU,
-		Reasons:        out.Reasons,
-		Container:      mi.Container,
-		VideoCodec:     mi.VideoCodec,
-		AudioCodec:     mi.AudioCodec,
-		DurationSecs:   durationSeconds(probe.Format.Duration),
-		AudioTracks:    audioTracks(&probe),
-		SubtitleTracks: subtitleTracks(&probe),
+		OK:              true,
+		Decision:        string(out.Decision),
+		Protocol:        protocol,
+		URL:             streamU,
+		Reasons:         out.Reasons,
+		Container:       mi.Container,
+		VideoCodec:      mi.VideoCodec,
+		AudioCodec:      mi.AudioCodec,
+		DurationSecs:    durationSeconds(probe.Format.Duration),
+		AudioTracks:     audioTracks(&probe),
+		SubtitleTracks:  subtitleTracks(&probe),
+		AppliedAudio:    aud,
+		AppliedSubtitle: sub,
 	}
 	if clean, perr := h.resolveMediaPath(src.absPath); perr == nil {
 		resp.SkipSegments = skipSegmentsFor(&probe, clean)

@@ -117,6 +117,45 @@ test('buildSelects populates audio + subtitle pickers and labels burn-in subs', 
   assert.strictEqual(sub.options[2].textContent, 'eng · Forced · burn-in'); // bitmap flagged
 });
 
+test('server-applied defaults select the pickers; explicit Off sends sub=-1 and sticks', async () => {
+  // The server resolved playback defaults (language-preference audio, subtitles
+  // on) and echoes applied_audio/applied_subtitle — the pickers must show the
+  // served tracks, not disposition-default/Off.
+  const fetchStub = makeFetch({
+    '/tv/playback-session': session({
+      audio_tracks: [
+        { ordinal: 1, language: 'jpn', codec: 'aac', default: true },
+        { ordinal: 2, language: 'eng', codec: 'aac' },
+      ],
+      subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }],
+      subtitle_url: '/stream/tv-subtitles/7?track=1',
+      applied_audio: 2,
+      applied_subtitle: 1,
+    }),
+  });
+  const env = await boot({ stubs: { fetch: fetchStub } });
+  const doc = env.document;
+  assert.strictEqual(doc.getElementById('audioSelect').value, '2', 'applied audio beats the disposition-default flag');
+  const sub = doc.getElementById('subSelect');
+  assert.strictEqual(sub.value, '1', 'applied subtitle selected instead of Off');
+
+  // Explicit Off must reach the server as sub=-1 — a plain 0 reads as "unpinned"
+  // and the subtitles-on default would re-apply against the user.
+  sub.value = '0';
+  sub.dispatchEvent(new env.window.Event('change'));
+  await flush();
+  let last = fetchStub.calls[fetchStub.calls.length - 1].url;
+  assert.ok(last.includes('sub=-1'), `explicit off request carries sub=-1 (got ${last})`);
+
+  // A later audio change keeps the explicit off rather than reverting to 0.
+  const audio = doc.getElementById('audioSelect');
+  audio.value = '1';
+  audio.dispatchEvent(new env.window.Event('change'));
+  await flush();
+  last = fetchStub.calls[fetchStub.calls.length - 1].url;
+  assert.ok(last.includes('sub=-1'), `audio change preserves explicit off (got ${last})`);
+});
+
 test('the subtitles dropdown leads with "Search subtitles…" whenever a key is configured', async () => {
   const withText = await boot({
     fixtureOpts: { osEnabled: '1' },
