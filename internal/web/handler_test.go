@@ -32,12 +32,12 @@ func openTestDB(t *testing.T) *sql.DB {
 // stubPages mirrors the page list New() compiles — kept here so the stub asset
 // FS provides every one (a missing page would fail New()).
 var stubPages = []string{
-	"home.html", "libraries.html", "libraries_new.html", "integrity_report.html",
-	"settings.html", "settings_jobs.html", "music_home.html", "music_artist.html",
+	"home.html", "libraries_new.html", "integrity_report.html",
+	"settings.html", "music_home.html", "music_artist.html",
 	"music_artist_external.html", "music_artist_disambiguate.html", "music_artist_art.html",
 	"music_album.html", "music_albums.html", "music_compilations.html", "music_playlist.html", "player.html",
 	"music_match_review.html", "music_album_edit.html", "music_track_edit.html", "music_duplicates.html",
-	"settings_tags.html", "settings_about.html", "tv_home.html", "tv_series.html",
+	"settings_tags.html", "tv_home.html", "tv_series.html",
 	"tv_season.html", "tv_match_review.html", "tv_player.html", "person.html",
 	"movies_home.html", "movie_detail.html", "movie_match_review.html", "movie_player.html",
 }
@@ -75,7 +75,14 @@ func stubAssetsFS() fs.FS {
 		"templates/movie_match_review.html": `{{define "content"}}` +
 			`{{if .Groups}}{{range .Groups}}<span>{{.GuessedTitle}}</span>{{end}}` +
 			`{{else}}<p>No movies need review</p>{{end}}{{end}}`,
-		"templates/settings_jobs.html": `{{define "content"}}<div id="jobs-container">{{template "jobs-container" .}}</div>{{end}}` +
+		// The settings page hosts the accordion cards; its stub carries the
+		// jobs-container define (settingsJobsFragment renders it) and the
+		// libraries pills the integrity tests assert.
+		"templates/settings.html": `{{define "content"}}<div id="jobs-container">{{template "jobs-container" .}}</div>` +
+			`{{range .Libraries}}<div class="lib">{{.Name}}` +
+			`{{$f := index $.Flagged .ID}}{{if $f}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-warn">{{$f}} corrupt</a>{{end}}` +
+			`{{$d := index $.Degraded .ID}}{{if $d}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-neutral">{{$d}} degraded</a>{{end}}` +
+			`</div>{{end}}{{end}}` +
 			`{{define "jobs-container"}}{{if .Jobs}}<table>{{range .Jobs}}<tr><td>{{.JobType}}</td>` +
 			`<td><span class="badge badge-{{.Status}}">{{.Status}}</span></td></tr>{{end}}</table>` +
 			`{{else}}<p>No jobs found.</p>{{end}}{{end}}`,
@@ -102,11 +109,7 @@ func stubAssetsFS() fs.FS {
 			`{{define "irow"}}<div class="irow">{{if .Href}}<a href="{{.Href}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}` +
 			`<code>{{.Path}}</code><span>{{humanBytes .SizeBytes}}</span>` +
 			`<em>{{.Detail}}</em><p>{{.Mitigation}}</p></div>{{end}}`,
-		// Libraries pills: the corrupt/degraded report links the test asserts.
-		"templates/libraries.html": `{{define "content"}}{{range .Libraries}}<div class="lib">{{.Name}}` +
-			`{{$f := index $.Flagged .ID}}{{if $f}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-warn">{{$f}} corrupt</a>{{end}}` +
-			`{{$d := index $.Degraded .ID}}{{if $d}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-neutral">{{$d}} degraded</a>{{end}}` +
-			`</div>{{end}}{{end}}`,
+
 	}
 	for path, content := range overrides {
 		m[path] = &fstest.MapFile{Data: []byte(content)}
@@ -145,7 +148,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 32
+	expectedPages := 29
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}
@@ -210,13 +213,13 @@ func TestNewMissingPageTemplate(t *testing.T) {
 func TestNewMultipleBrokenPages(t *testing.T) {
 	_, err := New(Deps{
 		Cfg:      config.Config{DataDir: t.TempDir(), MediaRoot: t.TempDir()},
-		AssetsFS: stubAssetsWithout("home.html", "libraries.html", "player.html"),
+		AssetsFS: stubAssetsWithout("home.html", "libraries_new.html", "player.html"),
 	})
 	if err == nil {
 		t.Fatal("New() should return error for multiple broken pages")
 	}
 	errStr := err.Error()
-	for _, page := range []string{"home.html", "libraries.html", "player.html"} {
+	for _, page := range []string{"home.html", "libraries_new.html", "player.html"} {
 		if !strings.Contains(errStr, page) {
 			t.Errorf("error should mention '%s', got: %v", page, errStr)
 		}

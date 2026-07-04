@@ -94,7 +94,7 @@ func (h *Handler) librariesIntegrityReport(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.render(w, "integrity_report.html", map[string]any{
-		"Breadcrumb":  []crumb{bcHome, bcSettings, {Label: "Libraries", Href: "/libraries"}},
+		"Breadcrumb":  []crumb{bcHome, bcSettings, {Label: "Libraries", Href: "/settings?open=libraries"}},
 		"Title":       "Integrity report",
 		"LibraryName": libName,
 		"Flagged":     flagged,

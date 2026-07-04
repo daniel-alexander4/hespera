@@ -24,9 +24,8 @@ import (
 )
 
 // settings renders the Settings page — an accordion of expandable subject
-// cards (Integrations / Features / Subtitles) whose forms live inline, plus
-// link cards for the page-sized tools (Libraries, Job Status, controls cheat
-// sheet, About). GET loads every subject's data; POST is the single dispatch
+// cards (Libraries / Job Status / Integrations / Features / Subtitles / About)
+// whose content lives inline. GET loads every subject's data; POST is the single dispatch
 // for all the accordion forms — each branch redirects back with
 // ?open=<subject> so the card just saved re-opens (deep links use the same
 // param). Values still live in app_settings via saveAPIKey + the effective*
@@ -35,6 +34,16 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	switch r.Method {
 	case http.MethodGet:
+		libs, err := h.loadLibraryList(ctx)
+		if err != nil {
+			httpError(w, 500, "internal server error", "load libraries failed", "handler", "settings", "err", err)
+			return
+		}
+		jobList, err := h.loadScanJobs(ctx, "", "", 0, 50)
+		if err != nil {
+			httpError(w, 500, "internal server error", "load jobs failed", "handler", "settings", "err", err)
+			return
+		}
 		tmdbCfg, tmdbSrc, tmdbMask := h.keyStatus(ctx, "tmdb_api_key", h.cfg.TMDBAPIKey, h.effectiveTMDBKey(ctx))
 		fanCfg, fanSrc, fanMask := h.keyStatus(ctx, "fanarttv_api_key", h.cfg.FanartTVAPIKey, h.effectiveFanartKey(ctx))
 		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
@@ -69,6 +78,12 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 			"SubtitleSize":            h.effectiveSubtitleSize(ctx),
 			"SubtitleBg":              h.effectiveSubtitleBg(ctx),
 			"SubtitlePosition":        h.effectiveSubtitlePosition(ctx),
+			"Libraries":               libs,
+			"MediaRoot":               h.cfg.MediaRoot,
+			"MediaRootInvalid":        r.URL.Query().Get("mediaroot") == "invalid",
+			"Flagged":                 h.integrityStatusCounts(ctx, "flagged"),
+			"Degraded":                h.integrityStatusCounts(ctx, "degraded"),
+			"Jobs":                    jobList,
 			"Open":                    r.URL.Query().Get("open"),
 			"Saved":                   r.URL.Query().Get("saved"),
 			"Valid":                   r.URL.Query().Get("valid"),
@@ -188,19 +203,11 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// settingsAbout renders the static About & Attributions page — the single place
-// all third-party data-source and open-source attributions live (incl. the
-// TMDB API notice required by TMDB's terms, which permit it on an About/Credits
-// page rather than every page).
+// settingsAbout is the old standalone page URL — now the About card (the
+// single home of all third-party attributions, incl. the TMDB API notice
+// required by TMDB's terms, permitted on an About/Credits page).
 func (h *Handler) settingsAbout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	h.render(w, "settings_about.html", map[string]any{
-		"Breadcrumb": []crumb{bcHome, bcSettings},
-		"Title":      "About & Attributions",
-	})
+	redirectToSettingsCard(w, r, "about")
 }
 
 // effectiveTMDBKey returns the runtime-configured TMDB API key: the value set
@@ -400,21 +407,9 @@ var featureToggles = []struct{ sentinel, key string }{
 	{"update_present", "update_check_enabled"},
 }
 
+// settingsJobs is the old standalone page URL — now the Job Status card.
 func (h *Handler) settingsJobs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	jobList, err := h.loadScanJobs(r.Context(), "", "", 0, 50)
-	if err != nil {
-		httpError(w, 500, "internal server error", "load jobs failed", "handler", "settingsJobs", "err", err)
-		return
-	}
-	h.render(w, "settings_jobs.html", map[string]any{
-		"Breadcrumb": []crumb{bcHome, bcSettings},
-		"Title":      "Jobs",
-		"Jobs":       jobList,
-	})
+	redirectToSettingsCard(w, r, "jobs")
 }
 
 func (h *Handler) settingsJobsJSON(w http.ResponseWriter, r *http.Request) {
@@ -464,7 +459,7 @@ func (h *Handler) settingsJobsFragment(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, "internal server error", "load jobs failed", "handler", "settingsJobsFragment", "err", err)
 		return
 	}
-	t, ok := h.tpls["settings_jobs.html"]
+	t, ok := h.tpls["settings.html"]
 	if !ok {
 		httpError(w, 500, "internal server error", "jobs template missing", "handler", "settingsJobsFragment")
 		return
@@ -611,26 +606,23 @@ func (h *Handler) createLibrary(ctx context.Context, name, libType, root string)
 	return res.LastInsertId()
 }
 
-func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
+// redirectToSettingsCard 303s an old standalone-page URL to its accordion card
+// on /settings, preserving query params (?saved=mediaroot etc. must survive the
+// hop — the settings page renders them). The old URLs stay live because many
+// templates and post-action redirects point at them.
+func redirectToSettingsCard(w http.ResponseWriter, r *http.Request, card string) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	libs, err := h.loadLibraryList(r.Context())
-	if err != nil {
-		httpError(w, 500, "internal server error", "load libraries failed", "handler", "libraries", "err", err)
-		return
-	}
-	h.render(w, "libraries.html", map[string]any{
-		"Breadcrumb":       []crumb{bcHome, bcSettings},
-		"Title":            "Libraries",
-		"Libraries":        libs,
-		"MediaRoot":        h.cfg.MediaRoot,
-		"Saved":            r.URL.Query().Get("saved"),
-		"MediaRootInvalid": r.URL.Query().Get("mediaroot") == "invalid",
-		"Flagged":          h.integrityStatusCounts(r.Context(), "flagged"),
-		"Degraded":         h.integrityStatusCounts(r.Context(), "degraded"),
-	})
+	q := r.URL.Query()
+	q.Set("open", card)
+	http.Redirect(w, r, "/settings?"+q.Encode(), http.StatusSeeOther)
+}
+
+// libraries is the old standalone page URL — now the Libraries accordion card.
+func (h *Handler) libraries(w http.ResponseWriter, r *http.Request) {
+	redirectToSettingsCard(w, r, "libraries")
 }
 
 // librariesMediaRoot persists the media folder (the pathguard containment root)
@@ -664,7 +656,7 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		h.render(w, "libraries_new.html", map[string]any{
-			"Breadcrumb": []crumb{bcHome, bcSettings, {Label: "Libraries", Href: "/libraries"}},
+			"Breadcrumb": []crumb{bcHome, bcSettings, {Label: "Libraries", Href: "/settings?open=libraries"}},
 			"Title":      "New Library",
 			"MediaRoot":  h.cfg.MediaRoot,
 		})

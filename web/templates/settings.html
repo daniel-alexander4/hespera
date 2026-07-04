@@ -14,8 +14,150 @@
 
 {{/* Expandable subject cards: native <details> accordion (name= keeps one
      open at a time; Enter on a focused summary toggles — remote-friendly with
-     no JS). ?open=<subject> renders a card expanded — the post-save redirect
-     and deep links use it. */}}
+     no JS). ?open=<subject> renders a card expanded — the post-save redirect,
+     the old standalone-page URLs (now redirects), and deep links use it. */}}
+
+<details class="settings-card" name="settings"{{if eq .Open "libraries"}} open{{end}}>
+  <summary>
+    <h3>Libraries</h3>
+    <p>Manage media library paths</p>
+  </summary>
+  <div class="settings-card-body">
+
+  {{if .MediaRootInvalid}}<p class="form-help">That path isn't an absolute, existing folder — not saved.</p>{{end}}
+  {{if eq .Saved "mediaroot"}}<p class="form-help">Media folder saved — restart Hespera to apply.</p>{{end}}
+
+  <form method="post" action="/libraries/media-root" class="form-card">
+    <div class="form-group">
+      <label for="media_root">Media folder</label>
+      <small class="form-help">Libraries live under this folder. Currently: <code>{{.MediaRoot}}</code></small>
+      <input type="text" id="media_root" name="media_root" class="input" value="{{.MediaRoot}}" placeholder="/absolute/path/to/media" />
+      <small class="form-help">An absolute path to an existing folder. Submit blank to revert to the default. <strong>Applies after you restart Hespera.</strong></small>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn">Save media folder</button>
+    </div>
+  </form>
+
+  {{if .Libraries}}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Path</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Libraries}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td>{{.Type}}</td>
+        <td><code>{{.RootPath}}</code></td>
+        <td class="actions-cell">
+          <form method="post" action="/libraries/scan" class="inline-form" data-live-job>
+            <input type="hidden" name="id" value="{{.ID}}" />
+            <button type="submit" class="btn btn-sm">{{template "icon-rotate-cw"}}Scan</button>
+          </form>
+          {{if eq .Type "music"}}
+          <form method="post" action="/music/match" class="inline-form" data-live-job>
+            <input type="hidden" name="id" value="{{.ID}}" />
+            <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
+          </form>
+          {{end}}
+          {{if eq .Type "tv"}}
+          <form method="post" action="/tv/match" class="inline-form" data-live-job>
+            <input type="hidden" name="id" value="{{.ID}}" />
+            <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
+          </form>
+          {{end}}
+          {{if eq .Type "movies"}}
+          <form method="post" action="/movies/match" class="inline-form" data-live-job>
+            <input type="hidden" name="id" value="{{.ID}}" />
+            <button type="submit" class="btn btn-sm">{{template "icon-search"}}Match</button>
+          </form>
+          {{end}}
+          {{if or (or (eq .Type "tv") (eq .Type "movies")) (eq .Type "music")}}
+          <form method="post" action="/libraries/integrity-deep" class="inline-form" data-live-job title="Deep-scan every file for corruption (full decode) and flag any that are damaged. Container corruption is auto-repaired on scan; this also catches unrepairable bitstream damage.">
+            <input type="hidden" name="id" value="{{.ID}}" />
+            <button type="submit" class="btn btn-sm">{{template "icon-play"}}Check integrity</button>
+          </form>
+          {{$flagged := index $.Flagged .ID}}
+          {{if $flagged}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-warn" title="Files with unrepairable corruption — open the integrity report">{{$flagged}} corrupt</a>{{end}}
+          {{$degraded := index $.Degraded .ID}}
+          {{if $degraded}}<a href="/libraries/integrity-report?id={{.ID}}" class="badge badge-neutral" title="Playable files with known defects (silence-filled audio gaps) — open the integrity report">{{$degraded}} degraded</a>{{end}}
+          {{end}}
+          <form method="post" action="/libraries/delete" class="inline-form" onsubmit="return confirm('Delete this library and all its data?')">
+            <input type="hidden" name="id" value="{{.ID}}" />
+            <button type="submit" class="btn btn-sm btn-danger">{{template "icon-trash"}}Delete</button>
+          </form>
+          <span class="lib-job-status" data-lib-status="{{.ID}}" hidden></span>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty-state">
+    <p>No libraries yet. Add one to get started.</p>
+  </div>
+  {{end}}
+  {{/* Live per-row job status is driven by the shared web/static/job_status.js
+       (loaded from the layout shell): it intercepts the [data-live-job] forms and
+       polls /libraries/jobs-status into each [data-lib-status] badge. */}}
+  <div class="form-actions">
+    <a href="/libraries/new" class="btn btn-primary">{{template "icon-plus"}}Add Library</a>
+  </div>
+
+  </div>
+</details>
+
+<details class="settings-card" name="settings"{{if eq .Open "jobs"}} open{{end}}>
+  <summary>
+    <h3>Job Status</h3>
+    <p>View running and completed jobs</p>
+  </summary>
+  <div class="settings-card-body">
+
+  <div id="jobs-container">
+  {{template "jobs-container" .}}
+  </div>
+
+  <script>
+  (() => {
+    const container = document.getElementById('jobs-container');
+    if (!container) return;
+    let timer = null;
+
+    const schedule = () => {
+      // Poll fast while a job is active, slower when idle — but never stop, so a
+      // job triggered after page load still shows up.
+      const active = container.querySelector('.badge-running, .badge-queued') !== null;
+      clearTimeout(timer);
+      timer = setTimeout(refresh, active ? 2000 : 5000);
+    };
+
+    const refresh = async () => {
+      if (!document.hidden) {
+        try {
+          const res = await fetch('/settings/jobs/fragment');
+          if (res.ok) container.innerHTML = await res.text();
+        } catch (_) {}
+      }
+      schedule();
+    };
+
+    // Stop the poll before Turbo caches/replaces this page, or it would keep
+    // fetching forever into a detached container. once:true avoids stacking.
+    document.addEventListener('turbo:before-cache', () => clearTimeout(timer), { once: true });
+
+    schedule();
+  })();
+  </script>
+
+  </div>
+</details>
 
 <details class="settings-card" name="settings"{{if eq .Open "integrations"}} open{{end}}>
   <summary>
@@ -274,22 +416,94 @@
   </div>
 </details>
 
-<div class="card-grid settings-links">
-  <a href="/libraries" class="card">
-    <h3>Libraries</h3>
-    <p>Manage media library paths</p>
-  </a>
-  <a href="/settings/jobs" class="card">
-    <h3>Job Status</h3>
-    <p>View running and completed jobs</p>
-  </a>
-  <a href="{{staticv "/static/controls-cheatsheet.svg"}}" class="card" target="_blank" rel="noopener">
-    <h3>Keyboard &amp; Remote</h3>
-    <p>Cheat sheet of the remote-style keyboard controls</p>
-  </a>
-  <a href="/settings/about" class="card">
+<details class="settings-card" name="settings"{{if eq .Open "about"}} open{{end}}>
+  <summary>
     <h3>About</h3>
     <p>Third-party data sources and open-source attributions</p>
-  </a>
+  </summary>
+  <div class="settings-card-body">
+
+  <div class="about-attributions">
+    <p class="form-help">Hespera is built on data and software from the projects below. All third-party attributions live here.</p>
+
+    <h2>The Movie Database (TMDB)</h2>
+    <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+    <p class="form-help">TV and movie metadata, artwork, and cast/people data are sourced from <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a>.</p>
+
+    <h2>Music data &amp; APIs</h2>
+    <ul>
+      <li><a href="https://musicbrainz.org" target="_blank" rel="noopener noreferrer">MusicBrainz</a> — album/artist matching data (core data released under CC0).</li>
+      <li><a href="https://coverartarchive.org" target="_blank" rel="noopener noreferrer">Cover Art Archive</a> — album cover art.</li>
+      <li><a href="https://listenbrainz.org" target="_blank" rel="noopener noreferrer">ListenBrainz</a> — track popularity and similar-artist data.</li>
+      <li><a href="https://lrclib.net" target="_blank" rel="noopener noreferrer">LRCLIB</a> — synced lyrics.</li>
+      <li><a href="https://fanart.tv" target="_blank" rel="noopener noreferrer">fanart.tv</a> — artist images (optional, user-keyed).</li>
+      <li><a href="https://www.theaudiodb.com" target="_blank" rel="noopener noreferrer">TheAudioDB</a> — artist bios/images (optional, user-keyed).</li>
+      <li><a href="https://www.last.fm" target="_blank" rel="noopener noreferrer">Last.fm</a> — additional track popularity data for Shuffle Most Popular (optional, user-keyed).</li>
+    </ul>
+
+    <h2>Other sources</h2>
+    <ul>
+      <li><a href="https://www.opensubtitles.com" target="_blank" rel="noopener noreferrer">OpenSubtitles</a> — on-demand subtitle search/download (optional, user-keyed).</li>
+      <li><a href="https://en.wikipedia.org" target="_blank" rel="noopener noreferrer">Wikipedia</a> / <a href="https://commons.wikimedia.org" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a> — artist/person biographies and images, used under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA</a>.</li>
+    </ul>
+
+    <h2>Open-source components</h2>
+    <ul>
+      <li><a href="https://hotwired.dev/turbo" target="_blank" rel="noopener noreferrer">Hotwire Turbo</a> — MIT License.</li>
+      <li><a href="https://github.com/video-dev/hls.js" target="_blank" rel="noopener noreferrer">hls.js</a> — Apache License 2.0.</li>
+      <li><a href="https://catppuccin.com" target="_blank" rel="noopener noreferrer">Catppuccin</a> palette — MIT License.</li>
+      <li><a href="https://lucide.dev" target="_blank" rel="noopener noreferrer">Lucide</a> icons — ISC License.</li>
+      <li>Go dependencies: <code>modernc.org/sqlite</code> (BSD-3), <code>dhowden/tag</code> (BSD-2), <code>bogem/id3v2</code> (MIT), <code>gcottom/audiometa</code> (MIT), and their transitive modules (MIT / BSD) — see <code>THIRD_PARTY_LICENSES.md</code> for the full list.</li>
+    </ul>
+    <p class="form-help">Hespera is licensed under the GNU GPL v3 (<code>LICENSE</code>); full third-party license details are in <code>THIRD_PARTY_LICENSES.md</code> in the source tree. The verbatim license text of every compiled-in module is embedded in this binary — <a href="/about/licenses">view the full texts</a>.</p>
+  </div>
+
+  </div>
+</details>
+{{end}}
+
+{{define "jobs-container"}}
+{{if .Jobs}}
+<table class="table" id="jobs-table">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Progress</th>
+      <th>Duration</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Jobs}}
+    <tr data-job-id="{{.ID}}">
+      <td>{{.ID}}</td>
+      <td>{{.JobType}}</td>
+      <td>
+        <span class="badge badge-{{.Status}}">{{.Status}}</span>
+      </td>
+      <td>
+        {{if .ProgressTotal}}{{.ProgressCurrent}}/{{.ProgressTotal}}{{else}}&mdash;{{end}}
+      </td>
+      <td>
+        {{if .DurationMS}}{{.DurationMS}}ms{{else}}&mdash;{{end}}
+      </td>
+      <td>
+        {{if or (eq .Status "queued") (eq .Status "running")}}
+        <form method="post" action="/settings/jobs/cancel" class="inline-form">
+          <input type="hidden" name="job_id" value="{{.ID}}" />
+          <button type="submit" class="btn btn-sm btn-danger">Cancel</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty-state">
+  <p>No jobs found.</p>
 </div>
+{{end}}
 {{end}}

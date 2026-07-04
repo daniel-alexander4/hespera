@@ -31,7 +31,11 @@ func TestManagedSettingsCoverSettingsForms(t *testing.T) {
 	formKeys := map[string]bool{}
 	for _, m := range nameAttr.FindAllStringSubmatch(string(tpl), -1) {
 		name := m[1]
-		if strings.HasSuffix(name, "_present") || name == "settings" {
+		// Filtered non-settings names: *_present checkbox-submission sentinels,
+		// the <details name="settings"> accordion-grouping attribute, and the
+		// action-form fields of the Libraries/Jobs cards (library id, job id —
+		// they post to action endpoints, not app_settings).
+		if strings.HasSuffix(name, "_present") || name == "settings" || name == "id" || name == "job_id" {
 			continue
 		}
 		formKeys[name] = true
@@ -41,20 +45,6 @@ func TestManagedSettingsCoverSettingsForms(t *testing.T) {
 	for _, spec := range managedSettings {
 		registryKeys[spec.Key] = true
 	}
-
-	// media_root is registry-managed but its form lives on the Libraries page,
-	// not the API-keys page — account for it there explicitly.
-	if !registryKeys["media_root"] {
-		t.Error("media_root missing from managedSettings")
-	}
-	libTpl, err := os.ReadFile("../../web/templates/libraries.html")
-	if err != nil {
-		t.Fatalf("read libraries.html: %v", err)
-	}
-	if !strings.Contains(string(libTpl), `name="media_root"`) {
-		t.Error(`media_root form input missing from libraries.html`)
-	}
-	delete(registryKeys, "media_root")
 
 	var missingFromRegistry, missingFromForms []string
 	for k := range formKeys {
