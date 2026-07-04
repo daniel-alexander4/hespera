@@ -16,7 +16,7 @@ function initJobStatus() {
     music_match: 'Matching', tv_match: 'Matching', movie_match: 'Matching',
     tag_writeback: 'Writing tags',
     tv_probe: 'Verifying', movie_probe: 'Verifying', photo_probe: 'Verifying',
-    photo_thumb: 'Generating thumbnails',
+    photo_thumb: 'Generating thumbnails', tv_thumb: 'Generating thumbnails',
     tv_trickplay: 'Generating trickplay', movie_trickplay: 'Generating trickplay',
     integrity_check: 'Checking integrity', integrity_deep: 'Checking integrity',
   };

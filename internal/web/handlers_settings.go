@@ -751,6 +751,12 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			_, _ = h.jobs.Enqueue("tv_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
 				return tvScanner.ReprobeMissing(ctx, pJID, pLibID)
 			})
+			// Chain episode-thumbnail generation (one frame grab per new/changed
+			// file; after tv_probe so the stored duration can place the grab,
+			// before the much heavier trickplay pass).
+			_, _ = h.jobs.Enqueue("tv_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+				return tvScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
+			})
 			// Chain trickplay sprite generation for new/changed files (measured
 			// ~15s per full movie, content-keyed so unchanged files are free).
 			_, _ = h.jobs.Enqueue("tv_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
@@ -994,23 +1000,33 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, "internal server error", "db query failed", "handler", "librariesDelete", "err", err)
 		return
 	}
-	// Photos thumbs/renditions are id-keyed files only a scan's prune pass
-	// deletes — and a deleted library can never be scanned again, so collect
-	// the ids now and reap the files after the row delete (best-effort; a
-	// leftover is unreferenced but would eat disk forever). The other library
-	// types' art is column-referenced and swept by thumbgc.
-	var photoIDs []int64
-	if libType == "photos" {
-		rows, err := h.db.QueryContext(r.Context(), "SELECT id FROM photos WHERE library_id=?", id)
-		if err == nil {
-			for rows.Next() {
-				var pid int64
-				if rows.Scan(&pid) == nil {
-					photoIDs = append(photoIDs, pid)
+	// Photos thumbs/renditions and TV episode thumbs are id-keyed files only a
+	// scan's prune pass deletes — and a deleted library can never be scanned
+	// again, so collect the file paths now and reap them after the row delete
+	// (best-effort; a leftover is unreferenced but would eat disk forever).
+	// The other generated art is column-referenced and swept by thumbgc.
+	var reapFiles []string
+	collectReap := func(query, dir string, names func(int64) []string) {
+		rows, err := h.db.QueryContext(r.Context(), query, id)
+		if err != nil {
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var rid int64
+			if rows.Scan(&rid) == nil {
+				for _, fn := range names(rid) {
+					reapFiles = append(reapFiles, filepath.Join(h.cfg.DataDir, "thumbs", dir, fn))
 				}
 			}
-			rows.Close()
 		}
+	}
+	switch libType {
+	case "photos":
+		collectReap("SELECT id FROM photos WHERE library_id=?", "photos", photoscan.ThumbFileNames)
+	case "tv":
+		collectReap("SELECT id FROM tv_series_files WHERE library_id=?", "episodes",
+			func(rid int64) []string { return []string{tvscan.EpisodeThumbFileName(rid)} })
 	}
 	if _, err := h.db.ExecContext(r.Context(), "DELETE FROM libraries WHERE id=?", id); err != nil {
 		if requestWantsJSON(r) {
@@ -1020,10 +1036,8 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, "internal server error", "db delete failed", "handler", "librariesDelete", "err", err)
 		return
 	}
-	for _, pid := range photoIDs {
-		for _, fn := range photoscan.ThumbFileNames(pid) {
-			_ = os.Remove(filepath.Join(h.cfg.DataDir, "thumbs", "photos", fn))
-		}
+	for _, p := range reapFiles {
+		_ = os.Remove(p)
 	}
 	if requestWantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")

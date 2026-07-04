@@ -119,6 +119,7 @@ func (h *Handler) Router() http.Handler {
 
 	// TV art
 	mux.HandleFunc("/art/tv/", h.tvArt)
+	mux.HandleFunc("/art/episode/", h.episodeArt)
 
 	// Cast / actor images
 	mux.HandleFunc("/art/person/", h.personArt)
