@@ -94,6 +94,39 @@ end. For anything beyond that (shared LAN, remote access), put a reverse
 proxy with authentication in front (Caddy `basic_auth`, nginx `auth_basic`,
 Tailscale, etc.) — that is the supported pattern, not an app-level login.
 
+### Performance: sharing a disk with another media server
+
+Hespera runs all of its background work — library scans, integrity checks,
+loudness analysis, thumbnail and preview generation — at **idle I/O priority**
+(and nice 19), so a long scan yields the disk to anything that needs it right
+now, like Plex or Jellyfin streaming a movie from the same drive.
+
+One catch: the kernel only enforces I/O priorities when the disk's scheduler
+supports them, and the default on most distros (`mq-deadline`) ignores them.
+Check yours (replace `sdb` with your media disk):
+
+```sh
+cat /sys/block/sdb/queue/scheduler   # [mq-deadline] → priorities are ignored
+```
+
+For a spinning disk (external USB drives especially), switch it to `bfq`:
+
+```sh
+# apply now
+sudo modprobe bfq
+echo bfq | sudo tee /sys/block/sdb/queue/scheduler
+
+# make it stick across reboots
+echo bfq | sudo tee /etc/modules-load.d/bfq.conf
+echo 'ACTION=="add|change", KERNEL=="sdb", ATTR{queue/scheduler}="bfq"' \
+  | sudo tee /etc/udev/rules.d/60-media-disk.rules
+```
+
+With `bfq`, Hespera's background jobs still use the disk's full speed when it
+is otherwise idle — they only step aside under contention. On NVMe/SSD media
+disks this tuning rarely matters; it is for rotational disks shared with
+playback.
+
 ### Configuration
 
 All configuration is via `HESPERA_`-prefixed environment variables. See the
