@@ -45,12 +45,51 @@ func (h *Handler) movieSimilarRows(ctx context.Context, tmdbID int) []filmograph
 	return h.buildRelatedRows(ctx, blob, "movie")
 }
 
+// movieCollectionRows returns the franchise-members strip for a film: the
+// cached /collection parts minus the film itself (its own page is not a
+// sibling). The collection blob is written by the movie_collection_fetch job.
+func (h *Handler) movieCollectionRows(ctx context.Context, collectionID, selfTMDBID int) []filmographyRow {
+	var blob string
+	if h.db.QueryRowContext(ctx,
+		"SELECT payload_json FROM movie_metadata_cache WHERE entity_key=?",
+		fmt.Sprintf("collection:%d", collectionID)).Scan(&blob) != nil {
+		return nil
+	}
+	var titles []tmdb.RelatedTitle
+	if json.Unmarshal([]byte(blob), &titles) != nil {
+		return nil
+	}
+	others := titles[:0]
+	for _, t := range titles {
+		if t.ID != selfTMDBID {
+			others = append(others, t)
+		}
+	}
+	return h.relatedRowsFromTitles(ctx, others, "movie")
+}
+
+// movieCollectionFetched reports whether a film's collection backfill has run
+// (the marker exists — written even for standalone films).
+func (h *Handler) movieCollectionFetched(ctx context.Context, tmdbID int) bool {
+	var x int
+	return h.db.QueryRowContext(ctx,
+		"SELECT 1 FROM movie_metadata_cache WHERE entity_key=?",
+		fmt.Sprintf("movie:%d:collection", tmdbID)).Scan(&x) == nil
+}
+
 // buildRelatedRows parses a related-titles blob and marks each row Owned
 // against the library (owned → local link + /art poster in the template;
 // un-owned → TMDB link + hotlinked w342 poster, the filmography pattern).
 func (h *Handler) buildRelatedRows(ctx context.Context, blob, mediaType string) []filmographyRow {
 	var titles []tmdb.RelatedTitle
-	if json.Unmarshal([]byte(blob), &titles) != nil || len(titles) == 0 {
+	if json.Unmarshal([]byte(blob), &titles) != nil {
+		return nil
+	}
+	return h.relatedRowsFromTitles(ctx, titles, mediaType)
+}
+
+func (h *Handler) relatedRowsFromTitles(ctx context.Context, titles []tmdb.RelatedTitle, mediaType string) []filmographyRow {
+	if len(titles) == 0 {
 		return nil
 	}
 	ids := make([]int, 0, len(titles))

@@ -45,6 +45,10 @@ type Movie struct {
 	Genres       []Genre `json:"genres"`
 	Tagline      string  `json:"tagline"`
 	VoteAverage  float64 `json:"vote_average"`
+	// BelongsToCollection is TMDB's franchise grouping (nil for standalone
+	// films). Blobs cached before this field existed unmarshal with nil; the
+	// lazy movie_collection_fetch job re-fetches details to backfill them.
+	BelongsToCollection *CollectionRef `json:"belongs_to_collection"`
 }
 
 // MovieCastMember is one entry from /movie/{id}/credits. Unlike TV's
