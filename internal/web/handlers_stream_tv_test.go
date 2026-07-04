@@ -270,6 +270,160 @@ func TestDefaultAudioOrdinal(t *testing.T) {
 	}
 }
 
+func TestPreferredAudioOrdinal(t *testing.T) {
+	mk := func(streams ...video.ProbeStream) *video.ProbeResult {
+		return &video.ProbeResult{Streams: streams}
+	}
+	twoLang := mk(
+		video.ProbeStream{CodecType: "video"},
+		video.ProbeStream{CodecType: "audio", CodecName: "ac3", Language: "jpn", IsDefault: true},
+		video.ProbeStream{CodecType: "audio", CodecName: "aac", Language: "eng"},
+	)
+	cases := []struct {
+		name string
+		p    *video.ProbeResult
+		pref string
+		want int
+	}{
+		{"no preference", twoLang, "", 0},
+		{"nil probe", nil, "en", 0},
+		{"matches non-default", twoLang, "en", 2},
+		{"639-2 preference form", twoLang, "eng", 2},
+		{"matches the default", twoLang, "ja", 1},
+		{"no matching language", twoLang, "de", 0},
+		{"untagged streams never match", mk(
+			video.ProbeStream{CodecType: "audio", CodecName: "aac"},
+		), "en", 0},
+		{"default wins among several matches", mk(
+			video.ProbeStream{CodecType: "audio", CodecName: "aac", Language: "eng"},
+			video.ProbeStream{CodecType: "audio", CodecName: "ac3", Language: "eng", IsDefault: true},
+		), "en", 2},
+	}
+	for _, c := range cases {
+		if got := preferredAudioOrdinal(c.p, c.pref); got != c.want {
+			t.Errorf("%s: preferredAudioOrdinal = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+func TestPreferredTextSubOrdinal(t *testing.T) {
+	mk := func(streams ...video.ProbeStream) *video.ProbeResult {
+		return &video.ProbeResult{Streams: streams}
+	}
+	mixed := mk(
+		video.ProbeStream{CodecType: "video"},
+		video.ProbeStream{CodecType: "subtitle", CodecName: "hdmv_pgs_subtitle", Language: "eng"}, // bitmap
+		video.ProbeStream{CodecType: "subtitle", CodecName: "subrip", Language: "spa"},
+		video.ProbeStream{CodecType: "subtitle", CodecName: "subrip", Language: "eng"},
+	)
+	cases := []struct {
+		name string
+		p    *video.ProbeResult
+		pref string
+		want int
+	}{
+		{"nil probe", nil, "", 0},
+		{"no preference picks first text", mixed, "", 2},
+		{"language match skips bitmap", mixed, "en", 3}, // eng PGS never picked; eng subrip is ordinal 3
+		{"preference with no text match picks nothing", mixed, "de", 0},
+		{"bitmap-only file picks nothing", mk(
+			video.ProbeStream{CodecType: "subtitle", CodecName: "hdmv_pgs_subtitle", Language: "eng"},
+		), "en", 0},
+		{"default-flagged text wins without preference", mk(
+			video.ProbeStream{CodecType: "subtitle", CodecName: "subrip", Language: "spa"},
+			video.ProbeStream{CodecType: "subtitle", CodecName: "subrip", Language: "eng", IsDefault: true},
+		), "", 2},
+	}
+	for _, c := range cases {
+		if got := preferredTextSubOrdinal(c.p, c.pref); got != c.want {
+			t.Errorf("%s: preferredTextSubOrdinal = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// TestTVPlaybackSessionPlaybackDefaults exercises the Settings-driven defaults
+// end to end through the session handler: language-preference audio pinning,
+// the subtitles-on default (text track auto-enabled + sidecar URL emitted +
+// applied ordinals echoed), and the client's explicit-off escape (sub=-1) that
+// must suppress the default rather than fight the user.
+func TestTVPlaybackSessionPlaybackDefaults(t *testing.T) {
+	h, db := newTestHandler(t)
+	const chromeUA = "Mozilla/5.0 Chrome/120 Safari/537"
+	for k, v := range map[string]string{
+		"default_audio_lang":    "en",
+		"default_subtitle_lang": "en",
+		"subtitles_default_on":  "1",
+	} {
+		if _, err := db.Exec("INSERT INTO app_settings(key,value) VALUES(?,?)", k, v); err != nil {
+			t.Fatalf("seed setting %s: %v", k, err)
+		}
+	}
+	probe := video.ProbeResult{
+		Format: video.ProbeFormat{Duration: "120.0"},
+		Streams: []video.ProbeStream{
+			{CodecType: "video", CodecName: "h264", Width: 1280, Height: 720},
+			{CodecType: "audio", CodecName: "aac", Language: "jpn", IsDefault: true},
+			{CodecType: "audio", CodecName: "aac", Language: "eng"},
+			{CodecType: "subtitle", CodecName: "subrip", Language: "spa"},
+			{CodecType: "subtitle", CodecName: "subrip", Language: "eng"},
+		},
+	}
+	id := insertTVFileWithProbe(t, db, "mp4", probe, 100<<20)
+
+	resp := getSession(t, h, id, chromeUA, "")
+	if resp.AppliedAudio != 2 {
+		t.Errorf("applied_audio = %d, want 2 (the eng track)", resp.AppliedAudio)
+	}
+	if resp.AppliedSubtitle != 2 {
+		t.Errorf("applied_subtitle = %d, want 2 (the eng subrip)", resp.AppliedSubtitle)
+	}
+	if resp.SubtitleURL == "" {
+		t.Error("subtitle_url empty — subtitles-on default did not emit the sidecar")
+	}
+
+	// Explicit off (sub=-1) suppresses the default.
+	resp = getSession(t, h, id, chromeUA, "&sub=-1")
+	if resp.AppliedSubtitle != 0 || resp.SubtitleURL != "" {
+		t.Errorf("explicit off: applied_subtitle = %d, subtitle_url = %q — default must not re-apply",
+			resp.AppliedSubtitle, resp.SubtitleURL)
+	}
+
+	// A pinned client choice always wins over the defaults.
+	resp = getSession(t, h, id, chromeUA, "&aud=1&sub=1")
+	if resp.AppliedAudio != 1 || resp.AppliedSubtitle != 1 {
+		t.Errorf("pinned: applied = (%d,%d), want (1,1)", resp.AppliedAudio, resp.AppliedSubtitle)
+	}
+}
+
+// TestTVPlaybackSessionSubtitleDefaultNoMatch: with a subtitle-language
+// preference that no text track satisfies, subtitles stay off (never a
+// surprise wrong-language sub, never a bitmap pick).
+func TestTVPlaybackSessionSubtitleDefaultNoMatch(t *testing.T) {
+	h, db := newTestHandler(t)
+	for k, v := range map[string]string{
+		"default_subtitle_lang": "de",
+		"subtitles_default_on":  "1",
+	} {
+		if _, err := db.Exec("INSERT INTO app_settings(key,value) VALUES(?,?)", k, v); err != nil {
+			t.Fatalf("seed setting %s: %v", k, err)
+		}
+	}
+	probe := video.ProbeResult{
+		Format: video.ProbeFormat{Duration: "120.0"},
+		Streams: []video.ProbeStream{
+			{CodecType: "video", CodecName: "h264", Width: 1280, Height: 720},
+			{CodecType: "audio", CodecName: "aac", Language: "eng"},
+			{CodecType: "subtitle", CodecName: "subrip", Language: "eng"},
+			{CodecType: "subtitle", CodecName: "hdmv_pgs_subtitle", Language: "ger"}, // bitmap match — must not be picked
+		},
+	}
+	id := insertTVFileWithProbe(t, db, "mp4", probe, 100<<20)
+	resp := getSession(t, h, id, "Mozilla/5.0 Chrome/120 Safari/537", "")
+	if resp.AppliedSubtitle != 0 || resp.SubtitleURL != "" {
+		t.Errorf("applied_subtitle = %d, subtitle_url = %q — want subtitles off", resp.AppliedSubtitle, resp.SubtitleURL)
+	}
+}
+
 func TestStreamURL(t *testing.T) {
 	if got := streamURL("direct_play", 7, 0); got != "/stream/tv/7" {
 		t.Fatalf("direct_play url = %q", got)

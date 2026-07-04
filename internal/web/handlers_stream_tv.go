@@ -94,8 +94,13 @@ type playbackSessionResponse struct {
 	Completed      bool              `json:"completed"`
 	AudioTracks    []sessionTrack    `json:"audio_tracks,omitempty"`
 	SubtitleTracks []sessionTrack    `json:"subtitle_tracks,omitempty"`
-	SkipSegments   []skipSegment     `json:"skip_segments,omitempty"`
-	Chapters       []chapterMark     `json:"chapters,omitempty"`
+	// The track ordinals the server actually applied, echoing back any
+	// defaults it resolved (language-preference audio, subtitles-on) so the
+	// client's pickers stay in sync with the served stream. 0 = none/unpinned.
+	AppliedAudio    int           `json:"applied_audio"`
+	AppliedSubtitle int           `json:"applied_subtitle"`
+	SkipSegments    []skipSegment `json:"skip_segments,omitempty"`
+	Chapters        []chapterMark `json:"chapters,omitempty"`
 }
 
 // tvPlaybackSession resolves how a given client should play a TV file: the
@@ -115,6 +120,13 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	aud := atoiDefault(q.Get("aud"), 0)
 	sub := atoiDefault(q.Get("sub"), 0)
+	// sub == -1 is the client's explicit "Off": without it, 0 can't distinguish
+	// "initial load" (subtitles-on default applies) from "user switched them off"
+	// (it must not re-apply and fight the user).
+	subExplicitOff := sub < 0
+	if subExplicitOff {
+		sub = 0
+	}
 	mode := q.Get("mode")
 	client := q.Get("client")
 
@@ -127,21 +139,41 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	var probe video.ProbeResult
 	_ = json.Unmarshal([]byte(src.streamJSON), &probe)
 
-	// When the default audio isn't stream index 0, pin aud to its concrete 1-based
-	// ordinal so the decision (FromProbe→pickStream evaluates the disposition
-	// default) and the served track (audioMap→0:a:(N-1), via the emitted ?aud=N
-	// URL) agree. Otherwise Decide could green-light remux on the default's codec
-	// while ffmpeg copies a different, incompatible index-0 track. A default that
-	// IS index 0 (ordinal 1) already agrees, so leave aud==0 (URL unchanged).
+	// When the client didn't pin an audio track, the user's default-audio-language
+	// setting picks one first; else, when the default audio isn't stream index 0,
+	// pin aud to its concrete 1-based ordinal so the decision (FromProbe→pickStream
+	// evaluates the disposition default) and the served track (audioMap→0:a:(N-1),
+	// via the emitted ?aud=N URL) agree. Otherwise Decide could green-light remux
+	// on the default's codec while ffmpeg copies a different, incompatible index-0
+	// track. A default that IS index 0 (ordinal 1) already agrees, so leave aud==0
+	// (URL unchanged).
 	if aud == 0 {
-		if n := defaultAudioOrdinal(&probe); n > 1 {
+		if n := preferredAudioOrdinal(&probe, h.effectiveDefaultAudioLang(r.Context())); n > 0 {
 			aud = n
+		} else if n := defaultAudioOrdinal(&probe); n > 1 {
+			aud = n
+		}
+	}
+	// Subtitles-on default: auto-enable a text subtitle on an unpinned load.
+	autoSub := false
+	if sub == 0 && !subExplicitOff && h.effectiveSubtitlesDefaultOn(r.Context()) {
+		if n := preferredTextSubOrdinal(&probe, h.effectiveDefaultSubtitleLang(r.Context())); n > 0 {
+			sub = n
+			autoSub = true
 		}
 	}
 
 	mi := playback.FromProbe(&probe, src.container, src.size, aud, sub)
 	profile, _ := playback.Profile(client, r.UserAgent())
 	out := playback.Decide(profile, mi, mode)
+	if autoSub && out.SubtitleBurnIn {
+		// A default setting must never trigger a transcode. The auto pick is
+		// text-only, but a profile that disallows text sidecars burns even text
+		// subs in — drop the pick and re-decide without it.
+		sub = 0
+		mi = playback.FromProbe(&probe, src.container, src.size, aud, sub)
+		out = playback.Decide(profile, mi, mode)
+	}
 
 	// A selected bitmap subtitle must be burned in, which the segment-on-demand
 	// HLS path can't do (per-segment input seeks drop stateful display sets). Route
@@ -155,17 +187,19 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := playbackSessionResponse{
-		OK:             true,
-		Decision:       string(out.Decision),
-		Protocol:       protocol,
-		URL:            streamU,
-		Reasons:        out.Reasons,
-		Container:      mi.Container,
-		VideoCodec:     mi.VideoCodec,
-		AudioCodec:     mi.AudioCodec,
-		DurationSecs:   durationSeconds(probe.Format.Duration),
-		AudioTracks:    audioTracks(&probe),
-		SubtitleTracks: subtitleTracks(&probe),
+		OK:              true,
+		Decision:        string(out.Decision),
+		Protocol:        protocol,
+		URL:             streamU,
+		Reasons:         out.Reasons,
+		Container:       mi.Container,
+		VideoCodec:      mi.VideoCodec,
+		AudioCodec:      mi.AudioCodec,
+		DurationSecs:    durationSeconds(probe.Format.Duration),
+		AudioTracks:     audioTracks(&probe),
+		SubtitleTracks:  subtitleTracks(&probe),
+		AppliedAudio:    aud,
+		AppliedSubtitle: sub,
 	}
 	if clean, perr := h.resolveTVPath(src.absPath); perr == nil {
 		resp.SkipSegments = skipSegmentsFor(&probe, clean)
@@ -488,6 +522,67 @@ func defaultAudioOrdinal(p *video.ProbeResult) int {
 		}
 	}
 	return 1
+}
+
+// preferredAudioOrdinal returns the 1-based ordinal (among audio streams) of
+// the stream whose language tag matches the user's default-audio-language
+// setting, or 0 when the preference is empty or nothing matches. Among several
+// matches the disposition-default stream wins (usually the main mix), else the
+// first. Untagged streams never match — the preference silently no-ops on them.
+func preferredAudioOrdinal(p *video.ProbeResult, pref string) int {
+	if p == nil || pref == "" {
+		return 0
+	}
+	first, idx := 0, 0
+	for _, s := range p.Streams {
+		if !strings.EqualFold(s.CodecType, "audio") {
+			continue
+		}
+		idx++
+		if !langsMatch(pref, s.Language) {
+			continue
+		}
+		if s.IsDefault {
+			return idx
+		}
+		if first == 0 {
+			first = idx
+		}
+	}
+	return first
+}
+
+// preferredTextSubOrdinal returns the 1-based ordinal (among subtitle streams)
+// of the text subtitle to auto-enable when subtitles default on: a
+// language-matching text track when a preference is set (no match → no auto
+// pick, never a surprise wrong-language sub), else any text track. Bitmap
+// tracks are never picked — burn-in forces a transcode, which a default
+// setting must not silently trigger. Disposition-default wins among
+// candidates, else the first.
+func preferredTextSubOrdinal(p *video.ProbeResult, pref string) int {
+	if p == nil {
+		return 0
+	}
+	first, idx := 0, 0
+	for _, s := range p.Streams {
+		if !strings.EqualFold(s.CodecType, "subtitle") {
+			continue
+		}
+		idx++
+		if !playback.IsTextSubtitle(s.CodecName) {
+			continue
+		}
+		if pref != "" && !langsMatch(pref, s.Language) {
+			continue
+		}
+		if s.IsDefault {
+			return idx
+		}
+		if first == 0 {
+			first = idx
+		}
+	}
+	return first
 }
 
 func subtitleTracks(p *video.ProbeResult) []sessionTrack {

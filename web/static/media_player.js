@@ -254,6 +254,11 @@ function initMediaPlayer() {
   }
 
   function buildSelects(session) {
+    // The server echoes the ordinals it actually applied (it may have resolved
+    // defaults: language-preference audio, subtitles-on) — the pickers must
+    // show the served tracks, not assume disposition-default/Off.
+    const appliedAud = session.applied_audio | 0;
+    const appliedSub = session.applied_subtitle | 0;
     const audio = session.audio_tracks || [];
     if (audio.length > 1) {
       audioSelect.innerHTML = '';
@@ -261,7 +266,7 @@ function initMediaPlayer() {
         const o = document.createElement('option');
         o.value = a.ordinal;
         o.textContent = [a.language, a.title, a.codec].filter(Boolean).join(' · ') || ('Track ' + a.ordinal);
-        if (a.default) o.selected = true;
+        if (appliedAud > 0 ? a.ordinal === appliedAud : a.default) o.selected = true;
         audioSelect.appendChild(o);
       });
       document.getElementById('audioPick').hidden = false;
@@ -285,13 +290,14 @@ function initMediaPlayer() {
         subSelect.appendChild(search);
       }
       const off = document.createElement('option');
-      off.value = 0; off.textContent = 'Off'; off.selected = true;
+      off.value = 0; off.textContent = 'Off'; off.selected = appliedSub === 0;
       subSelect.appendChild(off);
       subs.forEach((s) => {
         const o = document.createElement('option');
         o.value = s.ordinal;
         const label = [s.language, s.title].filter(Boolean).join(' · ') || ('Subtitle ' + s.ordinal);
         o.textContent = s.text ? label : (label + ' · burn-in');
+        if (s.ordinal === appliedSub) o.selected = true;
         subSelect.appendChild(o);
         if (!s.text) subBurnIn.add(Number(s.ordinal)); // bitmap → burned into the video stream
       });
@@ -319,6 +325,13 @@ function initMediaPlayer() {
       return;
     }
     if (!session || !session.ok) { modeLabel.textContent = 'Unable to start playback'; return; }
+
+    // Adopt the server's applied ordinals so subsequent track changes ride the
+    // resolved tracks. Explicit sub off (sub === -1) is kept as-is: adopting
+    // the echoed 0 would let a later audio change silently re-apply the
+    // subtitles-on default the user just turned off.
+    if (typeof session.applied_audio === 'number') currentAud = session.applied_audio;
+    if (sub >= 0 && typeof session.applied_subtitle === 'number') currentSub = session.applied_subtitle;
 
     if (!selectsBuilt) buildSelects(session);
     // A text-subtitle change is a sidecar swap — the video stream is byte-identical
@@ -351,7 +364,7 @@ function initMediaPlayer() {
     // (picking an action must not switch subtitles off) and open the search
     // dialog. Checked before parseInt, which would misread it as Off.
     if (subSelect.value === 'search') {
-      subSelect.value = String(currentSub);
+      subSelect.value = String(Math.max(0, currentSub)); // -1 (explicit off) displays as Off
       openSubsModal();
       subSelect.blur();
       return;
@@ -360,7 +373,9 @@ function initMediaPlayer() {
     // Reload the video stream only when burn-in is involved (entering or leaving a
     // bitmap sub changes the stream); a text/off↔text/off change is a sidecar swap.
     const reload = subBurnIn.has(newSub) || subBurnIn.has(currentSub);
-    loadFromSession(currentAud, newSub, currentAbsTime(), !reload);
+    // Picking Off sends -1 (explicit off): a plain 0 reads as "unpinned" to the
+    // server, which would re-apply the subtitles-on default against the user.
+    loadFromSession(currentAud, newSub === 0 ? -1 : newSub, currentAbsTime(), !reload);
     subSelect.blur();
   });
 
