@@ -212,6 +212,7 @@ the rest — all `HESPERA_`-prefixed:
 | `HESPERA_LASTFM_API_KEY` | | Optional Last.fm key — popularity blend for shuffles |
 | `HESPERA_OPENSUBTITLES_API_KEY` | | Optional OpenSubtitles key — on-demand subtitle search |
 | `HESPERA_OPENSUBTITLES_USER_AGENT` | `Hespera v1.0` | OpenSubtitles registered consumer UA |
+| `HESPERA_LOG_LEVEL` | `info` | Log level (`debug`/`info`/`warn`/`error`). Per-request access logs are emitted at `debug`; the default `info` keeps request serving off the log path. Set `debug` to see per-request logs |
 | `HESPERA_FFMPEG_CONCURRENCY` | 4 | Max concurrent ffmpeg/ffprobe processes |
 | `HESPERA_HLS_ENCODER` | `software` | HLS video encoder: `software` (libx264) or `vaapi` (opt-in hardware encode) |
 | `HESPERA_HLS_SEGMENT_CONCURRENCY` | 1 | Max concurrent HLS segment transcodes (keeps prefetch bursts off every core) |

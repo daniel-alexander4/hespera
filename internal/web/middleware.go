@@ -33,7 +33,13 @@ func withLogging(next http.Handler) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
-		slog.Info("request",
+		// Debug, not Info: this fires once per request (every HLS segment during
+		// playback included), and it's a SYNCHRONOUS write to stdout in the request
+		// goroutine through slog's process-wide mutex — so a stalling log sink (a
+		// systemd journal on a busy disk) would add latency to request serving. At
+		// the default info level slog drops this before the write, keeping the hot
+		// path log-I/O-free; HESPERA_LOG_LEVEL=debug restores per-request access logs.
+		slog.Debug("request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", sw.status,
