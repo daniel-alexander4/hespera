@@ -10,7 +10,8 @@
            data-media-kind="movie"
            data-file-id="{{.FileID}}"
            data-prev-file="0"
-           data-next-file="0">
+           data-next-file="0"
+           data-os-enabled="{{if .OpenSubtitlesEnabled}}1{{end}}">
       Your browser does not support video playback.
     </video>
     {{/* Controls overlay the video (auto-hide via media_player.js) so they stay

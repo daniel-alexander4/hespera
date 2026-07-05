@@ -742,13 +742,14 @@ func (h *Handler) moviePlayer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "movie_player.html", map[string]any{
-		"Title":       pageTitle,
-		"MovieTitle":  title,
-		"Year":        year,
-		"TMDBID":      tmdbID,
-		"FileID":      fileID,
-		"ExtraTitle":  showExtraTitle,
-		"CaptionVars": h.captionStyleVars(r.Context()),
+		"Title":                pageTitle,
+		"MovieTitle":           title,
+		"Year":                 year,
+		"TMDBID":               tmdbID,
+		"FileID":               fileID,
+		"ExtraTitle":           showExtraTitle,
+		"CaptionVars":          h.captionStyleVars(r.Context()),
+		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "",
 	})
 }
 

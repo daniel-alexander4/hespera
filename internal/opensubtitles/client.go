@@ -99,6 +99,27 @@ func (c *OSClient) Search(ctx context.Context, parentTMDBID string, season, epis
 	q.Set("parent_tmdb_id", parentTMDBID)
 	q.Set("season_number", fmt.Sprintf("%d", season))
 	q.Set("episode_number", fmt.Sprintf("%d", episode))
+	return c.runSearch(ctx, q, lang)
+}
+
+// SearchMovie finds subtitles for a TMDB movie. Unlike an episode search it sends
+// a plain tmdb_id with no season/episode — the OpenSubtitles movie query.
+func (c *OSClient) SearchMovie(ctx context.Context, tmdbID string, lang string) ([]SearchResult, error) {
+	if c == nil {
+		return nil, nil
+	}
+	if tmdbID == "" {
+		return nil, fmt.Errorf("opensubtitles: need movie tmdb id")
+	}
+	q := url.Values{}
+	q.Set("tmdb_id", tmdbID)
+	return c.runSearch(ctx, q, lang)
+}
+
+// runSearch sends a /subtitles query (episode- or movie-shaped) and returns each
+// candidate's first downloadable file. The response parsing is media-agnostic, so
+// Search and SearchMovie differ only in the query params they build.
+func (c *OSClient) runSearch(ctx context.Context, q url.Values, lang string) ([]SearchResult, error) {
 	if lang != "" {
 		q.Set("languages", lang)
 	}

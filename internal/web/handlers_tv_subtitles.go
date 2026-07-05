@@ -82,10 +82,62 @@ func (h *Handler) tvSubtitlesSearch(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "results": results})
 }
 
-// tvSubtitlesFetch downloads a chosen subtitle, converts it to WebVTT, caches it,
+// movieTMDBForSubtitles loads a matched movie file's TMDB id, so an OpenSubtitles
+// movie search is keyed off the stored id rather than a fuzzy title query. Movies
+// have no season/episode, so this resolves a single id (contrast
+// tvIdentityForSubtitles).
+func (h *Handler) movieTMDBForSubtitles(r *http.Request, fileID int64) (tmdbID string, ok bool) {
+	var id int64
+	err := h.db.QueryRowContext(r.Context(), `
+SELECT tmdb_id FROM movie_files WHERE id = ? AND match_status = 'matched'
+`, fileID).Scan(&id)
+	if err != nil || id <= 0 {
+		return "", false
+	}
+	return strconv.FormatInt(id, 10), true
+}
+
+// movieSubtitlesSearch finds candidate subtitles for a movie file on OpenSubtitles.
+// GET /movie/subtitles/search?file=<id>&lang=<code>
+func (h *Handler) movieSubtitlesSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	fileID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("file")), 10, 64)
+	if err != nil || fileID <= 0 {
+		jsonError(w, "invalid file id", http.StatusBadRequest)
+		return
+	}
+	lang := normalizeLang(r.URL.Query().Get("lang"))
+
+	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()), h.effectiveOpenSubtitlesUserAgent(r.Context()))
+	if client == nil {
+		jsonError(w, "subtitle search is not configured (set an OpenSubtitles API key in Settings)", http.StatusServiceUnavailable)
+		return
+	}
+
+	tmdbID, ok := h.movieTMDBForSubtitles(r, fileID)
+	if !ok {
+		jsonError(w, "this file is not matched to a TMDB movie", http.StatusNotFound)
+		return
+	}
+
+	results, err := client.SearchMovie(r.Context(), tmdbID, lang)
+	if err != nil {
+		jsonErr(w, http.StatusBadGateway, "subtitle search failed", "opensubtitles search", "handler", "movieSubtitlesSearch", "file_id", fileID, "err", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "results": results})
+}
+
+// subtitlesFetch downloads a chosen subtitle, converts it to WebVTT, caches it,
 // and returns a URL the player can attach. Cache-first, so a re-watch costs no
-// quota. POST /tv/subtitles/fetch (form: file, file_id, lang)
-func (h *Handler) tvSubtitlesFetch(w http.ResponseWriter, r *http.Request) {
+// quota. It is media-agnostic — the cache is keyed by the OpenSubtitles file id
+// alone; getPrefix ("/tv" or "/movie") only selects which get-endpoint the
+// returned URL names. POST form: file_id, lang.
+func (h *Handler) subtitlesFetch(w http.ResponseWriter, r *http.Request, getPrefix string) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -106,7 +158,7 @@ func (h *Handler) tvSubtitlesFetch(w http.ResponseWriter, r *http.Request) {
 	// any download quota.
 	if _, statErr := os.Stat(cachePath); statErr == nil {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "url": subtitleGetURL(osFileID, lang)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "url": subtitleGetURL(getPrefix, osFileID, lang)})
 		return
 	}
 
@@ -118,28 +170,35 @@ func (h *Handler) tvSubtitlesFetch(w http.ResponseWriter, r *http.Request) {
 
 	link, err := client.Download(r.Context(), osFileID)
 	if err != nil {
-		jsonErr(w, http.StatusBadGateway, "subtitle download failed", "opensubtitles download", "handler", "tvSubtitlesFetch", "os_file_id", osFileID, "err", err)
+		jsonErr(w, http.StatusBadGateway, "subtitle download failed", "opensubtitles download", "handler", "subtitlesFetch", "os_file_id", osFileID, "err", err)
 		return
 	}
 	// SSRF guard: only ever fetch the link OpenSubtitles handed back, and only if
 	// it points at opensubtitles.com — never an arbitrary client-supplied URL.
 	if !isOpenSubtitlesHost(link) {
-		jsonErr(w, http.StatusBadGateway, "subtitle download failed", "download link host rejected", "handler", "tvSubtitlesFetch", "link", link)
+		jsonErr(w, http.StatusBadGateway, "subtitle download failed", "download link host rejected", "handler", "subtitlesFetch", "link", link)
 		return
 	}
 
 	if err := h.cacheConvertedSubtitle(r, link, cachePath); err != nil {
-		jsonErr(w, http.StatusBadGateway, "subtitle conversion failed", "fetch+convert subtitle", "handler", "tvSubtitlesFetch", "os_file_id", osFileID, "err", err)
+		jsonErr(w, http.StatusBadGateway, "subtitle conversion failed", "fetch+convert subtitle", "handler", "subtitlesFetch", "os_file_id", osFileID, "err", err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "url": subtitleGetURL(osFileID, lang)})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "url": subtitleGetURL(getPrefix, osFileID, lang)})
 }
 
-// tvSubtitlesGet serves a cached, converted WebVTT subtitle.
-// GET /tv/subtitles/get?file_id=<id>&lang=<code>
-func (h *Handler) tvSubtitlesGet(w http.ResponseWriter, r *http.Request) {
+// tvSubtitlesFetch and movieSubtitlesFetch are the routed entry points; they share
+// subtitlesFetch and differ only in the get-endpoint the returned URL names.
+func (h *Handler) tvSubtitlesFetch(w http.ResponseWriter, r *http.Request)    { h.subtitlesFetch(w, r, "/tv") }
+func (h *Handler) movieSubtitlesFetch(w http.ResponseWriter, r *http.Request) { h.subtitlesFetch(w, r, "/movie") }
+
+// subtitlesGet serves a cached, converted WebVTT subtitle. Media-agnostic (the
+// cache is keyed by the OpenSubtitles file id), registered under both
+// /tv/subtitles/get and /movie/subtitles/get.
+// GET .../subtitles/get?file_id=<id>&lang=<code>
+func (h *Handler) subtitlesGet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -247,8 +306,8 @@ func (h *Handler) subtitleCachePath(osFileID int64, lang string) string {
 	return filepath.Join(h.tvSubtitlesCacheRoot(), fmt.Sprintf("%d.%s.vtt", osFileID, lang))
 }
 
-func subtitleGetURL(osFileID int64, lang string) string {
-	return fmt.Sprintf("/tv/subtitles/get?file_id=%d&lang=%s", osFileID, url.QueryEscape(lang))
+func subtitleGetURL(prefix string, osFileID int64, lang string) string {
+	return fmt.Sprintf("%s/subtitles/get?file_id=%d&lang=%s", prefix, osFileID, url.QueryEscape(lang))
 }
 
 // normalizeLang lowercases and validates a language code, defaulting to "en".
