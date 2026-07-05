@@ -2,7 +2,12 @@
 
 package singleton
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"testing"
+	"time"
+)
 
 // cleanDeleted must strip the kernel's " (deleted)" marker (the bug: an old
 // instance whose binary was replaced has /proc/<pid>/exe = "<path> (deleted)",
@@ -29,5 +34,40 @@ func TestCleanDeletedMatchesAcrossReplace(t *testing.T) {
 	replaced := cleanDeleted("/usr/bin/hespera (deleted)")
 	if live != replaced {
 		t.Fatalf("live %q and replaced %q must match by install path", live, replaced)
+	}
+}
+
+// anyAlive is the existence probe ReplaceOthers waits on. It must see this
+// running process as alive and a reaped child as gone (ESRCH), and treat an
+// empty list as nothing-alive.
+func TestAnyAlive(t *testing.T) {
+	if anyAlive(nil) {
+		t.Fatal("empty pid list reported alive")
+	}
+	if !anyAlive([]int{os.Getpid()}) {
+		t.Fatal("the running test process reported dead")
+	}
+
+	// A finished, reaped child no longer exists — Kill(pid, 0) returns ESRCH.
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil { // Run waits, so the child is reaped
+		t.Fatalf("run true: %v", err)
+	}
+	if anyAlive([]int{cmd.Process.Pid}) {
+		t.Fatal("a reaped child reported alive")
+	}
+}
+
+// waitForExit returns immediately for an empty list and for already-dead pids
+// (it must not spin until the timeout when nothing is alive).
+func TestWaitForExitReturnsWhenGone(t *testing.T) {
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run true: %v", err)
+	}
+	start := time.Now()
+	waitForExit([]int{cmd.Process.Pid}, 5*time.Second)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("waitForExit lingered %v for an already-dead pid", elapsed)
 	}
 }

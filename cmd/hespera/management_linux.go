@@ -4,7 +4,7 @@ package main
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -27,14 +27,38 @@ import (
 // no-op stub in management_other.go.
 func serveManagementSocket(h *web.Handler, dataDir string) (io.Closer, error) {
 	sockPath := config.ManagementSocketPath(dataDir)
-	// Remove a stale socket left by a hard-killed prior instance; a live instance
-	// is already handled by the singleton --replace path before we get here.
+
+	// Do no harm: if a live instance already answers on this socket, a second
+	// instance is booting against the same data dir (the upstream launch guard
+	// missed it — e.g. a stale/absent app.url with a false-negative health
+	// probe). Don't clobber the running instance's socket; skip our own and let
+	// it keep serving hescli. A stale socket left by a hard-killed instance
+	// won't answer, so we fall through and rebind it below.
+	if managementSocketAlive(sockPath) {
+		return nil, fmt.Errorf("a live instance already owns %s — leaving it and skipping this instance's management socket", sockPath)
+	}
+
+	// Remove a stale socket left by a hard-killed prior instance (nobody live
+	// answered above). A deliberate --replace take-over already waited for the
+	// old instance to exit (singleton.ReplaceOthers), so its socket is gone or
+	// dead by the time we get here.
 	_ = os.Remove(sockPath)
 
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
 		return nil, err
 	}
+	// Own the socket lifetime ourselves: disable Go's unlink-on-close so shutdown
+	// never removes the file. Go's default calls unlink(path) with no ownership
+	// check, so a shutting-down old instance would remove a new instance's
+	// freshly-bound socket at the same path (the reported bug: healthy server,
+	// dead hescli). By never unlinking at shutdown, an instance can't remove any
+	// socket but its own-that-it-leaves-behind; the leftover file is inert (a
+	// connect refuses) and the next startup reaps it, guarded by the liveness
+	// probe above. Inode comparison can't do this soundly — inode numbers are
+	// reused across remove+recreate — so "don't unlink at all" is the fix.
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+
 	// Belt-and-braces: restrict the socket file too (peer-cred is the real gate).
 	_ = os.Chmod(sockPath, 0o600)
 
@@ -48,24 +72,37 @@ func serveManagementSocket(h *web.Handler, dataDir string) (io.Closer, error) {
 		}
 	}()
 
-	return &managementServer{srv: srv, sockPath: sockPath}, nil
+	return &managementServer{srv: srv}, nil
 }
 
 type managementServer struct {
-	srv      *http.Server
-	sockPath string
+	srv *http.Server
 }
 
 func (m *managementServer) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+	// Deliberately does NOT unlink the socket file — see serveManagementSocket.
+	// The leftover file is inert and the next startup reaps it after the liveness
+	// probe confirms no live owner, so shutdown can never remove another
+	// instance's socket during a --replace take-over.
 	_ = m.srv.Shutdown(ctx)
-	// The unix listener already unlinks the socket on close; this is belt-and-
-	// braces, so a "not found" is the expected success case, not an error.
-	if err := os.Remove(m.sockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
 	return nil
+}
+
+// managementSocketAlive reports whether something is currently listening on the
+// unix socket at sockPath — a successful connect means a live instance owns it.
+// A stale socket file left by a cleanly-stopped or hard-killed instance refuses
+// the connection, so this distinguishes "live owner, don't clobber" from "stale,
+// safe to rebind". A local unix accept is disk-free, so this stays reliable even
+// on an I/O-saturated box where the HTTP health probe can time out.
+func managementSocketAlive(sockPath string) bool {
+	c, err := net.DialTimeout("unix", sockPath, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 // peerCredListener wraps a unix listener and refuses any peer whose credentials
