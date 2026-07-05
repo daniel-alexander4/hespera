@@ -2146,6 +2146,25 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
   color: var(--text-muted);
   text-transform: capitalize;
 }
+/* Playback-speed control — a compact native range (couch-engageable like the
+   volume slider), with a live value readout, pushed to the right end of the row.
+   margin-left:auto lands it just before the mode label (whose own auto-margin is
+   then a no-op). The readout inherits the overlay's white text; tabular-nums +
+   min-width keep the row from shifting as 0.75×↔1.75× change width. */
+.tv-speed {
+  margin-left: auto;
+}
+.tv-speed-range {
+  width: 5.7rem; /* ~80px @14 — matches the volume slider */
+  accent-color: var(--accent);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.tv-speed-val {
+  min-width: 2.6rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
 .tv-player-nav {
   display: flex;
   justify-content: space-between;

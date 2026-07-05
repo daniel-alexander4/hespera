@@ -19,9 +19,7 @@ function fixture({ kind = 'tv', fileId = 7, prevFile = 0, nextFile = 0, osEnable
       <div id="mediaOverlay">
         <div id="audioPick" hidden><select id="audioSelect"></select></div>
         <div id="subPick" hidden><select id="subSelect"></select></div>
-        <div id="speedPick"><select id="speedSelect">
-          <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option>
-        </select></div>
+        <div id="speedPick"><input id="speedSlider" type="range" min="0.5" max="2" step="0.25" value="1" /><span id="speedVal"></span></div>
         <div id="tvTransport">
           <button id="tvPrevEpBtn" hidden></button>
           <button id="tvRewindBtn"></button>
@@ -363,24 +361,27 @@ test('the reload button re-loads the stream at the current position', async () =
   assert.ok(/[?&]start=42\b/.test(src), `reload re-anchors at the current position: got ${src}`);
 });
 
-test('playback speed: change sets playbackRate + persists; stored value applied on boot', async () => {
+test('playback speed: slider input sets playbackRate + persists; stored value applied on boot', async () => {
   let env = await boot();
   let video = env.document.getElementById('tvVideo');
-  const sel = env.document.getElementById('speedSelect');
-  sel.value = '1.5';
-  sel.dispatchEvent(new env.window.Event('change', { bubbles: true }));
-  assert.strictEqual(video.playbackRate, 1.5, 'change applies the rate');
+  const slider = env.document.getElementById('speedSlider');
+  slider.value = '1.5';
+  slider.dispatchEvent(new env.window.Event('input', { bubbles: true }));
+  assert.strictEqual(video.playbackRate, 1.5, 'input applies the rate');
   assert.strictEqual(env.window.localStorage.getItem('tv_speed'), '1.5', 'rate persisted');
+  assert.strictEqual(env.document.getElementById('speedVal').textContent, '1.5×', 'the readout tracks the rate');
 
-  // A fresh boot with the stored value pre-selects and applies it.
+  // A fresh boot with the stored value restores the slider + applies it.
   env = await boot({ storage: { tv_speed: '2' } });
   video = env.document.getElementById('tvVideo');
   assert.strictEqual(video.playbackRate, 2, 'stored rate applied on boot');
-  assert.strictEqual(env.document.getElementById('speedSelect').value, '2');
+  assert.strictEqual(env.document.getElementById('speedSlider').value, '2');
+  assert.strictEqual(env.document.getElementById('speedVal').textContent, '2×');
 
-  // Garbage in storage falls back to 1× rather than an off-menu rate.
+  // Garbage in storage falls back to 1× rather than an off-range rate.
   env = await boot({ storage: { tv_speed: '17' } });
   assert.strictEqual(env.document.getElementById('tvVideo').playbackRate, 1);
+  assert.strictEqual(env.document.getElementById('speedSlider').value, '1');
 });
 
 test('Up Next: episode end shows a cancelable countdown card instead of an instant jump', async () => {
