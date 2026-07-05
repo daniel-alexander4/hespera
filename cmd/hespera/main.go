@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -117,6 +118,26 @@ func main() {
 		os.Exit(1)
 	}
 	_ = os.Chmod(cfg.DataDir, 0o700)
+
+	// Single-instance lock on the data dir — the hard mutual-exclusion behind the
+	// launch guard (attach/refuse) and the socket/app.url races. Taken AFTER any
+	// --replace take-over above (the old instance has exited, so its lock is
+	// free) and BEFORE db.Open, so a second instance never opens the shared DB or
+	// starts a duplicate job worker/watcher. flock auto-releases on process exit,
+	// so a crash leaves no stale lock. Best-effort off unix / on flock-less
+	// filesystems (see AcquireDataDirLock); a live holder is a hard refusal.
+	dataLock, err := singleton.AcquireDataDirLock(cfg.DataDir)
+	if errors.Is(err, singleton.ErrLocked) {
+		fmt.Fprintf(os.Stderr,
+			"Another Hespera instance is already running against %s.\n\n"+
+				"To control it from the command line, use hescli — for example:\n"+
+				"    hescli status\n\n"+
+				"Refusing to start a second instance.\n"+
+				"(Pass --replace to stop the running instance and take over.)\n",
+			cfg.DataDir)
+		os.Exit(1)
+	}
+	defer dataLock.Close()
 
 	dbConn, err := db.Open(cfg.DBPath)
 	if err != nil {
