@@ -99,3 +99,52 @@ func TestScaleIndexesUsed(t *testing.T) {
 		t.Errorf("filmography join does not use idx_movie_files_tmdb_id; plan: %s", plan)
 	}
 }
+
+// TestPlayHistoryRecentlyPlayedIndex pins that the recently-played aggregate
+// (rendered on the music home + landing pages) uses the composite index rather
+// than a full-table scan whose cost grows with lifetime plays.
+func TestPlayHistoryRecentlyPlayedIndex(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.sqlite")
+	conn, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := Migrate(conn); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	// Seed a music library with many artists (each an aggregate group) and a lot of
+	// play rows spread across them — the shape where a grouped-MAX full scan hurts.
+	if _, err := conn.Exec("INSERT INTO libraries (name, type, root_path) VALUES ('m','music','/m')"); err != nil {
+		t.Fatalf("seed lib: %v", err)
+	}
+	// One album + track per artist to satisfy play_history's FKs; the aggregate
+	// groups by artist_id, so distinct artists are what the index must resolve.
+	const artists = 40
+	for a := 1; a <= artists; a++ {
+		if _, err := conn.Exec("INSERT INTO music_artists (library_id, name) VALUES (1, ?)", fmt.Sprintf("artist %d", a)); err != nil {
+			t.Fatalf("seed artist: %v", err)
+		}
+		if _, err := conn.Exec("INSERT INTO music_albums (library_id, artist_id, title) VALUES (1, ?, ?)", a, fmt.Sprintf("album %d", a)); err != nil {
+			t.Fatalf("seed album: %v", err)
+		}
+		if _, err := conn.Exec("INSERT INTO music_tracks (library_id, artist_id, album_id, title, abs_path) VALUES (1, ?, ?, ?, ?)", a, a, fmt.Sprintf("track %d", a), fmt.Sprintf("/m/%d.flac", a)); err != nil {
+			t.Fatalf("seed track: %v", err)
+		}
+		for p := 0; p < 25; p++ { // 1000 play rows total — enough that a scan is costed above the seek
+			if _, err := conn.Exec("INSERT INTO play_history (track_id, library_id, artist_id, album_id, completed) VALUES (?, 1, ?, ?, 1)", a, a, a); err != nil {
+				t.Fatalf("seed play: %v", err)
+			}
+		}
+	}
+	if _, err := conn.Exec("ANALYZE"); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	conn.Close()
+
+	// loadRecentlyPlayedArtists' inner aggregate (handlers_music.go).
+	plan := queryPlan(t, dbPath, "SELECT artist_id, MAX(created_at) AS last_played FROM play_history WHERE library_id=? GROUP BY artist_id", 1)
+	if !strings.Contains(plan, "idx_play_history_lib_artist_created") {
+		t.Errorf("recently-played aggregate does not use idx_play_history_lib_artist_created; plan: %s", plan)
+	}
+}

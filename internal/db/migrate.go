@@ -112,6 +112,11 @@ CREATE INDEX IF NOT EXISTS idx_play_history_track_id ON play_history(track_id);
 CREATE INDEX IF NOT EXISTS idx_play_history_album_id ON play_history(album_id);
 CREATE INDEX IF NOT EXISTS idx_play_history_artist_id ON play_history(artist_id);
 CREATE INDEX IF NOT EXISTS idx_play_history_created_at ON play_history(created_at DESC);
+-- Serves the recently-played aggregate (SELECT artist_id, MAX(created_at) ...
+-- WHERE library_id=? GROUP BY artist_id) rendered on the music home + landing
+-- pages: a covering index so its cost scales with distinct artists, not lifetime
+-- plays (without it the grouped MAX is a full-table scan that grows unbounded).
+CREATE INDEX IF NOT EXISTS idx_play_history_lib_artist_created ON play_history(library_id, artist_id, created_at);
 
 CREATE TABLE IF NOT EXISTS tv_series_files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
