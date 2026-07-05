@@ -185,19 +185,23 @@ function initMediaPlayer() {
   let rvfcRunning = false;
 
   // The active cue(s) are computed from a media-clock time against the parsed cue
-  // list — NOT read from captionTrack.activeCues. The clock is the frame's exact
-  // presentation time (requestVideoFrameCallback's metadata.mediaTime) where
-  // supported, else video.currentTime; both are the clock the audio/video ride
-  // (HLS segments are stamped at true episode time via -output_ts_offset), so
-  // anchoring display to it keeps subtitles locked to the dialogue. The browser's
-  // own TextTrack cue scheduler (activeCues/cuechange) can drift ahead of that
-  // clock over a long MSE/HLS session — subtitles creeping earlier and earlier
-  // until you toggle them — so we never touch it. A linear scan of an episode's
-  // cues per frame is trivial (a few µs).
+  // list — NOT read from captionTrack.activeCues. The clock is the REAL episode
+  // timeline (currentAbsTime): the frame's exact presentation time
+  // (requestVideoFrameCallback's metadata.mediaTime) plus streamStartOffset where
+  // supported, else currentAbsTime(). Sidecar VTTs (embedded and OpenSubtitles)
+  // are extracted with no -ss, so their cue times are absolute; a resumed
+  // progressive stream (remux/burn-in) is rebased to zero, so we must add the
+  // offset back or the cues shift by the resume position and never paint.
+  // Seekable paths (HLS via -output_ts_offset, direct) carry offset 0, so this is
+  // identical to video.currentTime there. The browser's own TextTrack cue
+  // scheduler (activeCues/cuechange) can drift ahead of that clock over a long
+  // MSE/HLS session — subtitles creeping earlier and earlier until you toggle
+  // them — so we never touch it. A linear scan of an episode's cues per frame is
+  // trivial (a few µs).
   function computeActiveCues(t) {
     const all = captionTrack && captionTrack.cues;
     if (!all || !all.length) return [];
-    if (typeof t !== 'number') t = video.currentTime; // event-handler arg / no-arg → currentTime
+    if (typeof t !== 'number') t = currentAbsTime(); // event-handler arg / no-arg → real episode time
     const out = [];
     for (let i = 0; i < all.length; i++) {
       const c = all[i];
@@ -232,7 +236,7 @@ function initMediaPlayer() {
   // sole driver on browsers without rVFC). Self-stops when rvfcRunning clears.
   function frameTick(_now, meta) {
     if (!rvfcRunning) return;
-    renderActiveCues(meta && typeof meta.mediaTime === 'number' ? meta.mediaTime : undefined);
+    renderActiveCues(meta && typeof meta.mediaTime === 'number' ? meta.mediaTime + streamStartOffset : undefined);
     video.requestVideoFrameCallback(frameTick);
   }
   function startRVFC() {
