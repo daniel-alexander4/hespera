@@ -19,29 +19,10 @@
     <div class="media-overlay" id="mediaOverlay">
       {{template "media-seekbar" .}}
       {{template "media-transport" .}}
-      <div class="tv-player-controls">
-        <label class="tv-track-pick" id="audioPick" hidden>Audio
-          <select id="audioSelect"></select>
-        </label>
-        <label class="tv-track-pick" id="subPick" hidden>Subtitles
-          <select id="subSelect"></select>
-        </label>
-        <button type="button" id="skipAutoBtn" class="btn" hidden aria-pressed="false" title="Automatically skip intros & ads">{{template "icon-skip-forward"}}Auto-skip</button>
-        <button type="button" id="muteAdsBtn" class="btn" hidden aria-pressed="false" title="Automatically mute commercials">{{template "icon-volume-x"}}Mute ads</button>
-        <label class="tv-track-pick tv-speed" id="speedPick">Speed
-          <input id="speedSlider" type="range" min="0.5" max="2" step="0.25" value="1" class="tv-speed-range" aria-label="Playback speed" />
-          <span class="tv-speed-val" id="speedVal">1×</span>
-        </label>
-        <span id="playbackMode" class="tv-playback-mode"></span>
-      </div>
+      {{template "media-controls" .}}
     </div>
   </div>
 
-  <div class="tv-player-nav">
-    <span></span>
-    <a href="{{if .TMDBID}}/movie/{{.TMDBID}}{{else}}/movies{{end}}" class="btn btn-sm">Back to Movie</a>
-    <span></span>
-  </div>
 </div>
 {{end}}
 
