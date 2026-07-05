@@ -92,6 +92,33 @@ func TestRunningAppURL(t *testing.T) {
 	})
 }
 
+// TestRecordedAppURL pins the unprobed reader used by the socket-liveness
+// backstop: it returns the recorded loopback URL as-is, with no health probe,
+// and "" for a missing or non-loopback file.
+func TestRecordedAppURL(t *testing.T) {
+	t.Run("reads a recorded loopback url without probing", func(t *testing.T) {
+		dir := t.TempDir()
+		writeAppURL(dir, "http://127.0.0.1:4321/")
+		if got := recordedAppURL(dir); got != "http://127.0.0.1:4321/" {
+			t.Fatalf("recordedAppURL = %q, want the recorded URL", got)
+		}
+	})
+	t.Run("no file", func(t *testing.T) {
+		if got := recordedAppURL(t.TempDir()); got != "" {
+			t.Fatalf("recordedAppURL = %q, want empty", got)
+		}
+	})
+	t.Run("non-http content rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(appURLPath(dir), []byte("garbage\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := recordedAppURL(dir); got != "" {
+			t.Fatalf("recordedAppURL = %q, want empty", got)
+		}
+	})
+}
+
 // TestRemoveAppURLOnlyOwn pins the shutdown rule: an instance only removes the
 // discovery file while it still holds its OWN url — a newer instance's record
 // must survive an older instance's clean exit.

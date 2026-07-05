@@ -61,7 +61,7 @@ func main() {
 	//     take-over).
 	appMode := os.Getenv("HESPERA_NO_BROWSER") == ""
 	replace := hasFlag("--replace") || hasFlag("-replace")
-	runningURL := runningAppURL(cfg.DataDir)
+	runningURL := runningInstanceURL(cfg.DataDir)
 	switch launchDecision(appMode, replace, runningURL) {
 	case launchAttach:
 		slog.Info("attaching to running instance", "url", runningURL)
