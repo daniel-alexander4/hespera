@@ -567,14 +567,17 @@ body::before {
   border-color: var(--accent-hover);
   color: var(--text-on-accent);
 }
-/* Auto-skip toggle shares the boost button's solid-accent "on" treatment. */
-#skipAutoBtn.is-on {
+/* Auto-skip + mute-ads toggles share the boost button's solid-accent "on"
+   treatment (both flip .is-on in media_player.js). */
+#skipAutoBtn.is-on,
+#muteAdsBtn.is-on {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--text-on-accent);
   box-shadow: 0 0 0 2px var(--accent-bg);
 }
-#skipAutoBtn.is-on:hover {
+#skipAutoBtn.is-on:hover,
+#muteAdsBtn.is-on:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: var(--text-on-accent);
@@ -1415,12 +1418,29 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
 .player-controls .tv-volume {
   width: 8rem;
 }
-/* TV transport row: flush-left (sharing the track-picker row's left edge so the
-   two rows read as one control block), and the play/pause button shows the glyph
-   for the action the press will perform (pause while playing, play while paused). */
+/* TV transport row: three zones (mirrors the music .player-transport-controls) —
+   the core transport is centered in column 2, the utility cluster rides the right
+   edge in column 3. The play/pause button shows the glyph for the action the press
+   will perform (pause while playing, play while paused). */
 .tv-transport {
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
   margin-bottom: 1rem;
+}
+.tv-transport-core {
+  grid-column: 2;
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  justify-content: center;
+}
+.tv-transport-util {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
 }
 .tv-transport .tv-glyph-pause { display: none; }
 .tv-transport.playing .tv-glyph-play { display: none; }
