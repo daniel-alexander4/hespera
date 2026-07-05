@@ -14,9 +14,16 @@
   const modal = () => document.getElementById('search-modal');
   const input = () => document.getElementById('search-input');
 
+  // The control focus was on before the palette opened, so closing WITHOUT
+  // navigating (Escape, the Close button, couch's Back) can hand focus back
+  // there instead of dropping it to <body> — where the next remote arrow press
+  // would restart from the top-left logo, losing the user's place.
+  let returnFocus = null;
+
   const open = () => {
     const m = modal();
     if (!m) return;
+    returnFocus = document.activeElement;
     m.classList.remove('hidden');
     const i = input();
     if (i) { i.value = ''; i.focus(); }
@@ -25,6 +32,15 @@
   const close = () => {
     const m = modal();
     if (m) m.classList.add('hidden');
+  };
+  // Close and restore focus — the non-navigating dismiss paths. A row click
+  // navigates (Turbo swaps the page), so it uses close() alone.
+  const dismiss = () => {
+    close();
+    // Restore if the element is still in the DOM; focus() on a since-hidden one
+    // no-ops harmlessly, same as not restoring.
+    if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
+    returnFocus = null;
   };
 
   function renderSections(sections) {
@@ -85,7 +101,7 @@
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        close();
+        dismiss();
       } else if (e.key === 'Enter') {
         const first = document.querySelector('#search-results a');
         if (first) { e.preventDefault(); first.click(); close(); }
@@ -98,8 +114,10 @@
     // A row click is a normal Turbo navigation — just close behind it.
     const results = document.getElementById('search-results');
     if (results) results.addEventListener('click', () => close());
+    // The Close button is also couch's [data-couch-dismiss] (Back clicks it),
+    // so this one handler covers both the mouse and remote dismiss paths.
     const closeBtn = document.getElementById('search-close');
-    if (closeBtn) closeBtn.addEventListener('click', close);
+    if (closeBtn) closeBtn.addEventListener('click', dismiss);
   };
   document.addEventListener('turbo:load', bind);
 

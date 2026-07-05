@@ -301,6 +301,11 @@ html.is-fullscreen.has-play-controls .topbar {
   width: 100%;
   margin: 0 auto;
 }
+/* Larger displays get a wider content column so carousels show more cards and
+   grids more columns, instead of stranding half the width as dead space at the
+   10-foot / big-monitor scale. Capped under the viewport so it never overflows. */
+html[data-scale="large"] .main { max-width: 1600px; }
+html[data-scale="tv"] .main { max-width: 2000px; }
 
 /* Parent-navigation breadcrumb — a consistent "up to parent" trail at the top of
    every non-root page (partials_breadcrumb.html). In the content flow, so it is
@@ -1017,6 +1022,11 @@ html.using-mouse .grid-pager-btn,
   scroll-snap-type: x mandatory;
   padding-bottom: 0.5rem;
 }
+/* At tv scale the input is a remote, not a mouse — the native horizontal
+   scrollbar is dead chrome (cards advance via arrow focus + scrollIntoView),
+   so hide it there. Desktop/large keep it for mouse/trackpad scrolling. */
+html[data-scale="tv"] .home-carousel-row { scrollbar-width: none; }
+html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
 .home-carousel-row > .band-album-card {
   scroll-snap-align: start;
   min-width: 130px;
@@ -2263,7 +2273,10 @@ code {
 /* Readout on its own top row (flex:100%), then the track and the Play/Shuffle
    controls share the next line — the track grows, the buttons sit to its right.
    On a narrow container the controls wrap below the track (flex-wrap). */
-.era-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.9rem; max-width: 640px; }
+/* rem, not px, so the track scales with the display: at tv scale a fixed 640px
+   left the decade numbers (1970, 1980, …) too wide for the cramped track and
+   they collided; scaling the picker gives them room on a multi-decade span. */
+.era-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.9rem; max-width: 45.7143rem; /* 640px @14 */ }
 .era-readout { flex: 1 1 100%; font-weight: 700; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
 .era-track {
   position: relative; height: 46px; flex: 1 1 240px; background: var(--surface-panel);
