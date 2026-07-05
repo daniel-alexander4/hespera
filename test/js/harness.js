@@ -46,7 +46,7 @@ function makeMockHls() {
     emit(evt, data) { if (this.handlers[evt]) this.handlers[evt](evt, data); }
   }
   MockHls.isSupported = () => true;
-  MockHls.Events = { MANIFEST_PARSED: 'hlsManifestParsed', ERROR: 'hlsError' };
+  MockHls.Events = { MANIFEST_PARSED: 'hlsManifestParsed', ERROR: 'hlsError', FRAG_BUFFERED: 'hlsFragBuffered' };
   MockHls.ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError', OTHER_ERROR: 'otherError' };
   MockHls.instances = instances;
   return MockHls;

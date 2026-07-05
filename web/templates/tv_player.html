@@ -45,7 +45,7 @@
 
   <div class="tv-player-nav">
     {{if .PrevFileID}}
-    <a href="/tv/player?file={{.PrevFileID}}" class="btn btn-sm">{{template "icon-skip-back"}}Previous</a>
+    <a href="/tv/player?file={{.PrevFileID}}&begin=1" class="btn btn-sm">{{template "icon-skip-back"}}Previous</a>
     {{else}}
     <span></span>
     {{end}}
@@ -55,7 +55,7 @@
     <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNum}}" class="btn btn-sm">Back to Season</a>
     {{end}}
     {{if .NextFileID}}
-    <a href="/tv/player?file={{.NextFileID}}" class="btn btn-sm">{{template "icon-skip-forward"}}Next</a>
+    <a href="/tv/player?file={{.NextFileID}}&begin=1" class="btn btn-sm">{{template "icon-skip-forward"}}Next</a>
     {{else}}
     <span></span>
     {{end}}
