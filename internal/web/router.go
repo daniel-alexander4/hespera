@@ -95,7 +95,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/tv/playback-session", h.tvPlaybackSession)
 	mux.HandleFunc("/tv/subtitles/search", h.tvSubtitlesSearch)
 	mux.HandleFunc("/tv/subtitles/fetch", h.tvSubtitlesFetch)
-	mux.HandleFunc("/tv/subtitles/get", h.tvSubtitlesGet)
+	mux.HandleFunc("/tv/subtitles/get", h.subtitlesGet)
 
 	// TV streaming
 	mux.HandleFunc("/stream/tv/", h.streamTVEpisode)
@@ -110,6 +110,9 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/movie/playback-session", h.moviePlaybackSession)
 	mux.HandleFunc("/movie/playback-progress", h.moviePlaybackProgress)
 	mux.HandleFunc("/movie/mark-watched", h.movieMarkWatched)
+	mux.HandleFunc("/movie/subtitles/search", h.movieSubtitlesSearch)
+	mux.HandleFunc("/movie/subtitles/fetch", h.movieSubtitlesFetch)
+	mux.HandleFunc("/movie/subtitles/get", h.subtitlesGet)
 	mux.HandleFunc("/stream/movie/", h.streamMovieDirect)
 	mux.HandleFunc("/stream/movie-remux/", h.streamMovieRemux)
 	mux.HandleFunc("/stream/movie-burnin/", h.streamMovieBurnIn)

@@ -43,7 +43,10 @@ func TestNormalizeLang(t *testing.T) {
 }
 
 func TestSubtitleGetURL(t *testing.T) {
-	if got := subtitleGetURL(123, "en"); got != "/tv/subtitles/get?file_id=123&lang=en" {
-		t.Errorf("subtitleGetURL = %q", got)
+	if got := subtitleGetURL("/tv", 123, "en"); got != "/tv/subtitles/get?file_id=123&lang=en" {
+		t.Errorf("subtitleGetURL tv = %q", got)
+	}
+	if got := subtitleGetURL("/movie", 123, "en"); got != "/movie/subtitles/get?file_id=123&lang=en" {
+		t.Errorf("subtitleGetURL movie = %q", got)
 	}
 }
