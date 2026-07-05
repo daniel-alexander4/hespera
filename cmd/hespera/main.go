@@ -45,33 +45,52 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Attach-first: if a Hespera instance is already running against this data
-	// dir (typically the headless service — HESPERA_NO_BROWSER=1 under systemd),
-	// a desktop launch must not start a second instance or --replace-kill the
-	// service out from under the household. Instead, open the same chromeless
-	// app window onto the running instance and exit. The window is the same
-	// Chromium app-mode chrome as a normal launch (same dedicated profile).
-	if os.Getenv("HESPERA_NO_BROWSER") == "" {
-		if url := runningAppURL(cfg.DataDir); url != "" {
-			slog.Info("attaching to running instance", "url", url)
-			if c, err := browser.Open(url, filepath.Join(cfg.DataDir, "browser")); err != nil {
-				slog.Error("could not open app window — browse to it manually", "url", url, "err", err)
-				os.Exit(1)
-			} else {
-				// The running instance owns the lifecycle; this launcher just
-				// opened a window onto it and is done.
-				_ = c.Process.Release()
-			}
-			return
+	// Second-instance guard (both modes): if a live Hespera already owns this
+	// data dir — verified via the attach probe, not a bare pid — a second one
+	// must not start and corrupt the shared DB/socket. What happens next depends
+	// on the mode and --replace (see launchDecision):
+	//   - app mode: ATTACH — open the chromeless window onto the running instance
+	//     and exit (a desktop click, even with --replace, never kills a healthy
+	//     service out from under the household).
+	//   - server/headless mode without --replace: REFUSE — there's no window to
+	//     open, so a second server is always a mistake (typically a `hespera`
+	//     typed for `hescli`); abort BEFORE touching the DB or management socket
+	//     and point at hescli.
+	//   - server mode with --replace: PROCEED to ReplaceOthers below (deliberate
+	//     take-over).
+	appMode := os.Getenv("HESPERA_NO_BROWSER") == ""
+	replace := hasFlag("--replace") || hasFlag("-replace")
+	runningURL := runningAppURL(cfg.DataDir)
+	switch launchDecision(appMode, replace, runningURL) {
+	case launchAttach:
+		slog.Info("attaching to running instance", "url", runningURL)
+		if c, err := browser.Open(runningURL, filepath.Join(cfg.DataDir, "browser")); err != nil {
+			slog.Error("could not open app window — browse to it manually", "url", runningURL, "err", err)
+			os.Exit(1)
+		} else {
+			// The running instance owns the lifecycle; this launcher just
+			// opened a window onto it and is done.
+			_ = c.Process.Release()
 		}
+		return
+	case launchRefuse:
+		fmt.Fprintf(os.Stderr,
+			"Hespera is already running at %s.\n\n"+
+				"To control it from the command line, use hescli — for example:\n"+
+				"    hescli status\n"+
+				"    hescli jobs\n\n"+
+				"Refusing to start a second instance against %s.\n"+
+				"(Pass --replace to stop the running instance and take over.)\n",
+			runningURL, cfg.DataDir)
+		os.Exit(1)
 	}
 
 	// --replace (passed by the desktop launcher) SIGTERMs any other running
 	// instance so a relaunch from the menu takes over cleanly — reached only
-	// when the attach probe found nothing healthy, so a live service is never
-	// killed by a desktop click. The app binds a random loopback port, so this
-	// never has to wait for the old port to free.
-	if hasFlag("--replace") || hasFlag("-replace") {
+	// when the guard above neither attached nor refused, so a live service is
+	// never killed by a desktop click. The app binds a random loopback port, so
+	// this never has to wait for the old port to free.
+	if replace {
 		if n := singleton.ReplaceOthers(); n > 0 {
 			slog.Info("replaced running instance", "count", n)
 		}
@@ -120,10 +139,8 @@ func main() {
 
 	// App mode (the default) means the app window runs on this machine — which
 	// also enables display-scale auto-detection (the handler may match the
-	// window against this machine's displays). Resolved here because both the
-	// handler and the listen/launch logic below branch on it.
-	appMode := os.Getenv("HESPERA_NO_BROWSER") == ""
-
+	// window against this machine's displays). appMode was resolved above (the
+	// second-instance guard branches on it too).
 	h, err := web.New(web.Deps{
 		Cfg:     cfg,
 		DB:      dbConn,
@@ -246,6 +263,39 @@ func main() {
 	}
 	h.Shutdown()
 	slog.Info("shutdown complete")
+}
+
+// launchAction is what a launch should do when it finds (or doesn't find) a
+// live Hespera already owning this data dir.
+type launchAction int
+
+const (
+	launchProceed launchAction = iota // start normally (a --replace take-over runs first)
+	launchAttach                      // open an app window onto the running instance, then exit
+	launchRefuse                      // abort: a second server would corrupt the shared DB/socket
+)
+
+// launchDecision resolves the second-instance policy from the mode, --replace,
+// and whether a live instance was found (runningURL == "" means none). It is a
+// pure function so the matrix is unit-testable; main handles the I/O (attach,
+// print, exit) per the returned action.
+//
+// The load-bearing rule: app mode ATTACHES even with --replace, so a desktop
+// click (Exec=hespera --replace) never kills a healthy service — only when no
+// live instance answers does --replace's ReplaceOthers engage. Server/headless
+// mode has no window to open, so a second instance is refused unless --replace
+// asks for a deliberate take-over.
+func launchDecision(appMode, replace bool, runningURL string) launchAction {
+	if runningURL == "" {
+		return launchProceed
+	}
+	if appMode {
+		return launchAttach
+	}
+	if replace {
+		return launchProceed
+	}
+	return launchRefuse
 }
 
 // hasFlag reports whether a bare CLI flag is present in the arguments.
