@@ -665,26 +665,6 @@ function initMediaPlayer() {
   video.addEventListener('timeupdate', renderActiveCues);
   video.addEventListener('loadedmetadata', updateScrubFromPlayback);
 
-  // --- ?subdebug=1: opt-in subtitle-sync diagnostics (off by default, no overhead
-  //     when absent). Logs, once a second, the media clock vs our currentTime-
-  //     computed active cue vs the browser's own activeCues — so `drift` (browser −
-  //     ours) reveals the TextTrack scheduler creeping ahead over a long session.
-  let subDebugTimer = null;
-  if (new URLSearchParams(location.search).get('subdebug') === '1') {
-    subDebugTimer = setInterval(() => {
-      const comp = computeActiveCues();
-      const compStart = comp.length ? +comp[0].startTime.toFixed(3) : null;
-      const ac = captionTrack && captionTrack.activeCues;
-      const browserStart = (ac && ac.length) ? +ac[0].startTime.toFixed(3) : null;
-      const bufEnd = video.buffered.length ? +video.buffered.end(video.buffered.length - 1).toFixed(2) : null;
-      console.log('[subdebug] ' + JSON.stringify({
-        t: +video.currentTime.toFixed(3), computedCueStart: compStart, browserCueStart: browserStart,
-        drift: (compStart != null && browserStart != null) ? +(browserStart - compStart).toFixed(3) : null,
-        bufEnd: bufEnd, paused: video.paused,
-      }));
-    }, 1000);
-  }
-
   function fracFromEvent(e) {
     if (!scrubber) return 0;
     const rect = scrubber.getBoundingClientRect();
@@ -1194,7 +1174,6 @@ function initMediaPlayer() {
     teardownHLS();
     hideUpNext();
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
-    if (subDebugTimer) clearInterval(subDebugTimer);
     stopRVFC();
     window.removeEventListener('beforeunload', onBeforeUnload);
     video.removeAttribute('src');
