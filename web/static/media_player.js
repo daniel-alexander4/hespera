@@ -72,7 +72,8 @@ function initMediaPlayer() {
   // functions once the scrubber wires up (same pattern as renderScrubMarks).
   let scanShowPreview = () => {}, scanHidePreview = () => {}, scanLoadPreview = () => {};
   const subBurnIn = new Set(); // subtitle ordinals the server burns in (bitmap subs) — these change the video stream
-  let recoverMediaDate = 0, recoverSwapDate = 0; // hls.js fatal-media-error recovery guards (anti-loop)
+  let hlsFails = 0;               // consecutive fatal hls.js errors with no buffered progress
+  const HLS_FAIL_CAP = 4;         // give up (vs. loop) after this many fatals without a FRAG_BUFFERED
 
   const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
 
@@ -93,6 +94,7 @@ function initMediaPlayer() {
   // own currentTime then runs from zero. This is what lets those paths resume.
   function attachSource(session, seekTo) {
     teardownHLS();
+    hlsFails = 0; // fresh stream → fresh fatal-error budget
     isProgressive = cfg.progressiveRe.test(session.url || '');
     const progressive = isProgressive;
     let url = session.url;
@@ -121,31 +123,33 @@ function initMediaPlayer() {
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, onReady);
+      // A buffered fragment is real forward progress — the stream recovered, so
+      // reset the fatal-error budget. This is what lets a long, healthy stream
+      // survive the occasional transient error without ever exhausting the cap.
+      hls.on(Hls.Events.FRAG_BUFFERED, () => { hlsFails = 0; });
       // A fatal hls.js error (e.g. a transient MSE append/parse failure on a seek —
-      // CHUNK_DEMUXER_ERROR_APPEND_FAILED) otherwise leaves the pipeline idle and the
-      // screen black until a manual reload. Run the documented recovery: re-init the
-      // media on a media error, restart loading on a network error. Guard the media
-      // path against an infinite recover loop on a genuinely unplayable segment —
-      // recover once, then swap-audio-codec + recover, then give up with a message.
+      // CHUNK_DEMUXER_ERROR_APPEND_FAILED, or a segment whose cold transcode outran
+      // hls.js's fragment-load timeout) otherwise leaves the pipeline idle and the
+      // screen black until a manual reload. Run the documented recovery: restart
+      // loading on a network error, re-init the media (then swap-audio-codec) on a
+      // media error. Bound BOTH paths by a consecutive-fatal cap so a genuinely
+      // stuck stream degrades to a message instead of thrashing play/restart/play/
+      // restart forever — the count resets on any FRAG_BUFFERED above, so only
+      // failures with no progress between them count toward the cap.
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data || !data.fatal) return;
+        if (++hlsFails > HLS_FAIL_CAP) {
+          teardownHLS();
+          modeLabel.textContent = 'Playback error — reload to continue';
+          return;
+        }
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
           hls.startLoad();
           return;
         }
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          const now = Date.now();
-          if (now - recoverMediaDate > 3000) {
-            recoverMediaDate = now;
-            hls.recoverMediaError();
-          } else if (now - recoverSwapDate > 3000) {
-            recoverSwapDate = now;
-            hls.swapAudioCodec();
-            hls.recoverMediaError();
-          } else {
-            teardownHLS();
-            modeLabel.textContent = 'Playback error — reload to continue';
-          }
+          if (hlsFails === 1) hls.recoverMediaError();
+          else { hls.swapAudioCodec(); hls.recoverMediaError(); }
           return;
         }
         teardownHLS();
@@ -462,8 +466,12 @@ function initMediaPlayer() {
   // playerCtx (photo pages) carries the launch filters so stepping stays
   // within the list the clip was launched from.
   const playerCtx = video.dataset.playerCtx || '';
+  // Explicit episode/clip advance (prev/next, Up Next, media keys) starts the
+  // target at the BEGINNING — begin=1 tells the fresh boot to pass seekTo=0
+  // instead of resuming. Opening a title from Continue Watching / the season page
+  // is a plain <a> without this flag, so it still resumes where you left off.
   const gotoFile = (id) => {
-    window.location.href = '/' + video.dataset.mediaKind + '/player?file=' + id + (playerCtx ? '&' + playerCtx : '');
+    window.location.href = '/' + video.dataset.mediaKind + '/player?file=' + id + (playerCtx ? '&' + playerCtx : '') + '&begin=1';
   };
   const prevEpBtn = document.getElementById('tvPrevEpBtn');
   const nextEpBtn = document.getElementById('tvNextEpBtn');
@@ -1253,7 +1261,10 @@ function initMediaPlayer() {
 
   if (subsCloseBtn) subsCloseBtn.addEventListener('click', closeSubsModal);
 
-  loadFromSession(0, 0, null);
+  // begin=1 (set by gotoFile / the Prev-Next anchors on an explicit advance) →
+  // start at 0; otherwise seekTo=null lets loadFromSession resume the saved position.
+  const beginAtStart = new URLSearchParams(location.search).get('begin') === '1';
+  loadFromSession(0, 0, beginAtStart ? 0 : null);
 }
 
 // Run on every Turbo navigation (and the initial load — Turbo fires turbo:load

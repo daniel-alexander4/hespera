@@ -65,11 +65,11 @@ function session(overrides = {}) {
 }
 
 // Boot the controller against a session and settle the async load chain.
-async function boot({ fixtureOpts, sessionData, stubs, storage } = {}) {
+async function boot({ fixtureOpts, sessionData, stubs, storage, url } = {}) {
   const routes = { '/tv/playback-session': sessionData || session(), '/movie/playback-session': sessionData || session() };
   const env = loadController('media_player.js', {
     html: fixture(fixtureOpts),
-    url: 'http://localhost/tv/player?file=7',
+    url: url || 'http://localhost/tv/player?file=7',
     stubs: Object.assign({ fetch: makeFetch(routes), Hls: makeMockHls() }, stubs || {}),
     storage,
   });
@@ -250,6 +250,36 @@ test('a fatal HLS media error runs the guarded recovery, not an infinite loop', 
   // A non-fatal error is ignored.
   inst.emit(Hls.Events.ERROR, { fatal: false, type: Hls.ErrorTypes.MEDIA_ERROR });
   assert.strictEqual(inst.recoverMediaCount, 1);
+});
+
+test('HLS fatal errors are capped — a buffered frag resets the budget, cap+1 gives up', async () => {
+  const Hls = makeMockHls();
+  const env = await boot({ stubs: { Hls }, sessionData: session({ protocol: 'hls', url: '/stream/tv-hls/7/manifest.m3u8' }) });
+  const inst = Hls.instances[0];
+  const mode = env.document.getElementById('playbackMode');
+  // A buffered fragment between failures is real progress → the budget resets, so
+  // an occasional error over a long healthy stream never exhausts the cap.
+  for (let i = 0; i < 8; i++) {
+    inst.emit(Hls.Events.ERROR, { fatal: true, type: Hls.ErrorTypes.MEDIA_ERROR });
+    inst.emit(Hls.Events.FRAG_BUFFERED, {});
+  }
+  assert.strictEqual(inst.destroyed, false, 'progress between errors keeps recovering, never gives up');
+  // No progress this time: consecutive fatals past the cap → give up, not an infinite loop.
+  for (let i = 0; i < 5; i++) inst.emit(Hls.Events.ERROR, { fatal: true, type: Hls.ErrorTypes.NETWORK_ERROR });
+  assert.strictEqual(inst.destroyed, true, 'gives up after the consecutive-fatal cap instead of thrashing');
+  assert.match(mode.textContent, /reload to continue/i);
+});
+
+test('begin=1 starts the target at the beginning even when a resume position exists', async () => {
+  const Hls = makeMockHls();
+  const env = await boot({
+    stubs: { Hls },
+    url: 'http://localhost/tv/player?file=7&begin=1',
+    sessionData: session({ protocol: 'hls', url: '/stream/tv-hls/7/manifest.m3u8', resume_position_seconds: 120 }),
+  });
+  // Without begin=1 this would be startPosition 120 (see the resume test above);
+  // begin=1 makes the boot pass seekTo=0, so no seek — the episode starts fresh.
+  assert.strictEqual(Hls.instances[0].cfg.startPosition, -1, 'begin=1 overrides the saved resume → startPosition -1');
 });
 
 test('skip-segment button appears inside a segment with the right label', async () => {
