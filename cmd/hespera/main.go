@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -37,7 +38,7 @@ func main() {
 		return
 	}
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(os.Getenv("HESPERA_LOG_LEVEL"))})))
 	slog.Info("starting", "version", version)
 
 	cfg := config.FromEnv()
@@ -317,6 +318,25 @@ func launchDecision(appMode, replace bool, runningURL string) launchAction {
 		return launchProceed
 	}
 	return launchRefuse
+}
+
+// parseLogLevel maps HESPERA_LOG_LEVEL to a slog level, defaulting to info for
+// an empty or unrecognized value. At the default info level the per-request
+// access log (withLogging, emitted at Debug) is dropped before its synchronous
+// stdout write, so request serving does no log I/O on the hot path — a slow log
+// sink (e.g. a stalling systemd journal under heavy disk load) can't add latency
+// to playback/API requests. Set debug to restore per-request access logging.
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // hasFlag reports whether a bare CLI flag is present in the arguments.
