@@ -44,6 +44,22 @@ echo "installing hespera $VERSION ($ARCH)…"
 # "_apt couldn't access" permission warning.
 sudo apt-get install -y -qq -o APT::Sandbox::User=root "./$DEB"
 
+# Stop any instance still running the OLD binary. The app's attach-first launch
+# matches a live instance by its recorded app.url and opens a window onto THAT —
+# so a lingering old process means the next launch shows the old version and the
+# update looks like it "didn't take". SIGTERM is the app's clean-shutdown path
+# (it clears app.url); the KILL backstop covers a hung one. Matched by exact
+# process name, so hescli (a different binary) is never touched; runs as you,
+# so it only signals your own processes.
+if pgrep -x hespera >/dev/null 2>&1; then
+  echo "stopping the running hespera so the next launch starts $VERSION…"
+  pkill -TERM -x hespera 2>/dev/null || true
+  for _ in {1..20}; do pgrep -x hespera >/dev/null 2>&1 || break; sleep 0.25; done
+  pkill -KILL -x hespera 2>/dev/null || true
+fi
+
 # Refresh the desktop + icon caches so the menu entry and icon appear now.
 sudo update-desktop-database >/dev/null 2>&1 || true
 sudo gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1 || true
+
+echo "done — relaunch Hespera to start $VERSION."
