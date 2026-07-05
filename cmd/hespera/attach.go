@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"hespera/internal/config"
 )
 
 // The app-URL discovery file: every running instance (app or server mode)
@@ -40,16 +42,28 @@ func removeAppURL(dataDir, url string) {
 	_ = os.Remove(appURLPath(dataDir))
 }
 
-// runningAppURL returns the URL of a live Hespera instance recorded in the
-// discovery file, or "" when there is none (no file, or whatever is at that
-// address is down or isn't Hespera — a reused port must never be attached to).
-func runningAppURL(dataDir string) string {
+// recordedAppURL returns the URL an instance wrote to the discovery file, with
+// no liveness probe — "" when the file is absent or doesn't hold a loopback URL.
+// The caller decides whether that instance is actually live (via the HTTP probe
+// or the management-socket oracle); this is just the recorded address.
+func recordedAppURL(dataDir string) string {
 	b, err := os.ReadFile(appURLPath(dataDir))
 	if err != nil {
 		return ""
 	}
 	url := strings.TrimSpace(string(b))
 	if !strings.HasPrefix(url, "http://") {
+		return ""
+	}
+	return url
+}
+
+// runningAppURL returns the URL of a live Hespera instance recorded in the
+// discovery file, or "" when there is none (no file, or whatever is at that
+// address is down or isn't Hespera — a reused port must never be attached to).
+func runningAppURL(dataDir string) string {
+	url := recordedAppURL(dataDir)
+	if url == "" {
 		return ""
 	}
 	client := &http.Client{Timeout: time.Second}
@@ -64,4 +78,27 @@ func runningAppURL(dataDir string) string {
 		return ""
 	}
 	return url
+}
+
+// runningInstanceURL resolves the URL of a live Hespera owning this data dir,
+// robust to a false-negative HTTP health probe. The fast path is the probe
+// (runningAppURL). If that finds nothing but the management socket is alive —
+// a disk-free liveness oracle the kernel answers from the listen backlog, so it
+// stays reliable when an I/O-saturated box stalls the HTTP request in
+// withLogging's synchronous stdout write — the recorded app.url is trusted
+// directly: a live management socket proves that instance (and thus its
+// recording) is current, which is exactly the stale-file/reused-port case the
+// probe's X-Hespera check exists to rule out. This stops a desktop
+// `hespera --replace` launch from SIGTERM-killing a healthy headless server on a
+// transient probe timeout. "" when no live instance is found. The socket oracle
+// is Linux-only (managementSocketAlive is a no-op stub elsewhere), which is
+// where the headless-service risk lives; other platforms keep the probe alone.
+func runningInstanceURL(dataDir string) string {
+	if url := runningAppURL(dataDir); url != "" {
+		return url
+	}
+	if managementSocketAlive(config.ManagementSocketPath(dataDir)) {
+		return recordedAppURL(dataDir)
+	}
+	return ""
 }
