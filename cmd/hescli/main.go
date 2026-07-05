@@ -27,10 +27,22 @@ import (
 	"hespera/internal/config"
 )
 
+// version is set at build time via -ldflags "-X main.version=…" (see build.sh);
+// a plain `go build` leaves it "dev". This is hescli's own build version,
+// distinct from the server version that `status` reports over the socket — so
+// `hescli --version` answers without a running server.
+var version = "dev"
+
 func main() {
 	socket := flag.String("socket", "", "management socket path (default: <data-dir>/hescli.sock)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = usage
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("hescli", version)
+		return
+	}
 
 	args := flag.Args()
 	if len(args) == 0 {
@@ -63,6 +75,7 @@ Commands:
   config set <key> <value>                 Set a setting (blank value clears an API key)
   jobs [--status S] [--type T] [--limit N] Recent jobs
   status                                   Server overview
+  version                                  Print hescli version (also --version)
 
 Socket: --socket, else $HESPERA_SOCKET, else <data-dir>/hescli.sock (an
 over-long data dir falls back to a runtime-dir socket, same as the server).
@@ -95,6 +108,9 @@ func dispatch(c *client, args []string) error {
 		return jobsCmd(c, args[1:])
 	case "status":
 		return statusCmd(c)
+	case "version":
+		fmt.Println("hescli", version)
+		return nil
 	case "help", "-h", "--help":
 		usage()
 		return nil
