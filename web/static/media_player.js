@@ -402,19 +402,24 @@ function initMediaPlayer() {
   // pitch-correct by default), persisted per device (tv_speed). Reapplied on
   // loadedmetadata so progressive ?start= reloads and hls re-attaches keep the
   // chosen rate.
-  const speedSelect = document.getElementById('speedSelect');
+  const speedSlider = document.getElementById('speedSlider');
+  const speedVal = document.getElementById('speedVal');
   let speed = 1;
   try { speed = parseFloat(localStorage.getItem('tv_speed')) || 1; } catch (e) {}
+  if (!(speed >= 0.5 && speed <= 2)) speed = 1; // a stale/garbage stored value never plays at an off-range rate
   const applySpeed = () => { try { video.playbackRate = speed; } catch (e) {} };
-  if (speedSelect) {
-    const known = Array.from(speedSelect.options).some((o) => parseFloat(o.value) === speed);
-    if (known) speedSelect.value = String(speed);
-    else speed = 1; // a stale/garbage stored value never silently plays at an off-menu rate
-    speedSelect.addEventListener('change', () => {
-      speed = parseFloat(speedSelect.value) || 1;
+  const showSpeed = () => { if (speedVal) speedVal.textContent = speed + '×'; };
+  if (speedSlider) {
+    speedSlider.value = String(speed); // restore the saved rate onto the slider
+    showSpeed();
+    // input (not change) fires on drag AND on a couch arrow-step (the range is on
+    // couch.js's engage protocol like the volume slider), so the rate + readout
+    // track live; the position IS the value, so no write-back needed.
+    speedSlider.addEventListener('input', () => {
+      speed = parseFloat(speedSlider.value) || 1;
       try { localStorage.setItem('tv_speed', String(speed)); } catch (e) {}
       applySpeed();
-      speedSelect.blur();
+      showSpeed();
     });
   }
   video.addEventListener('loadedmetadata', applySpeed);
