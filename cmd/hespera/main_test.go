@@ -18,3 +18,32 @@ func TestAppURL(t *testing.T) {
 		}
 	}
 }
+
+// TestLaunchDecision pins the second-instance policy. The load-bearing invariant
+// is the app-mode+running rows: a desktop launch (which passes --replace) must
+// ATTACH onto a healthy service, never kill it. Server mode refuses a second
+// instance unless --replace asks for a deliberate take-over.
+func TestLaunchDecision(t *testing.T) {
+	const url = "http://127.0.0.1:8080/"
+	cases := []struct {
+		name       string
+		appMode    bool
+		replace    bool
+		runningURL string
+		want       launchAction
+	}{
+		{"app, none", true, false, "", launchProceed},
+		{"app, none, replace", true, true, "", launchProceed},
+		{"app, running -> attach", true, false, url, launchAttach},
+		{"app, running, replace -> attach (never kill a healthy service)", true, true, url, launchAttach},
+		{"server, none", false, false, "", launchProceed},
+		{"server, running -> refuse", false, false, url, launchRefuse},
+		{"server, running, replace -> take over", false, true, url, launchProceed},
+	}
+	for _, c := range cases {
+		if got := launchDecision(c.appMode, c.replace, c.runningURL); got != c.want {
+			t.Errorf("%s: launchDecision(%v,%v,%q) = %d, want %d",
+				c.name, c.appMode, c.replace, c.runningURL, got, c.want)
+		}
+	}
+}
