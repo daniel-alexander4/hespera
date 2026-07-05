@@ -1417,6 +1417,10 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
 }
 .player-controls .tv-volume {
   width: 8rem;
+  /* Shrink valve: when the transport util cluster is squeezed (narrow video), the
+     volume slider narrows (buttons keep their size) rather than the cluster
+     overflowing onto the centered core. Full 8rem at normal/fullscreen widths. */
+  min-width: 0;
 }
 /* TV transport row: three zones (mirrors the music .player-transport-controls) —
    the core transport is centered in column 2, the utility cluster rides the right
@@ -1424,7 +1428,11 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
    will perform (pause while playing, play while paused). */
 .tv-transport {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* minmax(0,1fr) — NOT a bare 1fr (= minmax(auto,1fr)): the auto minimum lets a
+     wide util cluster inflate col 3 and steal from the empty col 1, shoving the
+     centered core left. minmax(0,1fr) keeps both sides equal, so the core stays
+     dead-centered on the video at every width/scale. */
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   margin-bottom: 1rem;
 }
@@ -1437,10 +1445,16 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
 }
 .tv-transport-util {
   grid-column: 3;
-  justify-self: end;
+  /* Fill col 3 (default justify-self:stretch — NOT justify-self:end, which would
+     content-size the item so it overflows leftward onto the core without ever
+     compressing) and right-align the buttons inside. When col 3 is narrow, the
+     flex container is narrow, so the volume slider (min-width:0 below) shrinks to
+     fit rather than the cluster overlapping the centered core. */
   display: flex;
+  justify-content: flex-end;
   gap: 0.9rem;
   align-items: center;
+  min-width: 0;
 }
 .tv-transport .tv-glyph-pause { display: none; }
 .tv-transport.playing .tv-glyph-play { display: none; }
@@ -2141,16 +2155,18 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
    picker would stay visible even with nothing to choose. */
 .tv-track-pick[hidden] { display: none; }
 .tv-playback-mode {
-  margin-left: auto;
   font-size: 0.8rem;
   color: var(--text-muted);
   text-transform: capitalize;
 }
 /* Playback-speed control — a compact native range (couch-engageable like the
    volume slider), with a live value readout, pushed to the right end of the row.
-   margin-left:auto lands it just before the mode label (whose own auto-margin is
-   then a no-op). The readout inherits the overlay's white text; tabular-nums +
-   min-width keep the row from shifting as 0.75×↔1.75× change width. */
+   Its margin-left:auto is the ROW's only auto-margin (the mode label must NOT
+   also have one — two auto-margins split the free space and strand the slider in
+   the middle), so it right-justifies the speed + the trailing mode label while
+   Subtitles / Auto-skip / Mute-ads stay left. The readout inherits the overlay's
+   white text; tabular-nums + min-width keep the row from shifting as 0.75×↔1.75×
+   change width. */
 .tv-speed {
   margin-left: auto;
 }
