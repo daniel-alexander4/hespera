@@ -74,6 +74,48 @@ func TestSearchRejectsBadArgs(t *testing.T) {
 	}
 }
 
+func TestSearchMovieSendsMovieQuery(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.String()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"attributes": map[string]any{
+					"language": "en", "release": "GROUP.x264",
+					"files": []map[string]any{{"file_id": 777, "file_name": "movie.srt"}},
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New("k", "TestApp v1")
+	c.baseURL = srv.URL
+
+	res, err := c.SearchMovie(context.Background(), "696506", "en")
+	if err != nil {
+		t.Fatalf("SearchMovie: %v", err)
+	}
+	if len(res) != 1 || res[0].FileID != 777 {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	// A movie search sends a plain tmdb_id + languages, and NEVER the episode params.
+	if !strings.Contains(gotPath, "tmdb_id=696506") || !strings.Contains(gotPath, "languages=en") {
+		t.Errorf("query missing movie params; got %s", gotPath)
+	}
+	for _, forbidden := range []string{"parent_tmdb_id", "season_number", "episode_number"} {
+		if strings.Contains(gotPath, forbidden) {
+			t.Errorf("movie query must not carry %q; got %s", forbidden, gotPath)
+		}
+	}
+}
+
+func TestSearchMovieRejectsEmptyID(t *testing.T) {
+	if _, err := New("k", "").SearchMovie(context.Background(), "", "en"); err == nil {
+		t.Error("empty movie tmdb id should error")
+	}
+}
+
 func TestDownloadReturnsLink(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
