@@ -99,3 +99,30 @@ test('Enter activates the first result; Escape in the input closes the palette',
   input.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   assert.ok(modal.classList.contains('hidden'), 'Escape in the input closes');
 });
+
+test('closing restores focus to where it was before opening (no drop to <body>)', async () => {
+  const env = boot();
+  // A control on the page had the remote's focus before the palette opened.
+  const opener = env.document.querySelector('[data-search-open]');
+  opener.focus();
+  assert.strictEqual(env.document.activeElement, opener, 'opener focused first');
+
+  // Open via the "/" opener, which records the pre-open focus.
+  env.document.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }));
+  const input = env.document.getElementById('search-input');
+  assert.strictEqual(env.document.activeElement, input, 'palette input takes focus');
+
+  // Escape dismisses AND hands focus back — not to <body>, where the next
+  // remote arrow would restart from the top-left logo.
+  input.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.strictEqual(env.document.activeElement, opener, 'focus restored to the pre-open control');
+
+  // A row click navigates (Turbo swaps the page), so it must NOT restore.
+  opener.click(); // reopen
+  opener.blur();  // simulate focus already moved by navigation intent
+  const results = env.document.getElementById('search-results');
+  results.innerHTML = '<a href="/x">r</a>';
+  results.querySelector('a').click(); // row click → close(), no restore
+  assert.ok(env.document.getElementById('search-modal').classList.contains('hidden'), 'row click closes');
+  assert.notStrictEqual(env.document.activeElement, opener, 'row-click path does not restore (it navigates)');
+});

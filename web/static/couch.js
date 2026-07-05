@@ -25,7 +25,10 @@
 (() => {
   const isTVScale = () => document.documentElement.getAttribute('data-scale') === 'tv';
 
-  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  // summary is natively focusable (the settings accordion's headers are the
+  // page's primary controls) but doesn't match the button/input/etc. list, so
+  // without it the remote can't reach or open any accordion card.
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
   const visible = (el) => {
     if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
@@ -36,9 +39,20 @@
   // The currently-open overlay, if any: the first visible [data-couch-overlay].
   const openOverlay = () => Array.from(document.querySelectorAll('[data-couch-overlay]')).find(visible) || null;
 
+  // A collapsed <details> keeps its body laid out (modern browsers hide it via
+  // content-visibility on ::details-content, not display:none), so its controls
+  // still pass the geometric visible() test — but the browser refuses to focus
+  // them, which snags the ring. Treat content inside a closed <details> as
+  // unreachable (the summary itself stays reachable so the card can be opened).
+  const reachable = (el) => {
+    if (el.tagName === 'SUMMARY') return true;
+    const d = el.closest('details');
+    return !d || d.open;
+  };
+
   // Focus candidates are scoped to the open overlay when one is present, so
   // arrows can't drift to the dimmed page behind it; otherwise the whole page.
-  const candidates = () => Array.from((openOverlay() || document).querySelectorAll(FOCUSABLE)).filter(visible);
+  const candidates = () => Array.from((openOverlay() || document).querySelectorAll(FOCUSABLE)).filter(visible).filter(reachable);
 
   const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 
@@ -222,10 +236,14 @@
     if (!isTVScale()) return;
     const all = candidates();
     if (!all.length) return;
-    // Prefer the first in-content control over the breadcrumb, so a page doesn't
-    // land the ring on its "up to parent" link every load (the breadcrumb is
-    // still reachable by pressing Up). Fall back to it if it's the only thing.
-    const first = all.find((el) => !el.closest('.breadcrumb')) || all[0];
+    // Prefer the first control INSIDE the content (<main>) over the topbar that
+    // precedes it in the DOM and the breadcrumb — otherwise the ring lands on
+    // the top-left logo (a self-link) every non-subtab page and the remote user
+    // arrow-hunts down into content. The topbar and breadcrumb stay reachable by
+    // pressing Up. Fall back to the old first-non-breadcrumb, then anything.
+    const main = document.querySelector('main');
+    const inContent = (el) => !!main && main.contains(el) && !el.closest('.breadcrumb');
+    const first = all.find(inContent) || all.find((el) => !el.closest('.breadcrumb')) || all[0];
     first.focus();
   };
   document.addEventListener('turbo:load', focusFirst);
