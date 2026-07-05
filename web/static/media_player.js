@@ -366,7 +366,10 @@ function initMediaPlayer() {
     chapterList = session.chapters || [];
     resetSkip();
     renderScrubMarks();
-    modeLabel.textContent = session.decision.replace('_', ' ');
+    // #playbackMode is the error surface only — the normal decision (direct/remux/
+    // transcode) isn't shown (no viewer value, and it cluttered the control row).
+    // Clear any prior error, then re-raise the one case the viewer must know about.
+    modeLabel.textContent = '';
     if (session.protocol === 'hls' && !nativeHLS && !(window.Hls && Hls.isSupported())) {
       modeLabel.textContent = 'This browser cannot play the transcoded stream';
     }

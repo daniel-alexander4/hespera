@@ -2,7 +2,7 @@
 <div class="tv-player-page">
   <div class="tv-player-header">
     <h1><a href="{{if .SeriesID}}/tv/series/{{.SeriesID}}{{else}}/tv{{end}}" class="btn btn-head">{{.ShowName}}</a></h1>
-    <h2>{{if .IsExtra}}{{.EpName}}{{else}}S{{.SeasonNum}} — {{.EpName}}{{end}}</h2>
+    <h2>{{if .IsExtra}}{{.EpName}}{{else}}<a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNum}}">S{{.SeasonNum}}</a> — {{.EpName}}{{end}}</h2>
   </div>
 
   <div class="tv-player-video-wrap" id="tvPlayerWrap" style="{{.CaptionVars}}">
@@ -19,41 +19,10 @@
     <div class="media-overlay" id="mediaOverlay">
       {{template "media-seekbar" .}}
       {{template "media-transport" .}}
-      <div class="tv-player-controls">
-        <label class="tv-track-pick" id="audioPick" hidden>Audio
-          <select id="audioSelect"></select>
-        </label>
-        <label class="tv-track-pick" id="subPick" hidden>Subtitles
-          <select id="subSelect"></select>
-        </label>
-        <button type="button" id="skipAutoBtn" class="btn" hidden aria-pressed="false" title="Automatically skip intros, recaps & ads">{{template "icon-skip-forward"}}Auto-skip</button>
-        <button type="button" id="muteAdsBtn" class="btn" hidden aria-pressed="false" title="Automatically mute commercials">{{template "icon-volume-x"}}Mute ads</button>
-        <label class="tv-track-pick tv-speed" id="speedPick">Speed
-          <input id="speedSlider" type="range" min="0.5" max="2" step="0.25" value="1" class="tv-speed-range" aria-label="Playback speed" />
-          <span class="tv-speed-val" id="speedVal">1×</span>
-        </label>
-        <span id="playbackMode" class="tv-playback-mode"></span>
-      </div>
+      {{template "media-controls" .}}
     </div>
   </div>
 
-  <div class="tv-player-nav">
-    {{if .PrevFileID}}
-    <a href="/tv/player?file={{.PrevFileID}}&begin=1" class="btn btn-sm">{{template "icon-skip-back"}}Previous</a>
-    {{else}}
-    <span></span>
-    {{end}}
-    {{if .IsExtra}}
-    <a href="{{if .SeriesID}}/tv/series/{{.SeriesID}}{{else}}/tv{{end}}" class="btn btn-sm">Back to Show</a>
-    {{else}}
-    <a href="/tv/season/?series={{.SeriesID}}&season={{.SeasonNum}}" class="btn btn-sm">Back to Season</a>
-    {{end}}
-    {{if .NextFileID}}
-    <a href="/tv/player?file={{.NextFileID}}&begin=1" class="btn btn-sm">{{template "icon-skip-forward"}}Next</a>
-    {{else}}
-    <span></span>
-    {{end}}
-  </div>
 </div>
 
 <div id="subs-modal" class="playlist-modal hidden" data-couch-overlay>

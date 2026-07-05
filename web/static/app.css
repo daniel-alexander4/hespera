@@ -1415,46 +1415,23 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
   padding: 0.5rem 1.2rem;
   font-size: 1.6rem;
 }
-.player-controls .tv-volume {
+.tv-controls-right .tv-volume {
   width: 8rem;
-  /* Shrink valve: when the transport util cluster is squeezed (narrow video), the
-     volume slider narrows (buttons keep their size) rather than the cluster
-     overflowing onto the centered core. Full 8rem at normal/fullscreen widths. */
+  /* Shrink valve: when the utilities zone is squeezed (narrow video), the volume
+     slider narrows (buttons keep their size) rather than the group overflowing
+     onto its neighbours. Full 8rem at normal/fullscreen widths. */
   min-width: 0;
 }
-/* TV transport row: three zones (mirrors the music .player-transport-controls) —
-   the core transport is centered in column 2, the utility cluster rides the right
-   edge in column 3. The play/pause button shows the glyph for the action the press
-   will perform (pause while playing, play while paused). */
+/* TV transport row: the primary playback controls only, centered as one cluster
+   (the audio utilities moved to the media-controls row below). The play/pause
+   button shows the glyph for the action the press will perform (pause while
+   playing, play while paused). */
 .tv-transport {
-  display: grid;
-  /* minmax(0,1fr) — NOT a bare 1fr (= minmax(auto,1fr)): the auto minimum lets a
-     wide util cluster inflate col 3 and steal from the empty col 1, shoving the
-     centered core left. minmax(0,1fr) keeps both sides equal, so the core stays
-     dead-centered on the video at every width/scale. */
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  margin-bottom: 1rem;
-}
-.tv-transport-core {
-  grid-column: 2;
   display: flex;
-  gap: 0.9rem;
-  align-items: center;
   justify-content: center;
-}
-.tv-transport-util {
-  grid-column: 3;
-  /* Fill col 3 (default justify-self:stretch — NOT justify-self:end, which would
-     content-size the item so it overflows leftward onto the core without ever
-     compressing) and right-align the buttons inside. When col 3 is narrow, the
-     flex container is narrow, so the volume slider (min-width:0 below) shrinks to
-     fit rather than the cluster overlapping the centered core. */
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.9rem;
   align-items: center;
-  min-width: 0;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
 }
 .tv-transport .tv-glyph-pause { display: none; }
 .tv-transport.playing .tv-glyph-play { display: none; }
@@ -1584,7 +1561,7 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
 .media-scrubber:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
 .media-time {
   font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
+  font-size: 1.15rem;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -2121,12 +2098,23 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
 /* Track-picker row (audio/subtitles/speed + Auto-skip): same chip family and
    left edge as the transport above it, sized for text where the transport is
    sized for icons — so the two rows read as one control system. */
+/* Secondary-controls row: two groups — Speed + Subtitles (+ audio/skip toggles)
+   on the LEFT, the audio utilities (mute/volume/boost/reload/fullscreen) on the
+   RIGHT. space-between pins them to the edges; the (normally empty) #playbackMode
+   sits between them and shows an error message centered when one occurs. */
 .tv-player-controls {
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 0.9rem;
   margin-top: 0.75rem;
-  flex-wrap: wrap;
+}
+.tv-controls-left,
+.tv-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
 }
 .tv-player-controls select,
 .tv-player-controls .btn {
@@ -2160,16 +2148,11 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
   text-transform: capitalize;
 }
 /* Playback-speed control — a compact native range (couch-engageable like the
-   volume slider), with a live value readout, pushed to the right end of the row.
-   Its margin-left:auto is the ROW's only auto-margin (the mode label must NOT
-   also have one — two auto-margins split the free space and strand the slider in
-   the middle), so it right-justifies the speed + the trailing mode label while
-   Subtitles / Auto-skip / Mute-ads stay left. The readout inherits the overlay's
-   white text; tabular-nums + min-width keep the row from shifting as 0.75×↔1.75×
-   change width. */
-.tv-speed {
-  margin-left: auto;
-}
+   volume slider) with a live value readout. It lives in the right zone
+   (.tv-controls-right, justify-self:end) alongside the mode label, so no
+   auto-margin is needed. The readout inherits the overlay's white text;
+   tabular-nums + min-width keep the row from shifting as 0.75×↔1.75× change
+   width. */
 .tv-speed-range {
   width: 5.7rem; /* ~80px @14 — matches the volume slider */
   accent-color: var(--accent);
@@ -2180,13 +2163,6 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
   min-width: 2.6rem;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-}
-.tv-player-nav {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 1rem;
-  gap: 0.5rem;
 }
 
 /* TV Match Review */
