@@ -190,3 +190,64 @@ func TestWatchLibraryUnderDottedParent(t *testing.T) {
 	}
 	waitFor(t, func() bool { return fired.Load() == 1 })
 }
+
+// Boot reconcile: content added to a previously-scanned library WHILE THE APP
+// WAS DOWN emits no events, so startup must detect it by directory mtime.
+func TestBootReconcileScansChangedLibrary(t *testing.T) {
+	db := openTestDB(t)
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "New Show"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id := seedLib(t, db, root)
+	// The last scan completed an hour ago; the root + show dir were created just
+	// now (mtime = now), so their mtime is newer → boot must fire a rescan.
+	if _, err := db.Exec(
+		"INSERT INTO scan_jobs (library_id, job_type, status, ended_at) VALUES (?, 'scan', 'done', datetime('now','-1 hour'))",
+		id); err != nil {
+		t.Fatal(err)
+	}
+	_, fired := start(t, db) // New runs the boot reconcile
+	waitFor(t, func() bool { return fired.Load() >= 1 })
+}
+
+func TestBootReconcileSkipsUnchangedAndUnscanned(t *testing.T) {
+	// (a) Unchanged: every directory mtime predates the last scan → no fire.
+	db := openTestDB(t)
+	root := t.TempDir()
+	sub := filepath.Join(root, "Old Show")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	for _, p := range []string{sub, root} { // set AFTER mkdir (which touched root)
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	id := seedLib(t, db, root)
+	if _, err := db.Exec( // scan completed an hour ago — after the 2h-old dir mtimes
+		"INSERT INTO scan_jobs (library_id, job_type, status, ended_at) VALUES (?, 'scan', 'done', datetime('now','-1 hour'))",
+		id); err != nil {
+		t.Fatal(err)
+	}
+	_, fired := start(t, db)
+	time.Sleep(200 * time.Millisecond) // past the 60ms debounce
+	if got := fired.Load(); got != 0 {
+		t.Fatalf("unchanged library reconciled %d times at boot, want 0", got)
+	}
+
+	// (b) Never scanned (no completed scan job) → no boot fire: initial scanning
+	// is the add-library / manual-Scan path, not the reconcile's job.
+	db2 := openTestDB(t)
+	root2 := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root2, "Show"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedLib(t, db2, root2)
+	_, fired2 := start(t, db2)
+	time.Sleep(200 * time.Millisecond)
+	if got := fired2.Load(); got != 0 {
+		t.Fatalf("never-scanned library fired %d times at boot, want 0", got)
+	}
+}

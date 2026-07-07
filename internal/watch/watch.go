@@ -93,7 +93,11 @@ func (s *Service) refreshLoop() {
 // bumpAdded (every re-sync after the initial one), a newly-appeared root also
 // gets a debounced fire — its pre-existing files will never emit events, so
 // "add a library" auto-scans its current content too. The initial boot sync
-// never bumps: relaunching the app must not re-chain every library.
+// (bumpAdded=false) does NOT re-chain every library — it fires only for a
+// library whose newest directory mtime is later than its last completed scan,
+// i.e. content was added while the app was down (an unchanged library relaunch
+// stays scan-free). Best-effort: a copy tool that preserves destination dir
+// mtimes can defeat it, so the manual Scan button remains the guarantee.
 func (s *Service) syncRoots(bumpAdded bool) {
 	rows, err := s.db.Query("SELECT id, root_path FROM libraries WHERE type IN ('music','tv','movies','photos')")
 	if err != nil {
@@ -132,15 +136,31 @@ func (s *Service) syncRoots(bumpAdded bool) {
 		s.removeTree(root)
 	}
 	for id, root := range added {
-		s.addTree(root)
+		newest := s.addTree(root)
 		if bumpAdded {
+			// A newly-added library (a later re-sync): scan its current content.
+			s.bump(id)
+			continue
+		}
+		// Boot reconcile: rescan a PREVIOUSLY-scanned library whose content
+		// changed while the app was down. A never-scanned library (last==0) is
+		// left alone — initial scanning is the add-library / manual-Scan path,
+		// and a relaunch must not re-chain every library.
+		if last := s.lastScanUnix(id); last > 0 && newest.Unix() > last {
 			s.bump(id)
 		}
 	}
 }
 
-// addTree watches root and every non-hidden directory under it.
-func (s *Service) addTree(root string) {
+// addTree watches root and every non-hidden directory under it, and returns the
+// newest directory mtime it saw — the boot reconcile (syncRoots) uses this to
+// detect content added while the app was down. Dirs only: adding any file bumps
+// its parent directory's mtime, so the walk that sets up watches doubles as the
+// change detector at no extra cost. Future-dated dirs are ignored so a bogus
+// timestamp can't force a scan every launch.
+func (s *Service) addTree(root string) time.Time {
+	now := time.Now()
+	var newest time.Time
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {
 			return nil //nolint:nilerr // unreadable subtree: watch what we can
@@ -151,8 +171,27 @@ func (s *Service) addTree(root string) {
 		if werr := s.fw.Add(p); werr != nil {
 			slog.Warn("watch: add dir", "dir", p, "err", werr)
 		}
+		if fi, e := d.Info(); e == nil {
+			if mt := fi.ModTime(); mt.After(newest) && !mt.After(now) {
+				newest = mt
+			}
+		}
 		return nil
 	})
+	return newest
+}
+
+// lastScanUnix is the unix time of a library's most recent completed scan-walk
+// job (the head of the scan chain), or 0 if it has never scanned. strftime('%s')
+// parses the RFC3339 timestamp the job service writes to ended_at.
+func (s *Service) lastScanUnix(libID int64) int64 {
+	var ts int64
+	_ = s.db.QueryRow(`
+SELECT COALESCE(MAX(CAST(strftime('%s', ended_at) AS INTEGER)), 0)
+FROM scan_jobs
+WHERE library_id = ? AND status = 'done'
+  AND job_type IN ('scan','tvscan','moviescan','photoscan')`, libID).Scan(&ts)
+	return ts
 }
 
 // removeTree drops watches under a root that left the library set. fsnotify
