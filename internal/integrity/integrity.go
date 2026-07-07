@@ -135,16 +135,42 @@ func run(ctx context.Context, db *sql.DB, mediaRoot, table string, jobID, librar
 	return nil
 }
 
+// containerRepairable reports whether a file has a real container whose framing
+// damage a lossless remux can fix. Raw .mp3 is the exception: it has no
+// container, and ffmpeg's tolerant MP3 demuxer emits benign framing/ID3 noise
+// under `-c copy -f null` that the error-line count misreads as corruption — so
+// remux-"repairing" it rewrites the user's file for nothing, and each rewrite
+// bumps the album dir mtime, re-triggering scans (a library-wide churn). MP3
+// integrity is bitstream-only, judged by the decode audit instead (auditDecode,
+// which music always runs). FLAC/M4A/OGG/video have real containers and keep the
+// repair path.
+func containerRepairable(path string) bool {
+	return !strings.EqualFold(filepath.Ext(path), ".mp3")
+}
+
+// repairFileFn is the container-check + optional-repair primitive, a package var
+// so tests can observe that repairOne invokes it for real-container formats and
+// NOT for MP3 (the regression guard on the churn fix).
+var repairFileFn = video.RepairFile
+
 // repairOne runs the cheap tier on one file: the container check + optional
-// repair, PLUS a cheap audio packet-gap scan (both demux-level, no full decode).
+// repair (skipped for raw MP3, which has no container — see containerRepairable),
+// PLUS a cheap audio packet-gap scan (both demux-level, no full decode).
 // Container corruption is losslessly repaired in place; an audio gap is missing
 // data that can't be repaired, so it flags. Returns the final status, or "" on a
 // hard error.
 func repairOne(ctx context.Context, db *sql.DB, table string, id int64, path string, repair bool) string {
-	out, err := video.RepairFile(ctx, path, repair)
-	if err != nil {
-		slog.Warn("integrity check", "file_id", id, "path", path, "err", err)
-		return ""
+	var out video.RepairOutcome
+	if containerRepairable(path) {
+		var err error
+		out, err = repairFileFn(ctx, path, repair)
+		if err != nil {
+			slog.Warn("integrity check", "file_id", id, "path", path, "err", err)
+			return ""
+		}
+	} else {
+		// MP3: no container to remux — the decode audit below is the only judge.
+		out = video.RepairOutcome{Status: "ok"}
 	}
 	// Also examine audio (a gap the container check won't see), and — for music,
 	// where files are small and MP3 corruption surfaces only on decode — the
