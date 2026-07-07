@@ -235,6 +235,30 @@ test('an HLS resume loads the target segment first via startPosition', async () 
   assert.strictEqual(Hls.instances[0].loadedUrl, '/stream/tv-hls/7/manifest.m3u8');
 });
 
+test('a home resume (?paused=1) still seeks to the saved position but does NOT autoplay', async () => {
+  const Hls = makeMockHls();
+  const env = await boot({
+    stubs: { Hls },
+    url: 'http://localhost/tv/player?file=7&paused=1',
+    sessionData: session({ protocol: 'hls', url: '/stream/tv-hls/7/manifest.m3u8', resume_position_seconds: 120 }),
+  });
+  const video = env.document.getElementById('tvVideo');
+  assert.strictEqual(Hls.instances[0].cfg.startPosition, 120, 'resume seek preserved (loads the target segment first)');
+  assert.strictEqual(video.paused, true, 'starts paused — arriving from the dashboard does not autoplay');
+  // The spinner (shown on loadstart) must clear once the first frame decodes, even
+  // though a paused start never fires "playing".
+  const spinner = env.document.querySelector('.media-spinner');
+  video.dispatchEvent(new env.window.Event('loadstart'));
+  assert.strictEqual(spinner.hidden, false, 'loadstart shows the spinner');
+  video.dispatchEvent(new env.window.Event('loadeddata'));
+  assert.strictEqual(spinner.hidden, true, 'loadeddata clears it on a paused start');
+});
+
+test('a normal resume (no paused flag) autoplays', async () => {
+  const env = await boot({ sessionData: session({ protocol: 'file', url: '/stream/tv/7', resume_position_seconds: 30 }) });
+  assert.strictEqual(env.document.getElementById('tvVideo').paused, false, 'autoplays when not launched with ?paused=1');
+});
+
 test('HLS fragment-load patience is raised to match the server segment-build ceiling', async () => {
   const Hls = makeMockHls();
   await boot({ stubs: { Hls }, sessionData: session({ protocol: 'hls', url: '/stream/tv-hls/7/manifest.m3u8' }) });
