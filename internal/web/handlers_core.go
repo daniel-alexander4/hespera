@@ -92,6 +92,12 @@ type continueItem struct {
 	// NextFileID is the target season's first unwatched episode file — the
 	// card's one-click play target (0 → the card falls back to the season page).
 	NextFileID int64
+	// NextEpisode/ProgressPct/InProgress describe that target so the TV card can
+	// label "Resume · S2E3" (InProgress) vs "Play next · S2E4" (a fresh episode)
+	// and draw a resume sliver at ProgressPct.
+	NextEpisode int
+	ProgressPct int
+	InProgress  bool
 	// movie
 	TMDBID int
 	FileID int64 // the in-progress file, for the one-click resume link
@@ -116,11 +122,13 @@ func (h *Handler) loadContinueWatching(ctx context.Context, limit int) []continu
 	}
 	items := make([]continueItem, 0, len(tvRows)+len(movieRows))
 	for _, r := range tvRows {
+		// One-click play target: the season's first unwatched episode, plus its
+		// number + resume progress for the card's label and sliver.
+		fileID, epNum, pct, inProgress := h.continueTarget(ctx, r.SeriesID, r.SeasonNumber)
 		items = append(items, continueItem{
 			Kind: "tv", Title: r.Name, Year: r.Year, RecencyUnix: r.RecencyUnix,
 			SeriesID: r.SeriesID, SeasonNumber: r.SeasonNumber, HasPoster: r.PosterPath != "",
-			// One-click play: the target season's first unwatched episode.
-			NextFileID: h.firstUnwatchedInSeason(ctx, r.SeriesID, r.SeasonNumber),
+			NextFileID: fileID, NextEpisode: epNum, ProgressPct: pct, InProgress: inProgress,
 		})
 	}
 	for _, r := range movieRows {
