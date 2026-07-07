@@ -86,6 +86,25 @@ function initMediaPlayer() {
     if (hls) { hls.destroy(); hls = null; }
   }
 
+  // Buffering spinner — a self-owned overlay in the video wrap (mirrors
+  // .media-captions), pointer-events:none so it never eats the click-to-toggle-
+  // play. Driven by the element's own buffering events, so it covers every
+  // playback path (direct/remux/burn-in/HLS/photo), not just hls.js: shown while
+  // the element is starved for data (waiting/loadstart), hidden once it plays or
+  // pauses. The pause-hide keeps an autoplay-blocked video (play() rejected, so
+  // the element sits paused) from spinning forever while it awaits a user gesture.
+  const spinner = (() => {
+    const w = video.closest('.tv-player-video-wrap');
+    if (!w) return null;
+    let el = w.querySelector('.media-spinner');
+    if (!el) { el = document.createElement('div'); el.className = 'media-spinner'; el.hidden = true; w.appendChild(el); }
+    return el;
+  })();
+  const showSpinner = () => { if (spinner) spinner.hidden = false; };
+  const hideSpinner = () => { if (spinner) spinner.hidden = true; };
+  ['waiting', 'loadstart'].forEach((e) => video.addEventListener(e, showSpinner));
+  ['playing', 'pause', 'ended', 'error'].forEach((e) => video.addEventListener(e, hideSpinner));
+
   // attachSource points the element (or hls.js) at the stream. seekTo is the
   // desired position on the real episode timeline. Direct-play and HLS are
   // byte-range/segment seekable, so we set video.currentTime. Remux and burn-in
@@ -119,7 +138,29 @@ function initMediaPlayer() {
       // appends fragments out of DTS order on a fresh pipeline, which Chrome MSE rejects
       // (CHUNK_DEMUXER_ERROR_APPEND_FAILED: "not in DTS sequence") — wedging any resume/seek
       // into a transcoded file. Loading the target segment first keeps the appends in order.
-      hls = new Hls({ enableWorker: true, startPosition: clientSeek > 0 ? clientSeek : -1 });
+      // Our HLS segments transcode on demand: the server holds the connection
+      // open until the segment is built (no bytes until then), so a fragment's
+      // time-to-first-byte IS its full transcode time — which, on a loaded box,
+      // easily exceeds hls.js's default 10s maxTimeToFirstByteMs. That timeout
+      // fires a fatal NETWORK_ERROR, the handler below restarts loading, and the
+      // stream thrashes (buffer/restart/buffer/restart). Raise the client's
+      // patience to match the server's own ceiling (segBuildTimeout, 5min, in
+      // internal/video/ffmpeg.go) so it WAITS for a slow segment instead of
+      // giving up. The full default object is supplied verbatim (only the two
+      // timeouts change) because hls.js shallow-merges config — a partial policy
+      // would silently drop errorRetry and stop retrying genuine failures.
+      hls = new Hls({
+        enableWorker: true,
+        startPosition: clientSeek > 0 ? clientSeek : -1,
+        fragLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 300000, // mirror server segBuildTimeout (5min)
+            maxLoadTimeMs: 300000,
+            timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
+            errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+          },
+        },
+      });
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, onReady);
@@ -139,10 +180,13 @@ function initMediaPlayer() {
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data || !data.fatal) return;
         if (++hlsFails > HLS_FAIL_CAP) {
+          console.warn('[hespera] HLS gave up after', HLS_FAIL_CAP, 'fatal errors without progress; last:', data.type, data.details);
           teardownHLS();
+          hideSpinner();
           modeLabel.textContent = 'Playback error — reload to continue';
           return;
         }
+        console.warn('[hespera] HLS fatal', data.type, data.details, '— recovery', hlsFails, 'of', HLS_FAIL_CAP);
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
           hls.startLoad();
           return;
@@ -153,6 +197,7 @@ function initMediaPlayer() {
           return;
         }
         teardownHLS();
+        hideSpinner();
         modeLabel.textContent = 'Playback error — reload to continue';
       });
     } else {
