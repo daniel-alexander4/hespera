@@ -306,7 +306,12 @@ func jobsCmd(c *client, args []string) error {
 		return nil
 	}
 	tw := newTable("ID", "LIB", "TYPE", "STATUS", "PROGRESS", "ERROR")
-	for _, j := range resp.Data {
+	// The server returns jobs newest-first (ID DESC); print in reverse so the
+	// newest job is the last row above the prompt (a terminal appends downward).
+	// The web Job Status table keeps its newest-first top ordering — same query,
+	// medium-appropriate rendering.
+	for i := len(resp.Data) - 1; i >= 0; i-- {
+		j := resp.Data[i]
 		prog := ""
 		if j.ProgressTotal > 0 {
 			prog = fmt.Sprintf("%d/%d", j.ProgressCurrent, j.ProgressTotal)
