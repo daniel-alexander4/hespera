@@ -245,6 +245,9 @@ test('a home resume (?paused=1) still seeks to the saved position but does NOT a
   const video = env.document.getElementById('tvVideo');
   assert.strictEqual(Hls.instances[0].cfg.startPosition, 120, 'resume seek preserved (loads the target segment first)');
   assert.strictEqual(video.paused, true, 'starts paused — arriving from the dashboard does not autoplay');
+  // The template ships the native `autoplay` attribute (fires on src attach,
+  // independent of the JS play() call) — it must be cleared for a paused start.
+  assert.strictEqual(video.autoplay, false, 'native autoplay attribute cleared so the browser does not play it either');
   // The spinner (shown on loadstart) must clear once the first frame decodes, even
   // though a paused start never fires "playing".
   const spinner = env.document.querySelector('.media-spinner');
@@ -256,7 +259,9 @@ test('a home resume (?paused=1) still seeks to the saved position but does NOT a
 
 test('a normal resume (no paused flag) autoplays', async () => {
   const env = await boot({ sessionData: session({ protocol: 'file', url: '/stream/tv/7', resume_position_seconds: 30 }) });
-  assert.strictEqual(env.document.getElementById('tvVideo').paused, false, 'autoplays when not launched with ?paused=1');
+  const video = env.document.getElementById('tvVideo');
+  assert.strictEqual(video.paused, false, 'autoplays when not launched with ?paused=1');
+  assert.strictEqual(video.autoplay, true, 'native autoplay left on for a normal resume');
 });
 
 test('HLS fragment-load patience is raised to match the server segment-build ceiling', async () => {

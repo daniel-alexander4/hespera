@@ -116,6 +116,11 @@ function initMediaPlayer() {
   // own currentTime then runs from zero. This is what lets those paths resume.
   function attachSource(session, seekTo, startPaused) {
     teardownHLS();
+    // The <video> carries the native `autoplay` attribute, which fires the moment a
+    // src attaches — independent of the explicit play() below. Clear it for a paused
+    // start (before any src is set) or it would defeat the pause; restore it
+    // otherwise so seeks/track-changes keep autoplaying as before.
+    video.autoplay = !startPaused;
     hlsFails = 0; // fresh stream → fresh fatal-error budget
     isProgressive = cfg.progressiveRe.test(session.url || '');
     const progressive = isProgressive;
