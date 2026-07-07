@@ -47,7 +47,7 @@ func newTestScanner(t *testing.T, db *sql.DB, mediaRoot string) *Scanner {
 
 func seedScanJob(t *testing.T, db *sql.DB, libID int64) int64 {
 	t.Helper()
-	res, err := db.Exec("INSERT INTO scan_jobs (library_id, job_type) VALUES (?, 'photoscan')", libID)
+	res, err := db.Exec("INSERT INTO scan_jobs (library_id, job_type) VALUES (?, 'photo_scan')", libID)
 	if err != nil {
 		t.Fatalf("seedScanJob: %v", err)
 	}

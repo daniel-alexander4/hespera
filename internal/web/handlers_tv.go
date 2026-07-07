@@ -553,7 +553,7 @@ WHERE i.series_id = ? AND i.status = 'matched'`, seriesID); exErr == nil {
 		// Backfill a hi-res (w1280) backdrop for shows matched before the size
 		// bump — their on-disk banner is the old soft w500. Background, once.
 		if show.BackdropPath != "" && !h.metaMarkerExists(r.Context(), fmt.Sprintf("show:%d:backdrop_hires", sid)) {
-			h.enqueueMetaFetch(r.Context(), fmt.Sprintf("backdrop:%d", sid), "tv_backdrop_refresh",
+			h.enqueueMetaFetch(r.Context(), fmt.Sprintf("backdrop:%d", sid), "tv_backdrop_fetch",
 				func(ctx context.Context, m *tmdb.Matcher) error { return m.RefetchBackdrop(ctx, sid) })
 		}
 		// Cache-bust the backdrop URL with its fetched_at so a w500→w1280 upgrade
@@ -998,7 +998,7 @@ WHERE i.series_id = ? AND i.status = 'matched'
 	scanner := tvscan.New(h.cfg, h.db)
 	tmdbKey := h.effectiveTMDBKey(r.Context())
 
-	jobID, err := h.jobs.Enqueue("tvscan", libraryID, "user", func(ctx context.Context, jID, libID int64) error {
+	jobID, err := h.jobs.Enqueue("tv_scan", libraryID, "user", func(ctx context.Context, jID, libID int64) error {
 		var scanErr error
 		if len(dirs) == 0 || len(dirs) > maxSeriesScanDirs {
 			scanErr = scanner.ScanTV(ctx, jID, libID) // fallback: scattered/none → full scan
@@ -1119,7 +1119,7 @@ func (h *Handler) enqueueIntroDetect(ctx context.Context, seriesID string, seaso
 	if libraryID == 0 || total == 0 {
 		return 0, 0, libraryID, nil
 	}
-	jobID, err := h.jobs.Enqueue("intro_detect", libraryID, createdBy, func(ctx context.Context, jID, libID int64) error {
+	jobID, err := h.jobs.Enqueue("tv_intro_detect", libraryID, createdBy, func(ctx context.Context, jID, libID int64) error {
 		if dedupeKey != "" {
 			defer h.metaFetch.Delete(dedupeKey)
 		}

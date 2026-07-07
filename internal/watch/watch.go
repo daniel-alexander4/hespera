@@ -190,7 +190,7 @@ func (s *Service) lastScanUnix(libID int64) int64 {
 SELECT COALESCE(MAX(CAST(strftime('%s', ended_at) AS INTEGER)), 0)
 FROM scan_jobs
 WHERE library_id = ? AND status = 'done'
-  AND job_type IN ('scan','tvscan','moviescan','photoscan')`, libID).Scan(&ts)
+  AND job_type IN ('music_scan','tv_scan','movie_scan','photo_scan')`, libID).Scan(&ts)
 	return ts
 }
 
@@ -316,6 +316,6 @@ func (s *Service) scanActive(libID int64) bool {
 	_ = s.db.QueryRow(`
 SELECT COUNT(*) FROM scan_jobs
 WHERE library_id = ? AND status IN ('queued','running')
-  AND job_type IN ('scan','tvscan','moviescan','photoscan')`, libID).Scan(&n)
+  AND job_type IN ('music_scan','tv_scan','movie_scan','photo_scan')`, libID).Scan(&n)
 	return n > 0
 }

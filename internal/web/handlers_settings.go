@@ -703,7 +703,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 	switch libType {
 	case "music":
 		scanner := scan.New(h.cfg, h.db)
-		jobID, err = h.jobs.Enqueue("scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
+		jobID, err = h.jobs.Enqueue("music_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := scanner.ScanMusic(ctx, jID, libID); err != nil {
 				return err
 			}
@@ -727,7 +727,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 		})
 	case "tv":
 		tvScanner := tvscan.New(h.cfg, h.db)
-		jobID, err = h.jobs.Enqueue("tvscan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
+		jobID, err = h.jobs.Enqueue("tv_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := tvScanner.ScanTV(ctx, jID, libID); err != nil {
 				return err
 			}
@@ -766,7 +766,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 		})
 	case "movies":
 		movieScanner := moviescan.New(h.cfg, h.db)
-		jobID, err = h.jobs.Enqueue("moviescan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
+		jobID, err = h.jobs.Enqueue("movie_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := movieScanner.ScanMovies(ctx, jID, libID); err != nil {
 				return err
 			}
@@ -795,7 +795,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 		})
 	case "photos":
 		photoScanner := photoscan.New(h.cfg, h.db)
-		jobID, err = h.jobs.Enqueue("photoscan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
+		jobID, err = h.jobs.Enqueue("photo_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := photoScanner.ScanPhotos(ctx, jID, libID); err != nil {
 				return err
 			}

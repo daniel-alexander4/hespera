@@ -76,3 +76,50 @@ func TestMigrateIntegrityDegraded(t *testing.T) {
 		t.Fatalf("suffix duplicated on re-run: %q", d)
 	}
 }
+
+// TestMigrateJobTypeRename renames legacy scan_jobs.job_type values to the
+// consistent <media>_<action> scheme (idempotent on re-run).
+func TestMigrateJobTypeRename(t *testing.T) {
+	db := migratedTestDB(t)
+	// Seed rows with the OLD names an upgraded DB would carry, then re-run
+	// Migrate to exercise the rename.
+	old := []string{"scan", "tvscan", "moviescan", "photoscan", "intro_detect", "tag_writeback", "tv_backdrop_refresh"}
+	for _, jt := range old {
+		if _, err := db.Exec(`INSERT INTO scan_jobs (library_id, job_type, status, created_at) VALUES (1, ?, 'done', '')`, jt); err != nil {
+			t.Fatalf("seed %s: %v", jt, err)
+		}
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("re-migrate: %v", err)
+	}
+
+	var stale int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM scan_jobs WHERE job_type IN
+		('scan','tvscan','moviescan','photoscan','intro_detect','tag_writeback','tv_backdrop_refresh')`).Scan(&stale); err != nil {
+		t.Fatal(err)
+	}
+	if stale != 0 {
+		t.Fatalf("want 0 legacy job_type rows after migrate, got %d", stale)
+	}
+	for _, jt := range []string{"music_scan", "tv_scan", "movie_scan", "photo_scan", "tv_intro_detect", "music_tag_writeback", "tv_backdrop_fetch"} {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM scan_jobs WHERE job_type=?`, jt).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Fatalf("want 1 %q row, got %d", jt, n)
+		}
+	}
+
+	// Idempotent: a second re-run neither changes counts nor errors.
+	if err := Migrate(db); err != nil {
+		t.Fatalf("third migrate: %v", err)
+	}
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM scan_jobs`).Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if total != len(old) {
+		t.Fatalf("row count changed on re-run: want %d, got %d", len(old), total)
+	}
+}
