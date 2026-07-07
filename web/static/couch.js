@@ -7,10 +7,10 @@
 // nicety keyed to the tv scale class is auto-focusing a starting element after
 // each render (focusFirst) — on a desk it would steal focus for no benefit.
 //
-// Back walks up the UI in stages, then retraces browsing history:
+// Back walks up the UI in stages, then goes Home:
 // dismiss an open overlay/menu → pull focus out of a subtab panel onto its
-// menu bar → history.back(). Repeated presses reverse through the pages you
-// actually visited (going "up" a level instead is the breadcrumb's job).
+// menu bar → navigate to the home page (/). The Back button is a Home shortcut,
+// not a history-retrace — going "up" one level is the breadcrumb's job.
 //
 // Overlay contract: an element tagged [data-couch-overlay] that is currently
 // visible (any hide mechanism — display:none via class, attribute, or inline
@@ -204,12 +204,16 @@
         const menu = document.querySelector('.subtab.active') || document.querySelector('.subtab');
         if (menu) { menu.focus(); return; }
       }
-      // Retrace browsing history — each press one real step back. Navigating
-      // to the parent instead would push entries and bury the history under
-      // pages never visited (the old ping-pong at Home); the breadcrumb is
-      // the way UP, Back is the way BACK. At history's first entry this is a
-      // native no-op, which is fine.
-      history.back();
+      // Terminal stage: the Back button is a Home shortcut — go to the landing
+      // page in one press (the breadcrumb is the way UP one level). Turbo.visit
+      // keeps the persistent audio player alive, matching every other nav; a
+      // full load is the fallback if Turbo isn't present. Already on Home →
+      // no-op, so repeated presses don't stack duplicate Home history entries.
+      // (This uniformly replaces history.back for every back-keycode, so the
+      // remote's Back button behaves the same regardless of dongle.)
+      if (window.location.pathname === '/') return;
+      if (window.Turbo && typeof window.Turbo.visit === 'function') window.Turbo.visit('/');
+      else window.location.href = '/';
     }
     // Enter / OK is left to native behavior (activates links and buttons).
   });
