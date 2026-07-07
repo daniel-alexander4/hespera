@@ -173,7 +173,7 @@ func TestSettingsJobsFragment(t *testing.T) {
 	}
 	libID, _ := res.LastInsertId()
 	if _, err := db.Exec(
-		"INSERT INTO scan_jobs (library_id, job_type, status, progress_current, progress_total, created_at) VALUES (?, 'tvscan', 'done', 76, 76, datetime('now'))",
+		"INSERT INTO scan_jobs (library_id, job_type, status, progress_current, progress_total, created_at) VALUES (?, 'tv_scan', 'done', 76, 76, datetime('now'))",
 		libID); err != nil {
 		t.Fatalf("seed job: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestSettingsJobsFragment(t *testing.T) {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, "tvscan") {
+		if !strings.Contains(body, "tv_scan") {
 			t.Fatalf("fragment missing the tvscan row: %s", body)
 		}
 		if !strings.Contains(body, "badge-done") {
@@ -214,7 +214,7 @@ func TestSettingsJobsFragment(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
-		if !strings.Contains(rec.Body.String(), "tvscan") {
+		if !strings.Contains(rec.Body.String(), "tv_scan") {
 			t.Fatalf("settings page missing the tvscan jobs row")
 		}
 		req = httptest.NewRequest(http.MethodGet, "/settings/jobs?x=1", nil)

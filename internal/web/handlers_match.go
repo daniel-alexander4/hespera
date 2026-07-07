@@ -254,7 +254,7 @@ func (h *Handler) musicWriteback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
-	jobID, err := h.jobs.Enqueue("tag_writeback", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
+	jobID, err := h.jobs.Enqueue("music_tag_writeback", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunTagWriteback(ctx, jobID, libraryID)
 	})
 	if err != nil {

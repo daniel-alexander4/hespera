@@ -26,7 +26,7 @@ func TestReconcileStaleJobsOnStartup(t *testing.T) {
 	// not be touched.
 	for _, st := range []string{"running", "queued", "done"} {
 		if _, err := conn.Exec(
-			"INSERT INTO scan_jobs (library_id, job_type, status, progress_current, progress_total, created_at) VALUES (1, 'scan', ?, 0, 0, datetime('now'))",
+			"INSERT INTO scan_jobs (library_id, job_type, status, progress_current, progress_total, created_at) VALUES (1, 'music_scan', ?, 0, 0, datetime('now'))",
 			st,
 		); err != nil {
 			t.Fatalf("seed %s: %v", st, err)
@@ -66,7 +66,7 @@ func TestEnqueueAndRun(t *testing.T) {
 	svc := New(conn)
 	var ran atomic.Int32
 
-	jobID, err := svc.Enqueue("scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
+	jobID, err := svc.Enqueue("music_scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
 		ran.Add(1)
 		return nil
 	})
@@ -114,7 +114,7 @@ func TestPanicInExecutorIsIsolated(t *testing.T) {
 	svc := New(conn)
 
 	// A panicking executor must not kill the worker goroutine.
-	panicID, err := svc.Enqueue("scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
+	panicID, err := svc.Enqueue("music_scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
 		panic("boom")
 	})
 	if err != nil {
@@ -138,7 +138,7 @@ func TestPanicInExecutorIsIsolated(t *testing.T) {
 
 	// The worker must still drain subsequent jobs.
 	var ran atomic.Int32
-	nextID, err := svc.Enqueue("scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
+	nextID, err := svc.Enqueue("music_scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
 		ran.Add(1)
 		return nil
 	})
@@ -177,7 +177,7 @@ func TestCancelJob(t *testing.T) {
 	svc := New(conn)
 	started := make(chan struct{})
 
-	jobID, err := svc.Enqueue("scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
+	jobID, err := svc.Enqueue("music_scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()
@@ -299,8 +299,8 @@ func TestEnqueueDedupScoping(t *testing.T) {
 	exec := func(ctx context.Context, j, l int64) error { ran.Add(1); return nil }
 
 	// Two plain Enqueue of the same (type,lib) → two distinct jobs.
-	a, _ := svc.Enqueue("tvscan", 2, "test", exec)
-	b, _ := svc.Enqueue("tvscan", 2, "test", exec)
+	a, _ := svc.Enqueue("tv_scan", 2, "test", exec)
+	b, _ := svc.Enqueue("tv_scan", 2, "test", exec)
 	if a == b || a <= 0 || b <= 0 {
 		t.Fatalf("plain Enqueue must not dedup: a=%d b=%d", a, b)
 	}

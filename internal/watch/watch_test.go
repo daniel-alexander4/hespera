@@ -105,7 +105,7 @@ func TestWatchSkipsWhenScanActiveAndWhenDisabled(t *testing.T) {
 
 	// An already-queued scan suppresses the fire (the jobs service has no dedup).
 	if _, err := db.Exec(
-		"INSERT INTO scan_jobs (library_id, job_type, status, created_at) VALUES (?, 'scan', 'running', datetime('now'))",
+		"INSERT INTO scan_jobs (library_id, job_type, status, created_at) VALUES (?, 'music_scan', 'running', datetime('now'))",
 		libID); err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestBootReconcileScansChangedLibrary(t *testing.T) {
 	// The last scan completed an hour ago; the root + show dir were created just
 	// now (mtime = now), so their mtime is newer → boot must fire a rescan.
 	if _, err := db.Exec(
-		"INSERT INTO scan_jobs (library_id, job_type, status, ended_at) VALUES (?, 'scan', 'done', datetime('now','-1 hour'))",
+		"INSERT INTO scan_jobs (library_id, job_type, status, ended_at) VALUES (?, 'music_scan', 'done', datetime('now','-1 hour'))",
 		id); err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestBootReconcileSkipsUnchangedAndUnscanned(t *testing.T) {
 	}
 	id := seedLib(t, db, root)
 	if _, err := db.Exec( // scan completed an hour ago — after the 2h-old dir mtimes
-		"INSERT INTO scan_jobs (library_id, job_type, status, ended_at) VALUES (?, 'scan', 'done', datetime('now','-1 hour'))",
+		"INSERT INTO scan_jobs (library_id, job_type, status, ended_at) VALUES (?, 'music_scan', 'done', datetime('now','-1 hour'))",
 		id); err != nil {
 		t.Fatal(err)
 	}

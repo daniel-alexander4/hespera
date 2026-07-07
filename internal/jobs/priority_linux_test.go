@@ -33,7 +33,7 @@ func TestWorkerRunsAtBackgroundPriority(t *testing.T) {
 		nice   int
 	}
 	got := make(chan prio, 1)
-	jobID, err := svc.Enqueue("scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
+	jobID, err := svc.Enqueue("music_scan", 1, "test", func(ctx context.Context, jobID, libraryID int64) error {
 		// The executor runs on the locked worker thread, so "calling thread"
 		// syscalls observe the priority the worker set.
 		io, _, _ := syscall.Syscall(syscall.SYS_IOPRIO_GET, ioprioWhoProcess, 0, 0)

@@ -13,7 +13,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','photos','home_videos')),
+  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media')),
   root_path TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -311,7 +311,7 @@ CREATE TABLE IF NOT EXISTS photo_playback_progress (
 CREATE TABLE IF NOT EXISTS scan_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   library_id INTEGER NOT NULL DEFAULT 0,
-  job_type TEXT NOT NULL DEFAULT 'scan',
+  job_type TEXT NOT NULL DEFAULT 'music_scan',
   status TEXT NOT NULL DEFAULT 'queued',
   progress_current INTEGER NOT NULL DEFAULT 0,
   progress_total INTEGER NOT NULL DEFAULT 0,
@@ -522,6 +522,24 @@ DROP INDEX IF EXISTS idx_photos_library_dir;
 		DROP TABLE IF EXISTS youtube_lookups; DROP TABLE IF EXISTS itunes_art;
 		DROP TABLE IF EXISTS auth_user_keys; DROP TABLE IF EXISTS auth_users;`); err != nil {
 		return err
+	}
+	// Rename legacy scan_jobs.job_type values to the consistent <media>_<action>
+	// scheme: the scan heads had ad-hoc names ('scan'/'tvscan'/…) and three jobs
+	// lacked a subject prefix. Keeps the audit log + the watcher's last-scan
+	// lookup consistent with the new names. Idempotent — after the rename no rows
+	// match the old names.
+	for _, r := range []struct{ from, to string }{
+		{"scan", "music_scan"},
+		{"tvscan", "tv_scan"},
+		{"moviescan", "movie_scan"},
+		{"photoscan", "photo_scan"},
+		{"intro_detect", "tv_intro_detect"},
+		{"tag_writeback", "music_tag_writeback"},
+		{"tv_backdrop_refresh", "tv_backdrop_fetch"},
+	} {
+		if _, err := db.Exec(`UPDATE scan_jobs SET job_type=? WHERE job_type=?`, r.to, r.from); err != nil {
+			return err
+		}
 	}
 	// Refresh planner statistics so the indexes above are actually chosen (a new
 	// index on a populated table can be ignored until stats catch up). PRAGMA
