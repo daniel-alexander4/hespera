@@ -2011,6 +2011,27 @@ html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
 }
 .media-caption-line + .media-caption-line { margin-top: 0.2em; }
 
+/* Buffering spinner — media_player.js reveals this while the element is starved
+   for data (a fresh transcode start, a stalled fragment). Centered over the
+   video, pointer-events:none so it never intercepts the click-to-toggle-play.
+   Hidden via the element's [hidden] attribute (same as .media-captions). */
+.media-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: -1.75rem 0 0 -1.75rem;
+  border: 0.28rem solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+  animation: media-spin 0.9s linear infinite;
+}
+@keyframes media-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .media-spinner { animation-duration: 2.4s; } }
+
 /* "Skip intro/recap/commercial" button — floats over the lower-right of the video
    (above the controls bar; drops with it when the controls auto-hide) and stays
    visible whether or not the controls are showing, like Netflix's Skip Intro. */

@@ -235,6 +235,33 @@ test('an HLS resume loads the target segment first via startPosition', async () 
   assert.strictEqual(Hls.instances[0].loadedUrl, '/stream/tv-hls/7/manifest.m3u8');
 });
 
+test('HLS fragment-load patience is raised to match the server segment-build ceiling', async () => {
+  const Hls = makeMockHls();
+  await boot({ stubs: { Hls }, sessionData: session({ protocol: 'hls', url: '/stream/tv-hls/7/manifest.m3u8' }) });
+  const pol = Hls.instances[0].cfg.fragLoadPolicy && Hls.instances[0].cfg.fragLoadPolicy.default;
+  assert.ok(pol, 'an explicit fragLoadPolicy.default is supplied');
+  assert.strictEqual(pol.maxTimeToFirstByteMs, 300000, 'TTFB budget mirrors segBuildTimeout (5min) so a slow on-demand segment waits instead of timing out');
+  assert.strictEqual(pol.maxLoadTimeMs, 300000);
+  // The FULL default object is supplied (hls.js shallow-merges config), so a partial
+  // policy can't silently drop errorRetry and stop retrying genuine failures.
+  assert.strictEqual(pol.errorRetry.maxNumRetry, 6, 'errorRetry preserved — real failures still retry then fatal out');
+});
+
+test('the buffering spinner shows while the element is starved for data, hides on play/pause', async () => {
+  const env = await boot({ sessionData: session({ protocol: 'file', url: '/stream/tv/7' }) });
+  const video = env.document.getElementById('tvVideo');
+  const spinner = env.document.querySelector('.media-spinner');
+  assert.ok(spinner, 'a spinner overlay is created in the video wrap');
+  video.dispatchEvent(new env.window.Event('waiting'));
+  assert.strictEqual(spinner.hidden, false, 'waiting (buffering) reveals the spinner');
+  video.dispatchEvent(new env.window.Event('playing'));
+  assert.strictEqual(spinner.hidden, true, 'playing hides it');
+  // Autoplay-block guard: a paused element (play() rejected) must not spin forever.
+  video.dispatchEvent(new env.window.Event('waiting'));
+  video.dispatchEvent(new env.window.Event('pause'));
+  assert.strictEqual(spinner.hidden, true, 'pause hides the spinner so an autoplay-blocked video does not spin indefinitely');
+});
+
 test('a fatal HLS media error runs the guarded recovery, not an infinite loop', async () => {
   const Hls = makeMockHls();
   const env = await boot({ stubs: { Hls }, sessionData: session({ protocol: 'hls', url: '/stream/tv-hls/7/manifest.m3u8' }) });
