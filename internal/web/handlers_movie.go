@@ -535,7 +535,7 @@ func (h *Handler) moviesMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	matcher := tmdb.NewMovieMatcher(h.db, tmdbKey, h.cfg.DataDir)
-	jobID, err := h.jobs.Enqueue("movie_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
+	jobID, err := h.jobs.EnqueueUnique("movie_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunMovieMatch(ctx, jobID, libraryID)
 	})
 	if err != nil {

@@ -52,7 +52,7 @@ func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
-	jobID, err := h.jobs.Enqueue("music_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
+	jobID, err := h.jobs.EnqueueUnique("music_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunMusicMatch(ctx, jobID, libraryID)
 	})
 	if err != nil {

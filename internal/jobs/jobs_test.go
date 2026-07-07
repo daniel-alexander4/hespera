@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -208,4 +209,120 @@ func TestCancelJob(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("job was not canceled within timeout")
+}
+
+func newJobsService(t *testing.T) (*Service, *sql.DB) {
+	t.Helper()
+	conn, err := db.Open(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if err := db.Migrate(conn); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	return New(conn), conn
+}
+
+// EnqueueUnique collapses a duplicate that is still QUEUED, but not one enqueued
+// against a RUNNING job — a running scan may have started before the change that
+// prompted the new enqueue, so a fresh queued job must still be allowed through.
+func TestEnqueueUniqueDedupsQueuedNotRunning(t *testing.T) {
+	svc, conn := newJobsService(t)
+	var ran atomic.Int32
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	// A blocks while "running" so B and C enqueue against a known state.
+	idA, err := svc.EnqueueUnique("tv_match", 2, "test", func(ctx context.Context, j, l int64) error {
+		ran.Add(1)
+		started <- struct{}{}
+		<-release
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("enqueue A: %v", err)
+	}
+	<-started // A is now running (worker is blocked in it)
+
+	// B: A is running, none queued → a fresh job with a new id.
+	idB, err := svc.EnqueueUnique("tv_match", 2, "test", func(ctx context.Context, j, l int64) error {
+		ran.Add(1)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("enqueue B: %v", err)
+	}
+	if idB == idA {
+		t.Fatalf("B must be a new job while A runs, got A's id %d", idA)
+	}
+
+	// C: B is queued → deduped to B's id, never becomes its own job.
+	idC, err := svc.EnqueueUnique("tv_match", 2, "test", func(ctx context.Context, j, l int64) error {
+		ran.Add(1)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("enqueue C: %v", err)
+	}
+	if idC != idB {
+		t.Fatalf("C must dedup to queued B (%d), got %d", idB, idC)
+	}
+
+	var rows int
+	if err := conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE job_type='tv_match' AND library_id=2").Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 2 {
+		t.Fatalf("want 2 rows (A queued-then-running, B queued), got %d", rows)
+	}
+
+	close(release) // A finishes → worker runs B; C was never a separate job
+	deadline := time.Now().Add(3 * time.Second)
+	for ran.Load() < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("A and B did not both run (ran=%d)", ran.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if got := ran.Load(); got != 2 {
+		t.Fatalf("executor ran %d times, want 2 (C was deduped away)", got)
+	}
+}
+
+// Plain Enqueue never dedups, and EnqueueUnique dedups only within the same
+// (type, lib) — different types/libraries are independent work.
+func TestEnqueueDedupScoping(t *testing.T) {
+	svc, conn := newJobsService(t)
+	var ran atomic.Int32
+	exec := func(ctx context.Context, j, l int64) error { ran.Add(1); return nil }
+
+	// Two plain Enqueue of the same (type,lib) → two distinct jobs.
+	a, _ := svc.Enqueue("tvscan", 2, "test", exec)
+	b, _ := svc.Enqueue("tvscan", 2, "test", exec)
+	if a == b || a <= 0 || b <= 0 {
+		t.Fatalf("plain Enqueue must not dedup: a=%d b=%d", a, b)
+	}
+	// EnqueueUnique across different libraries → independent jobs.
+	c, _ := svc.EnqueueUnique("tv_match", 2, "test", exec)
+	d, _ := svc.EnqueueUnique("tv_match", 3, "test", exec)
+	if c == d || c <= 0 || d <= 0 {
+		t.Fatalf("different libraries must not dedup: c=%d d=%d", c, d)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for ran.Load() < 4 {
+		if time.Now().After(deadline) {
+			t.Fatalf("expected 4 executions, got %d", ran.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	var total int
+	if err := conn.QueryRow("SELECT COUNT(*) FROM scan_jobs").Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if total != 4 {
+		t.Fatalf("want 4 rows, got %d", total)
+	}
 }

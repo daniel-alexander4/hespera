@@ -33,10 +33,11 @@ type JobRequest struct {
 }
 
 type Service struct {
-	db      *sql.DB
-	queue   chan JobRequest
-	mu      sync.Mutex
-	cancels map[int64]context.CancelFunc
+	db        *sql.DB
+	queue     chan JobRequest
+	mu        sync.Mutex
+	cancels   map[int64]context.CancelFunc
+	enqueueMu sync.Mutex // serializes EnqueueUnique's check-then-insert
 }
 
 // jobRetention bounds how long a terminal scan_jobs row is kept. The table is
@@ -111,13 +112,50 @@ func (s *Service) Shutdown() {
 }
 
 func (s *Service) Enqueue(jobType string, libraryID int64, createdBy string, executor func(ctx context.Context, jobID, libraryID int64) error) (int64, error) {
+	return s.enqueue(jobType, libraryID, createdBy, false, executor)
+}
+
+// EnqueueUnique is Enqueue with dedup: if a job of the same type for the same
+// library is already QUEUED (not yet running), it returns that job's id instead
+// of adding a duplicate. For full-library-idempotent scan-chain jobs (match /
+// integrity / probe / thumb / trickplay / loudness) — re-triggering a scan while
+// its chain is still pending must not pile up a second chain (the plex 3×tv_match
+// case). NOT for per-entity jobs (metadata fetches, intro_detect) whose work isn't
+// identified by (type, lib) — those carry their own key-based dedup. Deliberately
+// dedups only against QUEUED, never RUNNING: a running job may have started before
+// the change that prompted this enqueue, so a fresh queued job must still be
+// allowed to catch it.
+func (s *Service) EnqueueUnique(jobType string, libraryID int64, createdBy string, executor func(ctx context.Context, jobID, libraryID int64) error) (int64, error) {
+	return s.enqueue(jobType, libraryID, createdBy, true, executor)
+}
+
+func (s *Service) enqueue(jobType string, libraryID int64, createdBy string, dedup bool, executor func(ctx context.Context, jobID, libraryID int64) error) (int64, error) {
 	if libraryID < 0 {
 		return 0, errors.New("invalid library id")
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if createdBy == "" {
 		createdBy = "system"
 	}
+
+	if dedup {
+		// Serialize check-then-insert so two concurrent EnqueueUnique of the same
+		// (type, lib) can't both miss the other and double-insert.
+		s.enqueueMu.Lock()
+		defer s.enqueueMu.Unlock()
+		var existing int64
+		err := s.db.QueryRow(
+			`SELECT id FROM scan_jobs WHERE job_type=? AND library_id=? AND status=? ORDER BY id LIMIT 1`,
+			jobType, libraryID, statusQueued,
+		).Scan(&existing)
+		if err == nil {
+			return existing, nil // a duplicate is already pending — reuse it
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 
 	res, err := s.db.Exec(
 		`INSERT INTO scan_jobs (
