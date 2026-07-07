@@ -86,6 +86,11 @@ function loadController(file, { html, url = 'http://localhost/', stubs = {}, sto
   // jsdom leaves these unimplemented on HTMLMediaElement — stub so the player's
   // play/load/canPlayType calls don't throw. Track load/pause for assertions.
   const mediaProto = window.HTMLMediaElement.prototype;
+  // jsdom exposes `paused` as a getter-only accessor wired to its own (unstubbed)
+  // engine state, so the play/pause stubs' `this.paused = …` would silently no-op.
+  // Redefine it as a writable data property (default paused) so the stubs' state
+  // actually takes — element.paused now reflects the stubbed play/pause.
+  Object.defineProperty(mediaProto, 'paused', { configurable: true, writable: true, value: true });
   Object.defineProperty(mediaProto, 'play', { configurable: true, value: function () { this.paused = false; this.dispatchEvent(new window.Event('play')); return Promise.resolve(); } });
   Object.defineProperty(mediaProto, 'pause', { configurable: true, value: function () { this.paused = true; this.dispatchEvent(new window.Event('pause')); } });
   Object.defineProperty(mediaProto, 'load', { configurable: true, value: function () {} });
