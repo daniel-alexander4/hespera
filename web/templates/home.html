@@ -58,7 +58,7 @@
     </div>
   </a>
   {{else}}
-  <a href="{{if .NextFileID}}/tv/player?file={{.NextFileID}}&paused=1{{else}}/tv/season/?series={{.SeriesID}}&season={{.SeasonNumber}}{{end}}" class="band-album-card band-album-card--poster">
+  <a href="{{if .NextFileID}}/tv/player?file={{.NextFileID}}{{if .InProgress}}&paused=1{{end}}{{else}}/tv/season/?series={{.SeriesID}}&season={{.SeasonNumber}}{{end}}" class="band-album-card band-album-card--poster">
     <div class="band-album-art">
       {{if .HasPoster}}
       <img src="/art/tv/poster/{{.SeriesID}}" alt="{{.Title}}" loading="lazy" />
