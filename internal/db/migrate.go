@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"regexp"
@@ -514,6 +515,9 @@ DROP INDEX IF EXISTS idx_photos_library_dir;
 	if err := migrateIdentitiesMatchedUnmatched(db); err != nil {
 		return err
 	}
+	if err := migrateLibraryTypeHomeMedia(db); err != nil {
+		return err
+	}
 	// Retired feature tables — drop on existing DBs (the CREATEs are gone from the
 	// schema). year_journey_*: the old "Rediscover a Year" build cache.
 	// youtube_lookups/itunes_art: the removed Top-100 YouTube playback + its
@@ -739,4 +743,60 @@ WHERE integrity_status='flagged'
 		}
 	}
 	return nil
+}
+
+// migrateLibraryTypeHomeMedia renames the library type 'photos' → 'home_media'
+// and drops the dead scanner-less 'home_videos' placeholder, so one home-media
+// type covers both home stills and clips. SQLite can't ALTER a CHECK constraint,
+// so it rebuilds the libraries table with the new CHECK and maps the old values
+// in the copy. FK-safe: child *_files.library_id reference libraries.id and the
+// rebuild preserves every id, so foreign_keys is turned OFF for the drop/rename
+// (else dropping libraries would cascade-delete its children) and the references
+// stay valid against the recreated table. Done on a single pooled connection —
+// PRAGMA foreign_keys is per-connection and a no-op inside a transaction.
+// Idempotent: after it runs the schema no longer names 'photos', so it's skipped.
+func migrateLibraryTypeHomeMedia(db *sql.DB) error {
+	var ddl string
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='libraries'").Scan(&ddl); err != nil {
+		return fmt.Errorf("read libraries schema: %w", err)
+	}
+	if !strings.Contains(ddl, "'photos'") {
+		return nil // already on the new type set
+	}
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+		return err
+	}
+	defer conn.ExecContext(ctx, "PRAGMA foreign_keys=ON") // restore before the conn returns to the pool
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	stmts := []string{
+		`CREATE TABLE libraries_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media')),
+  root_path TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+		`INSERT INTO libraries_new (id, name, type, root_path, created_at)
+   SELECT id, name,
+     CASE type WHEN 'photos' THEN 'home_media' WHEN 'home_videos' THEN 'home_media' ELSE type END,
+     root_path, created_at FROM libraries`,
+		`DROP TABLE libraries`,
+		`ALTER TABLE libraries_new RENAME TO libraries`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("libraries home_media rebuild: %w", err)
+		}
+	}
+	return tx.Commit()
 }

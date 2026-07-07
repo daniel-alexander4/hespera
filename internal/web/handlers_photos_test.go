@@ -11,7 +11,7 @@ import (
 func seedPhotos(t *testing.T, h *Handler, rows [][3]string) {
 	t.Helper()
 	if _, err := h.db.Exec(
-		"INSERT INTO libraries (id, name, type, root_path) VALUES (1, 'Pics', 'photos', '/pics')"); err != nil {
+		"INSERT INTO libraries (id, name, type, root_path) VALUES (1, 'Pics', 'home_media', '/pics')"); err != nil {
 		t.Fatalf("insert library: %v", err)
 	}
 	for i, r := range rows {

@@ -684,7 +684,7 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 }
 
 // errUnsupportedLibraryType marks a scan request against a library type with
-// no scanner (home_videos today).
+// no scanner (a guard against an unexpected type; every valid type scans today).
 var errUnsupportedLibraryType = errors.New("scanning not supported for this library type")
 
 // EnqueueLibraryScan enqueues the full scan chain for a library — scan →
@@ -793,7 +793,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			})
 			return nil
 		})
-	case "photos":
+	case "home_media":
 		photoScanner := photoscan.New(h.cfg, h.db)
 		jobID, err = h.jobs.Enqueue("photo_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := photoScanner.ScanPhotos(ctx, jID, libID); err != nil {
@@ -1022,7 +1022,7 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch libType {
-	case "photos":
+	case "home_media":
 		collectReap("SELECT id FROM photos WHERE library_id=?", "photos", photoscan.ThumbFileNames)
 	case "tv":
 		collectReap("SELECT id FROM tv_series_files WHERE library_id=?", "episodes",
@@ -1133,7 +1133,7 @@ func (h *Handler) settingsTagEditor(w http.ResponseWriter, r *http.Request) {
 
 func validLibraryType(v string) bool {
 	switch v {
-	case "music", "movies", "tv", "photos", "home_videos":
+	case "music", "movies", "tv", "home_media":
 		return true
 	default:
 		return false

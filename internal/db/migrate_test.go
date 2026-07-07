@@ -123,3 +123,65 @@ func TestMigrateJobTypeRename(t *testing.T) {
 		t.Fatalf("row count changed on re-run: want %d, got %d", len(old), total)
 	}
 }
+
+// TestMigrateLibraryTypeHomeMedia proves the libraries-table rebuild renames
+// 'photos' → 'home_media' (dropping the dead 'home_videos') while preserving row
+// ids and child FKs, and enforces the new CHECK afterward.
+func TestMigrateLibraryTypeHomeMedia(t *testing.T) {
+	conn, err := Open(filepath.Join(t.TempDir(), "hm.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	// The OLD schema an upgraded DB carries: the pre-rename CHECK + a child table
+	// with an ON DELETE CASCADE FK; seed a 'photos' library with a child row.
+	for _, s := range []string{
+		`CREATE TABLE libraries (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+		   type TEXT NOT NULL CHECK(type IN ('music','movies','tv','photos','home_videos')),
+		   root_path TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+		`CREATE TABLE photos (id INTEGER PRIMARY KEY, library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE)`,
+		`INSERT INTO libraries (id, name, type, root_path) VALUES (7, 'Home', 'photos', '/m')`,
+		`INSERT INTO photos (id, library_id) VALUES (100, 7)`,
+	} {
+		if _, err := conn.Exec(s); err != nil {
+			t.Fatalf("setup %q: %v", s, err)
+		}
+	}
+
+	if err := migrateLibraryTypeHomeMedia(conn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var typ string
+	if err := conn.QueryRow("SELECT type FROM libraries WHERE id=7").Scan(&typ); err != nil {
+		t.Fatalf("library gone / id not preserved: %v", err)
+	}
+	if typ != "home_media" {
+		t.Fatalf("type=%q, want home_media", typ)
+	}
+	var libID int64
+	if err := conn.QueryRow("SELECT library_id FROM photos WHERE id=100").Scan(&libID); err != nil || libID != 7 {
+		t.Fatalf("child row lost its FK: library_id=%d err=%v", libID, err)
+	}
+	// No FK violation after the rebuild.
+	rows, err := conn.Query("PRAGMA foreign_key_check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows.Next() {
+		rows.Close()
+		t.Fatal("foreign_key_check reported a violation after migration")
+	}
+	rows.Close()
+	// New CHECK enforced: 'photos' rejected, 'home_media' accepted.
+	if _, err := conn.Exec("INSERT INTO libraries (name,type,root_path) VALUES ('x','photos','/x')"); err == nil {
+		t.Fatal("old 'photos' type should now be rejected by the CHECK")
+	}
+	if _, err := conn.Exec("INSERT INTO libraries (name,type,root_path) VALUES ('y','home_media','/y')"); err != nil {
+		t.Fatalf("home_media should be accepted: %v", err)
+	}
+	// Idempotent: a second run is a no-op and doesn't error.
+	if err := migrateLibraryTypeHomeMedia(conn); err != nil {
+		t.Fatalf("idempotent re-run: %v", err)
+	}
+}

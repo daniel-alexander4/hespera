@@ -59,7 +59,7 @@ func TestScanPhotosIngest(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	root := t.TempDir()
-	libID := seedLibrary(t, db, "photos", "photos", root)
+	libID := seedLibrary(t, db, "photos", "home_media", root)
 	s := newTestScanner(t, db, root)
 
 	// A JPEG with EXIF (capture time + orientation), a plain PNG, a clip with
@@ -149,7 +149,7 @@ func TestScanPhotosUnchangedFastPathAndThumbReset(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	root := t.TempDir()
-	libID := seedLibrary(t, db, "photos", "photos", root)
+	libID := seedLibrary(t, db, "photos", "home_media", root)
 	s := newTestScanner(t, db, root)
 
 	p := filepath.Join(root, "a.jpg")
@@ -200,7 +200,7 @@ func TestRelinkMovedPhoto(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
 	root := t.TempDir()
-	libID := seedLibrary(t, db, "photos", "photos", root)
+	libID := seedLibrary(t, db, "photos", "home_media", root)
 	s := newTestScanner(t, db, root)
 
 	oldPath := filepath.Join(root, "old", "clip.avi")

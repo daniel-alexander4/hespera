@@ -139,7 +139,7 @@ func (h *Handler) photosHome(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"Breadcrumb": []crumb{bcHome},
-		"Title":      "Photos",
+		"Title":      "Home Media",
 		"Filters":    f,
 		// template.URL for the same reason as CtxQuery — see there.
 		"TabQ": map[string]template.URL{

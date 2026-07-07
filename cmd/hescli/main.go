@@ -65,7 +65,7 @@ Usage:
 
 Commands:
   library list                             List libraries
-  library add --name N --type T --path P   Add a library (type: music|tv|movies|photos|home_videos)
+  library add --name N --type T --path P   Add a library (type: music|tv|movies|home_media)
   library rm <id>                          Delete a library
   scan <id>                                Scan a library (chains match + integrity)
   match <id>                               Match a library's metadata
@@ -151,7 +151,7 @@ func libraryCmd(c *client, args []string) error {
 	case "add":
 		fs := flag.NewFlagSet("library add", flag.ContinueOnError)
 		name := fs.String("name", "", "library name")
-		typ := fs.String("type", "", "library type (music|tv|movies|photos|home_videos)")
+		typ := fs.String("type", "", "library type (music|tv|movies|home_media)")
 		path := fs.String("path", "", "root path (must be under the media folder)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err

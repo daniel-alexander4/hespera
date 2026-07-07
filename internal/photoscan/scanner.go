@@ -72,10 +72,10 @@ const takenAtLayout = "2006-01-02 15:04:05"
 func (s *Scanner) ScanPhotos(ctx context.Context, jobID, libraryID int64) error {
 	var root string
 	if err := s.DB.QueryRowContext(ctx,
-		"SELECT root_path FROM libraries WHERE id=? AND type='photos'",
+		"SELECT root_path FROM libraries WHERE id=? AND type='home_media'",
 		libraryID,
 	).Scan(&root); err != nil {
-		return fmt.Errorf("library %d not found or not photos: %w", libraryID, err)
+		return fmt.Errorf("library %d not found or not home_media: %w", libraryID, err)
 	}
 
 	cleanRoot := filepath.Clean(root)

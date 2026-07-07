@@ -200,7 +200,7 @@ func TestMgmtConfigUnknownKey(t *testing.T) {
 func TestMgmtMatchValidation(t *testing.T) {
 	h, db := newTestHandler(t)
 	// A photos library can't be matched.
-	res, _ := db.Exec("INSERT INTO libraries (name, type, root_path) VALUES ('Pics','photos',?)", h.cfg.MediaRoot)
+	res, _ := db.Exec("INSERT INTO libraries (name, type, root_path) VALUES ('Pics','home_media',?)", h.cfg.MediaRoot)
 	photoID, _ := res.LastInsertId()
 	// A TV library with no TMDB key can't match.
 	res, _ = db.Exec("INSERT INTO libraries (name, type, root_path) VALUES ('Shows','tv',?)", h.cfg.MediaRoot)
