@@ -237,7 +237,13 @@
     // default tab is what gets the ring.
     const tab = document.querySelector('.subtab.active') || document.querySelector('.subtab');
     if (tab && !html.classList.contains('using-mouse')) { tab.focus(); return; }
-    if (!isTVScale()) return;
+    // The home dashboard has no subtab bar, but its nav cards ARE the primary
+    // controls — anchor the ring on the first (Music) for a keyboard/remote start
+    // at ANY scale (elsewhere only tv scale auto-focuses content, so a desk mouse
+    // user isn't stolen from every load). Modality-gated like the subtab branch, so
+    // a mouse user returning home mid-session is never focus-stolen.
+    const isHome = location.pathname === '/';
+    if (isHome ? html.classList.contains('using-mouse') : !isTVScale()) return;
     const all = candidates();
     if (!all.length) return;
     // Prefer the first control INSIDE the content (<main>) over the topbar that
