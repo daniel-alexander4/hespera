@@ -913,7 +913,7 @@ func (h *Handler) tvMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
-	jobID, err := h.jobs.Enqueue("tv_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
+	jobID, err := h.jobs.EnqueueUnique("tv_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunTVMatch(ctx, jobID, libraryID)
 	})
 	if err != nil {
@@ -1010,7 +1010,7 @@ WHERE i.series_id = ? AND i.status = 'matched'
 		}
 		if tmdbKey != "" {
 			matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
-			_, _ = h.jobs.Enqueue("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 				return matcher.RunTVMatch(ctx, mJID, mLibID)
 			})
 		}

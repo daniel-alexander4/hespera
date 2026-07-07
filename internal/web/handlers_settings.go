@@ -709,18 +709,18 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			}
 			// Chain a music_match job after scan completes.
 			matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
-			_, _ = h.jobs.Enqueue("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 				return matcher.RunMusicMatch(ctx, mJID, mLibID)
 			})
 			// Chain the cheap container/audio integrity check (auto-repairs new/changed files).
 			repair := h.effectiveIntegrityAutoRepair(ctx)
-			_, _ = h.jobs.Enqueue("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
 				return integrity.CheckLibrary(ctx, h.db, h.cfg.MediaRoot, "music_tracks", iJID, iLibID, repair)
 			})
 			// Chain the loudness analysis for volume leveling (new/changed tracks
 			// only — loudness_lufs=0). Runs last: a container repair rewrites the
 			// file, and its scanner-reset loudness re-measures here.
-			_, _ = h.jobs.Enqueue("music_loudness", libID, "system", func(ctx context.Context, lJID, lLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("music_loudness", libID, "system", func(ctx context.Context, lJID, lLibID int64) error {
 				return scanner.AnalyzeLoudness(ctx, lJID, lLibID)
 			})
 			return nil
@@ -734,13 +734,13 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// Chain a tv_match job after scan completes if TMDB key is configured.
 			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" {
 				tvMatcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
-				_, _ = h.jobs.Enqueue("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+				_, _ = h.jobs.EnqueueUnique("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 					return tvMatcher.RunTVMatch(ctx, mJID, mLibID)
 				})
 			}
 			// Chain the cheap container integrity check (auto-repairs new/changed files).
 			repair := h.effectiveIntegrityAutoRepair(ctx)
-			_, _ = h.jobs.Enqueue("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
 				return integrity.CheckLibrary(ctx, h.db, h.cfg.MediaRoot, "tv_series_files", iJID, iLibID, repair)
 			})
 			// Chain a reprobe of files whose scan-time probe failed (empty
@@ -748,18 +748,18 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// the seekable HLS path always has the duration it needs. Runs last:
 			// an integrity repair can make a previously unprobeable file probe
 			// clean. Near-free no-op when nothing is missing.
-			_, _ = h.jobs.Enqueue("tv_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("tv_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
 				return tvScanner.ReprobeMissing(ctx, pJID, pLibID)
 			})
 			// Chain episode-thumbnail generation (one frame grab per new/changed
 			// file; after tv_probe so the stored duration can place the grab,
 			// before the much heavier trickplay pass).
-			_, _ = h.jobs.Enqueue("tv_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("tv_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return tvScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
 			})
 			// Chain trickplay sprite generation for new/changed files (measured
 			// ~15s per full movie, content-keyed so unchanged files are free).
-			_, _ = h.jobs.Enqueue("tv_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("tv_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return h.generateTrickplayMissing(ctx, "tv_series_files", tJID, tLibID)
 			})
 			return nil
@@ -773,22 +773,22 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// Chain a movie_match job after scan completes if a TMDB key is configured.
 			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" {
 				movieMatcher := tmdb.NewMovieMatcher(h.db, tmdbKey, h.cfg.DataDir)
-				_, _ = h.jobs.Enqueue("movie_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+				_, _ = h.jobs.EnqueueUnique("movie_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 					return movieMatcher.RunMovieMatch(ctx, mJID, mLibID)
 				})
 			}
 			// Chain the cheap container integrity check (auto-repairs new/changed files).
 			repair := h.effectiveIntegrityAutoRepair(ctx)
-			_, _ = h.jobs.Enqueue("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
 				return integrity.CheckLibrary(ctx, h.db, h.cfg.MediaRoot, "movie_files", iJID, iLibID, repair)
 			})
 			// Chain a reprobe of files whose scan-time probe failed — the movie
 			// twin of the tv_probe chain above.
-			_, _ = h.jobs.Enqueue("movie_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("movie_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
 				return movieScanner.ReprobeMissing(ctx, pJID, pLibID)
 			})
 			// Chain trickplay sprite generation — the movie twin.
-			_, _ = h.jobs.Enqueue("movie_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("movie_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return h.generateTrickplayMissing(ctx, "movie_files", tJID, tLibID)
 			})
 			return nil
@@ -802,11 +802,11 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// Chain a reprobe of clips whose scan-time probe failed — the
 			// movie/TV twin (a late success also recovers the clip's real
 			// capture time for the By Date view).
-			_, _ = h.jobs.Enqueue("photo_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("photo_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
 				return photoScanner.ReprobeMissing(ctx, pJID, pLibID)
 			})
 			// Chain grid-thumbnail generation (missing-only: new/changed files).
-			_, _ = h.jobs.Enqueue("photo_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("photo_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return photoScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
 			})
 			return nil
@@ -910,7 +910,7 @@ func (h *Handler) librariesIntegrityDeep(w http.ResponseWriter, r *http.Request)
 	}
 
 	mediaRoot := h.cfg.MediaRoot
-	jobID, err := h.jobs.Enqueue("integrity_deep", id, "user", func(ctx context.Context, jID, libID int64) error {
+	jobID, err := h.jobs.EnqueueUnique("integrity_deep", id, "user", func(ctx context.Context, jID, libID int64) error {
 		return integrity.DeepCheckLibrary(ctx, h.db, mediaRoot, table, jID, libID)
 	})
 	if err != nil {
