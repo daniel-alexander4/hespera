@@ -99,7 +99,7 @@ func (s *Service) refreshLoop() {
 // stays scan-free). Best-effort: a copy tool that preserves destination dir
 // mtimes can defeat it, so the manual Scan button remains the guarantee.
 func (s *Service) syncRoots(bumpAdded bool) {
-	rows, err := s.db.Query("SELECT id, root_path FROM libraries WHERE type IN ('music','tv','movies','photos')")
+	rows, err := s.db.Query("SELECT id, root_path FROM libraries WHERE type IN ('music','tv','movies','home_media')")
 	if err != nil {
 		slog.Warn("watch: list libraries", "err", err)
 		return
