@@ -253,3 +253,39 @@ test('focusFirst lands on the active subtab under remote/keyboard modality (Rece
   mouse.document.dispatchEvent(new mouse.window.Event('turbo:load'));
   assert.strictEqual(mouse.document.activeElement, mouse.document.body, 'mouse modality never steals focus');
 });
+
+// jsdom reports no layout (getBoundingClientRect → 0, offsetParent → null), so
+// couch's visible() filters every candidate out and the content-focus path can't
+// run. Give the elements layout so the real focusFirst logic is exercised.
+function stubLayout(env) {
+  const proto = env.window.HTMLElement.prototype;
+  Object.defineProperty(proto, 'offsetParent', { configurable: true, get() { return this.parentNode; } });
+  proto.getBoundingClientRect = function () { return { width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10 }; };
+}
+
+test('focusFirst anchors the home dashboard on the Music card at any scale, modality-gated', () => {
+  const homeBody = '<main><div class="card-grid">' +
+    '<a href="/music" class="card"><h3>Music</h3></a>' +
+    '<a href="/tv" class="card"><h3>TV Shows</h3></a></div></main>';
+
+  // Desktop scale (no subtab bar) + keyboard modality → the Music card gets the
+  // ring, even though non-home pages only auto-focus content at tv scale.
+  const key = boot({ body: homeBody, url: 'http://localhost/', couch: false });
+  stubLayout(key);
+  key.document.dispatchEvent(new key.window.Event('turbo:load'));
+  assert.strictEqual(key.document.activeElement.getAttribute('href'), '/music', 'Music card focused on a keyboard/remote home start');
+
+  // A mouse-driven session returning home is never focus-stolen.
+  const mouse = boot({ body: homeBody, url: 'http://localhost/', couch: false });
+  stubLayout(mouse);
+  mouse.document.dispatchEvent(new mouse.window.MouseEvent('mousemove', { bubbles: true }));
+  mouse.document.dispatchEvent(new mouse.window.Event('turbo:load'));
+  assert.strictEqual(mouse.document.activeElement, mouse.document.body, 'mouse modality never steals focus on home');
+
+  // Regression: a NON-home page at desktop scale still auto-focuses nothing (the
+  // home bypass must not leak to other routes).
+  const other = boot({ body: '<main><a href="/x" id="x">x</a></main>', url: 'http://localhost/music/album/1', couch: false });
+  stubLayout(other);
+  other.document.dispatchEvent(new other.window.Event('turbo:load'));
+  assert.strictEqual(other.document.activeElement, other.document.body, 'non-home desktop page is not focus-stolen');
+});
