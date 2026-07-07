@@ -183,7 +183,15 @@ SELECT sid, target_season, recency FROM (
           LEFT JOIN tv_playback_progress p2 ON p2.file_id = i2.file_id
           WHERE i2.series_id = w.sid AND i2.status = 'matched'
             AND i2.season_number >= w.nr
-            AND COALESCE(p2.completed, 0) = 0) AS target_season,
+            -- "effectively watched": completed, OR position within 5% of the end
+            -- (an episode that reached the end but whose completion report never
+            -- landed). Mirrors effectivelyWatched()/watchedFraction in Go so the
+            -- target season and the within-season file pick agree. The duration
+            -- guard also makes the LEFT-JOIN nulls (no progress row) fall through
+            -- to "not watched", and dodges divide-by-zero.
+            AND NOT (COALESCE(p2.completed, 0) = 1
+                     OR (COALESCE(p2.duration_seconds, 0) > 0
+                         AND p2.position_seconds / p2.duration_seconds >= 0.95))) AS target_season,
          CAST(strftime('%s', w.last_watched) AS INTEGER) AS recency
   FROM watched w
 )
@@ -1804,6 +1812,21 @@ type epFileEntry struct {
 	durSec    float64
 }
 
+// watchedFraction is the position/duration ratio past which an episode counts as
+// "effectively watched" for the home Continue-Watching target pick — a belt for
+// an episode that reached the end but whose completion report never landed (the
+// client only reports once past 90%, throttled every 15s, so closing the tab or
+// scrubbing past the end can skip it), which would otherwise become a "Resume"
+// target that plays the last second. Kept in sync with the 0.95 literal in
+// tvContinueWatchingQuery — both paths must agree or the card degrades to a
+// 2-click season link. Deliberately NOT applied to the season page's per-episode
+// ✓ or "X of Y watched" rollup: those stay honest to the stored completed flag.
+const watchedFraction = 0.95
+
+func effectivelyWatched(e epFileEntry) bool {
+	return e.completed || (e.durSec > 0 && e.posSec/e.durSec >= watchedFraction)
+}
+
 // seasonEpisodeFiles returns a season's matched files in numeric episode order
 // (episode_numbers_csv is TEXT — lexical order puts "10" before "2"), each with
 // its watched flag.
@@ -1871,7 +1894,7 @@ WHERE series_id = ? AND status = 'matched' AND season_number > ?`, seriesID, sea
 // (0 when everything is watched) — the home Continue-Watching play target.
 func (h *Handler) firstUnwatchedInSeason(ctx context.Context, seriesID string, seasonNum int) int64 {
 	for _, e := range h.seasonEpisodeFiles(ctx, seriesID, seasonNum) {
-		if !e.completed {
+		if !effectivelyWatched(e) {
 			return e.id
 		}
 	}
@@ -1885,7 +1908,7 @@ func (h *Handler) firstUnwatchedInSeason(ctx context.Context, seriesID string, s
 // 0 when the season has nothing left unwatched.
 func (h *Handler) continueTarget(ctx context.Context, seriesID string, seasonNum int) (fileID int64, epNum, pct int, inProgress bool) {
 	for _, e := range h.seasonEpisodeFiles(ctx, seriesID, seasonNum) {
-		if e.completed {
+		if effectivelyWatched(e) {
 			continue
 		}
 		if e.durSec > 0 {
