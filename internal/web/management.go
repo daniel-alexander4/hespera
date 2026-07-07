@@ -40,6 +40,7 @@ func (h *Handler) ManagementRouter() http.Handler {
 	// Jobs
 	mux.HandleFunc("/jobs", h.settingsJobsJSON)           // GET (reused)
 	mux.HandleFunc("/jobs/status", h.librariesJobsStatus) // GET (reused)
+	mux.HandleFunc("/jobs/cancel", h.settingsJobsCancel)  // POST (reused — pure JSON)
 
 	// Config (API keys, toggles, media_root)
 	mux.HandleFunc("/config", h.mgmtConfigList)    // GET
