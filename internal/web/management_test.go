@@ -78,6 +78,23 @@ func TestMgmtLibraryLifecycle(t *testing.T) {
 	}
 }
 
+func TestMgmtJobCancel(t *testing.T) {
+	h, _ := newTestHandler(t)
+	// Bad job_id → 400.
+	rec := mgmtReq(t, h, http.MethodPost, "/jobs/cancel", url.Values{"job_id": {"nope"}})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad job_id: want 400, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	// Unknown job → a JSON error (route wired, handler reached), never a 200.
+	rec = mgmtReq(t, h, http.MethodPost, "/jobs/cancel", url.Values{"job_id": {"999999"}})
+	if rec.Code == http.StatusOK {
+		t.Fatalf("cancel of an unknown job should not 200: %s", rec.Body.String())
+	}
+	if m := decodeMgmt(t, rec); m["message"] == nil {
+		t.Fatalf("expected a JSON message, got %v", m)
+	}
+}
+
 func TestMgmtLibraryAddValidation(t *testing.T) {
 	h, _ := newTestHandler(t)
 	cases := []struct {
