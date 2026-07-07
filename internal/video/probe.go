@@ -115,9 +115,13 @@ type ProbeStream struct {
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
 	Channels  int    `json:"channels"`
-	Language  string
-	Title     string
-	IsDefault bool
+	// ColorTransfer is the video transfer characteristic (ffprobe's
+	// color_transfer): "smpte2084" (PQ) or "arib-std-b67" (HLG) flag HDR, so a
+	// frame grab can tonemap to SDR instead of producing a grey/washed thumbnail.
+	ColorTransfer string `json:"color_transfer,omitempty"`
+	Language      string
+	Title         string
+	IsDefault     bool
 }
 
 // rawProbeStream matches ffprobe's JSON output, including nested tags/disposition.
@@ -127,8 +131,9 @@ type rawProbeStream struct {
 	CodecName string `json:"codec_name"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
-	Channels  int    `json:"channels"`
-	Tags      struct {
+	Channels      int    `json:"channels"`
+	ColorTransfer string `json:"color_transfer"`
+	Tags          struct {
 		Language string `json:"language"`
 		Title    string `json:"title"`
 	} `json:"tags"`
@@ -202,15 +207,16 @@ func parseProbeJSON(data []byte) (*ProbeResult, error) {
 	}
 	for i, s := range raw.Streams {
 		result.Streams[i] = ProbeStream{
-			Index:     s.Index,
-			CodecType: s.CodecType,
-			CodecName: s.CodecName,
-			Width:     s.Width,
-			Height:    s.Height,
-			Channels:  s.Channels,
-			Language:  s.Tags.Language,
-			Title:     s.Tags.Title,
-			IsDefault: s.Disposition.Default == 1,
+			Index:         s.Index,
+			CodecType:     s.CodecType,
+			CodecName:     s.CodecName,
+			Width:         s.Width,
+			Height:        s.Height,
+			Channels:      s.Channels,
+			ColorTransfer: s.ColorTransfer,
+			Language:      s.Tags.Language,
+			Title:         s.Tags.Title,
+			IsDefault:     s.Disposition.Default == 1,
 		}
 	}
 	for _, c := range raw.Chapters {
