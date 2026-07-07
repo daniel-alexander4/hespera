@@ -22,6 +22,9 @@ import (
 func PhotoThumb(ctx context.Context, src, dst string, maxDim, orientation int, isVideo bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
+	// HDR clips need tonemapping — detect BEFORE taking the ffmpeg slot, since
+	// the probe takes one too and nesting would deadlock at concurrency 1.
+	hdr := isVideo && hdrTonemapWanted(ctx, src)
 	release, err := acquire(ctx)
 	if err != nil {
 		// ErrBusy so the thumb job leaves the row pending (retried next run)
@@ -34,11 +37,11 @@ func PhotoThumb(ctx context.Context, src, dst string, maxDim, orientation int, i
 	if isVideo {
 		lead = 1 // skip a camcorder's black lead-in frame
 	}
-	err = photoThumbOnce(ctx, src, dst, maxDim, orientation, isVideo, lead)
+	err = photoThumbOnce(ctx, src, dst, maxDim, orientation, isVideo, hdr, lead)
 	if err != nil && isVideo && ctx.Err() == nil {
 		// A clip shorter than the lead-in seeks past EOF and grabs no frame —
 		// retry from the first frame rather than marking it unavailable.
-		err = photoThumbOnce(ctx, src, dst, maxDim, orientation, true, 0)
+		err = photoThumbOnce(ctx, src, dst, maxDim, orientation, true, hdr, 0)
 	}
 	return err
 }
@@ -50,6 +53,9 @@ func PhotoThumb(ctx context.Context, src, dst string, maxDim, orientation int, i
 func FrameGrab(ctx context.Context, src, dst string, maxDim int, seekSec float64) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
+	// Detect HDR before taking the ffmpeg slot — the probe takes one too, and
+	// nesting it under our own acquire would deadlock at concurrency 1.
+	hdr := hdrTonemapWanted(ctx, src)
 	release, err := acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("frame grab acquire slot: %w: %v", ErrBusy, err)
@@ -57,7 +63,7 @@ func FrameGrab(ctx context.Context, src, dst string, maxDim int, seekSec float64
 	defer release()
 
 	for _, seek := range frameGrabLadder(seekSec) {
-		if err = photoThumbOnce(ctx, src, dst, maxDim, 0, true, seek); err == nil || ctx.Err() != nil {
+		if err = photoThumbOnce(ctx, src, dst, maxDim, 0, true, hdr, seek); err == nil || ctx.Err() != nil {
 			return err
 		}
 	}
@@ -76,8 +82,11 @@ func frameGrabLadder(seekSec float64) []float64 {
 	return ladder
 }
 
-func photoThumbOnce(ctx context.Context, src, dst string, maxDim, orientation int, isVideo bool, seekSec float64) error {
+func photoThumbOnce(ctx context.Context, src, dst string, maxDim, orientation int, isVideo, hdr bool, seekSec float64) error {
 	var vf []string
+	if hdr {
+		vf = append(vf, tonemapFilters()...) // HDR→SDR before scaling, else the thumb is grey
+	}
 	if !isVideo {
 		vf = append(vf, orientationFilters(orientation)...)
 	}
