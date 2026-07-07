@@ -1705,11 +1705,21 @@ WHERE f.id = ?
 		}
 	}
 
+	// Season/episode codes for the header, SxxEyy convention (reusing the
+	// canonical padEpisodesCSV: "2" → "02", a multi-ep "1,2" → "01-02").
+	seasonCode := fmt.Sprintf("S%02d", seasonNum)
+	episodeCode := ""
+	if p := padEpisodesCSV(epCSV); strings.ContainsAny(p, "0123456789") {
+		episodeCode = "E" + p
+	}
+
 	h.render(w, "tv_player.html", map[string]any{
 		"Title":                fmt.Sprintf("%s — %s", showName, epName),
 		"FileID":               fileID,
 		"SeriesID":             seriesID,
 		"SeasonNum":            seasonNum,
+		"SeasonCode":           seasonCode,
+		"EpisodeCode":          episodeCode,
 		"ShowName":             showName,
 		"EpName":               epName,
 		"EpCSV":                epCSV,
