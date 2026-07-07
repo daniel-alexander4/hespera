@@ -18,7 +18,7 @@
     <input type="hidden" name="series" value="{{.ShowID}}" />
     <input type="hidden" name="season" value="{{.SeasonNum}}" />
     <input type="hidden" name="watched" value="{{if .SeasonCompleted}}0{{else}}1{{end}}" />
-    <button type="submit" class="btn btn-sm" title="{{if .SeasonCompleted}}Mark every episode in this season unwatched{{else}}Mark every episode in this season watched{{end}}">{{if .SeasonCompleted}}Mark season unwatched{{else}}{{template "icon-check"}}Mark season watched{{end}}</button>
+    <button type="submit" class="btn btn-sm" title="{{if .SeasonCompleted}}Mark every episode in this season unwatched{{else}}Mark every episode in this season watched{{end}}">{{if .SeasonCompleted}}Mark season unwatched{{else}}Mark season watched{{end}}</button>
   </form>
 </div>
 {{end}}
@@ -52,7 +52,7 @@
         <input type="hidden" name="series" value="{{$.ShowID}}" />
         <input type="hidden" name="season" value="{{$.SeasonNum}}" />
         <input type="hidden" name="watched" value="{{if .Completed}}0{{else}}1{{end}}" />
-        <button type="submit" class="btn btn-sm" title="{{if .Completed}}Mark unwatched{{else}}Mark watched{{end}}">{{if .Completed}}Unwatch{{else}}{{template "icon-check"}}Watched{{end}}</button>
+        <button type="submit" class="btn btn-sm" title="{{if .Completed}}Mark this episode unwatched{{else}}Mark this episode watched{{end}}">{{if .Completed}}Mark unwatched{{else}}Mark watched{{end}}</button>
       </form>
     </div>
     {{end}}
