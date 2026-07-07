@@ -52,9 +52,13 @@ type tvSeasonRow struct {
 	SeasonNumber int
 	Name         string
 	EpisodeCount int
+	WatchedCount int  // local episodes marked completed (of EpisodeCount)
 	Missing      bool // in TMDB metadata but no files present locally
 	FlaggedCount int  // files with unrepairable corruption (integrity_status='flagged')
 }
+
+// Completed reports whether every local episode in the season is watched.
+func (s tvSeasonRow) Completed() bool { return s.EpisodeCount > 0 && s.WatchedCount >= s.EpisodeCount }
 
 // tvPosterPlaceholder is the static asset served for a season card when no
 // season or series artwork is available (see tvArt).
@@ -437,9 +441,11 @@ func (h *Handler) tvSeriesDetail(w http.ResponseWriter, r *http.Request) {
 	// Query seasons that actually have files.
 	seasonRows, err := h.db.QueryContext(r.Context(), `
 SELECT i.season_number, COUNT(*) AS ep_count,
+       SUM(CASE WHEN p.completed = 1 THEN 1 ELSE 0 END) AS watched,
        SUM(CASE WHEN f.integrity_status = 'flagged' THEN 1 ELSE 0 END) AS flagged
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
+LEFT JOIN tv_playback_progress p ON p.file_id = f.id
 WHERE i.series_id = ? AND i.status = 'matched' AND i.season_number >= 0
 GROUP BY i.season_number
 ORDER BY i.season_number
@@ -452,8 +458,8 @@ ORDER BY i.season_number
 
 	var seasons []tvSeasonRow
 	for seasonRows.Next() {
-		var sn, count, flagged int
-		if err := seasonRows.Scan(&sn, &count, &flagged); err != nil {
+		var sn, count, watched, flagged int
+		if err := seasonRows.Scan(&sn, &count, &watched, &flagged); err != nil {
 			httpError(w, 500, "internal server error", "row scan failed", "handler", "tvSeriesDetail", "err", err)
 			return
 		}
@@ -471,6 +477,7 @@ ORDER BY i.season_number
 			SeasonNumber: sn,
 			Name:         seasonName,
 			EpisodeCount: count,
+			WatchedCount: watched,
 			FlaggedCount: flagged,
 		})
 	}
@@ -733,6 +740,18 @@ ORDER BY i.episode_numbers_csv
 		return episodes[i].EpisodeNumber < episodes[j].EpisodeNumber
 	})
 
+	// Season-level watched rollup over the local (present) episodes, for the
+	// "X of Y watched" header + its mark/unwatch toggle.
+	seasonTotal, seasonWatched := 0, 0
+	for _, e := range episodes {
+		if e.FileID > 0 {
+			seasonTotal++
+			if e.Completed {
+				seasonWatched++
+			}
+		}
+	}
+
 	h.render(w, "tv_season.html", map[string]any{
 		"Breadcrumb":      []crumb{bcHome, bcTV, bcSeries(seriesID, showName)},
 		"Title":           fmt.Sprintf("%s — %s", showName, seasonName),
@@ -743,6 +762,9 @@ ORDER BY i.episode_numbers_csv
 		"SeasonOverview":  seasonOverview,
 		"Episodes":        episodes,
 		"MissingEpisodes": len(missingEps),
+		"SeasonWatched":   seasonWatched,
+		"SeasonTotal":     seasonTotal,
+		"SeasonCompleted": seasonTotal > 0 && seasonWatched >= seasonTotal,
 	})
 }
 
@@ -1778,6 +1800,8 @@ type epFileEntry struct {
 	id        int64
 	epCSV     string
 	completed bool
+	posSec    float64
+	durSec    float64
 }
 
 // seasonEpisodeFiles returns a season's matched files in numeric episode order
@@ -1785,7 +1809,8 @@ type epFileEntry struct {
 // its watched flag.
 func (h *Handler) seasonEpisodeFiles(ctx context.Context, seriesID string, seasonNum int) []epFileEntry {
 	rows, err := h.db.QueryContext(ctx, `
-SELECT f.id, i.episode_numbers_csv, COALESCE(p.completed, 0)
+SELECT f.id, i.episode_numbers_csv, COALESCE(p.completed, 0),
+       COALESCE(p.position_seconds, 0), COALESCE(p.duration_seconds, 0)
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 LEFT JOIN tv_playback_progress p ON p.file_id = f.id
@@ -1799,7 +1824,7 @@ WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'matched'
 	for rows.Next() {
 		var e epFileEntry
 		var completed int
-		if rows.Scan(&e.id, &e.epCSV, &completed) == nil {
+		if rows.Scan(&e.id, &e.epCSV, &completed, &e.posSec, &e.durSec) == nil {
 			e.completed = completed == 1
 			entries = append(entries, e)
 		}
@@ -1851,6 +1876,29 @@ func (h *Handler) firstUnwatchedInSeason(ctx context.Context, seriesID string, s
 		}
 	}
 	return 0
+}
+
+// continueTarget resolves a season's play-from-home target: the first
+// not-completed episode file, with its episode number and resume progress so
+// the home card can distinguish "Resume · S2E3" (real saved progress) from
+// "Play next · S2E4" (a fresh next episode) and draw a resume sliver. fileID is
+// 0 when the season has nothing left unwatched.
+func (h *Handler) continueTarget(ctx context.Context, seriesID string, seasonNum int) (fileID int64, epNum, pct int, inProgress bool) {
+	for _, e := range h.seasonEpisodeFiles(ctx, seriesID, seasonNum) {
+		if e.completed {
+			continue
+		}
+		if e.durSec > 0 {
+			pct = int(e.posSec / e.durSec * 100)
+			if pct < 0 {
+				pct = 0
+			} else if pct > 100 {
+				pct = 100
+			}
+		}
+		return e.id, firstEpNum(e.epCSV), pct, e.posSec > 0
+	}
+	return 0, 0, 0, false
 }
 
 // --- TV Playback Progress ---

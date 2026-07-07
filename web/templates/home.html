@@ -65,10 +65,11 @@
       {{else}}
       <div class="album-art-ph">TV</div>
       {{end}}
+      {{if and .InProgress .ProgressPct}}<span class="card-resume-bar" title="{{.ProgressPct}}% watched"><span style="width:{{.ProgressPct}}%"></span></span>{{end}}
     </div>
     <div class="band-album-meta">
       <div class="artist-card-name">{{.Title}}</div>
-      <div class="artist-card-stats">{{if .NextFileID}}Play next · S{{.SeasonNumber}}{{else if .Year}}{{.Year}}{{end}}</div>
+      <div class="artist-card-stats">{{if .NextFileID}}{{if .InProgress}}Resume{{else}}Play next{{end}} · S{{.SeasonNumber}}E{{.NextEpisode}}{{else if .Year}}{{.Year}}{{end}}</div>
     </div>
   </a>
   {{end}}

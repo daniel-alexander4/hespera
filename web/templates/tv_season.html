@@ -11,13 +11,16 @@
 
 {{if .MissingEpisodes}}<p class="tv-missing-note">{{.MissingEpisodes}} episode(s) missing from your library</p>{{end}}
 
-{{if .Episodes}}
-<form method="post" action="/tv/mark-watched" class="inline-form tv-season-mark">
-  <input type="hidden" name="series" value="{{.ShowID}}" />
-  <input type="hidden" name="season" value="{{.SeasonNum}}" />
-  <input type="hidden" name="watched" value="1" />
-  <button type="submit" class="btn btn-sm" title="Mark every episode in this season watched">{{template "icon-check"}}Mark season watched</button>
-</form>
+{{if .SeasonTotal}}
+<div class="tv-season-status">
+  <span class="tv-season-progress">{{if .SeasonCompleted}}<span class="season-watched">{{template "icon-check"}}All {{.SeasonTotal}} watched</span>{{else}}{{.SeasonWatched}} of {{.SeasonTotal}} watched{{end}}</span>
+  <form method="post" action="/tv/mark-watched" class="inline-form">
+    <input type="hidden" name="series" value="{{.ShowID}}" />
+    <input type="hidden" name="season" value="{{.SeasonNum}}" />
+    <input type="hidden" name="watched" value="{{if .SeasonCompleted}}0{{else}}1{{end}}" />
+    <button type="submit" class="btn btn-sm" title="{{if .SeasonCompleted}}Mark every episode in this season unwatched{{else}}Mark every episode in this season watched{{end}}">{{if .SeasonCompleted}}Mark season unwatched{{else}}{{template "icon-check"}}Mark season watched{{end}}</button>
+  </form>
+</div>
 {{end}}
 
 {{if not .Episodes}}
