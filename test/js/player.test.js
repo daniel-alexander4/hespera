@@ -27,7 +27,7 @@ function fixture({ autoload = '', lyrics = false } = {}) {
         <div id="player-karaoke"><div id="player-karaoke-current"></div><div id="player-karaoke-next"></div></div>
         <div id="player-transport">
           <button id="player-prev-btn"></button><button id="player-rewind-btn"></button>
-          <button id="player-toggle-btn"></button><button id="player-forward-btn"></button>
+          <button id="player-toggle-btn"><span class="np-glyph-play"></span><span class="np-glyph-pause"></span></button><button id="player-forward-btn"></button>
           <button id="player-next-btn"></button>
         </div>
         <button id="player-lyrics-btn"></button>
@@ -85,6 +85,23 @@ test('an album-less track shows the placeholder, never /art/album/0', async () =
   assert.strictEqual(img.classList.contains('hidden'), true, 'cover img hidden for an album-less track');
   assert.strictEqual(ph.classList.contains('hidden'), false, 'placeholder shown');
   assert.ok(!/\/art\/album\/0\b/.test(img.getAttribute('src') || ''), 'never requests /art/album/0');
+});
+
+test('the now-playing transport toggle reflects play/pause via .np-paused (the glyph swap)', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 41, albumId: 9, album: 'A', title: 'T', artist: 'X' }] },
+  };
+  const env = boot({ autoload: 'source=all&library=1', routes });
+  await flush();
+  const btn = env.document.getElementById('player-toggle-btn');
+  // Autoload called play() → paused=false → the play glyph is hidden (no class).
+  assert.strictEqual(btn.classList.contains('np-paused'), false, 'playing → no np-paused (pause glyph shown)');
+
+  env.document.getElementById('hespera-audio').pause();
+  assert.strictEqual(btn.classList.contains('np-paused'), true, 'paused → np-paused (play glyph shown)');
+
+  env.document.getElementById('hespera-audio').play();
+  assert.strictEqual(btn.classList.contains('np-paused'), false, 'resumed → np-paused cleared');
 });
 
 // --- Lyrics card: verify lyrics exist before showing it ---

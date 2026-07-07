@@ -175,6 +175,12 @@ a:hover {
 .np-cluster .np-glyph-play { display: none; }
 .np-cluster.np-paused .np-glyph-play { display: inline-flex; }
 .np-cluster.np-paused .np-glyph-pause { display: none; }
+/* The now-playing page's primary transport toggle uses the same convention
+   (button-scoped — the rules above are cluster-only). */
+#player-toggle-btn .np-glyph-play { display: none; }
+#player-toggle-btn .np-glyph-pause { display: inline-flex; }
+#player-toggle-btn.np-paused .np-glyph-play { display: inline-flex; }
+#player-toggle-btn.np-paused .np-glyph-pause { display: none; }
 .np-title-link {
   min-width: 0;
   color: var(--text-muted);

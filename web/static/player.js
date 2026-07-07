@@ -228,6 +228,14 @@
   };
 
   // --- Header cluster ---
+  // Show the glyph for the action a press performs: pause while playing, play
+  // while paused. The topbar cluster and the now-playing page's transport toggle
+  // share the .np-paused convention, so one reflect point drives both.
+  const reflectPaused = () => {
+    const paused = curPaused();
+    if (npCluster) npCluster.classList.toggle('np-paused', paused);
+    if (view && view.toggleBtn) view.toggleBtn.classList.toggle('np-paused', paused);
+  };
   const updateHeader = () => {
     const t = currentTrack();
     if (!npCluster) return;
@@ -237,7 +245,7 @@
     }
     npCluster.classList.remove('hidden');
     if (npTitle) npTitle.textContent = t.artist ? t.title + ' — ' + t.artist : t.title;
-    npCluster.classList.toggle('np-paused', curPaused());
+    reflectPaused();
   };
 
   // Stop playback entirely and dismiss the now-playing cluster (the X control).
@@ -488,6 +496,7 @@
     renderPlaylist();
     renderKaraokeAt(curTime() || 0);
     updateSeek();
+    reflectPaused(); // the transport toggle was just (re)shown — match its glyph
   };
 
   // --- Auto-collapsing transport ---
@@ -560,6 +569,7 @@
       transport: $('player-transport'),
       backBtn: $('player-back'),
       addBtn: $('player-add-btn'),
+      toggleBtn: $('player-toggle-btn'),
     };
 
     // Start with the card hidden (cover expanded) always — loadKaraokeForTrack
@@ -581,7 +591,7 @@
     $('player-rewind-btn').addEventListener('click', () => {
       seekTo(Math.max(0, curTime() - 10));
     });
-    $('player-toggle-btn').addEventListener('click', toggle);
+    view.toggleBtn.addEventListener('click', toggle);
     $('player-forward-btn').addEventListener('click', () => {
       const d = curDur();
       seekTo(Number.isFinite(d) && d > 0 ? Math.min(d, curTime() + 10) : curTime() + 10);
