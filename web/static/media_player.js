@@ -103,7 +103,10 @@ function initMediaPlayer() {
   const showSpinner = () => { if (spinner) spinner.hidden = false; };
   const hideSpinner = () => { if (spinner) spinner.hidden = true; };
   ['waiting', 'loadstart'].forEach((e) => video.addEventListener(e, showSpinner));
-  ['playing', 'pause', 'ended', 'error'].forEach((e) => video.addEventListener(e, hideSpinner));
+  // 'loadeddata' hides the spinner once the first frame at the current position is
+  // decoded — this is what clears it for a deliberately-paused resume start (which
+  // never fires 'playing'); benign for normal playback (fires once, early).
+  ['playing', 'pause', 'ended', 'error', 'loadeddata'].forEach((e) => video.addEventListener(e, hideSpinner));
 
   // attachSource points the element (or hls.js) at the stream. seekTo is the
   // desired position on the real episode timeline. Direct-play and HLS are
@@ -111,7 +114,7 @@ function initMediaPlayer() {
   // are progressive (no random access), so instead we ask the server to begin the
   // stream at seekTo (?start=, an input -ss) and track the offset; the element's
   // own currentTime then runs from zero. This is what lets those paths resume.
-  function attachSource(session, seekTo) {
+  function attachSource(session, seekTo, startPaused) {
     teardownHLS();
     hlsFails = 0; // fresh stream → fresh fatal-error budget
     isProgressive = cfg.progressiveRe.test(session.url || '');
@@ -206,7 +209,15 @@ function initMediaPlayer() {
       video.addEventListener('loadedmetadata', onReady, { once: true });
       video.load();
     }
-    video.play().catch(() => {}); // autoplay may be blocked; user can press play
+    if (startPaused) {
+      // A resume-from-home load lands at the saved position but PAUSED, so the
+      // user starts playback when ready (no audio blast on arrival). The seek
+      // above still runs (onReady / hls startPosition / progressive ?start=); we
+      // just skip autoplay. Reflect paused so a hardware key toggles to play.
+      if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {} }
+    } else {
+      video.play().catch(() => {}); // autoplay may be blocked; user can press play
+    }
   }
 
   // --- subtitle rendering ---
@@ -378,7 +389,7 @@ function initMediaPlayer() {
     addCaptionTrack(url);
   }
 
-  async function loadFromSession(aud, sub, seekTo, subtitleOnly) {
+  async function loadFromSession(aud, sub, seekTo, subtitleOnly, startPaused) {
     currentAud = aud; currentSub = sub;
     let session;
     try {
@@ -419,7 +430,7 @@ function initMediaPlayer() {
       modeLabel.textContent = 'This browser cannot play the transcoded stream';
     }
     const resume = (seekTo != null) ? seekTo : (session.completed ? 0 : (session.resume_position_seconds || 0));
-    attachSource(session, resume);
+    attachSource(session, resume, startPaused);
     attachSubtitle(session);
   }
 
@@ -1299,8 +1310,12 @@ function initMediaPlayer() {
 
   // begin=1 (set by gotoFile / the Prev-Next anchors on an explicit advance) →
   // start at 0; otherwise seekTo=null lets loadFromSession resume the saved position.
-  const beginAtStart = new URLSearchParams(location.search).get('begin') === '1';
-  loadFromSession(0, 0, beginAtStart ? 0 : null);
+  // paused=1 (the home "Continue Watching" cards) → resume the saved position but
+  // start paused, so arriving from the dashboard doesn't blast audio.
+  const bootParams = new URLSearchParams(location.search);
+  const beginAtStart = bootParams.get('begin') === '1';
+  const startPaused = bootParams.get('paused') === '1';
+  loadFromSession(0, 0, beginAtStart ? 0 : null, false, startPaused);
 }
 
 // Run on every Turbo navigation (and the initial load — Turbo fires turbo:load
