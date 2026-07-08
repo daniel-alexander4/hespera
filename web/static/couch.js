@@ -56,13 +56,29 @@
 
   const center = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
 
-  // Pick the next candidate in the given direction from the active element.
-  // Prefer a candidate whose cross-axis extent overlaps the active element's —
-  // i.e. one in the same row (for left/right) or column (for up/down) — ranked
-  // by how close it is along the press direction. This keeps focus tracking the
-  // row/column instead of drifting diagonally on dense grids. Only when nothing
-  // aligns do we fall back to the nearest item overall, so every focusable stays
-  // reachable.
+  const focusMoved = (el) => {
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  };
+
+  // A dense band-album card grid (the paged browse grids AND the cast/similar/
+  // compilation card strips) keeps the Netflix-style spatial behavior below —
+  // up/down track the column, left/right the row, with a nearest fallback so
+  // every card stays reachable. Everything else (the home nav cards, the
+  // stacked home carousels, vertical lists, the player transport, the settings
+  // accordion) uses the row-locked model.
+  const inGrid = (el) => !!(el && el.closest && el.closest('.band-albums-grid'));
+
+  // Move the focus ring one step in `dir`. Two regimes:
+  //   • Inside a card grid — the original 2D spatial nav: prefer a candidate
+  //     whose cross-axis extent overlaps the active element's (same row for
+  //     left/right, same column for up/down) ranked by distance along the press
+  //     direction; fall back to the nearest item overall so nothing is stranded.
+  //   • Everywhere else (the ROW-LOCKED model Dan asked for) — left/right stay
+  //     within the current row (no cross-row fallback; a row end is a no-op,
+  //     grid_pager owns any real grid edge), and up/down jump to the LEFTMOST
+  //     item of the nearest row in that direction.
   const move = (dir) => {
     const all = candidates();
     if (!all.length) return;
@@ -70,31 +86,70 @@
     if (!active || !all.includes(active)) { all[0].focus(); return; }
     const a = active.getBoundingClientRect();
     const ac = center(a);
+    const horizontal = dir === 'left' || dir === 'right';
 
-    let aligned = null, alignedGap = Infinity;   // overlaps the cross axis
-    let nearest = null, nearestScore = Infinity;  // fallback: closest overall
+    if (inGrid(active)) {
+      let aligned = null, alignedGap = Infinity;   // overlaps the cross axis
+      let nearest = null, nearestScore = Infinity;  // fallback: closest overall
+      for (const el of all) {
+        if (el === active) continue;
+        const r = el.getBoundingClientRect();
+        const c = center(r);
+        const dx = c.x - ac.x;
+        const dy = c.y - ac.y;
+        let primary, cross, overlap;
+        if (dir === 'left') { if (dx >= -1) continue; primary = -dx; cross = Math.abs(dy); overlap = r.bottom > a.top && r.top < a.bottom; }
+        else if (dir === 'right') { if (dx <= 1) continue; primary = dx; cross = Math.abs(dy); overlap = r.bottom > a.top && r.top < a.bottom; }
+        else if (dir === 'up') { if (dy >= -1) continue; primary = -dy; cross = Math.abs(dx); overlap = r.right > a.left && r.left < a.right; }
+        else { if (dy <= 1) continue; primary = dy; cross = Math.abs(dx); overlap = r.right > a.left && r.left < a.right; }
+
+        const score = primary + cross * 2;
+        if (score < nearestScore) { nearestScore = score; nearest = el; }
+        if (overlap && primary < alignedGap) { alignedGap = primary; aligned = el; }
+      }
+      focusMoved(aligned || nearest);
+      return;
+    }
+
+    if (horizontal) {
+      // Nearest same-row (vertically overlapping) candidate in the press
+      // direction; no cross-row fallback so the ring stays on this row.
+      let best = null, bestGap = Infinity;
+      for (const el of all) {
+        if (el === active) continue;
+        const r = el.getBoundingClientRect();
+        if (!(r.bottom > a.top && r.top < a.bottom)) continue; // not the same row
+        const dx = center(r).x - ac.x;
+        const gap = dir === 'left' ? -dx : dx;
+        if (gap <= 1) continue; // not in the press direction
+        if (gap < bestGap) { bestGap = gap; best = el; }
+      }
+      focusMoved(best);
+      return;
+    }
+
+    // Vertical: find the nearest DIFFERENT row in the press direction (the
+    // anchor), then focus the leftmost candidate sharing that row's band.
+    let anchor = null, anchorGap = Infinity;
     for (const el of all) {
       if (el === active) continue;
       const r = el.getBoundingClientRect();
-      const c = center(r);
-      const dx = c.x - ac.x;
-      const dy = c.y - ac.y;
-      let primary, cross, overlap;
-      if (dir === 'left') { if (dx >= -1) continue; primary = -dx; cross = Math.abs(dy); overlap = r.bottom > a.top && r.top < a.bottom; }
-      else if (dir === 'right') { if (dx <= 1) continue; primary = dx; cross = Math.abs(dy); overlap = r.bottom > a.top && r.top < a.bottom; }
-      else if (dir === 'up') { if (dy >= -1) continue; primary = -dy; cross = Math.abs(dx); overlap = r.right > a.left && r.left < a.right; }
-      else { if (dy <= 1) continue; primary = dy; cross = Math.abs(dx); overlap = r.right > a.left && r.left < a.right; }
-
-      const score = primary + cross * 2;
-      if (score < nearestScore) { nearestScore = score; nearest = el; }
-      if (overlap && primary < alignedGap) { alignedGap = primary; aligned = el; }
+      if (r.bottom > a.top && r.top < a.bottom) continue; // same row as active — that's left/right's job
+      const dy = center(r).y - ac.y;
+      const gap = dir === 'up' ? -dy : dy;
+      if (gap <= 0) continue; // not in the press direction
+      if (gap < anchorGap) { anchorGap = gap; anchor = el; }
     }
-
-    const best = aligned || nearest;
-    if (best) {
-      best.focus();
-      best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    if (!anchor) return; // nothing that way — no-op (grid_pager pages a grid edge)
+    const band = anchor.getBoundingClientRect();
+    let leftmost = anchor, leftX = band.left;
+    for (const el of all) {
+      if (el === active || el === anchor) continue;
+      const r = el.getBoundingClientRect();
+      if (!(r.bottom > band.top && r.top < band.bottom)) continue; // not in the anchor's row
+      if (r.left < leftX) { leftX = r.left; leftmost = el; }
     }
+    focusMoved(leftmost);
   };
 
   const DIRS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
