@@ -444,6 +444,15 @@ func IsJunkFile(stem string) bool {
 var (
 	reLeadingTag  = regexp.MustCompile(`^\s*[\[\{][^\]\}]*[\]\}]\s*`)
 	reLeadingSite = regexp.MustCompile(`(?i)^\s*www\.[^\s]+\s*-\s*`)
+	// reSeasonEpToken matches a whole word that is a season/episode marker —
+	// "S13", "S13E01", "S13E01E02". These leak into a folder-derived title when a
+	// release subfolder sits between the season dir and the file (e.g.
+	// "Show-S13-An.Extra.Slice-S09--2022-Group"), where cleanTitle would otherwise
+	// keep the S13/S09 tokens and the title matches nothing. Anchored whole-token
+	// with a leading "s" + digits, so a real title word ("Series 7", "S Club 7",
+	// "1x01", "Se7en") is never touched. The filename-title path already slices the
+	// SxE marker off before cleanTitle, so this only bites the folder-derived path.
+	reSeasonEpToken = regexp.MustCompile(`(?i)^s\d{1,2}(?:e\d{1,3})*$`)
 )
 
 // StripLeadingNoise removes leading scene-release noise from a
@@ -474,6 +483,9 @@ func cleanTitle(raw string) string {
 	var out []string
 	for _, w := range words {
 		if qualityTokens[strings.ToLower(w)] {
+			continue
+		}
+		if reSeasonEpToken.MatchString(w) {
 			continue
 		}
 		out = append(out, w)
