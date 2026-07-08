@@ -42,6 +42,20 @@ func TestPickBestResult(t *testing.T) {
 		}
 	})
 
+	t.Run("matches_original_name", func(t *testing.T) {
+		// Folder uses the native title; TMDB's display name is the English one.
+		results := []TVSearchResult{
+			{ID: 71446, Name: "Money Heist", OriginalName: "La Casa de Papel", Popularity: 100},
+		}
+		res, score := pickBestResult(results, "La Casa de Papel", 0)
+		if res == nil || res.ID != 71446 {
+			t.Fatalf("expected id 71446, got %+v", res)
+		}
+		if score < 0.80 {
+			t.Fatalf("score = %v via original_name, want >= 0.80", score)
+		}
+	})
+
 	t.Run("picks_highest_scorer", func(t *testing.T) {
 		results := []TVSearchResult{
 			{ID: 1396, Name: "Breaking Bad", Popularity: 234.5},

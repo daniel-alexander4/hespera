@@ -476,6 +476,24 @@ func (m *Matcher) SearchTV(ctx context.Context, query string) ([]TVSearchResult,
 	return m.client.SearchTV(ctx, query)
 }
 
+// bestTitleSim scores a query against a candidate's names — its display name and
+// (when TMDB gives one) its original-language title — taking the strongest
+// match. TMDB returns original_name/original_title in the search payload, so a
+// folder that uses the native title ("La Casa de Papel") matches even when the
+// display name differs ("Money Heist"), at no extra API cost. Empty names skip.
+func bestTitleSim(query string, names ...string) float64 {
+	var best float64
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		if s := match.TitleMatchSimilarity(n, query); s > best {
+			best = s
+		}
+	}
+	return best
+}
+
 // pickBestResult scores candidates by name similarity + a small popularity
 // bonus, and — when year > 0 (the show folder carried one) — by first-air-year
 // agreement, which disambiguates reboots that share a name (Doctor Who 1963 vs
@@ -487,7 +505,7 @@ func pickBestResult(results []TVSearchResult, query string, year int) (*TVSearch
 	var best *TVSearchResult
 	var bestScore float64
 	for i := range results {
-		sim := match.TitleMatchSimilarity(results[i].Name, query)
+		sim := bestTitleSim(query, results[i].Name, results[i].OriginalName)
 		// Add small popularity bonus (normalized to 0-0.1 range).
 		popBonus := results[i].Popularity / 10000.0
 		if popBonus > 0.1 {

@@ -68,6 +68,7 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 type TVSearchResult struct {
 	ID           int     `json:"id"`
 	Name         string  `json:"name"`
+	OriginalName string  `json:"original_name"`
 	FirstAirDate string  `json:"first_air_date"`
 	Overview     string  `json:"overview"`
 	PosterPath   string  `json:"poster_path"`
