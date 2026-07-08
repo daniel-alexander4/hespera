@@ -487,7 +487,7 @@ func pickBestResult(results []TVSearchResult, query string, year int) (*TVSearch
 	var best *TVSearchResult
 	var bestScore float64
 	for i := range results {
-		sim := match.NormalizedSimilarity(results[i].Name, query)
+		sim := match.TitleMatchSimilarity(results[i].Name, query)
 		// Add small popularity bonus (normalized to 0-0.1 range).
 		popBonus := results[i].Popularity / 10000.0
 		if popBonus > 0.1 {

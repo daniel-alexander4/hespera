@@ -132,6 +132,61 @@ func NormalizeForDedup(s string) string {
 	return Normalize(NormalizeTitle(s))
 }
 
+// titleContainmentBoost is the score credited when one title is a whole-word
+// run inside the other (below 1.0 so an exact whole-string match still ranks
+// higher, above the 0.80 video-match threshold so a containment clears it).
+const titleContainmentBoost = 0.90
+
+// TitleMatchSimilarity scores a candidate title against a query for the video
+// matchers, where a library folder often carries the common/short name while
+// TMDB's canonical title adds a leading article ("The IT Crowd"), a franchise
+// prefix ("Tom Clancy's Jack Ryan"), or a subtitle suffix ("Pennyworth: The
+// Origin of Batman's Butler"). Whole-string Levenshtein over-penalizes that
+// length gap, so this returns max(NormalizedSimilarity, a containment boost):
+// when the shorter title appears verbatim as a whole-word run inside the longer
+// (either direction), the extra words don't sink the score. NOT used for music
+// matching, which keeps NormalizedSimilarity's stricter whole-string measure.
+func TitleMatchSimilarity(candidate, query string) float64 {
+	sim := NormalizedSimilarity(candidate, query)
+	if sim >= titleContainmentBoost {
+		return sim
+	}
+	if titleContains(candidate, query) {
+		return titleContainmentBoost
+	}
+	return sim
+}
+
+// titleContains reports whether the shorter of the two normalized titles appears
+// as a whole-word contiguous run inside the longer — the leading-article /
+// franchise-prefix / subtitle-suffix pattern. Space-padding makes the match
+// word-boundary-safe ("Terminal" is not inside "The Terminator"). Gated to a
+// specific-enough shorter title (≥2 tokens or ≥8 chars) so a generic single
+// short word ("House", "Doctor") can't latch onto a longer unrelated show;
+// those keep pure whole-string scoring.
+func titleContains(a, b string) bool {
+	short, long := Normalize(a), Normalize(b)
+	if len([]rune(long)) < len([]rune(short)) {
+		short, long = long, short
+	}
+	if !containmentEligible(short) {
+		return false
+	}
+	return strings.Contains(" "+long+" ", " "+short+" ")
+}
+
+// containmentEligible gates the containment boost to titles specific enough that
+// a whole-word match is a strong signal: ≥8 runes, or ≥2 tokens.
+func containmentEligible(norm string) bool {
+	if norm == "" {
+		return false
+	}
+	if len([]rune(norm)) >= 8 {
+		return true
+	}
+	return strings.Contains(norm, " ")
+}
+
 // NormalizedSimilarity returns a value in [0.0, 1.0] representing how similar
 // two strings are after normalization. 1.0 means identical.
 func NormalizedSimilarity(a, b string) float64 {
