@@ -1046,17 +1046,49 @@ html.using-mouse .grid-pager-btn,
   scroll-snap-type: x mandatory;
   padding-bottom: 0.5rem;
 }
-/* At tv scale the input is a remote, not a mouse — the native horizontal
-   scrollbar is dead chrome (cards advance via arrow focus + scrollIntoView),
-   so hide it there. Desktop/large keep it for mouse/trackpad scrolling. */
-html[data-scale="tv"] .home-carousel-row { scrollbar-width: none; }
-html[data-scale="tv"] .home-carousel-row::-webkit-scrollbar { display: none; }
+/* The native horizontal scrollbar is hidden at every scale: a remote advances
+   cards via arrow focus + scrollIntoView, and a mouse pages the row with the
+   edge chevrons below (carousel.js). Trackpad/wheel horizontal scroll still
+   works — only the visible bar is gone. */
+.home-carousel-row { scrollbar-width: none; }
+.home-carousel-row::-webkit-scrollbar { display: none; }
 .home-carousel-row > .band-album-card {
   scroll-snap-align: start;
   min-width: 130px;
   max-width: 160px;
   flex-shrink: 0;
 }
+
+/* Carousel chevrons (carousel.js) — the mouse path for paging a horizontal row
+   now that the scrollbar is hidden. Overlaid on the row's edges, shown only for
+   a mouse user (html.using-mouse) AND only when that direction has more to
+   reveal (.is-shown, toggled by JS on scroll). display:none otherwise, which
+   also keeps them out of couch.js's focus ring for a remote. Mirrors the
+   grid-pager chevrons. */
+.carousel-wrap { position: relative; }
+.carousel-chevron {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 3.4rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-card);
+  color: var(--page-fg);
+  opacity: 0.9;
+  cursor: pointer;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
+.carousel-chevron:hover { opacity: 1; border-color: var(--accent); }
+.carousel-chevron-prev { left: 0.25rem; }
+.carousel-chevron-next { right: 0.25rem; }
+.carousel-chevron .icon { width: 1.4rem; height: 1.4rem; }
 
 /* Artist header */
 .artist-header {
