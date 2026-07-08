@@ -428,7 +428,7 @@ func pickBestMovie(results []MovieSearchResult, title string, year int) (*MovieS
 	var best *MovieSearchResult
 	var bestScore float64
 	for i := range results {
-		sim := match.NormalizedSimilarity(results[i].Title, title)
+		sim := match.TitleMatchSimilarity(results[i].Title, title)
 
 		popBonus := results[i].Popularity / 10000.0
 		if popBonus > 0.1 {
