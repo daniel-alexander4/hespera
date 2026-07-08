@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"hespera/internal/match"
 	"hespera/internal/thumbgc"
 )
 
@@ -24,13 +23,14 @@ const movieMatchThreshold = 0.80
 
 // MovieSearchResult is one hit from /search/movie.
 type MovieSearchResult struct {
-	ID           int     `json:"id"`
-	Title        string  `json:"title"`
-	ReleaseDate  string  `json:"release_date"`
-	Overview     string  `json:"overview"`
-	PosterPath   string  `json:"poster_path"`
-	BackdropPath string  `json:"backdrop_path"`
-	Popularity   float64 `json:"popularity"`
+	ID            int     `json:"id"`
+	Title         string  `json:"title"`
+	OriginalTitle string  `json:"original_title"`
+	ReleaseDate   string  `json:"release_date"`
+	Overview      string  `json:"overview"`
+	PosterPath    string  `json:"poster_path"`
+	BackdropPath  string  `json:"backdrop_path"`
+	Popularity    float64 `json:"popularity"`
 }
 
 // Movie is the subset of /movie/{id} cached for the detail page.
@@ -428,7 +428,7 @@ func pickBestMovie(results []MovieSearchResult, title string, year int) (*MovieS
 	var best *MovieSearchResult
 	var bestScore float64
 	for i := range results {
-		sim := match.TitleMatchSimilarity(results[i].Title, title)
+		sim := bestTitleSim(title, results[i].Title, results[i].OriginalTitle)
 
 		popBonus := results[i].Popularity / 10000.0
 		if popBonus > 0.1 {
