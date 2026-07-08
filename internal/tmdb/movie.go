@@ -209,6 +209,10 @@ WHERE library_id = ?
 		default:
 		}
 		g := groupsByKey[key]
+		// Progress by candidates examined, at the loop head (see RunTVMatch) — a
+		// below-threshold film that continues still advances the bar, so a
+		// finished job never shows a misleading 0/N.
+		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", gi+1, jobID)
 
 		slog.Info("tmdb movie match", "title", g.title, "year", g.year, "files", len(g.fileIDs))
 
@@ -260,8 +264,6 @@ UPDATE movie_files SET
 WHERE id=?
 `, movieID, score, now, fileID)
 		}
-
-		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", gi+1, jobID)
 	}
 
 	// Sweep orphaned movie thumbnails (non-fatal). movie_art is the live reference

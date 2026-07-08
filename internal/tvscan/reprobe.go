@@ -68,6 +68,11 @@ func (s *Scanner) ReprobeMissing(ctx context.Context, jobID, libraryID int64) er
 			return ctx.Err()
 		default:
 		}
+		// Count by files examined (loop head) so a gone/moved/errored file that
+		// continues still advances the bar — a finished job never shows 0/N.
+		if (i+1)%25 == 0 || i+1 == len(targets) {
+			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i+1, jobID)
+		}
 		resolved, err := pathguard.ResolveExistingUnderRoot(mediaRoot, t.absPath)
 		if err != nil {
 			// File gone/moved — leave it for the next full scan's relink/prune.
@@ -89,9 +94,6 @@ func (s *Scanner) ReprobeMissing(ctx context.Context, jobID, libraryID int64) er
 			continue
 		}
 		reprobed++
-		if (i+1)%25 == 0 || i+1 == len(targets) {
-			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i+1, jobID)
-		}
 	}
 
 	slog.Info("tv reprobe complete",

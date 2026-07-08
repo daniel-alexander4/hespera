@@ -51,6 +51,11 @@ WHERE library_id=? AND kind='video' AND (stream_info_json='' OR stream_info_json
 			return ctx.Err()
 		default:
 		}
+		// Count by files examined (loop head) so a continued file still advances
+		// the bar — a finished job never shows a misleading 0/N.
+		if (i+1)%25 == 0 || i+1 == len(cands) {
+			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i+1, jobID)
+		}
 		probeResult, probeErr := video.Probe(ctx, c.absPath)
 		if probeErr != nil {
 			slog.Warn("photoscan reprobe", "path", c.absPath, "err", probeErr)
@@ -70,9 +75,6 @@ WHERE library_id=? AND kind='video' AND (stream_info_json='' OR stream_info_json
 		}
 		if _, err := s.DB.ExecContext(ctx, "UPDATE photos SET stream_info_json=? WHERE id=?", string(b), c.id); err != nil {
 			return err
-		}
-		if (i+1)%25 == 0 || i+1 == len(cands) {
-			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i+1, jobID)
 		}
 	}
 	return nil

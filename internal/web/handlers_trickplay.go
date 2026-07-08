@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/jobs"
 	"hespera/internal/pathguard"
 	"hespera/internal/video"
 )
@@ -77,6 +78,13 @@ func (h *Handler) generateTrickplayMissing(ctx context.Context, table string, jo
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+		// Yield to a waiting interactive job (scan/match/probe/integrity) rather
+		// than block it behind this slow sweep — re-enqueued to finish the rest
+		// once the interactive work runs. The check is a cheap EXISTS vs ~15s of
+		// ffmpeg per file, so polling every file gives the tightest hand-off.
+		if i > 0 && h.jobs.HasQueuedInteractive() {
+			return jobs.ErrYielded
 		}
 		if budget > 0 && used >= budget {
 			slog.Warn("trickplay cache at size cap — skipping remaining files",
