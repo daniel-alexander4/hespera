@@ -20,6 +20,10 @@ import (
 type Scanner struct {
 	Cfg config.Config
 	DB  *sql.DB
+	// ShouldYield, when set, is polled by the long thumbnail sweep: returning
+	// true makes it stop early (jobs.ErrYielded) so a waiting interactive job
+	// runs, then the sweep is re-enqueued to finish. nil = never yield.
+	ShouldYield func() bool
 }
 
 func New(cfg config.Config, db *sql.DB) *Scanner {

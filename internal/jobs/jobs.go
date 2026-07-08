@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 )
@@ -15,6 +16,12 @@ var (
 	ErrJobNotFound  = errors.New("job not found")
 	ErrJobNotCancel = errors.New("job is not cancelable")
 	ErrQueueFull    = errors.New("job queue is full")
+	// ErrYielded is a sentinel a long cosmetic job (trickplay/thumb) returns to
+	// signal it stopped early to let a waiting interactive job run. The enqueue
+	// wrapper (enqueueYielding) intercepts it, re-enqueues the job to finish its
+	// remaining work, and reports the current run as done — it is never a
+	// failure. Jobs are missing-only/incremental, so the re-run resumes cleanly.
+	ErrYielded = errors.New("job yielded to interactive work")
 )
 
 // Job status values, matching the scan_jobs.status column.
@@ -82,22 +89,55 @@ func (s *Service) pruneOldJobs() {
 }
 
 // reconcileStaleJobs marks any 'running'/'queued' rows left by a previous process
-// (a crash or restart) as 'failed'. The in-memory queue is the only thing that
+// (a crash or restart) as 'canceled'. The in-memory queue is the only thing that
 // holds runnable work, so those rows can never make progress on their own — left
 // alone they hang in a non-terminal state forever and keep reporting cancelable.
+// Marked 'canceled' (not 'failed') because the jobs are idempotent + incremental
+// and a re-kick resumes losslessly — a restart is not an error, so it must not
+// pollute the failed list. The "interrupted by restart" text disambiguates it
+// from a user cancel.
 func (s *Service) reconcileStaleJobs() {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.Exec(
 		`UPDATE scan_jobs SET status=?, error=?, ended_at=? WHERE status IN (?, ?)`,
-		statusFailed, "interrupted by restart", now, statusRunning, statusQueued,
+		statusCanceled, "interrupted by restart", now, statusRunning, statusQueued,
 	)
 	if err != nil {
 		slog.Warn("jobs reconcile stale", "err", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		slog.Info("jobs reconciled stale rows to failed", "count", n)
+		slog.Info("jobs reconciled stale rows to canceled", "count", n)
 	}
+}
+
+// cosmeticJobTypes are the low-priority "nice to have" tail jobs (screen-cap
+// thumbnails, trickplay sprites, loudness) that a user never waits on to see or
+// play content. HasQueuedInteractive treats everything NOT in this set as
+// interactive, so these jobs yield to a waiting scan/match/probe/integrity.
+var cosmeticJobTypes = []string{
+	"tv_thumb", "photo_thumb", "tv_trickplay", "movie_trickplay", "music_loudness",
+}
+
+// HasQueuedInteractive reports whether any interactive (non-cosmetic) job is
+// waiting in the queue. A long cosmetic job (trickplay/thumb) polls this and
+// re-enqueues itself when it returns true, so a scan/match/probe queued behind
+// it starts within one poll interval instead of after the whole sweep — without
+// a second worker (the single-worker idle-priority model is preserved). Cosmetic
+// jobs are excluded so two of them never ping-pong yielding to each other.
+func (s *Service) HasQueuedInteractive() bool {
+	placeholders := strings.Repeat(",?", len(cosmeticJobTypes))[1:]
+	args := make([]any, 0, len(cosmeticJobTypes)+1)
+	args = append(args, statusQueued)
+	for _, t := range cosmeticJobTypes {
+		args = append(args, t)
+	}
+	var exists int
+	err := s.db.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE status=? AND job_type NOT IN (`+placeholders+`))`,
+		args...,
+	).Scan(&exists)
+	return err == nil && exists == 1
 }
 
 // Shutdown cancels any in-flight job contexts so a graceful exit lets the worker

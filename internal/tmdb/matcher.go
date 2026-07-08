@@ -118,6 +118,11 @@ WHERE i.status = 'unmatched'
 			return ctx.Err()
 		default:
 		}
+		// Count progress by candidates EXAMINED, at the loop head — so a group
+		// that finds no match (a below-threshold title) and continues still
+		// advances the bar. A tail update skipped every no-match, leaving a
+		// finished job showing 0/N, which reads as a failure.
+		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", gi+1, jobID)
 
 		files := groups[key]
 		groupYear := files[0].year
@@ -287,8 +292,6 @@ WHERE file_id=?
 `, strconv.Itoa(showID), bestScore, now, fe.fileID)
 		}
 
-		// Update progress.
-		_, _ = m.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", gi+1, jobID)
 	}
 
 	// Sweep orphaned TV thumbnails (non-fatal). Runs last, after all art writes

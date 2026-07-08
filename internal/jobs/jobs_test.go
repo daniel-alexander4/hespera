@@ -49,6 +49,58 @@ func TestReconcileStaleJobsOnStartup(t *testing.T) {
 	if done != 1 {
 		t.Fatalf("terminal 'done' row must be untouched, got %d done rows", done)
 	}
+	// Interrupted rows are 'canceled' (not 'failed') with a disambiguating error,
+	// so a restart never pollutes the failed list.
+	var canceled, failed int
+	_ = conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE status='canceled' AND error='interrupted by restart'").Scan(&canceled)
+	_ = conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE status='failed'").Scan(&failed)
+	if canceled != 2 {
+		t.Fatalf("expected 2 rows reconciled to canceled+interrupted, got %d", canceled)
+	}
+	if failed != 0 {
+		t.Fatalf("a restart must not mark anything failed, got %d failed", failed)
+	}
+}
+
+func TestHasQueuedInteractive(t *testing.T) {
+	dir := t.TempDir()
+	conn, err := db.Open(filepath.Join(dir, "test.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+	if err := db.Migrate(conn); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	svc := &Service{db: conn} // no worker — we only exercise the query
+
+	seed := func(jobType, status string) {
+		if _, err := conn.Exec(
+			"INSERT INTO scan_jobs (library_id, job_type, status, created_at) VALUES (1, ?, ?, datetime('now'))",
+			jobType, status); err != nil {
+			t.Fatalf("seed %s/%s: %v", jobType, status, err)
+		}
+	}
+
+	if svc.HasQueuedInteractive() {
+		t.Fatal("empty queue: want false")
+	}
+	// A queued cosmetic job does not count as interactive work.
+	seed("tv_trickplay", "queued")
+	seed("photo_thumb", "queued")
+	if svc.HasQueuedInteractive() {
+		t.Fatal("only cosmetic jobs queued: want false (no ping-pong)")
+	}
+	// A running interactive job is not "queued".
+	seed("tv_scan", "running")
+	if svc.HasQueuedInteractive() {
+		t.Fatal("interactive job running (not queued): want false")
+	}
+	// A queued interactive job flips it true.
+	seed("tv_match", "queued")
+	if !svc.HasQueuedInteractive() {
+		t.Fatal("interactive job queued: want true")
+	}
 }
 
 func TestEnqueueAndRun(t *testing.T) {

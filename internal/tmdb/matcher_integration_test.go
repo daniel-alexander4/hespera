@@ -551,10 +551,11 @@ func TestRunTVMatchBelowThreshold(t *testing.T) {
 		if total != 1 {
 			t.Fatalf("progress_total = %d, want 1", total)
 		}
-		// The continue at line 109 in matcher.go skips the progress_current
-		// update at line 232, so progress_current stays 0.
-		if current != 0 {
-			t.Fatalf("progress_current = %d, want 0 (skipped groups don't update progress)", current)
+		// Progress counts groups EXAMINED (updated at the loop head), so a
+		// below-threshold group that finds no match still advances the bar to
+		// N/N — a finished job never shows a misleading 0/N.
+		if current != 1 {
+			t.Fatalf("progress_current = %d, want 1 (examined groups advance progress even with no match)", current)
 		}
 	})
 }

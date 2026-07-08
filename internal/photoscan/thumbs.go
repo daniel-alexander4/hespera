@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"hespera/internal/jobs"
 	"hespera/internal/video"
 )
 
@@ -105,6 +106,16 @@ func (s *Scanner) GenerateThumbsMissing(ctx context.Context, jobID, libraryID in
 			return ctx.Err()
 		default:
 		}
+		// Yield to a waiting interactive job (scan/match/probe) rather than block
+		// it behind this sweep; re-enqueued to finish the rest.
+		if s.ShouldYield != nil && i > 0 && s.ShouldYield() {
+			return jobs.ErrYielded
+		}
+		// Progress by files examined (loop head) so a busy/gone file that
+		// continues still advances the bar — a finished job never shows 0/N.
+		if (i+1)%25 == 0 || i+1 == len(cands) {
+			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i+1, jobID)
+		}
 		dst := filepath.Join(s.thumbsDir(), ThumbFileNames(c.id)[0])
 		mark := dst
 		if err := video.PhotoThumb(ctx, c.absPath, dst, thumbMaxDim, c.orientation, c.kind == "video"); err != nil {
@@ -128,9 +139,6 @@ func (s *Scanner) GenerateThumbsMissing(ctx context.Context, jobID, libraryID in
 		}
 		if _, err := s.DB.ExecContext(ctx, "UPDATE photos SET thumb_path=? WHERE id=?", mark, c.id); err != nil {
 			return err
-		}
-		if (i+1)%25 == 0 || i+1 == len(cands) {
-			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i+1, jobID)
 		}
 	}
 	return nil
