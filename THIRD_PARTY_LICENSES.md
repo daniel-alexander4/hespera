@@ -1,10 +1,10 @@
 # Third-Party Licenses
 
-Hespera itself is licensed under the GNU General Public License v3.0 (see
-[`LICENSE`](LICENSE)). It uses the third-party software listed below, each
+Hespera itself is licensed under the GNU Affero General Public License v3.0
+(see [`LICENSE`](LICENSE)). It uses the third-party software listed below, each
 distributed under its own license, retained here as required. Every license
-named here (MIT, BSD-2/3-Clause, the SQLite public-domain blessing) is
-compatible with redistribution under GPLv3.
+named here (MIT, BSD-2/3-Clause, Apache-2.0, ISC, the SQLite public-domain
+blessing) is compatible with redistribution under AGPLv3.
 
 The **verbatim license text** of every module below is committed under
 [`third_party/licenses/`](third_party/licenses/) (one directory per module

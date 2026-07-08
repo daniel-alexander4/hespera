@@ -7,7 +7,7 @@ server). SQLite storage, server-rendered HTML, no external services required to
 run. A headless server mode is also available if you want to reach it from
 other devices.
 
-Licensed under the [GNU GPL v3](LICENSE); third-party attributions in
+Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
 
 ## Features

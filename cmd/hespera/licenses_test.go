@@ -12,7 +12,7 @@ import (
 // TestThirdPartyLicensesCurrent fails if any module in go.mod's require blocks
 // — direct or indirect — is not listed in THIRD_PARTY_LICENSES.md. The indirect
 // modules are the transitive deps that compile into the binary, so they ship
-// with it and their attribution must be retained too (GPLv3 distribution). This
+// with it and their attribution must be retained too (AGPLv3 distribution). This
 // guard makes forgetting a dependency a build failure rather than silent drift.
 // (It checks presence of the module path, not the verbatim license text. A new
 // test-only module that `go mod tidy` parks in the indirect block will also be
