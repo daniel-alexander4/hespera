@@ -66,3 +66,52 @@ func TestManagedSettingsCoverSettingsForms(t *testing.T) {
 		t.Errorf("managedSettings keys with no settings-page form (add an input or move the key): %v", missingFromForms)
 	}
 }
+
+// TestManagedSettingsCoverHescliCompletion is the same drift guard for the
+// third enumeration of app_settings keys: the static `cfgkeys` value set in
+// hescli's bash-completion script (cmd/hescli/main.go, bashCompletion). That
+// list is a deliberate literal — sharing the registry across the
+// cmd/hescli↔internal/web boundary would drag the web package into the CLI
+// binary — so this test is what keeps it honest: a key added to
+// managedSettings without updating cfgkeys (or vice versa) fails the build
+// instead of silently missing from tab completion. (Caught live 2026-07-08:
+// job_resume_enabled shipped without the completion entry.)
+func TestManagedSettingsCoverHescliCompletion(t *testing.T) {
+	src, err := os.ReadFile("../../cmd/hescli/main.go")
+	if err != nil {
+		t.Fatalf("read cmd/hescli/main.go: %v", err)
+	}
+	m := regexp.MustCompile(`local cfgkeys="([^"]+)"`).FindSubmatch(src)
+	if m == nil {
+		t.Fatalf("cfgkeys value set not found in cmd/hescli/main.go — completion script restructured? Update this guard")
+	}
+	completionKeys := map[string]bool{}
+	for _, k := range strings.Fields(string(m[1])) {
+		completionKeys[k] = true
+	}
+
+	registryKeys := map[string]bool{}
+	for _, spec := range managedSettings {
+		registryKeys[spec.Key] = true
+	}
+
+	var missingFromCompletion, missingFromRegistry []string
+	for k := range registryKeys {
+		if !completionKeys[k] {
+			missingFromCompletion = append(missingFromCompletion, k)
+		}
+	}
+	for k := range completionKeys {
+		if !registryKeys[k] {
+			missingFromRegistry = append(missingFromRegistry, k)
+		}
+	}
+	sort.Strings(missingFromCompletion)
+	sort.Strings(missingFromRegistry)
+	if len(missingFromCompletion) > 0 {
+		t.Errorf("managedSettings keys missing from hescli completion cfgkeys (cmd/hescli/main.go): %v", missingFromCompletion)
+	}
+	if len(missingFromRegistry) > 0 {
+		t.Errorf("hescli completion cfgkeys not in managedSettings (stale entry?): %v", missingFromRegistry)
+	}
+}
