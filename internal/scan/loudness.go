@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 
+	"hespera/internal/jobs"
 	"hespera/internal/pathguard"
 	"hespera/internal/video"
 )
@@ -52,6 +53,11 @@ func (s *Scanner) AnalyzeLoudness(ctx context.Context, jobID, libraryID int64) e
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+		// Yield to a waiting interactive job (scan/match/probe) rather than block
+		// it behind this sweep on the single worker; re-enqueued to finish the rest.
+		if s.ShouldYield != nil && i > 0 && s.ShouldYield() {
+			return jobs.ErrYielded
 		}
 		resolved, err := pathguard.ResolveExistingUnderRoot(mediaRoot, t.absPath)
 		if err != nil {

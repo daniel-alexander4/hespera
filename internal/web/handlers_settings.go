@@ -777,6 +777,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 	switch libType {
 	case "music":
 		scanner := scan.New(h.cfg, h.db)
+		scanner.ShouldYield = h.jobs.HasQueuedInteractive
 		jobID, err = h.jobs.Enqueue("music_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
 			if err := scanner.ScanMusic(ctx, jID, libID); err != nil {
 				return err
@@ -795,8 +796,10 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			})
 			// Chain the loudness analysis for volume leveling (new/changed tracks
 			// only — loudness_lufs=0). Runs last: a container repair rewrites the
-			// file, and its scanner-reset loudness re-measures here.
-			_, _ = h.jobs.EnqueueUnique("music_loudness", libID, "system", func(ctx context.Context, lJID, lLibID int64) error {
+			// file, and its scanner-reset loudness re-measures here. Yielding: a
+			// first-pass sweep over a whole library takes hours and must step
+			// aside for queued interactive work, like the thumb/trickplay sweeps.
+			h.enqueueYielding("music_loudness", libID, func(ctx context.Context, lJID, lLibID int64) error {
 				return scanner.AnalyzeLoudness(ctx, lJID, lLibID)
 			})
 			return nil
