@@ -742,6 +742,17 @@ test('anamorphic aspect correction engages only on rendered-vs-flagged mismatch'
   assert.ok(!video.classList.contains('aspect-fix'), 'matching render stays untouched');
   assert.strictEqual(video.style.getPropertyValue('--dar'), '');
 
+  // Progressive-path reality: loadedmetadata fires with dims still 0 (empty_moov
+  // fMP4) → no fix yet; the dims arrive later announced by 'resize' → fix applies.
+  Object.defineProperty(video, 'videoWidth', { configurable: true, value: 0 });
+  Object.defineProperty(video, 'videoHeight', { configurable: true, value: 0 });
+  video.dispatchEvent(new env.window.Event('loadedmetadata'));
+  assert.ok(!video.classList.contains('aspect-fix'), 'no dims yet → no fix');
+  Object.defineProperty(video, 'videoWidth', { configurable: true, value: 702 });
+  Object.defineProperty(video, 'videoHeight', { configurable: true, value: 576 });
+  video.dispatchEvent(new env.window.Event('resize'));
+  assert.ok(video.classList.contains('aspect-fix'), 'resize with real dims applies the fix');
+
   // Session without video_dar (square-pixel file / old probe) → never engages.
   const env2 = await boot();
   const v2 = env2.document.getElementById('tvVideo');
