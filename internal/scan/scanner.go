@@ -107,6 +107,21 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 		slog.Warn("scan completed with errors", "library_id", libraryID, "files_scanned", processed, "errors", scanErrors)
 	}
 
+	// Prune safety: a walk that found nothing while the library has rows is far
+	// more likely an unmounted/empty mount point than a deliberately emptied
+	// library — pruning would delete every row (and the playback/match state
+	// only rows carry). Skip the destructive tail; a rescan once the root has
+	// content prunes normally, and deleting the library reaps everything.
+	if processed == 0 {
+		var rows int
+		_ = s.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM music_tracks WHERE library_id=?", libraryID).Scan(&rows)
+		if rows > 0 {
+			slog.Warn("scan: no files found but library has rows — root looks unmounted; skipping prune",
+				"library_id", libraryID, "rows", rows)
+			return nil
+		}
+	}
+
 	// Post-scan: detect compilations and merge variants (order-independent).
 	if err := s.finalizeCompilations(ctx, libraryID); err != nil {
 		return err
