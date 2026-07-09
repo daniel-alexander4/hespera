@@ -1028,8 +1028,14 @@ function initMediaPlayer() {
       // Keyboard/remote focus (couch arrow-nav) sets :focus-visible — don't yank
       // controls out from under the control being arrowed through. Mouse-click
       // focus is :focus only (not :focus-visible), so it doesn't pin here.
+      // The play/pause button is the one exemption on BOTH rules below: boot
+      // focuses it (see the end of init), and it must neither pin the overlay
+      // open forever nor lose focus on hide — an invisibly-focused toggle
+      // firing on Enter/Space is a deliberate pause (the TV-app idiom), unlike
+      // the stray-button re-fire the blur guard exists for.
       const ae = document.activeElement;
-      if (video.paused || dragging || (overlay.contains(ae) && ae.matches(':focus-visible'))) return;
+      if (video.paused || dragging ||
+        (overlay.contains(ae) && ae !== toggleBtn && ae.matches(':focus-visible'))) return;
       // Reaching here, a focused overlay control is mouse-focused (not
       // :focus-visible). The hidden overlay is opacity:0 + pointer-events:none —
       // which blocks the pointer but NOT keyboard activation, so a button the
@@ -1039,7 +1045,7 @@ function initMediaPlayer() {
       // (their arrow behavior is harmless). Blur before the class-add so the
       // synchronous focusout→bump re-show is immediately overridden — overlay still
       // ends hidden.
-      if (overlay.contains(ae) && ae.tagName === 'BUTTON') ae.blur();
+      if (overlay.contains(ae) && ae !== toggleBtn && ae.tagName === 'BUTTON') ae.blur();
       wrap.classList.add('controls-hidden');
     };
     const bump = () => {
@@ -1321,6 +1327,14 @@ function initMediaPlayer() {
   const beginAtStart = bootParams.get('begin') === '1';
   const startPaused = bootParams.get('paused') === '1';
   loadFromSession(0, 0, beginAtStart ? 0 : null, false, startPaused);
+
+  // Land keyboard/remote focus on play/pause, so the first Enter/OK (or Space)
+  // after opening a player toggles playback instead of activating whatever
+  // couch.js anchored (the header title link — which navigated BACK). The
+  // overlay auto-hide exempts this button (see hideControls): it keeps focus
+  // while the controls are hidden, so OK-to-pause works chrome-up or chrome-
+  // down — the standard TV-app idiom.
+  if (toggleBtn) toggleBtn.focus({ preventScroll: true });
 }
 
 // Run on every Turbo navigation (and the initial load — Turbo fires turbo:load

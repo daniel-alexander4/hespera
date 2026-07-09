@@ -700,3 +700,26 @@ test('photo clips: prev/next buttons unhide with clip wording; media keys route 
   // The hardware-media-key bridge consumes next/prev on a clip page too.
   assert.strictEqual(env.window.hesperaMediaControl('nexttrack'), true);
 });
+
+test('boot lands keyboard focus on the play/pause button', async () => {
+  const env = await boot();
+  assert.strictEqual(env.document.activeElement, env.document.getElementById('tvToggleBtn'),
+    'first Enter/OK after opening a player must toggle playback, not activate a nav link');
+});
+
+test('overlay auto-hide neither pins on nor blurs the focused play/pause button', async () => {
+  const env = await boot();
+  const doc = env.document;
+  const wrap = doc.querySelector('.tv-player-video-wrap');
+  const video = doc.getElementById('tvVideo');
+  video.paused = false; // playing — the hide gate is live
+  assert.ok(!wrap.classList.contains('controls-hidden'), 'controls start visible');
+  assert.strictEqual(doc.activeElement, doc.getElementById('tvToggleBtn'));
+  // HIDE_MS is 2500 — wait it out; the focused toggle must not pin the overlay
+  // open (the :focus-visible keep-visible rule exempts it) …
+  await new Promise((r) => setTimeout(r, 2700));
+  assert.ok(wrap.classList.contains('controls-hidden'), 'controls auto-hid with the toggle focused');
+  // … and must KEEP focus while hidden (exempt from the blur-on-hide), so an
+  // invisible Enter/Space is a deliberate pause — the TV-app idiom.
+  assert.strictEqual(doc.activeElement, doc.getElementById('tvToggleBtn'), 'toggle keeps focus while hidden');
+});

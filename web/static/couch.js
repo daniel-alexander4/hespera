@@ -281,6 +281,13 @@
   // above is added once and queries the live DOM, so it keeps working across
   // visits without re-binding.
   const focusFirst = () => {
+    // Never fight an anchor another controller already set (the media players
+    // focus their play/pause button at boot). Today couch.js's listener runs
+    // first so this is a no-op, but the guard makes the outcome independent of
+    // turbo:load listener order. A fresh Turbo body swap always starts with
+    // focus on <body>, so ordinary pages are unaffected.
+    const ae = document.activeElement;
+    if (ae && ae !== document.body && ae !== document.documentElement) return;
     // A page with a subtab bar (Music / TV / Movies) lands the ring on its
     // active tab — selecting a main tab from the topbar starts you on "Recent",
     // not whatever control happens to be first in the content. Gated on input
