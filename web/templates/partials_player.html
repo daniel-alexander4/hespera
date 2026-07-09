@@ -69,7 +69,11 @@
     <input id="tvVolume" type="range" min="0" max="1" step="0.05" value="1" class="tv-volume" aria-label="Volume" />
     <button id="tvBoostBtn" type="button" class="btn btn-sm is-on" aria-pressed="true" aria-label="Dialogue boost — even out loud music vs quiet dialogue" title="Dialogue boost: On">{{template "icon-audio-lines"}}</button>
     <button id="tvReloadBtn" type="button" class="btn btn-sm" aria-label="Reload video" title="Reload video">{{template "icon-rotate-cw"}}</button>
-    <button id="tvFullscreenBtn" type="button" class="btn btn-sm" aria-label="Fullscreen" title="Fullscreen">{{template "icon-maximize"}}</button>
+    {{/* data-app-fullscreen: handled by the layout shell's delegated handler — the
+         same app-root fullscreen as the topbar button (one fullscreen state
+         app-wide; CSS expands the video wrap to fill the viewport on player pages).
+         The fs-enter/fs-exit pair swaps via the shared [data-app-fullscreen] CSS. */}}
+    <button id="tvFullscreenBtn" type="button" class="btn btn-sm" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
   </div>
 </div>
 {{end}}

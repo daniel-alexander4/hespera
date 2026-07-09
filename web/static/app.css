@@ -2177,14 +2177,20 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
 }
 .tv-player-video-wrap.controls-hidden { cursor: none; }
 
-/* In fullscreen the wrap fills the screen and the video is letterboxed inside it,
-   with the overlay still pinned to the bottom. */
-.tv-player-video-wrap:fullscreen {
-  width: 100%;
-  height: 100%;
+/* App fullscreen on a player page: the app root is the fullscreen element (one
+   fullscreen state app-wide — it survives Turbo body swaps, so Up Next
+   auto-advance stays fullscreen), and the wrap expands to cover the viewport
+   with the video letterboxed inside it, overlay still pinned to the bottom.
+   z-index 260 sits above page content (music transport = 250) but below the
+   modal layer (300+), so the subtitle-search dialog stays visible. */
+html.is-fullscreen .tv-player-video-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  background: #000;
   border-radius: 0;
 }
-.tv-player-video-wrap:fullscreen .tv-video {
+html.is-fullscreen .tv-player-video-wrap .tv-video {
   width: 100%;
   height: 100%;
   max-height: none;
