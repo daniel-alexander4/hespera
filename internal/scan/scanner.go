@@ -88,7 +88,7 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 		default:
 		}
 
-		if err := s.ScanFile(ctx, libraryID, p, thumbDir); err != nil {
+		if err := s.scanFile(ctx, libraryID, p, thumbDir, true); err != nil {
 			scanErrors++
 			slog.Warn("scan file error", "path", p, "err", err)
 			// Continue scanning -- one file's error should not abort the library scan.
@@ -137,7 +137,15 @@ func (s *Scanner) ScanMusic(ctx context.Context, jobID, libraryID int64) error {
 }
 
 // ScanFile processes a single audio file: reads tags, resolves artist/album, upserts track, extracts art.
+// Always the full read — the targeted-rescan callers (the album Rescan button,
+// the tag editor via ScanFiles) exist precisely to re-process files whose bytes
+// haven't changed (re-extract art, apply just-written tags), so they must never
+// take the unchanged fast-path the library walk uses.
 func (s *Scanner) ScanFile(ctx context.Context, libraryID int64, absPath string, thumbDir string) error {
+	return s.scanFile(ctx, libraryID, absPath, thumbDir, false)
+}
+
+func (s *Scanner) scanFile(ctx context.Context, libraryID int64, absPath string, thumbDir string, skipUnchanged bool) error {
 	mediaRoot := filepath.Clean(s.Cfg.MediaRoot)
 	resolvedPath, err := pathguard.ResolveExistingUnderRoot(mediaRoot, absPath)
 	if err != nil {
@@ -151,6 +159,25 @@ func (s *Scanner) ScanFile(ctx context.Context, libraryID int64, absPath string,
 	}
 	fileSize := info.Size()
 	mtimeUnix := info.ModTime().UTC().Unix()
+
+	// Unchanged-file fast path (library walks only): a known row with the same
+	// size+mtime needs no work at all — everything a music row carries derives
+	// from the file's tags, which haven't changed. This skips the expensive
+	// per-file cost (open + parse tags incl. embedded-art frames, plus a write
+	// transaction) that made a no-op rescan crawl through every file. The
+	// video scanners' equivalent skips the probe; unlike TV there is no cheap
+	// filename-derived identity to refresh, so a tag-NORMALIZATION improvement
+	// doesn't reconverge on unchanged files — the album Rescan button / tag
+	// editor (full-read ScanFile) are the targeted escape hatches.
+	if skipUnchanged {
+		var existingSize, existingMtime int64
+		if qErr := s.DB.QueryRowContext(ctx,
+			"SELECT file_size_bytes, mtime_unix FROM music_tracks WHERE library_id=? AND abs_path=?",
+			libraryID, resolvedPath,
+		).Scan(&existingSize, &existingMtime); qErr == nil && existingSize == fileSize && existingMtime == mtimeUnix {
+			return nil
+		}
+	}
 
 	meta, err := music.ReadTrackMeta(resolvedPath)
 	if err != nil {

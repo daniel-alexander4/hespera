@@ -62,9 +62,13 @@ Every scanner follows the same disk→DB reconciliation shape:
 3. **Upsert per file** — `INSERT ... ON CONFLICT(library_id, abs_path) DO UPDATE`.
    New path → new row. Existing path → file facts refreshed.
    - **Change detection**: an unchanged file (same `file_size_bytes` *and*
-     `mtime_unix`) skips expensive work — music reuses the stored checksum
-     (`resolveTrackChecksum`); TV skips the ffprobe but still refreshes the
-     cheap, filename-derived identity.
+     `mtime_unix`) skips expensive work — music skips the file **entirely** on
+     a library walk (no tag read, no upsert; everything a music row carries
+     derives from tags, which haven't changed — so tag-*normalization*
+     improvements don't reconverge on unchanged files; the album Rescan button
+     and tag editor use the always-full-read `ScanFile`/`ScanFiles` path
+     precisely for that); TV skips the ffprobe but still refreshes the cheap,
+     filename-derived identity.
 4. **Move-relink** *(before prune — see §5)* — transfer irreplaceable per-file
    state from an orphaned old row to its moved-to new row.
 5. **Prune** — for each row whose `abs_path` is under root and fails `os.Stat`,
