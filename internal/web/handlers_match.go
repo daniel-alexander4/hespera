@@ -53,7 +53,9 @@ func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 
 	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
 	jobID, err := h.jobs.EnqueueUnique("music_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
-		return matcher.RunMusicMatch(ctx, jobID, libraryID)
+		// User-initiated → force: bypass the re-check TTLs (full retry, the
+		// deploy-a-matcher-improvement-then-rematch workflow).
+		return matcher.RunMusicMatch(ctx, jobID, libraryID, true)
 	})
 	if err != nil {
 		if errors.Is(err, jobs.ErrQueueFull) {

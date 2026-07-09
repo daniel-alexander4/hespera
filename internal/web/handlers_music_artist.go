@@ -120,14 +120,17 @@ func (h *Handler) musicArtistDisambiguatePOST(w http.ResponseWriter, r *http.Req
 	// Set the chosen identity and clear the stale enrichment so it re-fetches for
 	// the new MBID. This touches only music_artists — per-album
 	// artist_musicbrainz_id stays untouched (it was resolved per release-group and
-	// is individually correct).
+	// is individually correct). enrich_checked_at is cleared too, so if the
+	// synchronous re-enrich below fails (network), the next automatic Match
+	// retries immediately rather than waiting out the TTL.
 	if _, err := h.db.ExecContext(r.Context(), `
 		UPDATE music_artists SET
 			musicbrainz_id=?,
 			bio='',
 			bio_source_name='',
 			bio_source_url='',
-			art_path=''
+			art_path='',
+			enrich_checked_at=''
 		WHERE id=?
 	`, mbid, artistID); err != nil {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "musicArtistDisambiguate", "err", err)
