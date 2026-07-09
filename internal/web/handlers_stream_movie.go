@@ -128,6 +128,7 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 		SubtitleTracks:  subtitleTracks(&probe),
 		AppliedAudio:    aud,
 		AppliedSubtitle: sub,
+		VideoDAR:        probe.VideoDisplayAspect(),
 	}
 	if clean, perr := h.resolveMediaPath(src.absPath); perr == nil {
 		resp.SkipSegments = skipSegmentsFor(&probe, clean)

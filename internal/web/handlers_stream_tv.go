@@ -104,6 +104,10 @@ type playbackSessionResponse struct {
 	AppliedSubtitle int           `json:"applied_subtitle"`
 	SkipSegments    []skipSegment `json:"skip_segments,omitempty"`
 	Chapters        []chapterMark `json:"chapters,omitempty"`
+	// VideoDAR is the source's intended display aspect ratio (width/height as a
+	// float, 0 = unknown). The player compares it to the browser's rendered
+	// aspect and corrects anamorphic video whose flag was lost in the pipeline.
+	VideoDAR float64 `json:"video_dar,omitempty"`
 }
 
 // tvPlaybackSession resolves how a given client should play a TV file: the
@@ -203,6 +207,7 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 		SubtitleTracks:  subtitleTracks(&probe),
 		AppliedAudio:    aud,
 		AppliedSubtitle: sub,
+		VideoDAR:        probe.VideoDisplayAspect(),
 	}
 	if clean, perr := h.resolveTVPath(src.absPath); perr == nil {
 		resp.SkipSegments = skipSegmentsFor(&probe, clean)

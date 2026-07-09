@@ -8,10 +8,11 @@ import (
 	"hespera/internal/config"
 )
 
-// TestReprobeMissingSelectsOnlyEmptyRows verifies the candidate query (only rows
-// with empty stream info), the progress wiring, and that a missing file is
-// skipped gracefully — all without ffmpeg. The actual probe write-back on a real
-// file is covered by live verification.
+// TestReprobeMissingSelectsOnlyEmptyRows verifies the candidate query (empty
+// stream info, plus rows probed before aspect capture — no display_aspect_ratio
+// key), the progress wiring, and that a missing file is skipped gracefully — all
+// without ffmpeg. The actual probe write-back on a real file is covered by live
+// verification.
 func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
@@ -31,11 +32,17 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	// Candidate: default-empty stream info, file missing on disk (so the probe is
 	// skipped without ffmpeg — we're testing selection + graceful skip).
 	candidate := insertTVFile(t, db, libID, filepath.Join(root, "Show", "S01", "ep1.mkv"), 1, 1, false)
-	// Non-candidate: already has a duration; must be left untouched.
+	// Non-candidate: fully probed (has the display_aspect_ratio key); untouched.
 	probed := insertTVFile(t, db, libID, filepath.Join(root, "Show", "S01", "ep2.mkv"), 2, 2, false)
-	const probedJSON = `{"format":{"duration":"100.0"}}`
+	const probedJSON = `{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9"}]}`
 	if _, err := db.Exec("UPDATE tv_series_files SET stream_info_json=? WHERE id=?", probedJSON, probed); err != nil {
 		t.Fatalf("seed probed row: %v", err)
+	}
+	// Candidate: probed before aspect capture existed (no display_aspect_ratio
+	// key) — the one-shot backfill must re-select it.
+	preDAR := insertTVFile(t, db, libID, filepath.Join(root, "Show", "S01", "ep3.mkv"), 3, 3, false)
+	if _, err := db.Exec("UPDATE tv_series_files SET stream_info_json=? WHERE id=?", `{"format":{"duration":"100.0"}}`, preDAR); err != nil {
+		t.Fatalf("seed pre-DAR row: %v", err)
 	}
 
 	if err := s.ReprobeMissing(ctx, jobID, libID); err != nil {
@@ -46,8 +53,8 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	if err := db.QueryRow("SELECT progress_total FROM scan_jobs WHERE id=?", jobID).Scan(&total); err != nil {
 		t.Fatalf("read progress_total: %v", err)
 	}
-	if total != 1 {
-		t.Fatalf("progress_total = %d, want 1 (only the empty row is a candidate)", total)
+	if total != 2 {
+		t.Fatalf("progress_total = %d, want 2 (the empty row + the pre-DAR row)", total)
 	}
 
 	var got string

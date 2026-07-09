@@ -723,3 +723,30 @@ test('overlay auto-hide neither pins on nor blurs the focused play/pause button'
   // invisible Enter/Space is a deliberate pause — the TV-app idiom.
   assert.strictEqual(doc.activeElement, doc.getElementById('tvToggleBtn'), 'toggle keeps focus while hidden');
 });
+
+test('anamorphic aspect correction engages only on rendered-vs-flagged mismatch', async () => {
+  // Squeezed render: the browser reports the storage grid (702×576) while the
+  // session flags the source as ~16:9 (a PAL DVD rip whose SAR got lost).
+  const dar = 499 / 288;
+  const env = await boot({ sessionData: session({ video_dar: dar }) });
+  const video = env.document.getElementById('tvVideo');
+  Object.defineProperty(video, 'videoWidth', { configurable: true, value: 702 });
+  Object.defineProperty(video, 'videoHeight', { configurable: true, value: 576 });
+  video.dispatchEvent(new env.window.Event('loadedmetadata'));
+  assert.ok(video.classList.contains('aspect-fix'), 'mismatch applies the fix');
+  assert.ok(Math.abs(parseFloat(video.style.getPropertyValue('--dar')) - dar) < 1e-6);
+
+  // Browser honored the flag (rendered dims already DAR-shaped) → fix clears.
+  Object.defineProperty(video, 'videoWidth', { configurable: true, value: 998 });
+  video.dispatchEvent(new env.window.Event('loadedmetadata'));
+  assert.ok(!video.classList.contains('aspect-fix'), 'matching render stays untouched');
+  assert.strictEqual(video.style.getPropertyValue('--dar'), '');
+
+  // Session without video_dar (square-pixel file / old probe) → never engages.
+  const env2 = await boot();
+  const v2 = env2.document.getElementById('tvVideo');
+  Object.defineProperty(v2, 'videoWidth', { configurable: true, value: 702 });
+  Object.defineProperty(v2, 'videoHeight', { configurable: true, value: 576 });
+  v2.dispatchEvent(new env2.window.Event('loadedmetadata'));
+  assert.ok(!v2.classList.contains('aspect-fix'), 'no DAR → no correction');
+});

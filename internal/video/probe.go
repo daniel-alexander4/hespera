@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -119,21 +120,71 @@ type ProbeStream struct {
 	// color_transfer): "smpte2084" (PQ) or "arib-std-b67" (HLG) flag HDR, so a
 	// frame grab can tonemap to SDR instead of producing a grey/washed thumbnail.
 	ColorTransfer string `json:"color_transfer,omitempty"`
-	Language      string
-	Title         string
-	IsDefault     bool
+	// SampleAspectRatio / DisplayAspectRatio ("a:b" strings) flag anamorphic
+	// video — e.g. a PAL DVD rip stored 702×576 but meant to display at 16:9.
+	// The player corrects the picture when the browser misses the flag.
+	// DisplayAspectRatio is deliberately NOT omitempty: its key's presence in
+	// stored stream_info_json is the marker the reprobe jobs use to backfill
+	// rows probed before these fields existed (omitempty would re-select
+	// square-pixel files forever).
+	SampleAspectRatio  string `json:"sample_aspect_ratio,omitempty"`
+	DisplayAspectRatio string `json:"display_aspect_ratio"`
+	Language           string
+	Title              string
+	IsDefault          bool
+}
+
+// VideoDisplayAspect returns the first video stream's display aspect ratio as a
+// float (width/height as intended for display), or 0 when unknown. Prefers the
+// explicit DAR; falls back to storage dimensions × SAR for files that carry
+// only a sample aspect. A square-pixel file returns its plain w/h.
+func (p *ProbeResult) VideoDisplayAspect() float64 {
+	for _, s := range p.Streams {
+		if s.CodecType != "video" {
+			continue
+		}
+		if r := parseAspect(s.DisplayAspectRatio); r > 0 {
+			return r
+		}
+		if s.Width > 0 && s.Height > 0 {
+			base := float64(s.Width) / float64(s.Height)
+			if sar := parseAspect(s.SampleAspectRatio); sar > 0 {
+				return base * sar
+			}
+			return base
+		}
+		return 0
+	}
+	return 0
+}
+
+// parseAspect parses ffprobe's "a:b" ratio strings; 0 for absent/degenerate
+// values ("", "N/A", "0:1").
+func parseAspect(ratio string) float64 {
+	a, b, ok := strings.Cut(ratio, ":")
+	if !ok {
+		return 0
+	}
+	num, err1 := strconv.ParseFloat(a, 64)
+	den, err2 := strconv.ParseFloat(b, 64)
+	if err1 != nil || err2 != nil || num <= 0 || den <= 0 {
+		return 0
+	}
+	return num / den
 }
 
 // rawProbeStream matches ffprobe's JSON output, including nested tags/disposition.
 type rawProbeStream struct {
-	Index     int    `json:"index"`
-	CodecType string `json:"codec_type"`
-	CodecName string `json:"codec_name"`
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
-	Channels      int    `json:"channels"`
-	ColorTransfer string `json:"color_transfer"`
-	Tags          struct {
+	Index              int    `json:"index"`
+	CodecType          string `json:"codec_type"`
+	CodecName          string `json:"codec_name"`
+	Width              int    `json:"width"`
+	Height             int    `json:"height"`
+	Channels           int    `json:"channels"`
+	ColorTransfer      string `json:"color_transfer"`
+	SampleAspectRatio  string `json:"sample_aspect_ratio"`
+	DisplayAspectRatio string `json:"display_aspect_ratio"`
+	Tags               struct {
 		Language string `json:"language"`
 		Title    string `json:"title"`
 	} `json:"tags"`
@@ -207,16 +258,18 @@ func parseProbeJSON(data []byte) (*ProbeResult, error) {
 	}
 	for i, s := range raw.Streams {
 		result.Streams[i] = ProbeStream{
-			Index:         s.Index,
-			CodecType:     s.CodecType,
-			CodecName:     s.CodecName,
-			Width:         s.Width,
-			Height:        s.Height,
-			Channels:      s.Channels,
-			ColorTransfer: s.ColorTransfer,
-			Language:      s.Tags.Language,
-			Title:         s.Tags.Title,
-			IsDefault:     s.Disposition.Default == 1,
+			Index:              s.Index,
+			CodecType:          s.CodecType,
+			CodecName:          s.CodecName,
+			Width:              s.Width,
+			Height:             s.Height,
+			Channels:           s.Channels,
+			ColorTransfer:      s.ColorTransfer,
+			SampleAspectRatio:  s.SampleAspectRatio,
+			DisplayAspectRatio: s.DisplayAspectRatio,
+			Language:           s.Tags.Language,
+			Title:              s.Tags.Title,
+			IsDefault:          s.Disposition.Default == 1,
 		}
 	}
 	for _, c := range raw.Chapters {

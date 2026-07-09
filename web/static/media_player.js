@@ -108,6 +108,24 @@ function initMediaPlayer() {
   // never fires 'playing'); benign for normal playback (fires once, early).
   ['playing', 'pause', 'ended', 'error', 'loadeddata'].forEach((e) => video.addEventListener(e, hideSpinner));
 
+  // Anamorphic-aspect correction: some sources (PAL DVD rips) are stored at one
+  // pixel grid (e.g. 702×576) but flagged to display at another (16:9) via
+  // container SAR — a flag the pipeline/browser can lose, rendering the picture
+  // squeezed. The session carries the authoritative display aspect (video_dar);
+  // when the browser's own rendering (videoWidth/Height reflect any aspect
+  // metadata it honored) disagrees by >2%, CSS reshapes the element to the true
+  // aspect and stretches the frame into it (.aspect-fix + --dar). A file the
+  // browser gets right never engages — rendering stays identical to before.
+  let expectedDAR = 0;
+  video.addEventListener('loadedmetadata', () => {
+    const w = video.videoWidth, h = video.videoHeight;
+    const fix = expectedDAR > 0 && w > 0 && h > 0 &&
+      Math.abs(w / h - expectedDAR) / expectedDAR > 0.02;
+    video.classList.toggle('aspect-fix', fix);
+    if (fix) video.style.setProperty('--dar', String(expectedDAR));
+    else video.style.removeProperty('--dar');
+  });
+
   // attachSource points the element (or hls.js) at the stream. seekTo is the
   // desired position on the real episode timeline. Direct-play and HLS are
   // byte-range/segment seekable, so we set video.currentTime. Remux and burn-in
@@ -116,6 +134,7 @@ function initMediaPlayer() {
   // own currentTime then runs from zero. This is what lets those paths resume.
   function attachSource(session, seekTo, startPaused) {
     teardownHLS();
+    expectedDAR = session.video_dar || 0;
     // The <video> carries the native `autoplay` attribute, which fires the moment a
     // src attaches — independent of the explicit play() below. Clear it for a paused
     // start (before any src is set) or it would defeat the pause; restore it

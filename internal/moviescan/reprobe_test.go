@@ -51,10 +51,11 @@ func insertMovieFile(t *testing.T, db *sql.DB, libID int64, absPath, streamInfoJ
 	return id
 }
 
-// TestReprobeMissingSelectsOnlyEmptyRows verifies the candidate query (only rows
-// with empty stream info), the progress wiring, and that a missing file is
-// skipped gracefully — all without ffmpeg. Mirrors the tvscan reprobe test; the
-// actual probe write-back on a real file is covered by live verification.
+// TestReprobeMissingSelectsOnlyEmptyRows verifies the candidate query (empty
+// stream info, plus rows probed before aspect capture — no display_aspect_ratio
+// key), the progress wiring, and that a missing file is skipped gracefully — all
+// without ffmpeg. Mirrors the tvscan reprobe test; the actual probe write-back
+// on a real file is covered by live verification.
 func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
@@ -74,9 +75,12 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	// Candidate: empty stream info, file missing on disk (so the probe is
 	// skipped without ffmpeg — we're testing selection + graceful skip).
 	candidate := insertMovieFile(t, db, libID, filepath.Join(root, "Movie (2019)", "movie.mkv"), "{}")
-	// Non-candidate: already has a duration; must be left untouched.
-	const probedJSON = `{"format":{"duration":"100.0"}}`
+	// Non-candidate: fully probed (has the display_aspect_ratio key); untouched.
+	const probedJSON = `{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9"}]}`
 	probed := insertMovieFile(t, db, libID, filepath.Join(root, "Other (2020)", "other.mkv"), probedJSON)
+	// Candidate: probed before aspect capture existed (no display_aspect_ratio
+	// key) — the one-shot backfill must re-select it.
+	insertMovieFile(t, db, libID, filepath.Join(root, "Old (2018)", "old.mkv"), `{"format":{"duration":"100.0"}}`)
 
 	if err := s.ReprobeMissing(ctx, jobID, libID); err != nil {
 		t.Fatalf("ReprobeMissing: %v", err)
@@ -86,8 +90,8 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	if err := db.QueryRow("SELECT progress_total FROM scan_jobs WHERE id=?", jobID).Scan(&total); err != nil {
 		t.Fatalf("read progress_total: %v", err)
 	}
-	if total != 1 {
-		t.Fatalf("progress_total = %d, want 1 (only the empty row is a candidate)", total)
+	if total != 2 {
+		t.Fatalf("progress_total = %d, want 2 (the empty row + the pre-DAR row)", total)
 	}
 
 	var got string

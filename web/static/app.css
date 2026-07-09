@@ -2189,12 +2189,35 @@ html.is-fullscreen .tv-player-video-wrap {
   z-index: 260;
   background: #000;
   border-radius: 0;
+  /* Center the video box — a no-op for the normal 100%×100% video, but it
+     places the aspect-fix box (below), which can be narrower/shorter. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 html.is-fullscreen .tv-player-video-wrap .tv-video {
   width: 100%;
   height: 100%;
   max-height: none;
   object-fit: contain;
+}
+
+/* Anamorphic correction (media_player.js sets .aspect-fix + --dar when the
+   browser's rendered aspect disagrees with the source's flagged display
+   aspect): the element box takes the TRUE aspect and the frame is stretched
+   into it — object-fit: fill is correct whether or not the browser had already
+   applied the flag. max-width mirrors the height cap (80vh windowed, 100vh
+   fullscreen) so the box keeps its shape when the cap bites. */
+.tv-video.aspect-fix {
+  aspect-ratio: var(--dar);
+  object-fit: fill;
+  max-width: calc(80vh * var(--dar));
+  margin-inline: auto;
+}
+html.is-fullscreen .tv-player-video-wrap .tv-video.aspect-fix {
+  height: auto;
+  max-height: 100vh;
+  max-width: calc(100vh * var(--dar));
 }
 
 /* Track-picker row (audio/subtitles/speed + Auto-skip): same chip family and

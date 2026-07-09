@@ -152,6 +152,7 @@ func (h *Handler) photoPlaybackSession(w http.ResponseWriter, r *http.Request) {
 		SubtitleTracks:  subtitleTracks(&probe),
 		AppliedAudio:    aud,
 		AppliedSubtitle: sub,
+		VideoDAR:        probe.VideoDisplayAspect(),
 	}
 	resp.Chapters = chapterMarks(&probe)
 	if out.SubtitleSidecar && sub > 0 {
