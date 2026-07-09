@@ -947,20 +947,10 @@ function initMediaPlayer() {
   }
   document.addEventListener('turbo:before-cache', () => endScan(false), { once: true });
 
-  // Fullscreen the video-wrap (which holds the auto-hiding controls overlay), so
-  // the custom transport + scrubber stay reachable in fullscreen — there are no
-  // native controls to fall back on.
-  const fsBtn = document.getElementById('tvFullscreenBtn');
-  if (fsBtn) {
-    const fsTarget = video.closest('.tv-player-video-wrap') || video;
-    fsBtn.addEventListener('click', () => {
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      } else if (fsTarget.requestFullscreen) {
-        fsTarget.requestFullscreen().catch(() => {});
-      }
-    });
-  }
+  // Fullscreen is app-root fullscreen everywhere: #tvFullscreenBtn carries
+  // data-app-fullscreen, so the layout shell's delegated handler owns it (one
+  // fullscreen state that survives Turbo body swaps like Up Next auto-advance);
+  // CSS expands the video wrap to fill the viewport while html.is-fullscreen.
 
   // --- volume + mute --- native <video controls> is dropped, so this restores
   //     the volume slider it used to provide. Persisted in localStorage. Works

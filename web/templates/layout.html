@@ -160,11 +160,13 @@
       });
     })();
 
-    // App-wide full screen (topbar button) + an auto-hiding topbar overlay while
-    // in it. Window-guarded so the document-level listeners bind ONCE (the inline
-    // script re-runs on every Turbo render); delegated so the re-rendered button
-    // stays wired. Only the app root going full screen (not the per-video full
-    // screen) drives the overlay — gated on fullscreenElement === documentElement.
+    // App-wide full screen (the topbar button AND the media players'
+    // #tvFullscreenBtn — both carry data-app-fullscreen and toggle the same
+    // app-root fullscreen; on player pages CSS expands the video wrap to fill
+    // the viewport) + an auto-hiding topbar overlay while in it. Window-guarded
+    // so the document-level listeners bind ONCE (the inline script re-runs on
+    // every Turbo render); delegated so re-rendered buttons stay wired. Gated
+    // on fullscreenElement === documentElement.
     (() => {
       if (window.__hesperaFullscreen) return;
       window.__hesperaFullscreen = true;
@@ -189,12 +191,11 @@
       document.addEventListener('fullscreenchange', () => {
         if (appFs()) { root.classList.add('is-fullscreen'); bump(); }
         else { root.classList.remove('is-fullscreen', 'topbar-hidden'); clearTimeout(hideTimer); }
-        const btn = document.querySelector('[data-app-fullscreen]');
-        if (btn) {
-          const on = !!document.fullscreenElement;
+        const on = !!document.fullscreenElement;
+        document.querySelectorAll('[data-app-fullscreen]').forEach((btn) => {
           btn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
           btn.setAttribute('title', on ? 'Exit full screen' : 'Full screen');
-        }
+        });
       });
       document.addEventListener('pointermove', (e) => {
         if (!root.classList.contains('is-fullscreen')) return;
