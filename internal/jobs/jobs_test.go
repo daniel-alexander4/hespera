@@ -32,8 +32,21 @@ func TestReconcileStaleJobsOnStartup(t *testing.T) {
 			t.Fatalf("seed %s: %v", st, err)
 		}
 	}
+	// A second interrupted library, and a library-0 row (per-entity metadata
+	// fetch) that must NOT appear in InterruptedLibraries (it self-heals lazily).
+	for _, row := range []struct {
+		lib     int64
+		jobType string
+	}{{2, "tv_trickplay"}, {0, "person_fetch"}} {
+		if _, err := conn.Exec(
+			"INSERT INTO scan_jobs (library_id, job_type, status, progress_current, progress_total, created_at) VALUES (?, ?, 'running', 0, 0, datetime('now'))",
+			row.lib, row.jobType,
+		); err != nil {
+			t.Fatalf("seed lib %d: %v", row.lib, err)
+		}
+	}
 
-	New(conn) // runs reconcileStaleJobs
+	svc := New(conn) // runs reconcileStaleJobs
 
 	var stale int
 	if err := conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE status IN ('running','queued')").Scan(&stale); err != nil {
@@ -54,11 +67,22 @@ func TestReconcileStaleJobsOnStartup(t *testing.T) {
 	var canceled, failed int
 	_ = conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE status='canceled' AND error='interrupted by restart'").Scan(&canceled)
 	_ = conn.QueryRow("SELECT COUNT(*) FROM scan_jobs WHERE status='failed'").Scan(&failed)
-	if canceled != 2 {
-		t.Fatalf("expected 2 rows reconciled to canceled+interrupted, got %d", canceled)
+	if canceled != 4 {
+		t.Fatalf("expected 4 rows reconciled to canceled+interrupted, got %d", canceled)
 	}
 	if failed != 0 {
 		t.Fatalf("a restart must not mark anything failed, got %d failed", failed)
+	}
+
+	// The reconcile records which libraries had interrupted work (the boot
+	// auto-resume's input) — distinct, and excluding library_id=0.
+	libs := svc.InterruptedLibraries()
+	seen := map[int64]bool{}
+	for _, id := range libs {
+		seen[id] = true
+	}
+	if len(libs) != 2 || !seen[1] || !seen[2] {
+		t.Fatalf("InterruptedLibraries: want exactly {1,2}, got %v", libs)
 	}
 }
 

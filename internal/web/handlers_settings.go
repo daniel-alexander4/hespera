@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -72,6 +73,7 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
 			"WatchEnabled":            h.effectiveWatchEnabled(ctx),
+			"JobResumeEnabled":        h.effectiveJobResumeEnabled(ctx),
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
 			"UpdateCheckEnabled":      h.effectiveUpdateCheckEnabled(ctx),
 			"DefaultAudioLang":        h.effectiveDefaultAudioLang(ctx),
@@ -308,6 +310,17 @@ func (h *Handler) effectiveWatchEnabled(ctx context.Context) bool {
 	return strings.TrimSpace(v) != "0"
 }
 
+// effectiveJobResumeEnabled reports whether interrupted jobs auto-resume at
+// startup (resumeInterruptedJobs re-kicks the affected libraries' scan
+// chains). Default ON — a restart mid-chain should finish its work without a
+// manual re-kick; '0' turns it off. The watch_enabled pattern; read once at
+// boot since it gates a one-shot action.
+func (h *Handler) effectiveJobResumeEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='job_resume_enabled'").Scan(&v)
+	return strings.TrimSpace(v) != "0"
+}
+
 // effectiveLyricsEnabled reports whether synced-lyrics fetching + the
 // now-playing lyrics card are on. Default OFF (opt-in) — stored as '1' when
 // enabled, absent = off. The single source of truth for both the client (skips
@@ -405,6 +418,7 @@ func (h *Handler) saveAPIKey(ctx context.Context, dbKey, value string) error {
 var featureToggles = []struct{ sentinel, key string }{
 	{"integrity_present", "integrity_autorepair"},
 	{"watch_present", "watch_enabled"},
+	{"job_resume_present", "job_resume_enabled"},
 	{"lyrics_present", "lyrics_enabled"},
 	{"update_present", "update_check_enabled"},
 }
@@ -707,6 +721,44 @@ func (h *Handler) enqueueYielding(jobType string, libID int64, run func(context.
 		return nil
 	}
 	_, _ = h.jobs.EnqueueUnique(jobType, libID, "system", wrap)
+}
+
+// resumeInterruptedJobs re-kicks the scan chain of every library whose jobs the
+// startup reconcile marked "interrupted by restart" (a shutdown/crash mid-chain
+// — e.g. a box that powers off nightly with a trickplay sweep half done). Every
+// chain phase is incremental/missing-only, so the re-kick fast-forwards to the
+// interrupted work losslessly — this is the automated form of the manual
+// morning `hescli scan` re-kick. Gated by the job_resume_enabled Features
+// toggle (default ON). One-off non-chain jobs (integrity_deep, tv_intro_detect)
+// can't be resumed this way — their executors don't survive a restart — so they
+// stay canceled and re-run on the next manual trigger. Called once from web.New.
+func (h *Handler) resumeInterruptedJobs(ctx context.Context) {
+	libs := h.jobs.InterruptedLibraries()
+	if len(libs) == 0 || !h.effectiveJobResumeEnabled(ctx) {
+		return
+	}
+	for _, id := range libs {
+		var root string
+		if err := h.db.QueryRowContext(ctx, "SELECT root_path FROM libraries WHERE id=?", id).Scan(&root); err != nil {
+			slog.Warn("job resume: library gone, skipping", "library_id", id, "err", err)
+			continue
+		}
+		// Root sanity: a library root that is missing or EMPTY this early in
+		// boot is far more likely a not-yet-mounted mount point than a truly
+		// emptied library — and a scan over an empty root would prune every
+		// row (losing playback state). Skip with a warning; the Scan button /
+		// watcher covers it once the mount is up.
+		if entries, err := os.ReadDir(filepath.Clean(root)); err != nil || len(entries) == 0 {
+			slog.Warn("job resume: library root missing or empty, skipping",
+				"library_id", id, "root", root, "err", err)
+			continue
+		}
+		if _, err := h.EnqueueLibraryScan(ctx, id, "resume"); err != nil {
+			slog.Warn("job resume: enqueue failed", "library_id", id, "err", err)
+			continue
+		}
+		slog.Info("job resume: re-kicked scan chain for interrupted library", "library_id", id)
+	}
 }
 
 // EnqueueLibraryScan enqueues the full scan chain for a library — scan →

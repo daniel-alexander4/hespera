@@ -45,6 +45,13 @@ type Service struct {
 	mu        sync.Mutex
 	cancels   map[int64]context.CancelFunc
 	enqueueMu sync.Mutex // serializes EnqueueUnique's check-then-insert
+
+	// interruptedLibs is the distinct set of library ids whose jobs
+	// reconcileStaleJobs marked "interrupted by restart" at startup — the input
+	// to the boot auto-resume (the web layer re-kicks each library's scan
+	// chain, which is incremental so it fast-forwards to the interrupted work).
+	// Written once during New, read-only after.
+	interruptedLibs []int64
 }
 
 // jobRetention bounds how long a terminal scan_jobs row is kept. The table is
@@ -95,8 +102,29 @@ func (s *Service) pruneOldJobs() {
 // Marked 'canceled' (not 'failed') because the jobs are idempotent + incremental
 // and a re-kick resumes losslessly — a restart is not an error, so it must not
 // pollute the failed list. The "interrupted by restart" text disambiguates it
-// from a user cancel.
+// from a user cancel. The affected libraries are recorded (interruptedLibs) so
+// the boot auto-resume can perform that re-kick.
 func (s *Service) reconcileStaleJobs() {
+	// Collect which libraries the UPDATE below is about to touch. library_id=0
+	// rows (per-entity metadata fetches) are excluded: they self-heal lazily on
+	// the next page view via their fetched-markers, so a library re-kick has
+	// nothing to resume for them.
+	rows, err := s.db.Query(
+		`SELECT DISTINCT library_id FROM scan_jobs WHERE status IN (?, ?) AND library_id > 0`,
+		statusRunning, statusQueued,
+	)
+	if err != nil {
+		slog.Warn("jobs reconcile stale: list libraries", "err", err)
+	} else {
+		for rows.Next() {
+			var id int64
+			if rows.Scan(&id) == nil {
+				s.interruptedLibs = append(s.interruptedLibs, id)
+			}
+		}
+		rows.Close()
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	res, err := s.db.Exec(
 		`UPDATE scan_jobs SET status=?, error=?, ended_at=? WHERE status IN (?, ?)`,
@@ -109,6 +137,14 @@ func (s *Service) reconcileStaleJobs() {
 	if n, _ := res.RowsAffected(); n > 0 {
 		slog.Info("jobs reconciled stale rows to canceled", "count", n)
 	}
+}
+
+// InterruptedLibraries returns the distinct library ids whose jobs the startup
+// reconcile marked "interrupted by restart" — the libraries whose scan chains
+// the boot auto-resume should re-kick. Populated once in New; safe to call
+// concurrently thereafter.
+func (s *Service) InterruptedLibraries() []int64 {
+	return s.interruptedLibs
 }
 
 // cosmeticJobTypes are the low-priority "nice to have" tail jobs (screen-cap

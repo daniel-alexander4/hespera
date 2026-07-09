@@ -197,6 +197,11 @@ func New(d Deps) (*Handler, error) {
 		displayClassAt: display.ClassAt,
 	}
 
+	// Boot auto-resume: re-kick the scan chain of any library whose jobs the
+	// startup reconcile (inside jobs.New above) marked "interrupted by restart".
+	// Synchronous but cheap — it only inserts job rows; the worker runs them.
+	h.resumeInterruptedJobs(context.Background())
+
 	go h.pruneTVCacheLoop()
 
 	return h, nil

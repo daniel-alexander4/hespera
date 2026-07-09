@@ -160,6 +160,25 @@
   </form>
 
   <form method="post" action="/settings" class="form-card">
+    <input type="hidden" name="job_resume_present" value="1" />
+    <div class="form-group">
+      <label class="form-check">
+        <input type="checkbox" name="job_resume_enabled" value="1"{{if .JobResumeEnabled}} checked{{end}} />
+        Resume interrupted jobs at startup
+      </label>
+      <small class="form-help">
+        If Hespera shuts down mid-job (a scan, match, or thumbnail sweep), the next
+        launch automatically re-runs the affected library's scan chain. Every phase is
+        incremental, so it fast-forwards to the unfinished work rather than redoing
+        everything. Turn off to leave interrupted jobs canceled until a manual Scan.
+      </small>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+
+  <form method="post" action="/settings" class="form-card">
     <input type="hidden" name="lyrics_present" value="1" />
     <div class="form-group">
       <label class="form-check">

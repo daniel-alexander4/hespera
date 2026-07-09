@@ -25,7 +25,8 @@ Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
 - **Photos** — a capture-date timeline built from EXIF (with a folders view
   and year filters); home-video clips play through the same engine as TV.
 - **Library care** — a filesystem watcher auto-scans new media, corruption
-  detection with lossless container auto-repair, and loudness leveling.
+  detection with lossless container auto-repair, loudness leveling, and jobs
+  interrupted by a shutdown resume automatically on the next launch.
 - **Couch-friendly** — the whole UI drives with arrow keys or a TV remote,
   scales itself to the physical display size, and honors hardware media keys.
 - **Local-first** — one binary, SQLite, your files stay yours: no accounts,
