@@ -1,6 +1,10 @@
 package video
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 const sampleFFProbeJSON = `{
   "format": {
@@ -112,5 +116,82 @@ func TestParseProbeJSONChapters(t *testing.T) {
 	}
 	if result.Chapters[1] != (ProbeChapter{StartSec: 40, EndSec: 48, Title: "Advertisement"}) {
 		t.Errorf("chapter 1 = %+v", result.Chapters[1])
+	}
+}
+
+func TestVideoDisplayAspect(t *testing.T) {
+	cases := []struct {
+		name  string
+		probe ProbeResult
+		want  float64
+	}{
+		{
+			name: "explicit DAR wins (anamorphic PAL DVD)",
+			probe: ProbeResult{Streams: []ProbeStream{{
+				CodecType: "video", Width: 702, Height: 576,
+				SampleAspectRatio: "499:351", DisplayAspectRatio: "499:288",
+			}}},
+			want: 499.0 / 288.0,
+		},
+		{
+			name: "SAR fallback when DAR absent",
+			probe: ProbeResult{Streams: []ProbeStream{{
+				CodecType: "video", Width: 720, Height: 576, SampleAspectRatio: "64:45",
+			}}},
+			want: (720.0 / 576.0) * (64.0 / 45.0),
+		},
+		{
+			name: "square pixels return plain w/h",
+			probe: ProbeResult{Streams: []ProbeStream{{
+				CodecType: "video", Width: 640, Height: 496,
+			}}},
+			want: 640.0 / 496.0,
+		},
+		{
+			name: "garbage ratios ignored",
+			probe: ProbeResult{Streams: []ProbeStream{{
+				CodecType: "video", Width: 1920, Height: 1080,
+				SampleAspectRatio: "N/A", DisplayAspectRatio: "0:1",
+			}}},
+			want: 1920.0 / 1080.0,
+		},
+		{
+			name: "audio stream skipped, no video = 0",
+			probe: ProbeResult{Streams: []ProbeStream{{
+				CodecType: "audio", Channels: 2,
+			}}},
+			want: 0,
+		},
+		{
+			name: "zero dimensions and no DAR = 0",
+			probe: ProbeResult{Streams: []ProbeStream{{
+				CodecType: "video",
+			}}},
+			want: 0,
+		},
+	}
+	for _, tc := range cases {
+		got := tc.probe.VideoDisplayAspect()
+		if diff := got - tc.want; diff > 1e-9 || diff < -1e-9 {
+			t.Errorf("%s: VideoDisplayAspect = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The reprobe jobs backfill rows probed before aspect capture by testing for the
+// display_aspect_ratio key in stored stream_info_json — so the key must always be
+// present in a marshaled probe (non-omitempty), even when ffprobe reported nothing,
+// or the backfill would re-select those rows forever.
+func TestProbeJSONAlwaysCarriesDARKey(t *testing.T) {
+	result, err := parseProbeJSON([]byte(sampleFFProbeJSON))
+	if err != nil {
+		t.Fatalf("parseProbeJSON: %v", err)
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"display_aspect_ratio"`) {
+		t.Fatalf("marshaled probe missing display_aspect_ratio key: %s", b)
 	}
 }
