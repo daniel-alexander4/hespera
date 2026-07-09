@@ -117,14 +117,20 @@ function initMediaPlayer() {
   // aspect and stretches the frame into it (.aspect-fix + --dar). A file the
   // browser gets right never engages — rendering stays identical to before.
   let expectedDAR = 0;
-  video.addEventListener('loadedmetadata', () => {
+  const applyAspectFix = () => {
     const w = video.videoWidth, h = video.videoHeight;
     const fix = expectedDAR > 0 && w > 0 && h > 0 &&
       Math.abs(w / h - expectedDAR) / expectedDAR > 0.02;
     video.classList.toggle('aspect-fix', fix);
     if (fix) video.style.setProperty('--dar', String(expectedDAR));
     else video.style.removeProperty('--dar');
-  });
+  };
+  video.addEventListener('loadedmetadata', applyAspectFix);
+  // 'resize' is the load-bearing hook: on the progressive remux path the
+  // empty_moov fMP4 carries no dimensions up front, so loadedmetadata fires
+  // with videoWidth 0 and the real dims only arrive with the first fragment —
+  // announced by this event (also re-evaluates any mid-stream dim change).
+  video.addEventListener('resize', applyAspectFix);
 
   // attachSource points the element (or hls.js) at the stream. seekTo is the
   // desired position on the real episode timeline. Direct-play and HLS are
