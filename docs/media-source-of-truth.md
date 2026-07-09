@@ -69,6 +69,15 @@ Every scanner follows the same disk→DB reconciliation shape:
    state from an orphaned old row to its moved-to new row.
 5. **Prune** — for each row whose `abs_path` is under root and fails `os.Stat`,
    `DELETE`. FK `ON DELETE CASCADE` removes dependent rows.
+   - **Prune-safety guard** (all four scanners): when the walk ingested **0
+     files** but the library still holds **>0 rows**, relink+prune are skipped
+     with a warning and the scan finishes normally. A root that is present but
+     empty is far more likely an unmounted mount point than a deliberately
+     emptied library, and pruning it would delete every row (and the
+     playback/match state only rows carry — see §9). A deliberately emptied
+     library still cleans up via a rescan once the root has *some* content, or
+     via library delete. (The boot job auto-resume has the same guard upstream —
+     it skips enqueueing for a missing/empty root.)
 6. **Cleanup** *(music only)* — delete albums with zero tracks, then artists
    with zero albums/tracks (`cleanupEmptyAlbums`).
 

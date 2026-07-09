@@ -187,6 +187,21 @@ func (s *Scanner) ScanPhotos(ctx context.Context, jobID, libraryID int64) error 
 		slog.Warn("photoscan completed with errors", "library_id", libraryID, "files_scanned", processed, "errors", scanErrors)
 	}
 
+	// Prune safety: a walk that found nothing while the library has rows is far
+	// more likely an unmounted/empty mount point than a deliberately emptied
+	// library — pruning would delete every row (and the playback state + thumbs
+	// only rows carry). Skip the destructive tail; a rescan once the root has
+	// content prunes normally, and deleting the library reaps everything.
+	if processed == 0 {
+		var rows int
+		_ = s.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM photos WHERE library_id=?", libraryID).Scan(&rows)
+		if rows > 0 {
+			slog.Warn("photoscan: no files found but library has rows — root looks unmounted; skipping prune",
+				"library_id", libraryID, "rows", rows)
+			return nil
+		}
+	}
+
 	if err := s.relinkMovedFiles(ctx, libraryID, cleanRoot); err != nil {
 		return err
 	}
