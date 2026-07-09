@@ -498,7 +498,7 @@ _hescli() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
   local cmds="library scan match integrity config jobs status completion version help"
-  local cfgkeys="tmdb_api_key fanarttv_api_key audiodb_api_key lastfm_api_key opensubtitles_api_key opensubtitles_user_agent integrity_autorepair watch_enabled lyrics_enabled update_check_enabled default_audio_lang default_subtitle_lang subtitles_default_on subtitle_size subtitle_bg subtitle_position media_root"
+  local cfgkeys="tmdb_api_key fanarttv_api_key audiodb_api_key lastfm_api_key opensubtitles_api_key opensubtitles_user_agent integrity_autorepair watch_enabled job_resume_enabled lyrics_enabled update_check_enabled default_audio_lang default_subtitle_lang subtitles_default_on subtitle_size subtitle_bg subtitle_position media_root"
   local types="music tv movies home_media"
   local statuses="queued running done failed canceled"
 
