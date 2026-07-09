@@ -159,7 +159,8 @@ func (h *Handler) mgmtMatch(w http.ResponseWriter, r *http.Request) {
 	case "music":
 		matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
 		jobType = "music_match"
-		executor = func(ctx context.Context, jID, libID int64) error { return matcher.RunMusicMatch(ctx, jID, libID) }
+		// hescli match is human-invoked → force (bypass the re-check TTLs).
+		executor = func(ctx context.Context, jID, libID int64) error { return matcher.RunMusicMatch(ctx, jID, libID, true) }
 	case "tv":
 		tmdbKey := h.effectiveTMDBKey(ctx)
 		if tmdbKey == "" {

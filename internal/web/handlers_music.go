@@ -1287,7 +1287,8 @@ func (h *Handler) musicAlbumUnmatch(w http.ResponseWriter, r *http.Request) {
 			match_confidence=0,
 			matched_at='',
 			art_path='',
-			art_checked_at=''
+			art_checked_at='',
+			match_checked_at=''
 		WHERE id=?
 	`, albumID); err != nil {
 		httpError(w, 500, "internal server error", "db update failed", "handler", "musicAlbumUnmatch", "err", err)

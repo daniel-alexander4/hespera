@@ -784,7 +784,9 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// Chain a music_match job after scan completes.
 			matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
 			_, _ = h.jobs.EnqueueUnique("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
-				return matcher.RunMusicMatch(ctx, mJID, mLibID)
+				// Automatic chain run → NOT forced: the re-check TTLs keep a
+				// no-change rerun near-free (new candidates still process).
+				return matcher.RunMusicMatch(ctx, mJID, mLibID, false)
 			})
 			// Chain the cheap container/audio integrity check (auto-repairs new/changed files).
 			repair := h.effectiveIntegrityAutoRepair(ctx)

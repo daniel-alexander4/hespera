@@ -52,7 +52,7 @@ func TestFetchPopularity(t *testing.T) {
 	deepCut := track(dpID, "Maybe I'm a Leo", "/m/3.mp3") // not in top recordings
 	obscure := track(noID, "Whatever", "/m/4.mp3")        // artist has no MBID → not fetched
 
-	if err := m.fetchPopularity(ctx, 0, libID); err != nil {
+	if err := m.fetchPopularity(ctx, 0, libID, true); err != nil {
 		t.Fatalf("fetchPopularity: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestFetchPopularityLastfmBlend(t *testing.T) {
 	smoke := track("Smoke On The Water", "/m/1.mp3")
 	deepCut := track("Maybe I'm a Leo", "/m/2.mp3") // LB misses it; Last.fm fills it
 
-	if err := m.fetchPopularity(ctx, 0, libID); err != nil {
+	if err := m.fetchPopularity(ctx, 0, libID, true); err != nil {
 		t.Fatalf("fetchPopularity: %v", err)
 	}
 	pop := func(id int64) int {

@@ -416,6 +416,22 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "music_artists", "similar_fetched_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// Match-pipeline re-run TTL stamps (the art_checked_at pattern applied to the
+	// three formerly-ungated phases, so an automatic chain-triggered match run is
+	// near-free on an unchanged library while user-triggered runs bypass them):
+	// enrich_checked_at — last enrichment attempt for a still-INCOMPLETE artist;
+	// popularity_checked_at — last ListenBrainz/Last.fm popularity fetch;
+	// match_checked_at — last failed MusicBrainz match attempt for an album that
+	// stays unmatched (cleared by the album Unmatch reset).
+	if err := ensureColumn(db, "music_artists", "enrich_checked_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "music_artists", "popularity_checked_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "music_albums", "match_checked_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	// movie_files: the scanner parses guessed_title/year from the path (the matcher
 	// reads them); tmdb_id is the matched identity linking to movie_art and the
 	// metadata cache. Added here for DBs that created movie_files before these

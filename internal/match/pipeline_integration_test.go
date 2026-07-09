@@ -262,7 +262,7 @@ func TestRunMusicMatchIntegrationHappyPath(t *testing.T) {
 	libID, artistID, albumID, jobID := seedTestData(t, db)
 
 	// Run the full pipeline.
-	if err := m.RunMusicMatch(ctx, jobID, libID); err != nil {
+	if err := m.RunMusicMatch(ctx, jobID, libID, true); err != nil {
 		t.Fatalf("RunMusicMatch: %v", err)
 	}
 
@@ -457,7 +457,7 @@ func TestRunMusicMatchIntegrationPartialFailure(t *testing.T) {
 	libID, artistID, albumID, jobID := seedTestData(t, db)
 
 	// RunMusicMatch should NOT return error (artist enrichment errors are non-fatal).
-	if err := m.RunMusicMatch(ctx, jobID, libID); err != nil {
+	if err := m.RunMusicMatch(ctx, jobID, libID, true); err != nil {
 		t.Fatalf("RunMusicMatch should not fail on artist enrichment error: %v", err)
 	}
 

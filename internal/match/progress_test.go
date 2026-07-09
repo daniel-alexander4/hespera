@@ -79,7 +79,7 @@ func TestEnrichArtistsReportsProgress(t *testing.T) {
 		}
 	}
 
-	if err := m.enrichArtists(ctx, jobID, libID); err != nil {
+	if err := m.enrichArtists(ctx, jobID, libID, true); err != nil {
 		t.Fatalf("enrichArtists: %v", err)
 	}
 	cur, total := readProgress(t, db, jobID)

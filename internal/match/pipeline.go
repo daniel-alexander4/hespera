@@ -146,21 +146,29 @@ func (m *Matcher) ArtistImageCandidates(ctx context.Context, artistMBID string) 
 // RunMusicMatch is the job executor for the music_match job type.
 // Phase 1: Enrich artists (MBID, bio, image).
 // Phase 2: Match albums (MusicBrainz, cover art).
-func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64) error {
+//
+// force bypasses the per-candidate re-check TTLs (enrich_checked_at /
+// popularity_checked_at / match_checked_at). Callers pass force=true for a
+// USER-initiated match (the Match button, hescli match) — the full-retry
+// behavior that lets a matcher improvement retroactively fix a library — and
+// force=false for automatic chain runs (post-scan, watcher, boot auto-resume),
+// which would otherwise re-fan-out the full network cost for every
+// permanently-incomplete artist and unmatchable album on every run, daily.
+func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64, force bool) error {
 	// --- Phase 1: Artist enrichment ---
-	if err := m.enrichArtists(ctx, jobID, libraryID); err != nil {
+	if err := m.enrichArtists(ctx, jobID, libraryID, force); err != nil {
 		return err
 	}
 
 	// --- Phase 1b: Per-track popularity from ListenBrainz (non-fatal) ---
 	// Runs after artist enrichment so artist MBIDs are resolved. Best-effort —
 	// a network/coverage gap just leaves popularity unfilled, not a failed match.
-	if err := m.fetchPopularity(ctx, jobID, libraryID); err != nil {
+	if err := m.fetchPopularity(ctx, jobID, libraryID, force); err != nil {
 		slog.Warn("popularity phase", "err", err)
 	}
 
 	// --- Phase 2: Album matching ---
-	if err := m.matchAlbums(ctx, jobID, libraryID); err != nil {
+	if err := m.matchAlbums(ctx, jobID, libraryID, force); err != nil {
 		return err
 	}
 
@@ -187,6 +195,34 @@ func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64) err
 // cover art. Most such albums genuinely have no Cover Art Archive image, but CAA
 // accrues art over time, so we retry on a slow cadence rather than never.
 const artRecheckTTL = 30 * 24 * time.Hour
+
+// Re-check TTLs for the other pipeline phases — the art_checked_at pattern
+// applied to what were the three ungated phases. On an unchanged library an
+// automatic (non-force) match run sees empty candidate sets inside these
+// windows instead of re-issuing the full per-candidate network fan-out (measured
+// on a real library: 98 minutes/run). New candidates carry an empty stamp and
+// are always processed immediately; a user-initiated run (force) bypasses all
+// three. Popularity is shorter so Shuffle Most Popular stays reasonably fresh
+// for newly added tracks of existing artists.
+const (
+	enrichRecheckTTL     = 30 * 24 * time.Hour
+	popularityRecheckTTL = 7 * 24 * time.Hour
+	matchRecheckTTL      = 30 * 24 * time.Hour
+)
+
+// recheckCutoff renders the TTL comparison value for a checked-at column, and
+// stampNow the value written back — the art_checked_at conventions.
+func recheckCutoff(ttl time.Duration) string {
+	return time.Now().Add(-ttl).UTC().Format(time.RFC3339)
+}
+
+func stampNow() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
+// forceCutoff sorts after every real RFC3339 stamp, so a force run's TTL
+// predicate (`checked_at < cutoff`) admits every candidate.
+const forceCutoff = "9999-12-31T23:59:59Z"
 
 // refetchMissingArt is a second pass that fills cover art for albums that were
 // matched but still have no art_path — e.g. matched before an art improvement
@@ -349,15 +385,25 @@ func (m *Matcher) progressSet(ctx context.Context, jobID int64, current int) {
 
 // enrichArtists finds all artists in the library that are missing MBID, bio, or
 // image, resolves their MusicBrainz ID, and fetches bio + image.
-func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) error {
+func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64, force bool) error {
+	// Non-force runs skip artists whose last enrichment attempt is inside the
+	// TTL — a permanently-incomplete artist (bio found nowhere) otherwise costs
+	// its full MB+wiki+fanart+AudioDB fan-out on every automatic run, forever.
+	// Complete artists still pass the query (the loop skips them cheaply) and
+	// never carry a stamp; new artists have an empty stamp and always process.
+	cutoff := recheckCutoff(enrichRecheckTTL)
+	if force {
+		cutoff = forceCutoff
+	}
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT DISTINCT ar.id, ar.name, ar.musicbrainz_id, ar.bio, ar.art_path
 		FROM music_artists ar
 		JOIN music_albums al ON al.album_artist_id = ar.id
 		WHERE ar.library_id = ?
 		  AND ar.name NOT IN ('Unknown Artist', 'Various Artists')
+		  AND (ar.enrich_checked_at = '' OR ar.enrich_checked_at < ?)
 		ORDER BY ar.id
-	`, libraryID)
+	`, libraryID, cutoff)
 	if err != nil {
 		return fmt.Errorf("query artists: %w", err)
 	}
@@ -400,6 +446,12 @@ func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) err
 		if hasMBID && hasBio && hasArt {
 			continue
 		}
+
+		// Stamp the attempt up front (every exit below — no MB match, enrich
+		// error, partial fill — counts as "tried"), so a still-incomplete artist
+		// isn't re-fanned-out on every automatic run inside the TTL.
+		_, _ = m.db.ExecContext(ctx,
+			"UPDATE music_artists SET enrich_checked_at=? WHERE id=?", stampNow(), a.id)
 
 		slog.Info("enriching artist", "id", a.id, "name", a.name, "has_mbid", hasMBID)
 
@@ -466,15 +518,24 @@ func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64) err
 // unless their artist is in the <=4-track curated set). Best-effort and
 // idempotent — re-runs each Match. Mirrors enrichArtists' shape: drain artists
 // before the network loop, ctx-cancellable, 500ms inter-artist gap.
-func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) error {
+func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64, force bool) error {
+	// Non-force runs skip artists fetched inside the (shorter) popularity TTL —
+	// listen counts drift slowly, and re-fetching every MBID artist on every
+	// automatic run costs one ListenBrainz call each on the shared 1 req/s
+	// MetaBrainz limiter (plus Last.fm).
+	cutoff := recheckCutoff(popularityRecheckTTL)
+	if force {
+		cutoff = forceCutoff
+	}
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT id, musicbrainz_id, name
 		FROM music_artists
 		WHERE library_id = ?
 		  AND musicbrainz_id != ''
 		  AND name NOT IN ('Unknown Artist', 'Various Artists')
+		  AND (popularity_checked_at = '' OR popularity_checked_at < ?)
 		ORDER BY id
-	`, libraryID)
+	`, libraryID, cutoff)
 	if err != nil {
 		return fmt.Errorf("query artists: %w", err)
 	}
@@ -508,6 +569,11 @@ func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) e
 		default:
 		}
 		m.progressSet(ctx, jobID, base+i+1)
+
+		// Stamp the attempt up front — success or coverage-gap, it counts as
+		// "fetched" for the TTL.
+		_, _ = m.db.ExecContext(ctx,
+			"UPDATE music_artists SET popularity_checked_at=? WHERE id=?", stampNow(), a.id)
 
 		// Load this artist's local tracks once — both popularity sources credit
 		// them. norm = normalized title for matching; pop = current stored value.
@@ -583,15 +649,25 @@ func (m *Matcher) fetchPopularity(ctx context.Context, jobID, libraryID int64) e
 }
 
 // matchAlbums matches unmatched albums against MusicBrainz.
-func (m *Matcher) matchAlbums(ctx context.Context, jobID, libraryID int64) error {
+func (m *Matcher) matchAlbums(ctx context.Context, jobID, libraryID int64, force bool) error {
+	// Non-force runs skip albums whose last failed attempt is inside the TTL —
+	// a permanently-unmatchable album otherwise costs its full MB cascade (up
+	// to ~6 queries at 1 req/s) on every automatic run. Matched albums leave
+	// the set by status; the album Unmatch reset clears the stamp so a
+	// deliberate unmatch retries on the very next run.
+	cutoff := recheckCutoff(matchRecheckTTL)
+	if force {
+		cutoff = forceCutoff
+	}
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT a.id, a.title, a.year, COALESCE(ar.name, '')
 		FROM music_albums a
 		LEFT JOIN music_artists ar ON ar.id = a.album_artist_id
 		WHERE a.library_id = ?
 		  AND (a.match_status = '' OR a.match_status = 'unmatched')
+		  AND (a.match_checked_at = '' OR a.match_checked_at < ?)
 		ORDER BY a.id
-	`, libraryID)
+	`, libraryID, cutoff)
 	if err != nil {
 		return fmt.Errorf("query albums: %w", err)
 	}
@@ -629,6 +705,11 @@ func (m *Matcher) matchAlbums(ctx context.Context, jobID, libraryID int64) error
 			return ctx.Err()
 		default:
 		}
+
+		// Stamp the attempt up front — a no-match exit inside matchAlbum still
+		// counts as "tried" for the TTL.
+		_, _ = m.db.ExecContext(ctx,
+			"UPDATE music_albums SET match_checked_at=? WHERE id=?", stampNow(), a.id)
 
 		if err := m.matchAlbum(ctx, a.id, a.title, a.artist, a.year); err != nil {
 			slog.Warn("match album failed", "album_id", a.id, "title", a.title, "err", err)
