@@ -289,3 +289,16 @@ test('focusFirst anchors the home dashboard on the Music card at any scale, moda
   other.document.dispatchEvent(new other.window.Event('turbo:load'));
   assert.strictEqual(other.document.activeElement, other.document.body, 'non-home desktop page is not focus-stolen');
 });
+
+test('focusFirst yields to an anchor another controller already set', () => {
+  const env = boot({
+    body: '<button id="pre">preset</button>' +
+      '<div class="subtabs"><button class="subtab active" data-tab="recent">Recent</button></div>',
+    url: 'http://localhost/music',
+    couch: false,
+  });
+  env.document.getElementById('pre').focus();
+  env.document.dispatchEvent(new env.window.Event('turbo:load'));
+  assert.strictEqual(env.document.activeElement.id, 'pre',
+    'a pre-set anchor (e.g. the media player focusing play/pause) is never stolen');
+});
