@@ -595,6 +595,39 @@ test('FF/RW scan: rewind moves backward; a scrubber drag cancels without seeking
   assert.strictEqual(video.currentTime, 50, 'no seek committed by the canceled scan');
 });
 
+test('FF/RW scan: Escape / remote Back cancels without seeking and resumes', async () => {
+  for (const key of ['Escape', 'BrowserBack']) {
+    const env = await boot();
+    const doc = env.document;
+    const video = doc.getElementById('tvVideo');
+
+    video.currentTime = 50;
+    doc.getElementById('tvForwardBtn').click();
+    await new Promise((r) => setTimeout(r, 450)); // virtual playhead runs ahead
+    const e = new env.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    doc.dispatchEvent(e);
+    assert.strictEqual(doc.getElementById('mediaScanPill').hidden, true, `${key} cancels the scan`);
+    assert.strictEqual(video.currentTime, 50, `${key}: no seek — position untouched`);
+    assert.ok(doc.getElementById('tvTransport').classList.contains('playing'), `${key}: playback resumed`);
+    assert.ok(e.defaultPrevented, `${key}: consumed so couch.js never navigates mid-scan`);
+  }
+});
+
+test('FF/RW scan: Escape while fullscreen is left to the native exit (no cancel); Back still cancels', async () => {
+  const env = await boot();
+  const doc = env.document;
+  Object.defineProperty(doc, 'fullscreenElement', { configurable: true, value: doc.documentElement });
+
+  doc.getElementById('tvForwardBtn').click();
+  const esc = new env.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  doc.dispatchEvent(esc);
+  assert.strictEqual(doc.getElementById('mediaScanPill').hidden, false, 'scan survives — fullscreen owns Escape');
+  assert.ok(!esc.defaultPrevented, 'Escape left untouched for the browser');
+
+  doc.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'BrowserBack', bubbles: true, cancelable: true }));
+  assert.strictEqual(doc.getElementById('mediaScanPill').hidden, true, 'remote Back cancels even in fullscreen');
+});
+
 test('mute ads: mutes inside a commercial, restores on exit, never touches saved prefs', async () => {
   const env = await boot({
     storage: { mute_ads: '1' },
