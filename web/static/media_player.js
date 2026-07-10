@@ -971,6 +971,26 @@ function initMediaPlayer() {
     return true;
   }
   document.addEventListener('turbo:before-cache', () => endScan(false), { once: true });
+  // Escape / a remote's Back cancels an in-progress scan: abandon the virtual
+  // playhead and resume where playback paused — the video never moved, so no
+  // seek is issued (the same endScan(false) a scrubber drag uses). Capture
+  // phase so the cancel wins over couch.js's document-level Back handling,
+  // which registered first and would otherwise navigate Home mid-scan.
+  // Escape while fullscreen is left untouched: the browser's native
+  // exit-fullscreen outranks the cancel (matching couch.js's fullscreen yield).
+  const BACK_KEYS = new Set(['Backspace', 'Escape', 'BrowserBack', 'GoBack']);
+  const scanCancelKey = (e) => {
+    if (!scanActive() || !BACK_KEYS.has(e.key)) return;
+    if (e.key === 'Escape' && document.fullscreenElement) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endScan(false);
+    video.play().catch(() => {});
+  };
+  document.addEventListener('keydown', scanCancelKey, true);
+  document.addEventListener('turbo:before-cache', () => {
+    document.removeEventListener('keydown', scanCancelKey, true);
+  }, { once: true });
 
   // Fullscreen is app-root fullscreen everywhere: #tvFullscreenBtn carries
   // data-app-fullscreen, so the layout shell's delegated handler owns it (one
