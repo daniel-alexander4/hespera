@@ -1,7 +1,6 @@
 # Binaries
 bin/
 *.exe
-/isomedia
 /hespera
 
 # Release artifacts (cross-compiled binaries + .deb packages)
@@ -28,8 +27,9 @@ Thumbs.db
 *.sqlite-shm
 thumbs/
 
-# Project memory
+# Project memory / instructions stay local (Dan's convention, 2026-07-09)
 MEMORY.md
+/CLAUDE.md
 
 # Local scripts
 full.docker.reset.sh
@@ -40,6 +40,3 @@ full.docker.reset.sh
 # JS test harness (dev-only; jsdom is never compiled into the Go binary)
 node_modules/
 package-lock.json
-
-# Billboard chart data is fetched at runtime into DataDir, never committed
-internal/billboard/data.json.gz
