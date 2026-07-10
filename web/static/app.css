@@ -2218,6 +2218,10 @@ html.is-fullscreen .tv-player-video-wrap .tv-video.aspect-fix {
   height: auto;
   max-height: 100vh;
   max-width: calc(100vh * var(--dar));
+  /* Re-declared: the fullscreen .tv-video rule's object-fit: contain outranks
+     the base .aspect-fix fill (0,3,1 vs 0,2,0) and would letterbox the frame
+     at its intrinsic (wrong) ratio inside the corrected box. */
+  object-fit: fill;
 }
 
 /* Track-picker row (audio/subtitles/speed + Auto-skip): same chip family and
