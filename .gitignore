@@ -31,6 +31,10 @@ thumbs/
 MEMORY.md
 /CLAUDE.md
 
+# Troubleshooting investigation logs + scratch assets stay local
+tshoot/
+/libraries-icons.png
+
 # Local scripts
 full.docker.reset.sh
 
