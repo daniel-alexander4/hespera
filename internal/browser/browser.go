@@ -43,7 +43,9 @@ func fileExists(path string) bool {
 // independently closable).
 func Open(url, userDataDir string) (*exec.Cmd, error) {
 	if path, ok := findChromium(); ok {
-		appArgs := []string{"--app=" + url, "--new-window"}
+		// --start-maximized opens the window at full desktop size (maximized,
+		// not fullscreen) instead of Chromium's small default app-window bounds.
+		appArgs := []string{"--app=" + url, "--new-window", "--start-maximized"}
 		if userDataDir != "" {
 			// A unique profile guarantees this launch owns its window; the extra
 			// flags keep the fresh profile from showing first-run/setup prompts.
