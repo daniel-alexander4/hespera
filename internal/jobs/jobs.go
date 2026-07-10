@@ -16,11 +16,12 @@ var (
 	ErrJobNotFound  = errors.New("job not found")
 	ErrJobNotCancel = errors.New("job is not cancelable")
 	ErrQueueFull    = errors.New("job queue is full")
-	// ErrYielded is a sentinel a long cosmetic job (trickplay/thumb) returns to
-	// signal it stopped early to let a waiting interactive job run. The enqueue
-	// wrapper (enqueueYielding) intercepts it, re-enqueues the job to finish its
-	// remaining work, and reports the current run as done — it is never a
-	// failure. Jobs are missing-only/incremental, so the re-run resumes cleanly.
+	// ErrYielded is a sentinel a long cosmetic job (trickplay/thumb/loudness)
+	// returns to signal it stopped early to let a waiting interactive job run.
+	// The worker intercepts it and requeues the SAME job row (status back to
+	// 'queued', progress kept) behind the waiting work — never a failure, and
+	// never a misleading terminal 'done i/N' row with a hidden continuation.
+	// Jobs are missing-only/incremental, so the re-run resumes cleanly.
 	ErrYielded = errors.New("job yielded to interactive work")
 )
 
@@ -342,6 +343,10 @@ func (s *Service) runJob(req JobRequest) {
 			s.finishJob(req.JobID, statusCanceled, "", startedAt)
 			return
 		}
+		if errors.Is(err, ErrYielded) {
+			s.requeue(req, startedAt)
+			return
+		}
 		s.finishJob(req.JobID, statusFailed, err.Error(), startedAt)
 		return
 	}
@@ -350,6 +355,27 @@ func (s *Service) runJob(req JobRequest) {
 		return
 	}
 	s.finishJob(req.JobID, statusDone, "", startedAt)
+}
+
+// requeue puts a yielded job back in line: the SAME scan_jobs row returns to
+// 'queued' (progress kept — the row shows i/N paused, not a bogus terminal
+// done) and the same request is re-pushed behind the waiting interactive work.
+// One logical sweep = one row, however many times it yields. The push is
+// non-blocking like enqueue's: the worker must never block sending to the
+// channel only it drains. A full queue (128 waiting jobs) degrades to the old
+// behavior — the run is marked done and the remainder waits for the next scan.
+func (s *Service) requeue(req JobRequest, startedAt time.Time) {
+	_, _ = s.db.Exec(
+		`UPDATE scan_jobs SET status=?, error='', ended_at='' WHERE id=?`,
+		statusQueued, req.JobID,
+	)
+	select {
+	case s.queue <- req:
+	default:
+		slog.Warn("job yielded but queue is full — finishing; next scan resumes the rest",
+			"job_id", req.JobID)
+		s.finishJob(req.JobID, statusDone, "", startedAt)
+	}
 }
 
 func (s *Service) finishJob(jobID int64, status, errText string, startedAt time.Time) {

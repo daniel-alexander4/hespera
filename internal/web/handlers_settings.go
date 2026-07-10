@@ -701,28 +701,6 @@ func (h *Handler) librariesNew(w http.ResponseWriter, r *http.Request) {
 // no scanner (a guard against an unexpected type; every valid type scans today).
 var errUnsupportedLibraryType = errors.New("scanning not supported for this library type")
 
-// enqueueYielding enqueues a long cosmetic tail job (thumbnails, trickplay) that
-// may yield mid-run. If its executor returns jobs.ErrYielded — it stopped early
-// so a waiting interactive job (scan/match/probe/integrity) isn't blocked behind
-// it on the single worker — the job is re-enqueued to finish its remaining
-// (missing-only, incremental) work after that job runs, and the current run is
-// reported done, never failed. EnqueueUnique collapses a concurrent re-trigger,
-// so an uninterrupted sweep still runs as a single job with no row churn.
-func (h *Handler) enqueueYielding(jobType string, libID int64, run func(context.Context, int64, int64) error) {
-	var wrap func(context.Context, int64, int64) error
-	wrap = func(ctx context.Context, jobID, lID int64) error {
-		if err := run(ctx, jobID, lID); err != nil {
-			if errors.Is(err, jobs.ErrYielded) {
-				_, _ = h.jobs.EnqueueUnique(jobType, lID, "system", wrap)
-				return nil
-			}
-			return err
-		}
-		return nil
-	}
-	_, _ = h.jobs.EnqueueUnique(jobType, libID, "system", wrap)
-}
-
 // resumeInterruptedJobs re-kicks the scan chain of every library whose jobs the
 // startup reconcile marked "interrupted by restart" (a shutdown/crash mid-chain
 // — e.g. a box that powers off nightly with a trickplay sweep half done). Every
@@ -799,7 +777,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// file, and its scanner-reset loudness re-measures here. Yielding: a
 			// first-pass sweep over a whole library takes hours and must step
 			// aside for queued interactive work, like the thumb/trickplay sweeps.
-			h.enqueueYielding("music_loudness", libID, func(ctx context.Context, lJID, lLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("music_loudness", libID, "system", func(ctx context.Context, lJID, lLibID int64) error {
 				return scanner.AnalyzeLoudness(ctx, lJID, lLibID)
 			})
 			return nil
@@ -834,12 +812,12 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			// Chain episode-thumbnail generation (one frame grab per new/changed
 			// file; after tv_probe so the stored duration can place the grab,
 			// before the much heavier trickplay pass).
-			h.enqueueYielding("tv_thumb", libID, func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("tv_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return tvScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
 			})
 			// Chain trickplay sprite generation for new/changed files (measured
 			// ~15s per full movie, content-keyed so unchanged files are free).
-			h.enqueueYielding("tv_trickplay", libID, func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("tv_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return h.generateTrickplayMissing(ctx, "tv_series_files", tJID, tLibID)
 			})
 			return nil
@@ -868,7 +846,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 				return movieScanner.ReprobeMissing(ctx, pJID, pLibID)
 			})
 			// Chain trickplay sprite generation — the movie twin.
-			h.enqueueYielding("movie_trickplay", libID, func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("movie_trickplay", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return h.generateTrickplayMissing(ctx, "movie_files", tJID, tLibID)
 			})
 			return nil
@@ -887,7 +865,7 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 				return photoScanner.ReprobeMissing(ctx, pJID, pLibID)
 			})
 			// Chain grid-thumbnail generation (missing-only: new/changed files).
-			h.enqueueYielding("photo_thumb", libID, func(ctx context.Context, tJID, tLibID int64) error {
+			_, _ = h.jobs.EnqueueUnique("photo_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
 				return photoScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
 			})
 			return nil

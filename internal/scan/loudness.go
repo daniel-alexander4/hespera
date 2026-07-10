@@ -55,8 +55,10 @@ func (s *Scanner) AnalyzeLoudness(ctx context.Context, jobID, libraryID int64) e
 		default:
 		}
 		// Yield to a waiting interactive job (scan/match/probe) rather than block
-		// it behind this sweep on the single worker; re-enqueued to finish the rest.
+		// it behind this sweep on the single worker; the worker requeues this row
+		// to finish the rest. Flush real progress first so the paused row is honest.
 		if s.ShouldYield != nil && i > 0 && s.ShouldYield() {
+			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i, jobID)
 			return jobs.ErrYielded
 		}
 		resolved, err := pathguard.ResolveExistingUnderRoot(mediaRoot, t.absPath)

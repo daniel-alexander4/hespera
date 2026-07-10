@@ -107,8 +107,10 @@ func (s *Scanner) GenerateThumbsMissing(ctx context.Context, jobID, libraryID in
 		default:
 		}
 		// Yield to a waiting interactive job (scan/match/probe) rather than block
-		// it behind this sweep; re-enqueued to finish the rest.
+		// it behind this sweep; the worker requeues this row to finish the rest.
+		// Flush real progress first so the paused row is honest.
 		if s.ShouldYield != nil && i > 0 && s.ShouldYield() {
+			_, _ = s.DB.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i, jobID)
 			return jobs.ErrYielded
 		}
 		// Progress by files examined (loop head) so a busy/gone file that

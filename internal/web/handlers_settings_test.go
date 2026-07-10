@@ -9,49 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
-
-	"hespera/internal/jobs"
 )
-
-// TestEnqueueYieldingReEnqueuesOnYield: a cosmetic job whose executor returns
-// jobs.ErrYielded is re-run to finish its remaining work, and reported done
-// (never failed) — the mechanism that keeps trickplay/thumb from blocking a
-// waiting interactive job on the single worker.
-func TestEnqueueYieldingReEnqueuesOnYield(t *testing.T) {
-	h, _ := newTestHandler(t)
-	runs := make(chan int, 4)
-	var mu sync.Mutex
-	n := 0
-	h.enqueueYielding("tv_trickplay", 1, func(ctx context.Context, jobID, libID int64) error {
-		mu.Lock()
-		n++
-		cur := n
-		mu.Unlock()
-		runs <- cur
-		if cur == 1 {
-			return jobs.ErrYielded // first run yields to (pretend) interactive work
-		}
-		return nil // re-enqueued run completes
-	})
-	for want := 1; want <= 2; want++ {
-		select {
-		case got := <-runs:
-			if got != want {
-				t.Fatalf("run order %d, want %d", got, want)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatalf("timed out waiting for run %d — re-enqueue on yield failed", want)
-		}
-	}
-	select {
-	case got := <-runs:
-		t.Fatalf("unexpected extra run %d (yield should re-enqueue exactly once)", got)
-	case <-time.After(300 * time.Millisecond):
-	}
-}
 
 // TestOpenSubtitlesCombinedForm covers the merged key+UA form: both save
 // together; a blank key on a later submit keeps the stored key (so editing the

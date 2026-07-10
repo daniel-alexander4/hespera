@@ -84,11 +84,15 @@ func (h *Handler) generateTrickplayMissing(ctx context.Context, table string, jo
 		// once the interactive work runs. The check is a cheap EXISTS vs ~15s of
 		// ffmpeg per file, so polling every file gives the tightest hand-off.
 		if i > 0 && h.jobs.HasQueuedInteractive() {
+			// Flush real progress before the worker requeues this row, so the
+			// paused row is honest.
+			_, _ = h.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i, jobID)
 			return jobs.ErrYielded
 		}
 		if budget > 0 && used >= budget {
 			slog.Warn("trickplay cache at size cap — skipping remaining files",
 				"cap_bytes", budget, "used_bytes", used, "skipped", len(todo)-i)
+			_, _ = h.db.ExecContext(ctx, "UPDATE scan_jobs SET progress_current=? WHERE id=?", i, jobID)
 			break
 		}
 		resolved, err := pathguard.ResolveExistingUnderRoot(mediaRoot, t.absPath)
