@@ -87,6 +87,16 @@ func TestAnalyzeLoudnessYields(t *testing.T) {
 		t.Fatalf("AnalyzeLoudness with queued interactive work = %v, want jobs.ErrYielded", err)
 	}
 
+	// The yield flushed the real progress (1 item processed before the i>0
+	// check fired), so the requeued row never reads a stale 0/N.
+	var cur int
+	if err := db.QueryRow("SELECT progress_current FROM scan_jobs WHERE id=?", jobID).Scan(&cur); err != nil {
+		t.Fatal(err)
+	}
+	if cur != 1 {
+		t.Fatalf("progress_current after yield = %d, want 1 (flushed before ErrYielded)", cur)
+	}
+
 	// Hook unset → the same sweep runs to completion (missing files just skip).
 	s.ShouldYield = nil
 	if err := s.AnalyzeLoudness(ctx, jobID, libID); err != nil {

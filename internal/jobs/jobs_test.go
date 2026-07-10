@@ -402,3 +402,122 @@ func TestEnqueueDedupScoping(t *testing.T) {
 		t.Fatalf("want 4 rows, got %d", total)
 	}
 }
+
+// TestYieldRequeuesSameRow: an executor returning ErrYielded is requeued in
+// place — the SAME scan_jobs row goes back to 'queued' (progress kept) and the
+// same request re-runs to finish, ending as a single honest 'done' row. This
+// replaced the old wrapper that finished each yielded run 'done' with stale
+// progress and enqueued a hidden continuation row (the misleading `done 0/N`).
+func TestYieldRequeuesSameRow(t *testing.T) {
+	dir := t.TempDir()
+	conn, err := db.Open(filepath.Join(dir, "test.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+	if err := db.Migrate(conn); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	svc := New(conn)
+
+	runs := make(chan int64, 4)
+	var n atomic.Int32
+	var progressAtResume atomic.Int64
+	jobID, err := svc.Enqueue("tv_trickplay", 1, "test", func(ctx context.Context, jID, libID int64) error {
+		if n.Add(1) == 1 {
+			// Simulate the loop's flush-before-yield.
+			_, _ = conn.Exec("UPDATE scan_jobs SET progress_current=7, progress_total=53 WHERE id=?", jID)
+			runs <- jID
+			return ErrYielded
+		}
+		// The requeued run sees the row's progress intact (requeue keeps it).
+		var cur int64
+		_ = conn.QueryRow("SELECT progress_current FROM scan_jobs WHERE id=?", jID).Scan(&cur)
+		progressAtResume.Store(cur)
+		runs <- jID
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	for want := 1; want <= 2; want++ {
+		select {
+		case got := <-runs:
+			if got != jobID {
+				t.Fatalf("run %d used job id %d, want %d (same row, not a continuation)", want, got, jobID)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for run %d — requeue on yield failed", want)
+		}
+	}
+	select {
+	case <-runs:
+		t.Fatal("unexpected third run (yield should requeue exactly once here)")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	var status string
+	for time.Now().Before(deadline) {
+		if err := conn.QueryRow("SELECT status FROM scan_jobs WHERE id=?", jobID).Scan(&status); err == nil && status == "done" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if status != "done" {
+		t.Fatalf("expected final status=done, got %q", status)
+	}
+	if got := progressAtResume.Load(); got != 7 {
+		t.Fatalf("progress_current at resume = %d, want 7 (requeue must keep progress)", got)
+	}
+	var count int
+	if err := conn.QueryRow("SELECT COUNT(*) FROM scan_jobs").Scan(&count); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 scan_jobs row (no continuation churn), got %d", count)
+	}
+}
+
+// TestYieldWithPendingCancelIsCanceled: a cancel that lands while the executor
+// is yielding wins — the job finishes 'canceled', never requeued over the
+// user's cancel.
+func TestYieldWithPendingCancelIsCanceled(t *testing.T) {
+	dir := t.TempDir()
+	conn, err := db.Open(filepath.Join(dir, "test.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+	if err := db.Migrate(conn); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	svc := New(conn)
+
+	var ran atomic.Int32
+	jobID, err := svc.Enqueue("tv_trickplay", 1, "test", func(ctx context.Context, jID, libID int64) error {
+		ran.Add(1)
+		// Simulate RequestCancel racing the yield: flag set before the return.
+		_, _ = conn.Exec("UPDATE scan_jobs SET cancel_requested=1 WHERE id=?", jID)
+		return ErrYielded
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	var status string
+	for time.Now().Before(deadline) {
+		if err := conn.QueryRow("SELECT status FROM scan_jobs WHERE id=?", jobID).Scan(&status); err == nil && status == "canceled" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if status != "canceled" {
+		t.Fatalf("expected status=canceled, got %q", status)
+	}
+	if ran.Load() != 1 {
+		t.Fatalf("expected exactly 1 run (no requeue past a cancel), ran %d", ran.Load())
+	}
+}
