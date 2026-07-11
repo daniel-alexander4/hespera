@@ -1408,13 +1408,28 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
 .player-now.no-lyrics .player-cover img,
 .player-now.no-lyrics .album-art-ph.big {
   /* With no lyrics card the cover owns the page: size it to the viewport — as
-     large as fits without crowding, bounded on both ends. (It used to be pinned
-     to the sun-reflection line of the background artwork; that artwork is gone,
-     so the size is now derived from the viewport itself rather than a picture's
-     internal geometry.) Floor at the old 440px so small windows never regress;
-     cap so it can't run under the bottom transport. Square cover → width is the
-     height knob. */
-  width: clamp(31.4286rem, min(62vh, 52vw), calc(100vh - 13rem));
+     large as fits without crowding. (It used to be pinned to the sun-reflection
+     line of the background artwork; that artwork is gone, so the size is derived
+     from the viewport itself rather than a picture's internal geometry.) Square
+     cover → width is the height knob.
+
+     Three terms, and the nesting is deliberate — NOT a clamp():
+       min(62vh, 52vw)  the ideal: an image tracks the VIEWPORT, so this is the
+                        one term that must not scale with the root font-size.
+       max(440px, …)    the floor, in px on purpose: it means "never smaller than
+                        it used to be on a small window". In rem it would inflate
+                        with the display class (440px desktop → 754px at tv) and
+                        override the ideal on a TV, which is backwards.
+       min(…, 100vh - 15rem)  the cap, in rem on purpose: it keeps the cover clear
+                        of the fixed transport, which IS rem-sized and so grows
+                        with the display class. 15rem is measured, not guessed —
+                        the chrome it must reserve (the cover's top offset + the
+                        transport) is ~13.6rem at tv scale, so the old 13rem let
+                        the cover overrun the transport by ~8px in a short window.
+     The cap is applied LAST because it is the hard constraint — a clamp() would
+     yield its floor when floor > cap (a short window), overrunning the transport;
+     min(max(…)) lets the cap win and the cover simply gets smaller. */
+  width: min(max(440px, min(62vh, 52vw)), calc(100vh - 15rem));
   max-width: 100%;
 }
 /* Scale the info hierarchy up with the bigger cover. */
