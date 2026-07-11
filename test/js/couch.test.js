@@ -236,7 +236,7 @@ test('arrows in a text input stay native (caret), and in a checkbox they move fo
   assert.strictEqual(pressOn(env, box, 'ArrowLeft').defaultPrevented, true, 'checkbox arrows are focus moves, not dead keys');
 });
 
-test('focusFirst lands on the active subtab under remote/keyboard modality (Recent from the topbar)', () => {
+test('focusFirst lands on the active subtab under remote/keyboard modality (Recent on arrival)', () => {
   const env = boot({
     body:
       breadcrumb(['/']) +

@@ -56,20 +56,24 @@
   <script src="{{staticv "/static/search.js"}}" defer></script>
   <script src="{{staticv "/static/playlist_picker.js"}}" defer></script>
   <script src="{{staticv "/static/update_pill.js"}}" defer></script>
+  <script src="{{staticv "/static/clock.js"}}" defer></script>
   <script src="{{staticv "/static/about_health.js"}}" defer></script>
   <script src="{{staticv "/static/photo_view.js"}}" defer></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><a href="/"><img class="brand-logo" src="{{staticv "/static/hespera-icon.svg"}}" alt="" width="28" height="28" /><span>Hespera</span></a></div>
-    <nav class="nav">
-      <a href="/" class="nav-link">{{template "icon-home"}}Home</a>
-      <a href="/music" class="nav-link">{{template "icon-music"}}Music</a>
-      <a href="/movies" class="nav-link">{{template "icon-film"}}Movies</a>
-      <a href="/photos" class="nav-link">{{template "icon-image"}}Home Media</a>
-      <a href="/tv" class="nav-link">{{template "icon-tv"}}TV Shows</a>
-      <a href="/settings" class="nav-link">{{template "icon-settings"}}Settings</a>
-    </nav>
+  {{/* There is no topbar. The home screen is the hub (its cards are the nav,
+       its header carries the utilities) and every other page carries a
+       breadcrumb rooted at Home, so the UI has no persistent chrome — a
+       10-foot-first shape. The two things that genuinely must outlive a page
+       (the audio element and the now-playing / resume chips) live here in the
+       shell as data-turbo-permanent floating chrome instead. */}}
+
+  <!-- The single persistent audio element. data-turbo-permanent, so Turbo
+       carries it across page visits and music keeps playing. player.js owns it
+       and hard-aborts without it. -->
+  <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
+
+  <div class="chip-stack">
     <!-- Resume-watching chip for TV/video. data-turbo-permanent so it persists
          across visits; tv_resume.js shows it when you've navigated away from a
          player and hides it while you're on one. -->
@@ -80,9 +84,9 @@
       <button id="nw-dismiss" type="button" class="np-toggle nw-dismiss" aria-label="Dismiss resume" title="Dismiss">×</button>
     </div>
 
-    <!-- Now-playing cluster + the single persistent audio element. Both are
-         data-turbo-permanent, so Turbo carries them across page visits and music
-         keeps playing. player.js owns them. Hidden until something is playing. -->
+    <!-- Now-playing chip: the only route back to the player once you wander off,
+         and the only stop-playback control. data-turbo-permanent; player.js owns
+         it. Hidden until something is playing. -->
     <div id="np-cluster" class="np-cluster hidden" data-turbo-permanent>
       <button id="np-toggle" type="button" class="np-toggle" aria-label="Play or pause" title="Play / pause">
         <span class="np-glyph-play">{{template "icon-play"}}</span>
@@ -91,15 +95,7 @@
       <a id="np-title-link" class="np-title-link" href="/music/player" title="Open the player"><span id="np-title" class="np-title"></span></a>
       <button id="np-close" type="button" class="np-toggle np-close" aria-label="Stop playback" title="Stop">{{template "icon-x"}}</button>
     </div>
-    <audio id="hespera-audio" data-turbo-permanent preload="none" playsinline class="hidden"></audio>
-    <div class="topbar-controls">
-    <button type="button" id="update-pill" class="update-pill is-unknown" title="Installed version v{{appVersion}} — update status unknown. Click to check for updates.">v{{appVersion}}</button>
-    <button type="button" class="topbar-btn" data-search-open aria-label="Search" title="Search ( / )">{{template "icon-search"}}</button>
-    <button type="button" class="topbar-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
-    <button type="button" class="topbar-btn" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
-    <button type="button" class="topbar-btn topbar-btn--power" data-app-quit aria-label="Quit Hespera" title="Quit Hespera">{{template "icon-power"}}</button>
-    </div>
-  </header>
+  </div>
 
   <main class="main">
     {{template "breadcrumb" .}}
@@ -143,45 +139,27 @@
   </div>
 
   <script>
+    // Reload button (home's utility cluster). Not window-guarded and not
+    // delegated: this inline script re-runs on every Turbo render, and the
+    // button is re-rendered with the page, so it re-binds to the fresh node.
     (() => {
       const reload = document.querySelector('[data-app-reload]');
       if (reload) reload.addEventListener('click', () => window.location.reload());
-      const quit = document.querySelector('[data-app-quit]');
-      if (quit) quit.addEventListener('click', async () => {
-        try {
-          // Refused (403) on a remote device — quitting is loopback-only on a
-          // LAN-serving setup. Keep the page; the server is not stopping.
-          const res = await fetch('/shutdown', { method: 'POST' });
-          if (!res.ok) return;
-        } catch (_) { /* server is stopping */ }
-        document.body.innerHTML =
-          '<div style="display:flex;align-items:center;justify-content:center;min-height:90vh;color:#a6adc8;font:1.1rem system-ui,sans-serif;">Hespera has shut down — you can close this window.</div>';
-        window.close(); // closes the chromeless app window; the message remains if the browser blocks it
-      });
     })();
 
-    // App-wide full screen (the topbar button AND the media players'
-    // #tvFullscreenBtn — both carry data-app-fullscreen and toggle the same
+    // App-wide full screen — home's utility cluster AND the media players'
+    // #tvFullscreenBtn both carry data-app-fullscreen and toggle the same
     // app-root fullscreen; on player pages CSS expands the video wrap to fill
-    // the viewport) + an auto-hiding topbar overlay while in it. Window-guarded
-    // so the document-level listeners bind ONCE (the inline script re-runs on
-    // every Turbo render); delegated so re-rendered buttons stay wired. Gated
-    // on fullscreenElement === documentElement.
+    // the viewport, so fullscreen survives Turbo swaps (Up Next auto-advance)
+    // and fixed modals stay visible. Window-guarded so the document-level
+    // listeners bind ONCE (the inline script re-runs on every Turbo render);
+    // delegated so re-rendered buttons stay wired. Gated on
+    // fullscreenElement === documentElement.
     (() => {
       if (window.__hesperaFullscreen) return;
       window.__hesperaFullscreen = true;
       const root = document.documentElement;
-      const HIDE_MS = 2500;
-      const JITTER = 6; // sub-threshold pointermove = sensor noise, not activity
-      let hideTimer = null, lastX = null, lastY = null, hover = false;
       const appFs = () => document.fullscreenElement === root;
-      const overTopbar = () => {
-        const tb = document.querySelector('.topbar');
-        return !!tb && tb.contains(document.activeElement);
-      };
-      const show = () => root.classList.remove('topbar-hidden');
-      const hide = () => { if (!hover && !overTopbar()) root.classList.add('topbar-hidden'); };
-      const bump = () => { show(); clearTimeout(hideTimer); hideTimer = setTimeout(hide, HIDE_MS); };
 
       document.addEventListener('click', (e) => {
         if (!(e.target.closest && e.target.closest('[data-app-fullscreen]'))) return;
@@ -189,37 +167,13 @@
         else if (root.requestFullscreen) root.requestFullscreen().catch(() => {});
       });
       document.addEventListener('fullscreenchange', () => {
-        if (appFs()) { root.classList.add('is-fullscreen'); bump(); }
-        else { root.classList.remove('is-fullscreen', 'topbar-hidden'); clearTimeout(hideTimer); }
+        root.classList.toggle('is-fullscreen', appFs());
         const on = !!document.fullscreenElement;
         document.querySelectorAll('[data-app-fullscreen]').forEach((btn) => {
           btn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
           btn.setAttribute('title', on ? 'Exit full screen' : 'Full screen');
         });
       });
-      document.addEventListener('pointermove', (e) => {
-        if (!root.classList.contains('is-fullscreen')) return;
-        if (lastX !== null && Math.abs(e.clientX - lastX) < JITTER && Math.abs(e.clientY - lastY) < JITTER) return;
-        lastX = e.clientX; lastY = e.clientY; bump();
-      });
-      document.addEventListener('keydown', () => { if (root.classList.contains('is-fullscreen')) bump(); });
-      document.addEventListener('pointerover', (e) => {
-        if (e.target.closest && e.target.closest('.topbar')) { hover = true; show(); }
-      });
-      document.addEventListener('pointerout', (e) => {
-        const tb = e.target.closest && e.target.closest('.topbar');
-        if (tb && !tb.contains(e.relatedTarget)) { hover = false; bump(); }
-      });
-
-      // Mark pages that have their own play controls (the music now-playing
-      // transport, or a TV/movie video). CSS then suppresses the full-screen
-      // topbar overlay on them so only the play controls show. Windowed unaffected.
-      const syncPlayControls = () => {
-        const has = !!(document.getElementById('player-transport') || document.querySelector('[data-media-kind]'));
-        root.classList.toggle('has-play-controls', has);
-      };
-      document.addEventListener('turbo:load', syncPlayControls);
-      syncPlayControls();
     })();
 
     // Display-scale auto-detect: ask the server (same machine in app mode)

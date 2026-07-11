@@ -1,7 +1,7 @@
 {{/* Shared parent-navigation breadcrumb. Rendered by layout.html at the top of
      the content on every page that supplies a .Breadcrumb trail (a []crumb of
      ancestor links, ending at the immediate parent). Lives in the content area,
-     not the topbar, so it is visible AND remote-focusable in couch mode. Pages
+     so it is visible AND remote-focusable in couch mode (there is no topbar). Pages
      without a trail (root/hubs, immersive players) render nothing. */}}
 {{define "breadcrumb"}}
 {{with .Breadcrumb}}

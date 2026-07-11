@@ -229,7 +229,7 @@
 
   // --- Header cluster ---
   // Show the glyph for the action a press performs: pause while playing, play
-  // while paused. The topbar cluster and the now-playing page's transport toggle
+  // while paused. The now-playing chip and the now-playing page's transport toggle
   // share the .np-paused convention, so one reflect point drives both.
   const reflectPaused = () => {
     const paused = curPaused();

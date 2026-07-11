@@ -1,6 +1,6 @@
 // about_health.js — fills the Settings → About "System" health rows.
 //
-// Three rows: Hespera (reuses /update/check, the same data the topbar version
+// Three rows: Hespera (reuses /update/check, the same data the home-screen version
 // pill shows), ffmpeg and Browser (from /about/health — local version probes).
 // Fetched once, lazily, only when the About card is actually opened, so the
 // subprocess probes never run on an ordinary settings load. Renders with
@@ -38,7 +38,7 @@
       const d = await res.json();
       if (d.updateAvailable) {
         setRow(root, 'hespera', 'warn', 'v' + d.current,
-          'A newer version (v' + d.latest + ') is available — the topbar version pill downloads it.');
+          'A newer version (v' + d.latest + ') is available — the version pill on the home screen downloads it.');
       } else if (d.latest) {
         setRow(root, 'hespera', 'ok', 'v' + d.current, 'Up to date — the latest published release.');
       } else {
