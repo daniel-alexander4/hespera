@@ -7,7 +7,7 @@ const assert = require('node:assert');
 const { loadController, makeFetch, flush } = require('./harness');
 
 const PAGE = `
-<button class="topbar-btn" data-search-open></button>
+<button class="util-btn" data-search-open></button>
 <input id="page-input" type="text" />
 <div id="search-modal" class="playlist-modal hidden" data-couch-overlay>
   <div class="playlist-panel">

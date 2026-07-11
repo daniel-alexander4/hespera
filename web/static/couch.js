@@ -296,8 +296,8 @@
     const ae = document.activeElement;
     if (ae && ae !== document.body && ae !== document.documentElement) return;
     // A page with a subtab bar (Music / TV / Movies) lands the ring on its
-    // active tab — selecting a main tab from the topbar starts you on "Recent",
-    // not whatever control happens to be first in the content. Gated on input
+    // active tab — arriving from a home card starts you on "Recent", not
+    // whatever control happens to be first in the content. Gated on input
     // MODALITY, not display scale: "using a remote" is true on a 32″ TV at the
     // `large` scale too, and using-mouse persists on <html> across Turbo body
     // swaps, so a mouse-driven visit is never focus-stolen while any
@@ -315,11 +315,12 @@
     if (isHome ? html.classList.contains('using-mouse') : !isTVScale()) return;
     const all = candidates();
     if (!all.length) return;
-    // Prefer the first control INSIDE the content (<main>) over the topbar that
-    // precedes it in the DOM and the breadcrumb — otherwise the ring lands on
-    // the top-left logo (a self-link) every non-subtab page and the remote user
-    // arrow-hunts down into content. The topbar and breadcrumb stay reachable by
-    // pressing Up. Fall back to the old first-non-breadcrumb, then anything.
+    // Prefer the first control INSIDE the content (<main>) over the shell chrome
+    // that precedes it in the DOM (the floating now-playing / resume chips) and
+    // the breadcrumb — otherwise the ring lands on a chip or a crumb rather than
+    // the page's own controls, and the remote user arrow-hunts into content. The
+    // chips and breadcrumb stay reachable by arrowing to them. Fall back to the
+    // old first-non-breadcrumb, then anything.
     const main = document.querySelector('main');
     const inContent = (el) => !!main && main.contains(el) && !el.closest('.breadcrumb');
     const first = all.find(inContent) || all.find((el) => !el.closest('.breadcrumb')) || all[0];

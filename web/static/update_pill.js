@@ -1,4 +1,4 @@
-// update_pill.js — the topbar version pill (#update-pill).
+// update_pill.js — the home-screen version pill (#update-pill).
 //
 // Three states: yellow `is-unknown` (the server-rendered default — automatic
 // checks off, no releases published, or a failed check), green `is-current`
@@ -11,7 +11,7 @@
 // off. Clicking the pill always re-checks, toggle or no toggle, and when an
 // update exists navigates to the asset URL so the browser downloads it (nothing
 // installs automatically). State persists in sessionStorage and is re-applied
-// on every turbo:load, since the topbar re-renders with each body swap.
+// on every turbo:load, since the home page re-renders with each body swap.
 (() => {
   if (window.__hesperaUpdatePill) return;
   window.__hesperaUpdatePill = true;

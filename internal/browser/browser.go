@@ -35,13 +35,21 @@ func fileExists(path string) bool {
 // running) so the caller can wait on it — or stop it to close the window — or an
 // error if nothing could launch.
 //
+// ownsWindow reports whether the returned command IS the app window: true only
+// on the Chromium app-mode path with a dedicated profile, where the process
+// lives as long as the window does. It is false for the default-browser tab
+// fallback, whose command exits immediately after handing the URL off. Callers
+// that treat the browser's exit as a quit signal (closing the window quits
+// Hespera) MUST gate on it — waiting on the tab-fallback command would fire
+// instantly.
+//
 // userDataDir, when non-empty, runs the app window in a dedicated browser profile.
 // That forces a NEW browser process that OWNS the window instead of delegating to
 // an already-running Chrome and exiting immediately — so the caller can reliably
 // close the window on quit by stopping the returned process. Empty → shared
 // default profile (the window may then be owned by an existing instance and not
 // independently closable).
-func Open(url, userDataDir string) (*exec.Cmd, error) {
+func Open(url, userDataDir string) (cmd *exec.Cmd, ownsWindow bool, err error) {
 	if path, ok := findChromium(); ok {
 		// --start-maximized opens the window at full desktop size (maximized,
 		// not fullscreen) instead of Chromium's small default app-window bounds.
@@ -60,19 +68,21 @@ func Open(url, userDataDir string) (*exec.Cmd, error) {
 			// instead of the small icon Chromium derives from the page favicon.
 			appArgs = append(appArgs, "--class=Hespera")
 		}
-		cmd := exec.Command(path, appArgs...)
-		if err := cmd.Start(); err == nil {
-			return cmd, nil
+		app := exec.Command(path, appArgs...)
+		if err := app.Start(); err == nil {
+			// Only a dedicated profile guarantees this process owns the window
+			// (see the doc comment); a shared profile may delegate and exit.
+			return app, userDataDir != "", nil
 		}
 		// fall through to the tab fallback if the app-mode launch failed
 	}
 
 	if runtime.GOOS == "linux" {
-		return nil, errors.New("no Chromium-family browser found (install google-chrome or chromium for the app window)")
+		return nil, false, errors.New("no Chromium-family browser found (install google-chrome or chromium for the app window)")
 	}
 	name, args := tabOpener(url)
-	cmd := exec.Command(name, args...)
-	return cmd, cmd.Start()
+	tab := exec.Command(name, args...)
+	return tab, false, tab.Start()
 }
 
 // findChromium returns the first Chromium-family browser found for the OS.

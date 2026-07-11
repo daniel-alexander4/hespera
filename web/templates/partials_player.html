@@ -70,7 +70,7 @@
     <button id="tvBoostBtn" type="button" class="btn btn-sm is-on" aria-pressed="true" aria-label="Dialogue boost — even out loud music vs quiet dialogue" title="Dialogue boost: On">{{template "icon-audio-lines"}}</button>
     <button id="tvReloadBtn" type="button" class="btn btn-sm" aria-label="Reload video" title="Reload video">{{template "icon-rotate-cw"}}</button>
     {{/* data-app-fullscreen: handled by the layout shell's delegated handler — the
-         same app-root fullscreen as the topbar button (one fullscreen state
+         same app-root fullscreen as the home screen's button (one fullscreen state
          app-wide; CSS expands the video wrap to fill the viewport on player pages).
          The fs-enter/fs-exit pair swaps via the shared [data-app-fullscreen] CSS. */}}
     <button id="tvFullscreenBtn" type="button" class="btn btn-sm" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>

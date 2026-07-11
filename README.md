@@ -144,8 +144,8 @@ Stop the service and the icon goes back to launching a standalone app.
 Notes for shared use: Hespera has one household-wide state — watched marks,
 resume positions, and playlists are shared by everyone (there are no user
 profiles); the security posture below applies (trusted network only); and
-the topbar power button only works from the server machine itself, so a
-phone can't shut the family server down.
+there is no shutdown control in the UI, so a phone can't stop the family
+server (quitting is closing the app window, or stopping the service).
 
 ### Security posture
 

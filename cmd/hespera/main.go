@@ -66,7 +66,7 @@ func main() {
 	switch launchDecision(appMode, replace, runningURL) {
 	case launchAttach:
 		slog.Info("attaching to running instance", "url", runningURL)
-		if c, err := browser.Open(runningURL, filepath.Join(cfg.DataDir, "browser")); err != nil {
+		if c, _, err := browser.Open(runningURL, filepath.Join(cfg.DataDir, "browser")); err != nil {
 			slog.Error("could not open app window — browse to it manually", "url", runningURL, "err", err)
 			os.Exit(1)
 		} else {
@@ -237,35 +237,59 @@ func main() {
 	defer removeAppURL(cfg.DataDir, appURL(boundAddr))
 
 	var browserCmd *exec.Cmd
+	// Closed when the app window exits on its own (the user hit the title bar's
+	// close button) — that IS the quit gesture, so it must not be reaped twice.
+	windowGone := make(chan struct{})
 	if appMode {
 		url := appURL(boundAddr)
 		// A dedicated profile under the data dir makes the launched process own
-		// the window, so quitting (power button / signal) can close it.
+		// the window, so quitting (a signal) can close it — and, conversely, so
+		// closing the window quits Hespera (below).
 		profileDir := filepath.Join(cfg.DataDir, "browser")
-		if c, err := browser.Open(url, profileDir); err != nil {
+		c, ownsWindow, err := browser.Open(url, profileDir)
+		if err != nil {
 			slog.Warn("could not open app window — browse to it manually", "url", url, "err", err)
 		} else {
 			browserCmd = c
 			slog.Info("opened app window", "url", url)
+			// Closing the app window quits Hespera: the window IS the app in app
+			// mode, so leaving the server running headless after the user closed
+			// it would strand a process holding the port and the data-dir lock.
+			// Gated on ownsWindow — the default-browser-tab fallback's command
+			// exits the instant it hands the URL off, which would quit at once.
+			if ownsWindow {
+				go func() {
+					_ = c.Wait()
+					close(windowGone)
+					slog.Info("app window closed — shutting down")
+					quitFunc()
+				}()
+			}
 		}
 	}
 
-	// Quit on a signal (SIGINT/SIGTERM) or the UI power button (POST /shutdown).
+	// Quit on a signal (SIGINT/SIGTERM) or the app window closing (quitFunc,
+	// also wired to web.Deps.Quit).
 	select {
 	case <-stop:
 	case <-quit:
-		slog.Info("shutdown requested via UI")
 	}
 
 	// Close the app window we launched: the dedicated profile (see browser.Open)
 	// means this process owns its window, so stopping it closes the window. Try a
 	// graceful SIGTERM first (clean Chrome exit, no "restore pages" next launch);
-	// fall back to Kill (Windows, where SIGTERM isn't delivered). A no-op in the
-	// default-browser-tab fallback — that cmd already exited and isn't the user's
-	// browser, so we never close their window.
-	if browserCmd != nil && browserCmd.Process != nil {
-		if err := browserCmd.Process.Signal(syscall.SIGTERM); err != nil {
-			_ = browserCmd.Process.Kill()
+	// fall back to Kill (Windows, where SIGTERM isn't delivered). Skipped when the
+	// window is already gone (it closing is what quit us) — signalling a reaped
+	// process races pid reuse. A no-op in the default-browser-tab fallback — that
+	// cmd already exited and isn't the user's browser, so we never close their
+	// window.
+	select {
+	case <-windowGone:
+	default:
+		if browserCmd != nil && browserCmd.Process != nil {
+			if err := browserCmd.Process.Signal(syscall.SIGTERM); err != nil {
+				_ = browserCmd.Process.Kill()
+			}
 		}
 	}
 

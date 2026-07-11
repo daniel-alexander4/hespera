@@ -1266,7 +1266,7 @@ function initMediaPlayer() {
   // stop playback, and tear down the hls.js worker before this page is
   // cached/replaced. Pause + clear the source so a direct/remux stream (no hls
   // instance to destroy) can't keep playing audio from a detached element. The
-  // topbar "resume" chip (tv_resume.js) then links back here. once:true so it
+  // floating "resume" chip (tv_resume.js) then links back here. once:true so it
   // doesn't accumulate across repeat visits.
   document.addEventListener('turbo:before-cache', () => {
     window.hesperaMediaControl = null; // media keys go back to the music engine

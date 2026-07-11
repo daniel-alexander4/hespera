@@ -1,4 +1,4 @@
-// Tests for web/static/update_pill.js — the topbar version pill. jsdom drives
+// Tests for web/static/update_pill.js — the home-screen version pill. jsdom drives
 // the real controller: turbo:load triggers the once-per-session auto check
 // (server-gated by ?auto=1), a click always re-checks and navigates to the
 // download URL when an update exists. The pill starts in the server-rendered

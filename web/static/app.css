@@ -3,10 +3,15 @@
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "Consolas", "Lucida Console", monospace;
 
+  /* Page backdrop: a fixed navy→indigo gradient (the app's whole background;
+     there is no artwork layer). Indigo top matches the theme-color meta. */
+  --bg-indigo: #312e81;      /* top */
+  --bg-deep: #0b1026;        /* bottom — deep navy */
+
   /* Catppuccin Mocha */
-  --page-bg: #1e1e2e;        /* base */
+  --page-bg: #1e1e2e;        /* base — fallback under the gradient */
   --page-fg: #cdd6f4;        /* text */
-  --surface-topbar: #181825; /* mantle */
+  --surface-raised: #181825; /* mantle — floating chrome (the chip stack) */
   --surface-card: #313244;   /* surface0 */
   --surface-panel: #181825;  /* mantle */
   --border-default: #45475a; /* surface1 */
@@ -51,7 +56,10 @@ html[data-scale="tv"] { font-size: 24px; scroll-behavior: smooth; }
 
 body {
   font-family: var(--font-body);
-  background: var(--page-bg);
+  /* The backdrop IS the background — no artwork layer, no pseudo-element.
+     `fixed` pins the gradient to the viewport so it neither scrolls nor
+     stretches, and paints full-height even on a short page. */
+  background: var(--page-bg) linear-gradient(to top, var(--bg-deep), var(--bg-indigo)) fixed;
   color: var(--page-fg);
   line-height: 1.5;
   min-height: 100vh;
@@ -86,66 +94,42 @@ a:hover {
   box-shadow: 0 0 10px var(--accent);
 }
 
-/* Topbar */
-.topbar {
+/* The floating chip stack — the app has no topbar, so the two pieces of chrome
+   that must outlive a page (now-playing, resume-watching) float bottom-right
+   instead of riding a bar. Both chips are data-turbo-permanent; each hides
+   itself when idle, and the stack collapses to nothing when both are hidden
+   (no background of its own, pointer-events only on the chips). */
+.chip-stack {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 200;
   display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 0 1.25rem;
-  height: 3rem;
-  background: var(--surface-topbar);
-  border-bottom: 1px solid var(--border-default);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.brand a {
-  display: inline-flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 0.5rem;
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: var(--page-fg);
+  pointer-events: none;
+}
+.chip-stack > * {
+  pointer-events: auto;
 }
 
-.brand-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  display: block;
-  flex-shrink: 0;
-}
-
-.nav {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  /* Push the now-playing cluster + theme toggle to the right edge. */
-  margin-right: auto;
-}
-
-.nav-link {
-  padding: 0.35rem 0.65rem;
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  transition: background 0.15s, color 0.15s;
-}
-.nav-link:hover {
-  background: var(--accent-bg);
-  color: var(--page-fg);
-}
-
-/* Now-playing cluster in the topbar — a compact play/pause + track title that
-   links to the full player. Hidden until something is playing. Persistent
-   (data-turbo-permanent), driven by player.js. */
+/* Now-playing chip — a compact play/pause + track title that links to the full
+   player, plus a stop button. The only route back to the player once you
+   navigate away. Hidden until something is playing; driven by player.js. */
 .np-cluster {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   max-width: 22rem;
   min-width: 0;
+  /* Floating over page content now (no topbar to sit on), so the chip carries
+     its own surface. */
+  padding: 0.4rem 0.5rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 .np-toggle {
   display: inline-flex;
@@ -214,14 +198,45 @@ a:hover {
   line-height: 1;
 }
 
-/* Topbar control cluster — reload + full-screen + power grouped tightly (the
-   topbar's own 1.5rem gap would scatter them). */
-.topbar-controls {
+/* Home's masthead — the logo and the wordmark ARE the page title, so it reads a
+   size up from the generic .page-header h1. */
+.home-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+.home-brand-logo {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9px;
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Home's utility cluster — clock + version pill + search + reload + full screen,
+   sitting opposite the masthead in the home page header. These rode the topbar
+   before it was removed; home is the hub now, so they live here. (No quit
+   button: closing the app window quits Hespera.) */
+.home-utils {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
 }
-.topbar-btn {
+/* Live clock (clock.js). Tabular figures so the width doesn't jitter as the
+   digits change. Empty until the client paints it. */
+.app-clock {
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  padding: 0 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.util-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -235,11 +250,11 @@ a:hover {
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.topbar-btn:hover {
+.util-btn:hover {
   color: var(--page-fg);
   border-color: var(--accent);
 }
-.topbar-btn .icon { width: 1.05rem; height: 1.05rem; display: block; }
+.util-btn .icon { width: 1.05rem; height: 1.05rem; display: block; }
 /* Version pill (update_pill.js): yellow = status unknown / checks off,
    green = on the latest release, red = update available (click downloads). */
 .update-pill {
@@ -256,48 +271,15 @@ a:hover {
 .update-pill.is-unknown { background: var(--badge-warn-bg); color: var(--badge-warn-fg); }
 .update-pill.is-current { background: var(--badge-success-bg); color: var(--badge-success-fg); }
 .update-pill.is-outdated { background: var(--badge-error-bg); color: var(--badge-error-fg); }
-/* Power button reads as destructive on hover. */
-.topbar-btn--power:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-  background: var(--danger-bg, var(--surface-card));
-}
 
 /* App full-screen toggle: swap enter/exit glyphs by state (the JS sets
-   html.is-fullscreen when the app root is the fullscreen element). */
+   html.is-fullscreen when the app root is the fullscreen element). Carried by
+   home's utility button AND the media players' #tvFullscreenBtn. */
 [data-app-fullscreen] .fs-enter,
 [data-app-fullscreen] .fs-exit { display: flex; }
 [data-app-fullscreen] .fs-exit { display: none; }
 html.is-fullscreen [data-app-fullscreen] .fs-enter { display: none; }
 html.is-fullscreen [data-app-fullscreen] .fs-exit { display: flex; }
-
-/* In app full screen the sticky topbar becomes a fixed overlay (content reclaims
-   its 3rem and fills the screen) that auto-hides — the JS toggles .topbar-hidden
-   on the root after ~2.5s of inactivity, revealed on mouse/keyboard activity.
-   Windowed (no .is-fullscreen) is unaffected. On a TV this overlay IS the
-   topbar behavior — full-screen hides it, remote keys reveal it. */
-html.is-fullscreen .topbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  z-index: 400;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  transition: transform 0.25s ease, opacity 0.25s ease;
-}
-html.is-fullscreen.topbar-hidden .topbar {
-  transform: translateY(-100%);
-  opacity: 0;
-  pointer-events: none;
-}
-/* On a page with its own play controls (the music now-playing transport, or a
-   TV/movie video), keep the full-screen topbar overlay hidden entirely — the play
-   controls are the only chrome. Windowed (no .is-fullscreen) is unaffected. */
-html.is-fullscreen.has-play-controls .topbar {
-  transform: translateY(-100%);
-  opacity: 0;
-  pointer-events: none;
-}
 
 /* Main content */
 .main {
@@ -315,7 +297,8 @@ html[data-scale="tv"] .main { max-width: 2000px; }
 
 /* Parent-navigation breadcrumb — a consistent "up to parent" trail at the top of
    every non-root page (partials_breadcrumb.html). In the content flow, so it is
-   visible and remote-focusable in couch mode where the topbar is hidden. */
+   visible and remote-focusable in couch mode — and it is the only upward nav on
+   a page (there is no topbar). */
 .breadcrumb {
   margin-bottom: 1.1rem;
 }
@@ -359,25 +342,6 @@ html[data-scale="tv"] .main { max-width: 2000px; }
   border-top: 1px solid var(--border-default);
 }
 
-/* Hespera artwork as a fixed, full-viewport background on every page. z-index:-1
-   sits it behind all page content (above the opaque body background, below the
-   normal-flow topbar/main/footer), and fixed keeps it pinned while the page
-   scrolls. pointer-events:none so it never intercepts clicks. Uses the
-   square-cornered variant (hespera-bg.svg) — the app-icon's rounded frame would
-   otherwise show its corners when stretched edge-to-edge. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image: url("/static/hespera-bg.svg");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  opacity: 0.4;
-  z-index: -1;
-  pointer-events: none;
-}
-
 /* Page header */
 .page-header {
   display: flex;
@@ -390,9 +354,11 @@ body::before {
   font-size: 1.5rem;
   font-weight: 600;
 }
+/* Home's stats sit under the header now — the header's right side is the
+   utility cluster. */
 .home-stats {
   font-size: 0.85rem;
-  text-align: right;
+  margin: -0.75rem 0 1.5rem;
 }
 
 /* Cards */
@@ -484,6 +450,12 @@ body::before {
 .card h3 {
   font-size: 1rem;
   margin-bottom: 0.35rem;
+}
+/* Home's nav cards lead with the section's icon (the glyphs the old topbar nav
+   used to carry). */
+.card h3 .icon {
+  margin-right: 0.45em;
+  vertical-align: -0.2em;
 }
 .card p {
   color: var(--text-muted);
@@ -1017,7 +989,6 @@ html.using-mouse .grid-pager-btn,
 }
 .btn .icon { margin-right: 0.4em; }
 .player-controls .btn .icon { margin-right: 0; } /* icon-only transport buttons */
-.nav-link .icon { margin-right: 0.45em; vertical-align: -0.2em; }
 .album-art-ph .icon,
 .artist-thumb-ph .icon { width: 38%; height: 38%; vertical-align: middle; }
 
@@ -1359,9 +1330,9 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
   /* Clear the fixed transport overlay pinned to the bottom of the viewport. */
   padding-bottom: 8rem;
 }
-/* In the no-lyrics layout the reflection-deep cover already ends above the
-   transport's resting position, so the full 8rem clearance only manufactures
-   a needless scrollbar — keep a token gap instead. */
+/* In the no-lyrics layout the cover is capped to end above the transport's
+   resting position, so the full 8rem clearance only manufactures a needless
+   scrollbar — keep a token gap instead. */
 .player-page:has(.player-now.no-lyrics) {
   padding-bottom: 1rem;
 }
@@ -1436,16 +1407,14 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
 }
 .player-now.no-lyrics .player-cover img,
 .player-now.no-lyrics .album-art-ph.big {
-  /* With no lyrics card the cover owns the page: size it so its bottom edge
-     reaches the background artwork's sun-reflection bottom. The bg SVG is a
-     240-unit square, cover-cropped and centered (body::before), with the
-     reflection bottom at 179/240 = 74.6% of the image — on a landscape
-     viewport that's 24.6vw + 50vh from the top. Subtract a little less than
-     the cover's top offset (topbar + page margins ≈ 4rem — the back button is
-     overlay chrome, not flow) so the bottom lands just past the reflection;
-     floor at the old 440px so small windows never regress, cap so it can't
-     run under the bottom transport. Square cover → width is the height knob. */
-  width: clamp(31.4286rem, calc(24.6vw + 50vh - 3.5rem), calc(100vh - 13rem));
+  /* With no lyrics card the cover owns the page: size it to the viewport — as
+     large as fits without crowding, bounded on both ends. (It used to be pinned
+     to the sun-reflection line of the background artwork; that artwork is gone,
+     so the size is now derived from the viewport itself rather than a picture's
+     internal geometry.) Floor at the old 440px so small windows never regress;
+     cap so it can't run under the bottom transport. Square cover → width is the
+     height knob. */
+  width: clamp(31.4286rem, min(62vh, 52vw), calc(100vh - 13rem));
   max-width: 100%;
 }
 /* Scale the info hierarchy up with the bigger cover. */
@@ -1676,12 +1645,11 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
   transition: transform 0.28s ease;
 }
 /* Floating "Back to Music" — top-left overlay chrome on the now-playing page,
-   collapsing in sync with the transport (one idle system drives both). 4rem
-   top clears the sticky topbar when windowed and the overlay topbar when
-   revealed in fullscreen. */
+   collapsing in sync with the transport (one idle system drives both). Sits at
+   the page margin: there is no topbar to clear. */
 .player-back {
   position: fixed;
-  top: 4rem;
+  top: 1rem;
   left: 1rem;
   z-index: 90;
   transition: transform 0.28s ease, opacity 0.28s ease;

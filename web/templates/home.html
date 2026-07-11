@@ -1,33 +1,54 @@
 {{define "content"}}
-<div class="page-header">
-  <h1>Welcome to Hespera</h1>
-  {{if or .HasMusic (or (gt .Stats.Series 0) (gt .Stats.Movies 0))}}
-  <div class="home-stats text-muted">
-    {{if .HasMusic}}{{.Stats.Artists}} artists · {{.Stats.Albums}} albums{{end}}
-    {{if and .HasMusic (gt .Stats.Series 0)}} · {{end}}
-    {{if gt .Stats.Series 0}}{{.Stats.Series}} series · {{.Stats.Episodes}} episodes{{end}}
-    {{if and (or .HasMusic (gt .Stats.Series 0)) (gt .Stats.Movies 0)}} · {{end}}
-    {{if gt .Stats.Movies 0}}{{.Stats.Movies}} movies{{end}}
+{{/* There is no topbar — home IS the hub. The app utilities that used to ride
+     the bar (version pill, search, reload, full screen) live here; the cards
+     below are the nav. Quit is not among them: closing the app window quits
+     Hespera (cmd/hespera/main.go). */}}
+<div class="page-header home-header">
+  <h1 class="home-brand">
+    <img class="home-brand-logo" src="{{staticv "/static/hespera-icon.svg"}}" alt="" width="36" height="36" />
+    <span>Hespera</span>
+  </h1>
+  <div class="home-utils">
+    {{/* Live clock (clock.js). Server-rendered empty — the client fills it on
+         load, so no server time leaks into a cached page. */}}
+    <span id="app-clock" class="app-clock" aria-label="Current time"></span>
+    <button type="button" id="update-pill" class="update-pill is-unknown" title="Installed version v{{appVersion}} — update status unknown. Click to check for updates.">v{{appVersion}}</button>
+    <button type="button" class="util-btn" data-search-open aria-label="Search" title="Search ( / )">{{template "icon-search"}}</button>
+    <button type="button" class="util-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
+    <button type="button" class="util-btn" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
   </div>
-  {{end}}
 </div>
+
+{{if or .HasMusic (or (gt .Stats.Series 0) (gt .Stats.Movies 0))}}
+<div class="home-stats text-muted">
+  {{if .HasMusic}}{{.Stats.Artists}} artists · {{.Stats.Albums}} albums{{end}}
+  {{if and .HasMusic (gt .Stats.Series 0)}} · {{end}}
+  {{if gt .Stats.Series 0}}{{.Stats.Series}} series · {{.Stats.Episodes}} episodes{{end}}
+  {{if and (or .HasMusic (gt .Stats.Series 0)) (gt .Stats.Movies 0)}} · {{end}}
+  {{if gt .Stats.Movies 0}}{{.Stats.Movies}} movies{{end}}
+</div>
+{{end}}
 
 <div class="card-grid">
   <a href="/music" class="card">
-    <h3>Music</h3>
+    <h3>{{template "icon-music"}}Music</h3>
     <p>Browse and play your music collection</p>
   </a>
   <a href="/tv" class="card">
-    <h3>TV Shows</h3>
+    <h3>{{template "icon-tv"}}TV Shows</h3>
     <p>Watch your TV series</p>
   </a>
   <a href="/movies" class="card">
-    <h3>Movies</h3>
+    <h3>{{template "icon-film"}}Movies</h3>
     <p>Browse your movie library</p>
   </a>
   <a href="/photos" class="card">
-    <h3>Home Media</h3>
+    <h3>{{template "icon-image"}}Home Media</h3>
     <p>Browse your photos and home videos</p>
+  </a>
+  <a href="/settings" class="card">
+    <h3>{{template "icon-settings"}}Settings</h3>
+    <p>Libraries, jobs, integrations and features</p>
   </a>
 </div>
 
