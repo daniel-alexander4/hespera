@@ -224,15 +224,20 @@ a:hover {
   align-items: center;
   gap: 0.4rem;
 }
-/* Live clock (clock.js). Tabular figures so the width doesn't jitter as the
-   digits change. Empty until the client paints it. */
+/* Live clock (clock.js). Sized to be read from the couch: at tv scale (24px
+   root) 1.6rem is ~38px, well above the 24px body baseline, and it scales with
+   the display class like everything else. Full-strength text, not muted — dim
+   grey is as much of a legibility problem at 10 feet as small type. Tabular
+   figures so the width doesn't jitter as the digits change. Empty until the
+   client paints it. */
 .app-clock {
   display: inline-flex;
   align-items: center;
-  height: 2rem;
   padding: 0 0.5rem;
-  color: var(--text-muted);
-  font-size: 0.85rem;
+  color: var(--page-fg);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
