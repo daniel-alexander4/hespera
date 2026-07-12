@@ -439,6 +439,13 @@
     }
   };
 
+  // The playlist dropdown (native <details>) closes on any pick, on Back (whose
+  // hidden [data-couch-dismiss] control lives in the panel), and on an outside
+  // click. It never needs opening from JS — the summary does that natively.
+  const closePlaylistMenu = () => {
+    if (view && view.playlistMenu) view.playlistMenu.open = false;
+  };
+
   const renderPlaylist = () => {
     if (!view) return;
     view.playlistList.innerHTML = '';
@@ -524,6 +531,7 @@
     // is keyboard-focused (couch nav) — the same guards as the TV overlay.
     const ae = document.activeElement;
     if (curPaused() || view.seeking || transportHover ||
+        (view.playlistMenu && view.playlistMenu.open) || // an open dropdown would slide away with the bar
         (ae && ae !== document.body && view.transport.contains(ae) && ae.matches && ae.matches(':focus-visible'))) return;
     applyTransportCollapsed(true);
   };
@@ -561,6 +569,7 @@
       karaokeNext: $('player-karaoke-next'),
       lyricsEnabled: page.dataset.lyricsEnabled === '1',
       lyricsBtn: $('player-lyrics-btn'),
+      playlistMenu: $('player-playlist-menu'),
       playlistOpenBtn: $('playlist-open-btn'),
       playlistCloseBtn: $('playlist-close-btn'),
       playlistDrawer: $('playlist-drawer'),
@@ -618,6 +627,13 @@
       view.coverImg.dataset.fallbackApplied = '1';
       view.coverImg.src = '/static/missing.album.webp';
     });
+    // Any pick inside the dropdown's panel closes it: Add/Save hand off to the
+    // picker modal (playlist_picker.js, delegated on the document), Show playlist
+    // opens the drawer below, and the hidden dismiss button is Back's target.
+    if (view.playlistMenu)
+      view.playlistMenu.addEventListener('click', (e) => {
+        if (e.target.closest && e.target.closest('.player-menu-panel')) closePlaylistMenu();
+      });
     if (view.playlistOpenBtn)
       view.playlistOpenBtn.addEventListener('click', () => setPlaylistOpen(true));
     if (view.playlistCloseBtn)
@@ -764,6 +780,13 @@
     },
     true,
   );
+
+  // A click anywhere outside the playlist dropdown closes it (bound once,
+  // document-level; a no-op when it's closed or the view isn't on the page).
+  document.addEventListener('click', (e) => {
+    if (!view || !view.playlistMenu || !view.playlistMenu.open) return;
+    if (!view.playlistMenu.contains(e.target)) closePlaylistMenu();
+  });
 
   // Reveal the auto-collapsing transport on any activity (bound once, document-
   // level; a no-op when the now-playing view isn't on the page).
