@@ -1470,11 +1470,32 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
    button shows the glyph for the action the press will perform (pause while
    playing, play while paused). */
 .tv-transport {
+  position: relative; /* containing block for the wall clock at the right edge */
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 0.9rem;
   margin-bottom: 1rem;
+}
+/* Wall clock, right edge of the transport row — directly under the seek row's
+   elapsed/duration readout, which it matches in size and tabular figures so the
+   two read as one right-hand column. Absolutely positioned (out of flow) rather
+   than a flex sibling: the transport is centered by justify-content, and any
+   in-flow sibling — or a margin-left:auto trick — would shove that cluster off
+   centre. Hidden on a narrow player, where it would collide with the buttons. */
+.media-clock {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media (max-width: 700px) {
+  .media-clock { display: none; }
 }
 .tv-transport .tv-glyph-pause { display: none; }
 .tv-transport.playing .tv-glyph-play { display: none; }
@@ -2158,6 +2179,7 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
 .media-overlay .tv-player-controls { margin-top: 0.25rem; }
 /* Bare label/time text rides on the dark gradient. */
 .media-overlay .media-time,
+.media-overlay .media-clock,
 .media-overlay .tv-playback-mode,
 .media-overlay .tv-track-pick { color: rgba(255, 255, 255, 0.9); }
 .tv-player-video-wrap.controls-hidden .media-overlay {

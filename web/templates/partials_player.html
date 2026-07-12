@@ -34,6 +34,12 @@
   <button id="tvToggleBtn" type="button" class="btn btn-primary btn-sm" aria-label="Play or pause" title="Play / Pause"><span class="tv-glyph-play">{{template "icon-play"}}</span><span class="tv-glyph-pause">{{template "icon-pause"}}</span></button>
   <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Fast-forward" title="Fast-forward — press again for 8× / 32×">{{template "icon-fast-forward"}}</button>
   <button id="tvNextEpBtn" type="button" class="btn btn-sm" aria-label="Next episode" title="Next episode" hidden>{{template "icon-skip-forward"}}</button>
+  {{/* Wall clock — "is it too late for another episode?". Same #app-clock the
+       home masthead uses, so the shell's clock.js drives it with no new JS (it
+       queries the id per tick and no page carries two). Absolutely positioned at
+       the right edge, under the seek row's elapsed/duration readout, so the
+       transport above stays a genuinely centered cluster. */}}
+  <span id="app-clock" class="media-clock" aria-label="Current time"></span>
 </div>
 {{end}}
 
