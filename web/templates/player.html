@@ -43,6 +43,25 @@
     </div>
 
     <div class="player-transport-controls">
+      {{/* Left group: the lyrics toggle, plus the playlist actions collapsed into
+           one dropdown. It's a native <details>, so the remote opens it with
+           Enter on the summary (couch.js already treats summary as focusable and
+           skips a closed card's contents) — no menu JS. The panel is tagged
+           data-couch-overlay: while it's open, arrows stay inside it and Back
+           clicks the hidden dismiss control instead of navigating Home. */}}
+      <div class="player-transport-left">
+        <button id="player-lyrics-btn" type="button" class="btn btn-sm" aria-pressed="false" aria-label="Toggle lyrics for this song" title="Toggle lyrics for this song">{{template "icon-mic-vocal"}}<span>Lyrics</span></button>
+        <details id="player-playlist-menu" class="player-menu">
+          <summary class="btn btn-sm" aria-label="Playlist menu" title="Playlist menu">{{template "icon-list-music"}}<span>Playlist</span>{{template "icon-chevron-down"}}</summary>
+          <div class="player-menu-panel" data-couch-overlay>
+            <button id="player-add-btn" type="button" class="player-menu-item" data-playlist-add aria-label="Add this song to a playlist">{{template "icon-list-plus"}}<span>Add this song</span></button>
+            <button id="player-save-btn" type="button" class="player-menu-item" data-playlist-save aria-label="Save the current queue as a playlist">{{template "icon-plus"}}<span>Save queue</span></button>
+            <button id="playlist-open-btn" type="button" class="player-menu-item" aria-label="Show playlist">{{template "icon-list-music"}}<span>Show playlist</span></button>
+            <button id="player-menu-dismiss" type="button" class="player-menu-dismiss" data-couch-dismiss aria-label="Close playlist menu" tabindex="-1"></button>
+          </div>
+        </details>
+      </div>
+
       <div class="player-controls">
         <button id="player-prev-btn" type="button" class="btn btn-sm" aria-label="Previous or restart" title="Previous or restart">{{template "icon-skip-back"}}</button>
         <button id="player-rewind-btn" type="button" class="btn btn-sm" aria-label="Rewind 10s" title="Rewind 10s">{{template "icon-rewind"}}</button>
@@ -50,10 +69,11 @@
         <button id="player-forward-btn" type="button" class="btn btn-sm" aria-label="Forward 10s" title="Forward 10s">{{template "icon-fast-forward"}}</button>
         <button id="player-next-btn" type="button" class="btn btn-sm" aria-label="Next track" title="Next track">{{template "icon-skip-forward"}}</button>
       </div>
-      <button id="player-lyrics-btn" type="button" class="btn btn-sm playlist-open-btn" aria-pressed="false" aria-label="Toggle lyrics for this song" title="Toggle lyrics for this song">{{template "icon-mic-vocal"}}<span>Lyrics</span></button>
-      <button id="player-add-btn" type="button" class="btn btn-sm playlist-open-btn" data-playlist-add aria-label="Add this song to a playlist" title="Add this song to a playlist">{{template "icon-list-plus"}}<span>Add</span></button>
-      <button id="player-save-btn" type="button" class="btn btn-sm playlist-open-btn" data-playlist-save aria-label="Save the current queue as a playlist" title="Save the current queue as a playlist">{{template "icon-plus"}}<span>Save</span></button>
-      <button id="playlist-open-btn" type="button" class="btn btn-sm playlist-open-btn" aria-label="Show playlist" title="Show playlist">{{template "icon-list-music"}}<span>Playlist</span></button>
+
+      {{/* Wall clock, right edge of the same line — the same #app-clock the home
+           masthead and the video players carry, so the shell's clock.js drives it
+           with no new JS. */}}
+      <span id="app-clock" class="media-clock" aria-label="Current time"></span>
     </div>
   </div>
 </div>
