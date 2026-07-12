@@ -4,8 +4,8 @@
 // (overlay/menu guards, subtab-panel → menu bar,
 // then Home — the Back button is a Home shortcut, not a history-retrace; the
 // breadcrumb is the way UP — typing guard, broadened keycodes) and always-on.
-// Escape is split from the remote keycodes: it runs the same dismissal stages
-// but never navigates (dismiss-only; the Home stage is remote-Back's alone).
+// EVERY back key reaches the Home stage, Escape included, so the remote behaves
+// the same whatever keycode the dongle emits.
 // What jsdom can't model — the visible()/overlay-dismiss path and spatial
 // arrow focus both need real layout (getBoundingClientRect) — stays in the
 // Playwright/manual smoke.
@@ -48,18 +48,13 @@ test('Back goes Home from a normal page (the Back button is a Home shortcut)', (
   assert.strictEqual(env.backCalls.length, 0, 'no history.back — Back is Home, not a retrace');
 });
 
-test('every remote back keycode goes Home; Escape never navigates', () => {
-  for (const key of ['Backspace', 'BrowserBack', 'GoBack']) {
+test('every back keycode goes Home — Escape included (dongles differ)', () => {
+  for (const key of ['Backspace', 'Escape', 'BrowserBack', 'GoBack']) {
     const env = boot({ body: breadcrumb(['/', '/music']) });
     pressKey(env, key);
     assert.deepStrictEqual(env.visited, ['/'], `key ${key}`);
     assert.strictEqual(env.backCalls.length, 0, `key ${key}`);
   }
-  // Escape is dismiss-only: with nothing to dismiss it is a terminal no-op.
-  const env = boot({ body: breadcrumb(['/', '/music']) });
-  pressKey(env, 'Escape');
-  assert.strictEqual(env.visited.length, 0, 'Escape must not navigate');
-  assert.strictEqual(env.backCalls.length, 0, 'Escape must not retrace');
 });
 
 test('a player page goes Home', () => {
@@ -95,11 +90,8 @@ test('Escape inside a text field blurs it (exits the trap) without navigating', 
   assert.notStrictEqual(env.document.activeElement, input); // focus left the field
   assert.strictEqual(env.visited.length, 0); // first press only exits — no navigation
   assert.strictEqual(env.backCalls.length, 0);
-  // The next Escape (no longer typing, nothing to dismiss) stays a no-op —
-  // Escape never navigates; a remote's Back still goes Home.
+  // The next press (no longer typing, nothing to dismiss) reaches the Home stage.
   pressKey(env, 'Escape');
-  assert.strictEqual(env.visited.length, 0);
-  pressKey(env, 'BrowserBack');
   assert.deepStrictEqual(env.visited, ['/']);
 });
 
@@ -123,10 +115,8 @@ test('Back from inside a subtab panel focuses the menu bar, second press goes ba
   assert.strictEqual(env.visited.length, 0, 'first press must not navigate');
   assert.strictEqual(env.backCalls.length, 0, 'first press must not navigate');
   assert.strictEqual(env.document.activeElement.className, 'subtab active');
-  // Escape stops here (dismiss-only); a remote Back's second press goes Home.
+  // The ladder's next rung: a second Back press (any keycode) goes Home.
   pressKey(env, 'Escape', env.document.activeElement);
-  assert.strictEqual(env.visited.length, 0, 'second Escape is a no-op');
-  pressKey(env, 'BrowserBack', env.document.activeElement);
   assert.deepStrictEqual(env.visited, ['/'], 'second Back press goes Home');
 });
 
@@ -185,11 +175,9 @@ test('Back on an engaged control releases it without navigating; the next Back n
   pressOn(env, range, 'Escape');
   assert.strictEqual(range.hasAttribute('data-couch-engaged'), false, 'Back releases');
   assert.strictEqual(env.backCalls.length, 0, 'the releasing press does not navigate');
-  // Once released: Escape stays dismiss-only; a remote Back goes Home.
+  // Once released, the next Back press navigates Home as usual.
   pressOn(env, range, 'Escape');
-  assert.strictEqual(env.visited.length, 0, 'released Escape is a no-op');
-  pressOn(env, range, 'BrowserBack');
-  assert.deepStrictEqual(env.visited, ['/'], 'once released, remote Back goes Home as usual');
+  assert.deepStrictEqual(env.visited, ['/'], 'once released, Back goes Home as usual');
   assert.strictEqual(env.backCalls.length, 0);
 });
 

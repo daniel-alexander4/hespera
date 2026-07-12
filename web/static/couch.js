@@ -259,20 +259,13 @@
         const menu = document.querySelector('.subtab.active') || document.querySelector('.subtab');
         if (menu) { menu.focus(); return; }
       }
-      // Escape is dismiss-only: on a desktop keyboard it means "cancel the
-      // thing in front of me", never "navigate" — with nothing left to
-      // dismiss, it deliberately does nothing. Only the remote back-keycodes
-      // reach the Home shortcut below (a remote whose Back button emits
-      // Escape should be remapped to BrowserBack).
-      if (e.key === 'Escape') return;
-      // Terminal stage: the remote's Back button is a Home shortcut — go to
-      // the landing page in one press (the breadcrumb is the way UP one
-      // level). Turbo.visit keeps the persistent audio player alive, matching
-      // every other nav; a full load is the fallback if Turbo isn't present.
-      // Already on Home → no-op, so repeated presses don't stack duplicate
-      // Home history entries. (This uniformly replaces history.back for every
-      // remote back-keycode, so the Back button behaves the same regardless
-      // of dongle.)
+      // Terminal stage: Back is a Home shortcut — go to the landing page in one
+      // press (the breadcrumb is the way UP one level). EVERY back key reaches
+      // this, Escape included, so the remote behaves the same regardless of
+      // which keycode the dongle emits. Turbo.visit keeps the persistent audio
+      // player alive, matching every other nav; a full load is the fallback if
+      // Turbo isn't present. Already on Home → no-op, so repeated presses don't
+      // stack duplicate Home history entries.
       if (window.location.pathname === '/') return;
       if (window.Turbo && typeof window.Turbo.visit === 'function') window.Turbo.visit('/');
       else window.location.href = '/';
