@@ -22,16 +22,27 @@ function fixture({ autoload = '', lyrics = false } = {}) {
       <div id="player-empty"></div>
       <div id="player-main">
         <img id="player-cover-img" /><div id="player-cover-ph"></div>
-        <div id="player-album-title"></div><a id="player-track-title"></a>
+        <a id="player-track-title"></a>
+        <div id="player-artist"></div><div id="player-album-title"></div>
         <input id="player-seek" type="range" min="0" max="1000" /><span id="player-time"></span>
         <div id="player-karaoke"><div id="player-karaoke-current"></div><div id="player-karaoke-next"></div></div>
         <div id="player-transport">
           <button id="player-prev-btn"></button><button id="player-rewind-btn"></button>
           <button id="player-toggle-btn"><span class="np-glyph-play"></span><span class="np-glyph-pause"></span></button><button id="player-forward-btn"></button>
           <button id="player-next-btn"></button>
+          <button id="player-lyrics-btn"></button>
+          <details id="player-playlist-menu">
+            <summary></summary>
+            <div class="player-menu-panel" data-couch-overlay>
+              <button id="player-add-btn" data-playlist-add></button>
+              <button id="player-save-btn" data-playlist-save></button>
+              <button id="playlist-open-btn"></button>
+              <button id="player-menu-dismiss" data-couch-dismiss></button>
+            </div>
+          </details>
+          <span id="app-clock"></span>
         </div>
-        <button id="player-lyrics-btn"></button>
-        <button id="playlist-open-btn"></button><button id="playlist-close-btn"></button>
+        <button id="playlist-close-btn"></button>
         <div id="playlist-drawer"></div><div id="playlist-scrim"></div><ul id="playlist-list"></ul>
       </div>
     </div>
@@ -102,6 +113,82 @@ test('the now-playing transport toggle reflects play/pause via .np-paused (the g
 
   env.document.getElementById('hespera-audio').play();
   assert.strictEqual(btn.classList.contains('np-paused'), false, 'resumed → np-paused cleared');
+});
+
+// --- Now-playing metadata lines: artist and album link to their pages ---
+
+test('the artist and album lines render as links to their pages', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 7, albumId: 3, album: 'Ray of Light', title: 'Frozen', artist: 'Madonna', artistId: 12 }] },
+  };
+  const env = boot({ autoload: 'source=all&library=1', routes });
+  await flush();
+
+  const artist = env.document.querySelector('#player-artist a');
+  const album = env.document.querySelector('#player-album-title a');
+  assert.ok(artist, 'artist name is a link');
+  assert.strictEqual(artist.getAttribute('href'), '/music/artist/12');
+  assert.strictEqual(artist.textContent, 'Madonna');
+  assert.ok(album, 'album name is a link');
+  assert.strictEqual(album.getAttribute('href'), '/music/album/3');
+  assert.strictEqual(album.textContent, 'Ray of Light');
+});
+
+test('a track with no album/artist id degrades to plain text (never /music/album/0)', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 9, albumId: 0, album: 'Orphan', title: 'Loose Track', artist: 'Nobody', artistId: 0 }] },
+  };
+  const env = boot({ autoload: 'source=all&library=1', routes });
+  await flush();
+
+  const artistLine = env.document.getElementById('player-artist');
+  const albumLine = env.document.getElementById('player-album-title');
+  assert.strictEqual(artistLine.querySelector('a'), null, 'no artist link without an id');
+  assert.strictEqual(artistLine.textContent, 'Nobody', 'still shows the name');
+  assert.strictEqual(albumLine.querySelector('a'), null, 'no album link without an id');
+  assert.strictEqual(albumLine.textContent, 'Orphan');
+});
+
+// --- Playlist dropdown (the transport's <details> menu) ---
+
+test('picking from the playlist dropdown closes it: Show playlist opens the drawer', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 41, albumId: 9, album: 'A', title: 'T', artist: 'X', artistId: 2 }] },
+  };
+  const env = boot({ autoload: 'source=all&library=1', routes });
+  await flush();
+
+  const menu = env.document.getElementById('player-playlist-menu');
+  const drawer = env.document.getElementById('playlist-drawer');
+  menu.open = true;
+  env.document.getElementById('playlist-open-btn').click();
+  assert.strictEqual(menu.open, false, 'the pick closed the menu');
+  assert.strictEqual(drawer.classList.contains('open'), true, 'and opened the playlist drawer');
+});
+
+test('the dropdown Add button closes the menu and points at the current track', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 55, albumId: 9, album: 'A', title: 'T', artist: 'X', artistId: 2 }] },
+  };
+  const env = boot({ autoload: 'source=all&library=1', routes });
+  await flush();
+
+  const menu = env.document.getElementById('player-playlist-menu');
+  const add = env.document.getElementById('player-add-btn');
+  // playlist_picker.js (a separate controller) reads this id off the button.
+  assert.strictEqual(add.getAttribute('data-track-id'), '55', 'Add targets the playing track');
+  menu.open = true;
+  add.click();
+  assert.strictEqual(menu.open, false, 'handing off to the picker closes the menu');
+});
+
+test("Back's hidden dismiss control closes the dropdown", async () => {
+  const env = boot({});
+  const menu = env.document.getElementById('player-playlist-menu');
+  menu.open = true;
+  // couch.js dismisses an overlay by clicking its [data-couch-dismiss].
+  env.document.querySelector('#player-playlist-menu [data-couch-dismiss]').click();
+  assert.strictEqual(menu.open, false);
 });
 
 // --- Lyrics card: verify lyrics exist before showing it ---
