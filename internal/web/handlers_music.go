@@ -1709,12 +1709,13 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type queueTrackJSON struct {
-		ID      int64   `json:"id"`
-		AlbumID int64   `json:"albumId"`
-		Album   string  `json:"album"`
-		Title   string  `json:"title"`
-		Artist  string  `json:"artist"`
-		GainDB  float64 `json:"gainDb"` // volume-leveling gain toward the -18 LUFS target (0 = unanalyzed)
+		ID       int64   `json:"id"`
+		AlbumID  int64   `json:"albumId"`
+		Album    string  `json:"album"`
+		Title    string  `json:"title"`
+		Artist   string  `json:"artist"`
+		ArtistID int64   `json:"artistId"` // the now-playing view links the artist name to /music/artist/{id}
+		GainDB   float64 `json:"gainDb"`   // volume-leveling gain toward the -18 LUFS target (0 = unanalyzed)
 	}
 	out := struct {
 		Title   string           `json:"title"`
@@ -1722,7 +1723,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		Tracks  []queueTrackJSON `json:"tracks"`
 	}{Title: q.Title, BackURL: q.BackURL, Tracks: make([]queueTrackJSON, 0, len(q.Tracks))}
 	for _, t := range q.Tracks {
-		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist, GainDB: levelGainDB(t.LoudnessLUFS)})
+		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist, ArtistID: t.ArtistID, GainDB: levelGainDB(t.LoudnessLUFS)})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
