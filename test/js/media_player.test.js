@@ -235,6 +235,29 @@ test('picking "Search subtitles…" opens the dialog and restores the previous s
   assert.ok(env.fetch.calls.some((c) => c.url.indexOf('/tv/subtitles/search') >= 0), 'search endpoint queried');
 });
 
+// Dismissing the dialog must hand the ring back to the picker it was opened from.
+// Otherwise focus lands on <body> when the modal hides, and couch.js's next arrow
+// restarts at the first focusable on the page — the ring escapes the player.
+test('the subtitle dialog returns the remote ring to the picker on close', async () => {
+  const env = await boot({
+    fixtureOpts: { osEnabled: '1' },
+    sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }] }),
+  });
+  const doc = env.document;
+  const sub = doc.getElementById('subSelect');
+
+  sub.focus();
+  sub.value = 'search';
+  sub.dispatchEvent(new env.window.Event('change'));
+  await flush();
+  assert.strictEqual(doc.activeElement, doc.getElementById('subs-close-btn'), 'the ring moves into the dialog it opened');
+
+  doc.getElementById('subs-close-btn').dispatchEvent(new env.window.MouseEvent('click', { bubbles: true }));
+  await flush();
+  assert.ok(doc.getElementById('subs-modal').classList.contains('hidden'), 'dialog closed');
+  assert.strictEqual(doc.activeElement, sub, 'ring is back on the subtitles picker, not <body>');
+});
+
 test('fmtTime renders the scrubber duration/current labels (incl. hours)', async () => {
   const env = await boot(); // duration 3661 = 1:01:01
   const video = env.document.getElementById('tvVideo');
