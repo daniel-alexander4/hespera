@@ -154,6 +154,35 @@ test('server-applied defaults select the pickers; explicit Off sends sub=-1 and 
   assert.ok(last.includes('sub=-1'), `audio change preserves explicit off (got ${last})`);
 });
 
+// The blur-after-pick is a MOUSE affordance: a mouse-clicked <select> matches
+// :focus-visible in Chrome, so without it the auto-hiding overlay would pin open
+// forever. Blurring a REMOTE user's pick instead drops focus to <body>, from
+// which couch.js's next arrow restarts at the first focusable on the page — the
+// ring escapes the player mid-episode. So the blur is gated on input modality.
+test('a remote subtitle pick keeps the ring on the picker; a mouse pick blurs it', async () => {
+  const env = await boot({
+    sessionData: session({ subtitle_tracks: [{ ordinal: 1, language: 'eng', text: true }] }),
+  });
+  const doc = env.document;
+  const sub = doc.getElementById('subSelect');
+
+  // Remote/keyboard: html.using-mouse is absent (couch clears it on any handled key).
+  sub.focus();
+  sub.value = '1';
+  sub.dispatchEvent(new env.window.Event('change'));
+  await flush();
+  assert.strictEqual(doc.activeElement, sub, 'remote pick keeps focus on the picker');
+
+  // Mouse: couch sets using-mouse on mousedown — the select must blur so the
+  // overlay can auto-hide (its :focus-visible would otherwise pin it open).
+  doc.documentElement.classList.add('using-mouse');
+  sub.focus();
+  sub.value = '0';
+  sub.dispatchEvent(new env.window.Event('change'));
+  await flush();
+  assert.notStrictEqual(doc.activeElement, sub, 'mouse pick blurs so the controls can hide');
+});
+
 test('the subtitles dropdown leads with "Search subtitles…" whenever a key is configured', async () => {
   const withText = await boot({
     fixtureOpts: { osEnabled: '1' },

@@ -464,17 +464,27 @@ function initMediaPlayer() {
     attachSubtitle(session);
   }
 
-  // blur() after a pick so the <select> (which lives inside the auto-hiding
-  // .media-overlay) doesn't keep :focus-visible and pin the controls open.
-  if (audioSelect) audioSelect.addEventListener('change', () => { loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()); audioSelect.blur(); });
+  // blur() after a pick, but ONLY on the mouse path. A mouse-clicked <select>
+  // matches :focus-visible in Chrome (unlike a <button>), so a lingering focus
+  // would pin the auto-hiding .media-overlay open forever — that is what this
+  // blur exists for (see hideControls). Blurring a REMOTE user's pick, though,
+  // drops focus to <body>, and couch.js's next arrow then restarts from the first
+  // focusable on the page — the title back-link — so the ring escapes the player
+  // mid-episode. The remote keeps its ring on the picker; the overlay staying up
+  // while a control is keyboard-focused is exactly what hideControls already wants.
+  const blurIfMouse = (el) => { if (document.documentElement.classList.contains('using-mouse')) el.blur(); };
+  if (audioSelect) audioSelect.addEventListener('change', () => { loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()); blurIfMouse(audioSelect); });
   if (subSelect) subSelect.addEventListener('change', () => {
     // The "Search subtitles…" action option: restore the previous selection
     // (picking an action must not switch subtitles off) and open the search
     // dialog. Checked before parseInt, which would misread it as Off.
+    // (couch.js coalesces an engaged select's arrow steps into one change at
+    // release, so arrowing PAST this option no longer fires the dialog — it opens
+    // on the Enter that commits it.)
     if (subSelect.value === 'search') {
       subSelect.value = String(Math.max(0, currentSub)); // -1 (explicit off) displays as Off
       openSubsModal();
-      subSelect.blur();
+      blurIfMouse(subSelect);
       return;
     }
     const newSub = parseInt(subSelect.value, 10) || 0;
@@ -484,7 +494,7 @@ function initMediaPlayer() {
     // Picking Off sends -1 (explicit off): a plain 0 reads as "unpinned" to the
     // server, which would re-apply the subtitles-on default against the user.
     loadFromSession(currentAud, newSub === 0 ? -1 : newSub, currentAbsTime(), !reload);
-    subSelect.blur();
+    blurIfMouse(subSelect);
   });
 
   // --- playback speed --- pure client-side (video.playbackRate; browsers
@@ -1076,8 +1086,10 @@ function initMediaPlayer() {
       // which blocks the pointer but NOT keyboard activation, so a button the
       // mouse last clicked would re-fire on Space/Enter while invisible. Drop its
       // focus before hiding. <button> only: never a <select> (blur would close an
-      // open popup; selects blur themselves on change) and not the scrubber/volume
-      // (their arrow behavior is harmless). Blur before the class-add so the
+      // open popup; a mouse-picked select blurs itself on change — blurIfMouse) and
+      // not the scrubber/volume (their arrow behavior is harmless). A REMOTE user's
+      // focused select is :focus-visible and pins the overlay open above, like any
+      // other keyboard-focused control. Blur before the class-add so the
       // synchronous focusout→bump re-show is immediately overridden — overlay still
       // ends hidden.
       if (overlay.contains(ae) && ae !== toggleBtn && ae.tagName === 'BUTTON') ae.blur();

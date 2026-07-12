@@ -195,7 +195,28 @@
     (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'range') ||
       (el.matches && el.matches('[data-couch-capture]')));
   const isEngaged = (el) => !!el && !!el.hasAttribute && el.hasAttribute('data-couch-engaged');
-  const release = (el) => el.removeAttribute('data-couch-engaged');
+  const isSelect = (el) => !!el && el.tagName === 'SELECT';
+
+  // An engaged <select> is being PREVIEWED with the arrows, and the browser fires
+  // a `change` on every step. For the app each of those is a real commit — the
+  // media player re-opens a playback session per change, and a burn-in subtitle
+  // restarts a server-side transcode — so arrowing from Off to the third track
+  // would fire three of them, none of them wanted. Swallow the per-step change
+  // while engaged and re-emit ONE at release: the arrows preview, Enter/Back
+  // commits. Selects only — a range's per-step change is the whole point (volume
+  // tracks the arrow live; the music seek bar seeks on it).
+  let engagedValue = null; // the engaged select's value at engage time
+  document.addEventListener('change', (e) => {
+    if (isSelect(e.target) && isEngaged(e.target)) e.stopPropagation();
+  }, true);
+
+  const release = (el) => {
+    el.removeAttribute('data-couch-engaged'); // first: the re-emit below must not be swallowed
+    if (isSelect(el) && el.isConnected && engagedValue !== null && el.value !== engagedValue) {
+      el.dispatchEvent(new Event('change', { bubbles: true })); // commit the preview
+    }
+    engagedValue = null;
+  };
   // Leaving an engaged control by any means (click elsewhere, Turbo swap,
   // widget blur-after-pick) releases it.
   document.addEventListener('focusout', (e) => {
@@ -223,7 +244,10 @@
       html.classList.remove('using-mouse');
       e.preventDefault(); // keep Enter from submitting an enclosing form
       if (isEngaged(target)) release(target);
-      else target.setAttribute('data-couch-engaged', '');
+      else {
+        engagedValue = isSelect(target) ? target.value : null; // the value the preview starts from
+        target.setAttribute('data-couch-engaged', '');
+      }
       return;
     }
     // Enter toggles a checkbox like OK on a remote would — natively it triggers
