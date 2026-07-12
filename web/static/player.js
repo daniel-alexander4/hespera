@@ -469,6 +469,23 @@
     });
   };
 
+  // Fill one of the now-playing metadata lines, as a link when there's somewhere
+  // to go. textContent only — the queue's strings are user data, never markup.
+  const setMetaLine = (host, text, href) => {
+    if (!host) return;
+    host.textContent = '';
+    if (!text) return;
+    if (!href) {
+      host.textContent = text;
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = href;
+    a.className = 'player-meta-link';
+    a.textContent = text;
+    host.appendChild(a);
+  };
+
   // Update the now-playing view's display from current state (cover/titles/playlist).
   const renderView = () => {
     if (!view) return;
@@ -487,8 +504,11 @@
     // (playlist_picker.js reads the data-track-id like an album-row button).
     if (view.addBtn) view.addBtn.setAttribute('data-track-id', String(t.id || 0));
     view.trackTitle.textContent = t.title || '';
-    if (view.artist) view.artist.textContent = (t.artist || '').trim();
-    view.albumTitle.textContent = t.album || '';
+    // Artist and album are links to their pages when the queue carries an id
+    // (Turbo navigates; the permanent <audio> keeps playing). A queue row with
+    // no id — an album-less track — degrades to plain text.
+    setMetaLine(view.artist, (t.artist || '').trim(), t.artistId ? '/music/artist/' + t.artistId : '');
+    setMetaLine(view.albumTitle, t.album || '', t.albumId ? '/music/album/' + t.albumId : '');
     delete view.coverImg.dataset.fallbackApplied;
     // Guard an album-less track (albumId 0) — never build /art/album/0.
     const coverSrc = t.albumId ? '/art/album/' + t.albumId : '';
