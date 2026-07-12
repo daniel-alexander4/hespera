@@ -106,6 +106,15 @@ macOS/Windows).
 `HESPERA_LISTEN` (default `127.0.0.1:8080` — loopback only). To reach it from
 other devices, opt in explicitly with `HESPERA_LISTEN=:8080`.
 
+**Focus-follows-mouse desktops.** If your window manager focuses whatever the
+pointer hovers (Cinnamon's `focus-mode='mouse'`, and the sloppy-focus variants),
+a newly opened window on *another* monitor never gets the keyboard — the WM
+hands focus to whatever sits under the pointer. Install `xdotool` and Hespera
+will move the pointer onto its own window at launch so the window manager gives
+it focus (it does nothing when the pointer is already over the window, and
+nothing at all on click-to-focus desktops). `HESPERA_NO_FOCUS_STEAL=1` turns it
+off.
+
 ### Serving your household
 
 To let other devices in the house use Hespera (phones, laptops, a TV

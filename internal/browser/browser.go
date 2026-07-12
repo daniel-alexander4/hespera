@@ -24,6 +24,11 @@ import (
 	"time"
 )
 
+// WMClass is the WM_CLASS Chromium is launched with on Linux (--class). Two
+// things key off it: the desktop entry (StartupWMClass=Hespera, for the panel
+// icon) and FocusWindow, which finds the app window by class to hand it focus.
+const WMClass = "Hespera"
+
 // fileExists reports whether an absolute path is a regular, runnable file.
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
@@ -66,7 +71,8 @@ func Open(url, userDataDir string) (cmd *exec.Cmd, ownsWindow bool, err error) {
 			// Set a stable WM_CLASS so the panel can match this window to
 			// hespera.desktop (StartupWMClass=Hespera) and show the themed icon
 			// instead of the small icon Chromium derives from the page favicon.
-			appArgs = append(appArgs, "--class=Hespera")
+			// FocusWindow (focus_linux.go) finds the window by this same class.
+			appArgs = append(appArgs, "--class="+WMClass)
 		}
 		app := exec.Command(path, appArgs...)
 		if err := app.Start(); err == nil {
