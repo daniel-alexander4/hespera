@@ -472,7 +472,8 @@ function initMediaPlayer() {
   // focusable on the page — the title back-link — so the ring escapes the player
   // mid-episode. The remote keeps its ring on the picker; the overlay staying up
   // while a control is keyboard-focused is exactly what hideControls already wants.
-  const blurIfMouse = (el) => { if (document.documentElement.classList.contains('using-mouse')) el.blur(); };
+  const usingMouse = () => document.documentElement.classList.contains('using-mouse'); // couch.js owns the class
+  const blurIfMouse = (el) => { if (usingMouse()) el.blur(); };
   if (audioSelect) audioSelect.addEventListener('change', () => { loadFromSession(parseInt(audioSelect.value, 10) || 0, currentSub, currentAbsTime()); blurIfMouse(audioSelect); });
   if (subSelect) subSelect.addEventListener('change', () => {
     // The "Search subtitles…" action option: restore the previous selection
@@ -1302,13 +1303,31 @@ function initMediaPlayer() {
   const subsResults = document.getElementById('subs-results');
   const subsCloseBtn = document.getElementById('subs-close-btn');
 
+  // The control the dialog was opened from (the subtitles picker), so dismissing
+  // it — Close, couch's Back, or picking a result — hands the ring back there
+  // instead of dropping focus to <body>, where the next remote arrow would
+  // restart from the top of the page and lose the user's place. Same pattern as
+  // the "/" search palette (search.js). Remote only: a mouse user wants no ring
+  // at all, and focus on a <select> is :focus-visible, which would re-pin the
+  // auto-hiding overlay open (the very thing blurIfMouse exists to avoid).
+  let subsReturnFocus = null;
+
   function openSubsModal() {
     if (!subsModal) return;
+    subsReturnFocus = document.activeElement;
     subsModal.classList.remove('hidden');
+    // Put the ring inside the dialog it just opened (the results arrive async, so
+    // Close is the only control there yet) — otherwise it sits on the picker
+    // behind the modal until an arrow drags it in.
+    if (!usingMouse() && subsCloseBtn) subsCloseBtn.focus();
     runSubsSearch();
   }
   function closeSubsModal() {
     if (subsModal) subsModal.classList.add('hidden');
+    // Restore only if it's still in the DOM; focus() on a since-removed element
+    // no-ops, same as not restoring.
+    if (!usingMouse() && subsReturnFocus && document.contains(subsReturnFocus)) subsReturnFocus.focus();
+    subsReturnFocus = null;
   }
 
   async function runSubsSearch() {
