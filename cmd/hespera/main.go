@@ -66,10 +66,16 @@ func main() {
 	switch launchDecision(appMode, replace, runningURL) {
 	case launchAttach:
 		slog.Info("attaching to running instance", "url", runningURL)
-		if c, _, err := browser.Open(runningURL, filepath.Join(cfg.DataDir, "browser")); err != nil {
+		if c, ownsWindow, err := browser.Open(runningURL, filepath.Join(cfg.DataDir, "browser")); err != nil {
 			slog.Error("could not open app window — browse to it manually", "url", runningURL, "err", err)
 			os.Exit(1)
 		} else {
+			// Hand the new window the keyboard before exiting (a no-op unless the
+			// WM is focus-follows-mouse). Synchronous here: this launcher process
+			// is about to die, so a goroutine would be killed mid-flight.
+			if ownsWindow {
+				browser.FocusWindow()
+			}
 			// The running instance owns the lifecycle; this launcher just
 			// opened a window onto it and is done.
 			_ = c.Process.Release()
@@ -252,6 +258,12 @@ func main() {
 		} else {
 			browserCmd = c
 			slog.Info("opened app window", "url", url)
+			// Hand the window the keyboard once it maps — a no-op unless the WM
+			// is focus-follows-mouse (see browser.FocusWindow). In a goroutine:
+			// it polls for the window, and the server must not wait on it.
+			if ownsWindow {
+				go browser.FocusWindow()
+			}
 			// Closing the app window quits Hespera: the window IS the app in app
 			// mode, so leaving the server running headless after the user closed
 			// it would strand a process holding the port and the data-dir lock.

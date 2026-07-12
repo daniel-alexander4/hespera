@@ -16,6 +16,13 @@ description: |
 # ffmpeg powers TV/movie transcoding + tag recovery. apt pulls it on install.
 depends:
   - ffmpeg
+
+# xdotool is optional: it lets the app window take the keyboard on launch under
+# an X11 focus-follows-mouse window manager (browser.FocusWindow). Absent, the
+# window simply relies on the WM — which is correct on every click-to-focus
+# desktop, so this is a Recommends, not a Depends.
+recommends:
+  - xdotool
 contents:
   - src: dist/hespera
     dst: /usr/bin/hespera
