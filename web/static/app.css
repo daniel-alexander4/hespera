@@ -215,10 +215,11 @@ a:hover {
   flex-shrink: 0;
 }
 
-/* Home's utility cluster — clock + version pill + search + reload + full screen,
-   sitting opposite the masthead in the home page header. These rode the topbar
-   before it was removed; home is the hub now, so they live here. (No quit
-   button: closing the app window quits Hespera.) */
+/* Home's utility cluster — clock + version pill + settings + search + reload +
+   full screen, sitting opposite the masthead in the home page header. These rode
+   the topbar before it was removed; home is the hub now, so they live here.
+   Settings is a gear here rather than a media card, so the card grid is purely
+   the four libraries. (No quit button: closing the app window quits Hespera.) */
 .home-utils {
   display: inline-flex;
   align-items: center;

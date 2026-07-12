@@ -1,8 +1,8 @@
 {{define "content"}}
 {{/* There is no topbar — home IS the hub. The app utilities that used to ride
-     the bar (version pill, search, reload, full screen) live here; the cards
-     below are the nav. Quit is not among them: closing the app window quits
-     Hespera (cmd/hespera/main.go). */}}
+     the bar (version pill, settings, search, reload, full screen) live here;
+     the cards below are the media nav. Quit is not among them: closing the app
+     window quits Hespera (cmd/hespera/main.go). */}}
 <div class="page-header home-header">
   <h1 class="home-brand">
     <img class="home-brand-logo" src="{{staticv "/static/hespera-icon.svg"}}" alt="" width="36" height="36" />
@@ -13,6 +13,7 @@
          load, so no server time leaks into a cached page. */}}
     <span id="app-clock" class="app-clock" aria-label="Current time"></span>
     <button type="button" id="update-pill" class="update-pill is-unknown" title="Installed version v{{appVersion}} — update status unknown. Click to check for updates.">v{{appVersion}}</button>
+    <a href="/settings" class="util-btn" aria-label="Settings" title="Settings">{{template "icon-settings"}}</a>
     <button type="button" class="util-btn" data-search-open aria-label="Search" title="Search ( / )">{{template "icon-search"}}</button>
     <button type="button" class="util-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
     <button type="button" class="util-btn" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
@@ -45,10 +46,6 @@
   <a href="/photos" class="card">
     <h3>{{template "icon-image"}}Home Media</h3>
     <p>Browse your photos and home videos</p>
-  </a>
-  <a href="/settings" class="card">
-    <h3>{{template "icon-settings"}}Settings</h3>
-    <p>Libraries, jobs, integrations and features</p>
   </a>
 </div>
 
