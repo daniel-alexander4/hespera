@@ -12,6 +12,9 @@
 // menu bar → navigate to the home page (/). The Back button is a Home shortcut,
 // not a history-retrace — going "up" one level is the breadcrumb's job.
 //
+// Home (the remote's own Home button) skips the ladder entirely: one press goes
+// to / from anywhere and leaves the ring on the Music card.
+//
 // Overlay contract: an element tagged [data-couch-overlay] that is currently
 // visible (any hide mechanism — display:none via class, attribute, or inline
 // style all read as not-visible) traps focus inside itself, and Back dismisses
@@ -157,6 +160,15 @@
   // depending on the dongle/OS (Flirc, BT, CEC, webOS/Android TV), so catch them
   // all — otherwise the behaviour depends on which code the remote happens to send.
   const BACK_KEYS = new Set(['Backspace', 'Escape', 'BrowserBack', 'GoBack']);
+  // Same for a remote's Home button: the Flirc emits Alt+Home (key 'Home'),
+  // other dongles send BrowserHome/GoHome. Modifiers are ignored for the same
+  // reason — the dongle picks them, not the user.
+  const HOME_KEYS = new Set(['Home', 'BrowserHome', 'GoHome']);
+
+  // Home's nav cards are its primary controls, and Music is the first of them.
+  // The ring belongs there rather than on the utility cluster (clock, version
+  // pill, search) that precedes the cards in the DOM.
+  const homeCard = () => document.querySelector('.card-grid a.card');
 
   // Input-modality tracking: mouse presence reveals mouse-only affordances
   // (html.using-mouse in CSS); any handled key hands control back to the
@@ -230,6 +242,31 @@
       html.classList.remove('using-mouse');
       e.preventDefault();
       target.blur();
+      return;
+    }
+    // Home goes straight to the landing page and lands the ring on the Music
+    // card, from anywhere and in one press — no ladder, unlike Back. An open
+    // overlay is dismissed on the way out rather than left floating over home.
+    // Skipped while typing (Home moves the caret) and on an engaged control
+    // (it owns its keys until released).
+    if (HOME_KEYS.has(e.key) && !typing && !isEngaged(target)) {
+      html.classList.remove('using-mouse');
+      e.preventDefault();
+      const overlay = openOverlay();
+      if (overlay) {
+        const dismiss = overlay.querySelector('[data-couch-dismiss]');
+        if (dismiss) dismiss.click();
+      }
+      // Already home: no navigation (it would stack a duplicate history entry) —
+      // just move the ring, which is the whole point of the press. Otherwise the
+      // Turbo visit lands there and focusFirst anchors the card.
+      if (window.location.pathname === '/') {
+        const card = homeCard();
+        if (card) card.focus();
+        return;
+      }
+      if (window.Turbo && typeof window.Turbo.visit === 'function') window.Turbo.visit('/');
+      else window.location.href = '/';
       return;
     }
     // Back on an engaged control releases it; the NEXT press moves/navigates.
@@ -306,6 +343,13 @@
     // a mouse user returning home mid-session is never focus-stolen.
     const isHome = location.pathname === '/';
     if (isHome ? html.classList.contains('using-mouse') : !isTVScale()) return;
+    // Home anchors on the Music card explicitly: the generic first-in-<main>
+    // rule below would land on the utility cluster (version pill), which sits
+    // above the cards in the DOM.
+    if (isHome) {
+      const card = homeCard();
+      if (card) { card.focus(); return; }
+    }
     const all = candidates();
     if (!all.length) return;
     // Prefer the first control INSIDE the content (<main>) over the shell chrome

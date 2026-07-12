@@ -268,7 +268,15 @@ function stubLayout(env) {
 }
 
 test('focusFirst anchors the home dashboard on the Music card at any scale, modality-gated', () => {
-  const homeBody = '<main><div class="card-grid">' +
+  // Mirrors the real home.html: the utility cluster (clock, version pill,
+  // search) precedes the cards inside <main>, so a generic first-in-content rule
+  // would land the ring on the pill. The fixture carries it for that reason.
+  const homeBody = '<main>' +
+    '<div class="page-header home-header"><div class="home-utils">' +
+    '<button id="update-pill">v0</button>' +
+    '<button data-search-open>search</button>' +
+    '</div></div>' +
+    '<div class="card-grid">' +
     '<a href="/music" class="card"><h3>Music</h3></a>' +
     '<a href="/tv" class="card"><h3>TV Shows</h3></a></div></main>';
 
@@ -292,6 +300,59 @@ test('focusFirst anchors the home dashboard on the Music card at any scale, moda
   stubLayout(other);
   other.document.dispatchEvent(new other.window.Event('turbo:load'));
   assert.strictEqual(other.document.activeElement, other.document.body, 'non-home desktop page is not focus-stolen');
+});
+
+// ---- Home key --------------------------------------------------------------
+// The remote's Home button. The Flirc emits Alt+Home (key 'Home'); other dongles
+// send BrowserHome/GoHome, so all three are handled, modifiers ignored.
+const homeMarkup = '<main>' +
+  '<div class="page-header home-header"><div class="home-utils"><button id="update-pill">v0</button></div></div>' +
+  '<div class="card-grid"><a href="/music" class="card">Music</a><a href="/tv" class="card">TV</a></div></main>';
+
+test('every home keycode goes Home in one press, from anywhere', () => {
+  for (const key of ['Home', 'BrowserHome', 'GoHome']) {
+    const env = boot({ body: breadcrumb(['/', '/music', '/music/artist/1']) });
+    pressKey(env, key);
+    assert.deepStrictEqual(env.visited, ['/'], `key ${key} navigates Home via Turbo`);
+  }
+});
+
+test('Home skips the Back ladder: it leaves a subtab panel for home, not the menu bar', () => {
+  const env = boot({
+    body: '<div class="subtabs"><button class="subtab active">Recent</button></div>' +
+      '<div class="subtab-panel"><a href="/x" id="inpanel">x</a></div>',
+    url: 'http://localhost/music',
+  });
+  env.document.getElementById('inpanel').focus();
+  pressKey(env, 'Home', env.document.getElementById('inpanel'));
+  assert.deepStrictEqual(env.visited, ['/'], 'one press goes home from inside a panel');
+});
+
+test('Home already on the root page focuses the Music card without navigating', () => {
+  const env = boot({ body: homeMarkup, url: 'http://localhost/' });
+  env.document.getElementById('update-pill').focus();
+  pressKey(env, 'Home', env.document.getElementById('update-pill'));
+  assert.deepStrictEqual(env.visited, [], 'no duplicate history entry when already home');
+  assert.strictEqual(env.document.activeElement.getAttribute('href'), '/music', 'ring lands on the Music card');
+});
+
+test('Home inside a text field moves the caret, never navigates', () => {
+  const env = boot({ body: '<input type="text" id="q">', url: 'http://localhost/music' });
+  const input = env.document.getElementById('q');
+  input.focus();
+  pressKey(env, 'Home', input);
+  assert.deepStrictEqual(env.visited, [], 'Home stays native while typing');
+  assert.strictEqual(env.document.activeElement.id, 'q', 'field keeps focus');
+});
+
+test('Home on an engaged control stays native (the control owns its keys)', () => {
+  const env = boot({ body: '<input type="range" id="vol">', url: 'http://localhost/music' });
+  const range = env.document.getElementById('vol');
+  range.focus();
+  pressKey(env, 'Enter', range); // engage
+  assert.ok(range.hasAttribute('data-couch-engaged'), 'engaged');
+  pressKey(env, 'Home', range);
+  assert.deepStrictEqual(env.visited, [], 'engaged control keeps Home');
 });
 
 test('focusFirst yields to an anchor another controller already set', () => {
