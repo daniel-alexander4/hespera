@@ -166,6 +166,84 @@ test('Enter toggles engagement on a select; engaged arrows stay native', () => {
   assert.strictEqual(sel.hasAttribute('data-couch-engaged'), false, 'Enter again releases');
 });
 
+// An engaged select PREVIEWS with the arrows: the browser fires a change per
+// arrow step, and each one is a real commit for the app (the media player
+// re-opens a playback session per change — a burn-in subtitle restarts a
+// server-side transcode). couch swallows those and re-emits one at release.
+// jsdom does not implement native select key behavior, so the tests dispatch the
+// `change` the browser would fire; that is the event couch has to coalesce.
+
+function selectFixture() {
+  return '<select id="s"><option value="0">off</option><option value="1">a</option><option value="2">b</option></select>';
+}
+function changeSpy(env, el) {
+  const seen = [];
+  el.addEventListener('change', () => seen.push(el.value));
+  return seen;
+}
+
+test('an engaged select swallows its per-step changes and commits ONE on release', () => {
+  const env = boot({ body: selectFixture() });
+  const sel = env.document.getElementById('s');
+  const seen = changeSpy(env, sel);
+  sel.focus();
+  pressOn(env, sel, 'Enter'); // engage
+
+  // Two arrow steps — the browser would fire a change on each.
+  sel.value = '1';
+  sel.dispatchEvent(new env.window.Event('change', { bubbles: true }));
+  sel.value = '2';
+  sel.dispatchEvent(new env.window.Event('change', { bubbles: true }));
+  assert.deepStrictEqual(seen, [], 'no change escapes while the arrows are previewing');
+
+  pressOn(env, sel, 'Enter'); // release = commit
+  assert.deepStrictEqual(seen, ['2'], 'exactly one change, carrying the committed value');
+});
+
+test('Back commits an engaged select too (release is release, whichever key)', () => {
+  const env = boot({ body: breadcrumb(['/', '/music']) + selectFixture() });
+  const sel = env.document.getElementById('s');
+  const seen = changeSpy(env, sel);
+  sel.focus();
+  pressOn(env, sel, 'Enter');
+  sel.value = '1';
+  sel.dispatchEvent(new env.window.Event('change', { bubbles: true }));
+  pressOn(env, sel, 'Escape');
+  assert.deepStrictEqual(seen, ['1'], 'Back commits the previewed pick');
+  assert.strictEqual(env.visited.length, 0, 'the releasing press does not also navigate');
+});
+
+test('releasing an engaged select that never moved fires nothing', () => {
+  const env = boot({ body: selectFixture() });
+  const sel = env.document.getElementById('s');
+  const seen = changeSpy(env, sel);
+  sel.focus();
+  pressOn(env, sel, 'Enter');
+  pressOn(env, sel, 'Enter'); // engage then release, no arrows
+  assert.deepStrictEqual(seen, [], 'no phantom commit — a no-op engagement reloads nothing');
+});
+
+test('an unengaged select\'s change passes straight through (the mouse path)', () => {
+  const env = boot({ body: selectFixture() });
+  const sel = env.document.getElementById('s');
+  const seen = changeSpy(env, sel);
+  sel.value = '1';
+  sel.dispatchEvent(new env.window.Event('change', { bubbles: true }));
+  assert.deepStrictEqual(seen, ['1'], 'a mouse pick is never coalesced');
+});
+
+test('an engaged RANGE is not coalesced — its per-step change is the point', () => {
+  const env = boot({ body: '<input id="v" type="range" min="0" max="10" />' });
+  const range = env.document.getElementById('v');
+  const seen = [];
+  range.addEventListener('change', () => seen.push(range.value));
+  range.focus();
+  pressOn(env, range, 'Enter');
+  range.value = '5';
+  range.dispatchEvent(new env.window.Event('change', { bubbles: true }));
+  assert.deepStrictEqual(seen, ['5'], 'volume/seek must track the arrow live');
+});
+
 test('Back on an engaged control releases it without navigating; the next Back navigates', () => {
   const env = boot({ body: breadcrumb(['/', '/music']) + '<input id="v" type="range" min="0" max="1" />' });
   const range = env.document.getElementById('v');
