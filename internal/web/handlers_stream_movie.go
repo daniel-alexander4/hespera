@@ -241,9 +241,7 @@ func (h *Handler) streamMovieRemux(w http.ResponseWriter, r *http.Request) {
 	start := parseStartParam(r.URL.Query().Get("start"), total)
 	ch, encodeAudio := h.remuxAudioPlan(r, src.streamJSON, src.container, src.size, aud)
 	args := video.RemuxArgs(clean, aud, start, ch, encodeAudio)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, args, maxf(total-start, 0)); err != nil {
-		slog.Warn("movie remux stream", "file_id", fileID, "err", err)
-	}
+	streamProgressive(w, r, args, maxf(total-start, 0), "movie remux stream", fileID)
 }
 
 // streamMovieBurnIn transcodes with a bitmap subtitle burned in, progressive
@@ -283,9 +281,7 @@ func (h *Handler) streamMovieBurnIn(w http.ResponseWriter, r *http.Request) {
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
 	total := durationSeconds(probe.Format.Duration)
 	start := parseStartParam(r.URL.Query().Get("start"), total)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud)), maxf(total-start, 0)); err != nil {
-		slog.Warn("movie burn-in stream", "file_id", fileID, "err", err)
-	}
+	streamProgressive(w, r, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud)), maxf(total-start, 0), "movie burn-in stream", fileID)
 }
 
 // streamMovieHLS serves the segment-on-demand HLS asset (seekable transcode).

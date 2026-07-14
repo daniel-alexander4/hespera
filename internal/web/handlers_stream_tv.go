@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -289,10 +290,48 @@ func (h *Handler) streamTVRemux(w http.ResponseWriter, r *http.Request) {
 	start := parseStartParam(r.URL.Query().Get("start"), total)
 	ch, encodeAudio := h.remuxAudioPlan(r, src.streamJSON, src.container, src.size, aud)
 	args := video.RemuxArgs(clean, aud, start, ch, encodeAudio)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, args, maxf(total-start, 0)); err != nil {
-		// Headers/body may already be partially written; just log.
-		slog.Warn("tv remux stream", "file_id", fileID, "err", err)
+	streamProgressive(w, r, args, maxf(total-start, 0), "tv remux stream", fileID)
+}
+
+// countingWriter reports whether any response bytes have reached the client.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// streamProgressive runs a progressive (remux / burn-in) ffmpeg stream and — this is
+// the whole point — ABORTS the connection if ffmpeg dies after bytes have already
+// gone out, instead of letting net/http finish the response cleanly.
+//
+// A clean EOF is a lie the browser cannot see through. These streams carry a moov
+// whose duration we patch to the FULL episode length, so when the body simply ends,
+// the browser concludes the file is complete. Verified in a live Chrome by killing
+// the ffmpeg behind a playing episode: at the truncation point it set currentTime,
+// duration AND buffered.end all to the declared 1767s and fired 'ended' — so the
+// episode was marked WATCHED and Up Next auto-advanced into the next one, 12 seconds
+// into a 29-minute show. There is no client-side signal left to detect this with;
+// every one of them reports a complete file. So the server must not claim one.
+//
+// panic(http.ErrAbortHandler) is net/http's documented way to drop a connection
+// without a clean terminator (and without logging a stack). The browser then sees a
+// broken stream — which is the truth — and the player's stall watchdog recovers it.
+func streamProgressive(w http.ResponseWriter, r *http.Request, args []string, streamDurSec float64, logMsg string, fileID int64) {
+	cw := &countingWriter{w: w}
+	err := video.StreamFFmpegPatchMoov(r.Context(), cw, args, streamDurSec)
+	if err == nil || r.Context().Err() != nil {
+		return // finished, or the client simply went away mid-stream
 	}
+	slog.Warn(logMsg, "file_id", fileID, "err", err)
+	if cw.n > 0 {
+		panic(http.ErrAbortHandler) // never hand the browser a clean end to a dead stream
+	}
+	http.Error(w, "stream failed", http.StatusInternalServerError)
 }
 
 // remuxAudioPlan resolves what a remux must do with its audio: re-encode it to
@@ -354,10 +393,7 @@ func (h *Handler) streamTVBurnIn(w http.ResponseWriter, r *http.Request) {
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
 	total := durationSeconds(probe.Format.Duration)
 	start := parseStartParam(r.URL.Query().Get("start"), total)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud)), maxf(total-start, 0)); err != nil {
-		// Headers/body may already be partially written; just log.
-		slog.Warn("tv burn-in stream", "file_id", fileID, "err", err)
-	}
+	streamProgressive(w, r, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud)), maxf(total-start, 0), "tv burn-in stream", fileID)
 }
 
 var hlsAssetName = regexp.MustCompile(`^(index\.m3u8|seg\d+\.ts)$`)

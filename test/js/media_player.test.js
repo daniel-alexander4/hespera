@@ -469,6 +469,164 @@ test('the reload button re-loads the stream at the current position', async () =
   assert.ok(/[?&]start=42\b/.test(src), `reload re-anchors at the current position: got ${src}`);
 });
 
+// --- progressive-path seek behaviour (the remux/burn-in streams) ---
+// These matter far more since v0.34.0: an h264 file with Dolby audio is now a
+// stream-copy remux, so a third of a real library rides this path.
+
+const remux = (extra) => session(Object.assign({ protocol: 'file', url: '/stream/tv-remux/7' }, extra || {}));
+const arrowKey = (env, scrubber, key) =>
+  scrubber.dispatchEvent(new env.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+// Progress beacons are sent as Blobs, so String(data) is '[object Blob]' — decode
+// them, or an assertion about the payload silently passes no matter what was sent.
+// (jsdom's Blob has no .text(); FileReader is the one it does implement.)
+const readBlob = (env, blob) =>
+  new Promise((res) => {
+    const r = new env.window.FileReader();
+    r.onload = () => res(String(r.result));
+    r.readAsText(blob);
+  });
+const beaconBodies = (env) =>
+  Promise.all((env.window.__beacons || []).map((b) => (typeof b.data === 'string' ? b.data : readBlob(env, b.data))));
+// Advance the element the way real playback does — in small continuous steps — so
+// the player's continuity tracker records how far we actually WATCHED. This is the
+// only signal a dying stream can't fake: at a false 'ended', Chrome snaps
+// currentTime, duration AND buffered.end all to the declared duration.
+const playTo = (env, video, absSec) => {
+  for (let t = 0; t <= absSec; t += 2) {
+    video.currentTime = t;
+    video.dispatchEvent(new env.window.Event('timeupdate'));
+  }
+};
+
+test('rapid ±10s presses on a progressive stream accumulate and issue ONE reload', async () => {
+  const env = await boot({ sessionData: remux() });
+  const video = env.document.getElementById('tvVideo');
+  const scrubber = env.document.getElementById('mediaScrubber');
+  scrubber.setAttribute('data-couch-engaged', ''); // couch.js's engage protocol
+  video.currentTime = 100;
+  const before = env.window.__fetchCalls ? env.window.__fetchCalls.length : 0;
+
+  for (let i = 0; i < 5; i++) arrowKey(env, scrubber, 'ArrowRight'); // 5 presses, key-repeat fast
+  // The bar must track the presses immediately, without waiting for any server round-trip.
+  assert.strictEqual(env.document.getElementById('mediaCur').textContent, '2:30', 'scrubber shows 100+50s at once');
+
+  await new Promise((r) => setTimeout(r, 400)); // past the 250ms arrow debounce
+  await flush();
+  const src = video.getAttribute('src') || '';
+  // The whole point: five presses move 50s, not 10s. Dropping the in-flight seeks
+  // (the old `if (reloading) return`) lost the accumulation and under-seeked.
+  assert.ok(/[?&]start=150\b/.test(src), `five +10s presses land at 150s: got ${src}`);
+});
+
+test('seeking a PAUSED progressive stream leaves it paused', async () => {
+  const env = await boot({ sessionData: remux() });
+  const video = env.document.getElementById('tvVideo');
+  const scrubber = env.document.getElementById('mediaScrubber');
+  scrubber.setAttribute('data-couch-engaged', '');
+  video.pause();
+  assert.strictEqual(video.paused, true, 'precondition: paused');
+
+  video.currentTime = 60;
+  arrowKey(env, scrubber, 'ArrowRight');
+  await new Promise((r) => setTimeout(r, 400));
+  await flush();
+
+  assert.ok(/[?&]start=70\b/.test(video.getAttribute('src') || ''), 'the seek still happened');
+  // attachSource sets autoplay = !startPaused, so a resumed seek would show here.
+  assert.strictEqual(video.autoplay, false, 'a paused seek must not switch autoplay back on');
+  assert.strictEqual(video.paused, true, 'a paused seek must not resume playback');
+});
+
+test('the FF/RW scan commit DOES resume — the one seek that must override "stay paused"', async () => {
+  const env = await boot({ sessionData: remux() });
+  const video = env.document.getElementById('tvVideo');
+  video.play();
+  video.currentTime = 200;
+
+  // Fast-forward scan: the first press pauses the video and runs a virtual playhead.
+  env.document.getElementById('tvForwardBtn').dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(video.paused, true, 'the scan pauses playback in place');
+
+  // Play commits the scan. Because the scan left the element paused, a naive
+  // "preserve video.paused" seek would strand the player frozen at the scanned frame.
+  env.document.getElementById('tvToggleBtn').dispatchEvent(new env.window.Event('click'));
+  await new Promise((r) => setTimeout(r, 50));
+  await flush();
+  assert.strictEqual(video.autoplay, true, 'the scan commit resumes: autoplay stays on');
+  assert.strictEqual(video.paused, false, 'playback resumed after committing the scan');
+});
+
+test('a dead progressive stream is detected by the stall watchdog and re-anchored', async () => {
+  const env = await boot({ sessionData: remux() });
+  const video = env.document.getElementById('tvVideo');
+  video.play();
+  video.currentTime = 300;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+
+  // Now the ffmpeg behind the stream dies. Verified in a real Chrome: the element
+  // fires NO 'error' and NO 'ended' — it fires waiting/stalled and then freezes with
+  // readyState starved and currentTime never advancing again. Reproduce exactly that:
+  video.readyState = 2; // HAVE_CURRENT_DATA — nothing further to play
+  video.dispatchEvent(new env.window.Event('waiting'));
+  video.dispatchEvent(new env.window.Event('stalled'));
+
+  // Let the watchdog tick once at the REAL clock first, so it records 300s as the
+  // last known-good position. (Jumping the clock before this baseline exists makes
+  // the very first tick record the shifted time, and no elapsed stall is ever seen.)
+  await new Promise((r) => setTimeout(r, 1200));
+
+  // Now jump the clock past the stall window. The next tick sees a frozen position
+  // and a starved buffer, and re-anchors the stream where it died.
+  const realNow = env.window.Date.now;
+  env.window.Date.now = () => realNow() + 20000;
+  await new Promise((r) => setTimeout(r, 1300));
+  await flush();
+  env.window.Date.now = realNow;
+
+  const src = video.getAttribute('src') || '';
+  assert.ok(/[?&]start=30[0-9]\b/.test(src), `the stalled stream is re-anchored at ~300s: got ${src}`);
+});
+
+test('a progressive stream that dies mid-episode must NOT mark it watched or auto-advance', async () => {
+  // The real failure, caught by killing the ffmpeg behind a live episode in Chrome:
+  // the handler returns normally, so Go closes the chunked response CLEANLY, and the
+  // browser — seeing a complete resource — fires 'ended' right there. It fired ~30s
+  // into a 29-minute file, which marked the episode WATCHED and auto-advanced Up Next
+  // into the next one. A genuine end happens near the end; anything else is a corpse.
+  const env = await boot({ fixtureOpts: { nextFile: 9 }, sessionData: remux() }); // duration 3661
+  const video = env.document.getElementById('tvVideo');
+  video.play();
+  playTo(env, video, 30); // we actually watched 30s of a 61-minute episode
+  // Now the stream dies. Chrome snaps currentTime (and duration, and buffered) up to
+  // the declared duration, so the element looks exactly like a finished episode.
+  video.currentTime = 3661;
+  video.dispatchEvent(new env.window.Event('ended')); // the lie
+  await flush();
+
+  const upnext = env.document.querySelector('.media-upnext');
+  assert.ok(!upnext || upnext.hidden, 'a dead stream must NOT open the Up Next countdown');
+  const bodies = await beaconBodies(env);
+  assert.ok(!bodies.some((b) => /"completed":true/.test(b)),
+    'a dead stream must NOT report the episode completed — that destroys the resume position');
+  // …and it re-anchors the stream where it died rather than leaving a dead player.
+  assert.ok(/[?&]start=30\b/.test(video.getAttribute('src') || ''),
+    `the stream is re-anchored where the DATA stopped, not where currentTime claimed: got ${video.getAttribute('src')}`);
+});
+
+test('a genuine end (at the duration) still completes and offers Up Next', async () => {
+  const env = await boot({ fixtureOpts: { nextFile: 9 }, sessionData: remux() }); // duration 3661
+  const video = env.document.getElementById('tvVideo');
+  video.play();
+  playTo(env, video, 3660); // genuinely watched through to the end
+  video.dispatchEvent(new env.window.Event('ended'));
+  await flush();
+
+  const upnext = env.document.querySelector('.media-upnext');
+  assert.ok(upnext && !upnext.hidden, 'finishing the episode still offers Up Next');
+  const bodies = await beaconBodies(env);
+  assert.ok(bodies.some((b) => /"completed":true/.test(b)), 'finishing still marks it watched');
+});
+
 test('playback speed: slider input sets playbackRate + persists; stored value applied on boot', async () => {
   let env = await boot();
   let video = env.document.getElementById('tvVideo');
