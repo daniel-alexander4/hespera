@@ -26,7 +26,7 @@ func readMvhd(b []byte) (ts, dur uint64) {
 func TestStreamFFmpegPatchMoovRealStream(t *testing.T) {
 	ffmpegAvailable(t)
 	src, _, _ := sampleClipDur(t, 5)
-	args := RemuxArgs(src, 0, 0) // frag_keyframe+empty_moov+faststart, -f mp4 pipe:1
+	args := RemuxArgs(src, 0, 0, 2, false) // frag_keyframe+empty_moov+faststart, -f mp4 pipe:1
 
 	var unpatched bytes.Buffer
 	if err := StreamFFmpeg(context.Background(), &unpatched, args); err != nil {
@@ -37,7 +37,7 @@ func TestStreamFFmpegPatchMoovRealStream(t *testing.T) {
 	}
 
 	var patched bytes.Buffer
-	if err := StreamFFmpegPatchMoov(context.Background(), &patched, RemuxArgs(src, 0, 0), 5); err != nil {
+	if err := StreamFFmpegPatchMoov(context.Background(), &patched, RemuxArgs(src, 0, 0, 2, false), 5); err != nil {
 		t.Fatalf("patched stream: %v", err)
 	}
 	ts, dur := readMvhd(patched.Bytes())

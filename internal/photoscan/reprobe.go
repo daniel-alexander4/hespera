@@ -15,12 +15,14 @@ import (
 // timeout). The movie/TV twin: chained after every photos scan, near-free
 // when nothing is missing. Stills never probe.
 func (s *Scanner) ReprobeMissing(ctx context.Context, jobID, libraryID int64) error {
-	// Also re-probes clips whose stored probe predates aspect capture (missing
-	// display_aspect_ratio key; non-omitempty → one-shot backfill).
+	// Also re-probes clips whose stored probe predates aspect capture or
+	// cover-art detection (missing display_aspect_ratio / attached_pic key; both
+	// non-omitempty → one-shot backfill).
 	rows, err := s.DB.QueryContext(ctx, `
 SELECT id, abs_path, mtime_unix FROM photos
 WHERE library_id=? AND kind='video' AND (stream_info_json='' OR stream_info_json='{}'
-	OR stream_info_json NOT LIKE '%"display_aspect_ratio"%')
+	OR stream_info_json NOT LIKE '%"display_aspect_ratio"%'
+	OR stream_info_json NOT LIKE '%"attached_pic"%')
 `, libraryID)
 	if err != nil {
 		return err

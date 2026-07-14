@@ -287,10 +287,27 @@ func (h *Handler) streamTVRemux(w http.ResponseWriter, r *http.Request) {
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
 	total := storedDuration(src)
 	start := parseStartParam(r.URL.Query().Get("start"), total)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, video.RemuxArgs(clean, aud, start), maxf(total-start, 0)); err != nil {
+	ch, encodeAudio := h.remuxAudioPlan(r, src.streamJSON, src.container, src.size, aud)
+	args := video.RemuxArgs(clean, aud, start, ch, encodeAudio)
+	if err := video.StreamFFmpegPatchMoov(r.Context(), w, args, maxf(total-start, 0)); err != nil {
 		// Headers/body may already be partially written; just log.
 		slog.Warn("tv remux stream", "file_id", fileID, "err", err)
 	}
+}
+
+// remuxAudioPlan resolves what a remux must do with its audio: re-encode it to
+// AAC (and with how many source channels, for the shared downmix filter) or copy
+// it through. It is derived from the same stored probe and client profile the
+// playback session used, deliberately rather than from a query parameter — the
+// stream that gets served must agree with the decision the session published,
+// and a client must not be able to ask for a copy the muxer cannot perform.
+// Shared by the TV, movie, and photo remux handlers.
+func (h *Handler) remuxAudioPlan(r *http.Request, streamJSON, container string, size int64, aud int) (srcChannels int, encodeAudio bool) {
+	var probe video.ProbeResult
+	_ = json.Unmarshal([]byte(streamJSON), &probe)
+	mi := playback.FromProbe(&probe, container, size, aud, 0)
+	profile, _ := playback.Profile(r.URL.Query().Get("client"), r.UserAgent())
+	return audioChannels(&probe, aud), playback.RemuxAudioNeedsTranscode(profile, mi.AudioCodec, mi.HasAudio)
 }
 
 // streamTVBurnIn transcodes the file with a bitmap subtitle (PGS/DVD/DVB) burned

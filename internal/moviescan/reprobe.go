@@ -29,11 +29,14 @@ func (s *Scanner) ReprobeMissing(ctx context.Context, jobID, libraryID int64) er
 	mediaRoot := filepath.Clean(s.Cfg.MediaRoot)
 
 	// Snapshot the candidate list first so the query isn't held open across probes.
-	// Empty = probe failure / pre-column rows; a missing display_aspect_ratio key =
-	// rows probed before aspect capture (non-omitempty → one-shot backfill).
+	// Empty = probe failure / pre-column rows; a missing display_aspect_ratio or
+	// attached_pic key = rows probed before that field existed (aspect capture,
+	// cover-art detection; both non-omitempty → one-shot backfill).
 	rows, err := s.DB.QueryContext(ctx,
 		`SELECT id, abs_path FROM movie_files WHERE library_id=? AND
-		 (stream_info_json IN ('', '{}') OR stream_info_json NOT LIKE '%"display_aspect_ratio"%')`,
+		 (stream_info_json IN ('', '{}')
+		  OR stream_info_json NOT LIKE '%"display_aspect_ratio"%'
+		  OR stream_info_json NOT LIKE '%"attached_pic"%')`,
 		libraryID,
 	)
 	if err != nil {

@@ -65,7 +65,7 @@ func TestSegmentWarmupArgs(t *testing.T) {
 	mux := strings.Join(segmentMuxArgs("/m/ep.mkv", "/cache/x/aud.tmp", "/cache/x/seg00010.ts.tmp", 60, 6, 720), " ")
 	for _, want := range []string{
 		"-ss 0.5 -i /cache/x/aud.tmp", "-ss 60 -i /m/ep.mkv", "-t 6",
-		"-map 0:a:0", "-map 1:v:0", "-c:a copy", "-c:v libx264", "-bf 0", "-threads 3",
+		"-map 0:a:0", "-map 1:V:0", "-c:a copy", "-c:v libx264", "-bf 0", "-threads 3",
 		"-force_key_frames expr:eq(n,0)", "-avoid_negative_ts disabled", "-output_ts_offset 60",
 		"scale=-2:'min(ih,720)'",
 	} {
@@ -145,7 +145,7 @@ func TestBurnInArgs(t *testing.T) {
 	joined := strings.Join(BurnInArgs("/m/ep.mkv", 2, 1, 1080, 0, 2), " ")
 	for _, want := range []string{
 		"-i /m/ep.mkv",
-		"[0:v:0][0:s:1]overlay,scale=-2:'min(ih,1080)'[v]",
+		"[0:V:0][0:s:1]overlay,scale=-2:'min(ih,1080)'[v]",
 		"-map [v]", "-map 0:a:0?",
 		"-c:v libx264", "-c:a aac",
 		"-movflags frag_keyframe+empty_moov+faststart", "-f mp4", "pipe:1",
@@ -177,7 +177,7 @@ func TestBurnInArgsResume(t *testing.T) {
 }
 
 func TestRemuxArgsCopiesCodecs(t *testing.T) {
-	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0, 0), " ")
+	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0, 0, 2, false), " ")
 	if !strings.Contains(joined, "-c copy") {
 		t.Fatalf("RemuxArgs should copy codecs: %s", joined)
 	}
@@ -188,14 +188,70 @@ func TestRemuxArgsCopiesCodecs(t *testing.T) {
 	if strings.Contains(joined, "-ss ") {
 		t.Fatalf("RemuxArgs(start=0) must not input-seek: %s", joined)
 	}
+	// The copy path must never carry an audio encoder or a filter.
+	for _, banned := range []string{"-c:a", "aac", "-af"} {
+		if strings.Contains(joined, banned) {
+			t.Fatalf("RemuxArgs(copy) must not %q: %s", banned, joined)
+		}
+	}
+	// Cover art must never be selected as the picture (0:V:0, not 0:v:0).
+	if !strings.Contains(joined, "-map 0:V:0") {
+		t.Fatalf("RemuxArgs must map 0:V:0 (video, excluding attached pictures): %s", joined)
+	}
 }
 
 func TestRemuxArgsResume(t *testing.T) {
-	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0, 1200), " ")
+	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0, 1200, 2, false), " ")
 	for _, want := range []string{"-ss 1200", "-i /m/ep.mkv", "-avoid_negative_ts make_zero", "-c copy"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("RemuxArgs(start) missing %q in: %s", want, joined)
 		}
+	}
+	if strings.Index(joined, "-ss ") > strings.Index(joined, "-i ") {
+		t.Fatalf("RemuxArgs(start) -ss must be an input seek (before -i): %s", joined)
+	}
+	// A pure copy never decodes, so accurate-seek is irrelevant — and leaving it
+	// off here keeps the long-standing copy args byte-identical.
+	if strings.Contains(joined, "-noaccurate_seek") {
+		t.Fatalf("RemuxArgs(copy) must not carry -noaccurate_seek: %s", joined)
+	}
+}
+
+// The middle gear: the video is copied while an unplayable soundtrack (Dolby) is
+// re-encoded to AAC, instead of dragging the whole file through the transcoder.
+func TestRemuxArgsEncodeAudioCopiesVideo(t *testing.T) {
+	joined := strings.Join(RemuxArgs("/m/ep.mkv", 2, 0, 6, true), " ")
+	for _, want := range []string{
+		"-map 0:V:0",  // real picture, never the cover art
+		"-map 0:a:1?", // the selected (1-based) audio track
+		"-c:v copy",   // ← the whole point: the video is NOT re-encoded
+		"-c:a aac",    // the soundtrack is
+		"-b:a 160k",
+		"aresample=async=1", // shared gap-fill
+		"pan=stereo|FL=0.7*FC+0.5*FL|FR=0.7*FC+0.5*FR", // 5.1 dialogue-forward downmix
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("RemuxArgs(encodeAudio) missing %q in: %s", want, joined)
+		}
+	}
+	// A blanket "-c copy" here would copy the audio too and defeat the encode.
+	if strings.Contains(joined, "-c copy") {
+		t.Fatalf("RemuxArgs(encodeAudio) must not blanket-copy: %s", joined)
+	}
+}
+
+// Resuming an audio-encoding remux MUST use -noaccurate_seek. ffmpeg's default
+// accurate seek discards decoded audio before the requested position while the
+// copied video keeps its pre-roll back to the previous keyframe, so the two
+// streams start at different points and the audio lags the picture by up to a
+// GOP (measured: 3.9s of desync on a 4s-GOP source).
+func TestRemuxArgsEncodeAudioResumeKeepsAVInSync(t *testing.T) {
+	joined := strings.Join(RemuxArgs("/m/ep.mkv", 0, 900, 6, true), " ")
+	if !strings.Contains(joined, "-noaccurate_seek") {
+		t.Fatalf("RemuxArgs(encodeAudio, start) must -noaccurate_seek or audio lags the video: %s", joined)
+	}
+	if strings.Index(joined, "-noaccurate_seek") > strings.Index(joined, "-i ") {
+		t.Fatalf("-noaccurate_seek must be an input option (before -i): %s", joined)
 	}
 	if strings.Index(joined, "-ss ") > strings.Index(joined, "-i ") {
 		t.Fatalf("RemuxArgs(start) -ss must be an input seek (before -i): %s", joined)
@@ -458,7 +514,7 @@ func TestStreamFFmpegRemux(t *testing.T) {
 	ffmpegAvailable(t)
 	src, _, _ := sampleClip(t)
 	var buf bytes.Buffer
-	if err := StreamFFmpeg(context.Background(), &buf, RemuxArgs(src, 0, 0)); err != nil {
+	if err := StreamFFmpeg(context.Background(), &buf, RemuxArgs(src, 0, 0, 2, false)); err != nil {
 		t.Fatalf("StreamFFmpeg remux: %v", err)
 	}
 	if buf.Len() == 0 {
@@ -471,7 +527,7 @@ func TestStreamFFmpegCanceledIsNotError(t *testing.T) {
 	src, _, _ := sampleClip(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already canceled before start
-	err := StreamFFmpeg(ctx, &bytes.Buffer{}, RemuxArgs(src, 0, 0))
+	err := StreamFFmpeg(ctx, &bytes.Buffer{}, RemuxArgs(src, 0, 0, 2, false))
 	if err != context.Canceled {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
