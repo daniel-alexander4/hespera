@@ -75,12 +75,16 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	// Candidate: empty stream info, file missing on disk (so the probe is
 	// skipped without ffmpeg — we're testing selection + graceful skip).
 	candidate := insertMovieFile(t, db, libID, filepath.Join(root, "Movie (2019)", "movie.mkv"), "{}")
-	// Non-candidate: fully probed (has the display_aspect_ratio key); untouched.
-	const probedJSON = `{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9"}]}`
+	// Non-candidate: fully probed (carries every marker key); untouched.
+	const probedJSON = `{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9","attached_pic":false}]}`
 	probed := insertMovieFile(t, db, libID, filepath.Join(root, "Other (2020)", "other.mkv"), probedJSON)
 	// Candidate: probed before aspect capture existed (no display_aspect_ratio
 	// key) — the one-shot backfill must re-select it.
 	insertMovieFile(t, db, libID, filepath.Join(root, "Old (2018)", "old.mkv"), `{"format":{"duration":"100.0"}}`)
+	// Candidate: probed before cover-art detection existed (aspect key, no
+	// attached_pic key) — same one-shot backfill.
+	insertMovieFile(t, db, libID, filepath.Join(root, "Older (2017)", "older.mkv"),
+		`{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9"}]}`)
 
 	if err := s.ReprobeMissing(ctx, jobID, libID); err != nil {
 		t.Fatalf("ReprobeMissing: %v", err)
@@ -90,8 +94,8 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	if err := db.QueryRow("SELECT progress_total FROM scan_jobs WHERE id=?", jobID).Scan(&total); err != nil {
 		t.Fatalf("read progress_total: %v", err)
 	}
-	if total != 2 {
-		t.Fatalf("progress_total = %d, want 2 (the empty row + the pre-DAR row)", total)
+	if total != 3 {
+		t.Fatalf("progress_total = %d, want 3 (the empty row + the pre-DAR row + the pre-attached_pic row)", total)
 	}
 
 	var got string

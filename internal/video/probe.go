@@ -132,6 +132,12 @@ type ProbeStream struct {
 	Language           string
 	Title              string
 	IsDefault          bool
+	// AttachedPic marks embedded cover art carried as a video stream (ffprobe's
+	// disposition.attached_pic). It is deliberately NOT omitempty for the same
+	// reason as DisplayAspectRatio: the key's presence in stored
+	// stream_info_json is the marker the reprobe jobs use to backfill rows
+	// probed before the field existed.
+	AttachedPic bool `json:"attached_pic"`
 }
 
 // VideoDisplayAspect returns the first video stream's display aspect ratio as a
@@ -189,7 +195,8 @@ type rawProbeStream struct {
 		Title    string `json:"title"`
 	} `json:"tags"`
 	Disposition struct {
-		Default int `json:"default"`
+		Default     int `json:"default"`
+		AttachedPic int `json:"attached_pic"`
 	} `json:"disposition"`
 }
 
@@ -270,6 +277,7 @@ func parseProbeJSON(data []byte) (*ProbeResult, error) {
 			Language:           s.Tags.Language,
 			Title:              s.Tags.Title,
 			IsDefault:          s.Disposition.Default == 1,
+			AttachedPic:        s.Disposition.AttachedPic == 1,
 		}
 	}
 	for _, c := range raw.Chapters {

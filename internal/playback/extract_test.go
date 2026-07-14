@@ -77,6 +77,26 @@ func TestFromProbeLargestVideoWins(t *testing.T) {
 	}
 }
 
+// Real-library regression (Small Prophets S01): a 1080p mjpeg cover art rides
+// alongside a 720p HEVC episode, so "largest frame wins" handed the decision to
+// the ARTWORK — the file was judged on a codec no browser plays and transcoded
+// for nothing, and no amount of codec support would have saved it. The
+// disposition flag, not the frame size, is what identifies cover art.
+func TestFromProbeAttachedPicNeverWinsEvenWhenLarger(t *testing.T) {
+	p := &video.ProbeResult{
+		Streams: []video.ProbeStream{
+			{CodecType: "video", CodecName: "hevc", Width: 1280, Height: 720},
+			{CodecType: "audio", CodecName: "aac"},
+			{CodecType: "video", CodecName: "mjpeg", Width: 1920, Height: 1080, AttachedPic: true},
+		},
+	}
+	m := FromProbe(p, "mkv", 0, 0, 0)
+	if m.VideoCodec != "hevc" || m.VideoWidth != 1280 {
+		t.Fatalf("VideoCodec = %q %dx%d, want hevc 1280x720 (the real picture, not the cover art)",
+			m.VideoCodec, m.VideoWidth, m.VideoHeight)
+	}
+}
+
 func TestFromProbeNoAudio(t *testing.T) {
 	p := &video.ProbeResult{Streams: []video.ProbeStream{{CodecType: "video", CodecName: "h264", Width: 1280, Height: 720}}}
 	if m := FromProbe(p, "mp4", 0, 0, 0); m.HasAudio {

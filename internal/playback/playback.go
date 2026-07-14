@@ -88,6 +88,10 @@ type Output struct {
 	Reasons         []Reason
 	SubtitleSidecar bool // selected text subtitle delivered as a sidecar
 	SubtitleBurnIn  bool // selected subtitle must be burned in (forces transcode)
+	// AudioTranscode marks a DirectStream whose audio must be re-encoded to AAC
+	// while the video is still stream-copied — the middle gear between "copy
+	// everything" and "re-encode everything". See RemuxAudioNeedsTranscode.
+	AudioTranscode bool
 }
 
 // Decide chooses the playback strategy for the selected tracks under a client
@@ -101,7 +105,10 @@ func Decide(p ClientProfile, m MediaInfo, modeOverride string) Output {
 	case "direct", "direct_play":
 		return Output{Decision: DirectPlay, Protocol: ProtocolFile, Reasons: []Reason{ReasonForcedMode}, SubtitleSidecar: sidecar}
 	case "direct_stream":
-		return Output{Decision: DirectStream, Protocol: ProtocolFile, Reasons: []Reason{ReasonForcedMode}, SubtitleSidecar: sidecar}
+		return Output{
+			Decision: DirectStream, Protocol: ProtocolFile, Reasons: []Reason{ReasonForcedMode}, SubtitleSidecar: sidecar,
+			AudioTranscode: RemuxAudioNeedsTranscode(p, m.AudioCodec, m.HasAudio),
+		}
 	case "transcode", "transcoded", "compat", "compatibility":
 		return Output{Decision: Transcode, Protocol: p.CompatProtocol, Reasons: []Reason{ReasonForcedMode}, SubtitleSidecar: sidecar, SubtitleBurnIn: burnIn}
 	}
@@ -137,11 +144,12 @@ func Decide(p ClientProfile, m MediaInfo, modeOverride string) Output {
 	switch {
 	case len(reasons) == 0:
 		out.Decision, out.Protocol = DirectPlay, ProtocolFile
-	case !burnIn && !resTooHigh && !bitrateTooHigh && canRemux(p, video, audio, m.HasAudio):
-		// Direct-play failed only on container packaging; the codecs themselves
-		// are client-compatible, so repackage into the remux target.
+	case !burnIn && !resTooHigh && !bitrateTooHigh && canRemux(p, video):
+		// The video is client-compatible, so it can be stream-copied into the
+		// remux target; only the packaging (and possibly the audio) is wrong.
 		reasons = append(reasons, ReasonRemuxToSupported)
 		out.Decision, out.Protocol = DirectStream, ProtocolFile
+		out.AudioTranscode = RemuxAudioNeedsTranscode(p, audio, m.HasAudio)
 	default:
 		out.Decision, out.Protocol = Transcode, p.CompatProtocol
 	}
@@ -149,15 +157,38 @@ func Decide(p ClientProfile, m MediaInfo, modeOverride string) Output {
 	return out
 }
 
-// canRemux reports whether the source's codecs can be repackaged, unchanged,
-// into the profile's remux-target container (codecs are client-OK; only the
-// container differs).
-func canRemux(p ClientProfile, video, audio string, hasAudio bool) bool {
+// canRemux reports whether the source's video can be repackaged, unchanged, into
+// the profile's remux-target container. The audio is deliberately not part of
+// this test: an audio codec the client can't play (or that the fragmented-MP4
+// muxer can't carry) is re-encoded in place while the video is still copied —
+// re-encoding the video because of the soundtrack is the waste this avoids.
+func canRemux(p ClientProfile, video string) bool {
 	caps, ok := p.Containers[p.RemuxTarget]
-	if !ok || !caps.Video[video] {
+	return ok && caps.Video[video]
+}
+
+// fmp4CopyableAudio lists the audio codecs ffmpeg can stream-copy into the
+// fragmented MP4 the remux path emits. AC-3/E-AC-3 are absent for a hard
+// muxer reason, not a client one: the MP4 muxer must parse an audio packet
+// before it can write the moov, but -movflags empty_moov writes the moov
+// first, so the mux fails outright ("Cannot write moov atom before AC3
+// packets"). Copying them is therefore never an option here, even for a client
+// (Safari) whose profile says it could decode them.
+var fmp4CopyableAudio = set("aac", "mp3", "flac")
+
+// RemuxAudioNeedsTranscode reports whether a DirectStream must re-encode the
+// selected audio track to AAC — because the client can't decode it, or because
+// the fragmented-MP4 output can't carry it (see fmp4CopyableAudio).
+func RemuxAudioNeedsTranscode(p ClientProfile, audioCodec string, hasAudio bool) bool {
+	if !hasAudio {
 		return false
 	}
-	return !hasAudio || caps.Audio[audio]
+	audio := strings.ToLower(strings.TrimSpace(audioCodec))
+	caps, ok := p.Containers[p.RemuxTarget]
+	if !ok {
+		return true
+	}
+	return !caps.Audio[audio] || !fmp4CopyableAudio[audio]
 }
 
 func normalizeMode(mode string) string {

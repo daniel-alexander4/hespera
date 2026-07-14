@@ -35,7 +35,18 @@ func FromProbe(p *video.ProbeResult, container string, fileSizeBytes int64, audi
 	for _, s := range p.Streams {
 		switch strings.ToLower(s.CodecType) {
 		case "video":
-			// Largest frame wins, which skips tiny cover-art/thumbnail video streams.
+			// Cover art is skipped two ways. The disposition flag is the reliable
+			// one and must come first: an embedded poster can be LARGER than the
+			// real picture (a 1080p mjpeg cover on a 720p HEVC episode), so
+			// largest-frame alone hands the decision to the artwork and the file
+			// transcodes for nothing. ffmpeg selects the same stream via -map
+			// 0:V:0 ("video, excluding attached pictures"), so the decision and
+			// the stream that actually gets served stay in agreement. Largest
+			// frame then still breaks ties, which also catches unflagged cover
+			// art sitting ahead of the real video.
+			if s.AttachedPic {
+				continue
+			}
 			if m.VideoCodec == "" || s.Width*s.Height > m.VideoWidth*m.VideoHeight {
 				m.VideoCodec = strings.ToLower(s.CodecName)
 				m.VideoWidth = s.Width

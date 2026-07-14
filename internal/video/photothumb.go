@@ -98,7 +98,7 @@ func photoThumbOnce(ctx context.Context, src, dst string, maxDim, orientation in
 	}
 	args = append(args,
 		"-i", src,
-		"-map", "0:v:0", "-an", "-sn",
+		"-map", "0:V:0", "-an", "-sn",
 		"-frames:v", "1",
 		"-vf", strings.Join(vf, ","),
 		"-f", "webp", "-quality", "82",

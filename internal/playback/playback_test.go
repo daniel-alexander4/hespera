@@ -29,11 +29,14 @@ func TestDecide(t *testing.T) {
 			protocol: ProtocolFile,
 		},
 		{
-			name:     "h264/ac3/mkv on chrome transcodes (ac3 not remuxable to mp4)",
+			// The middle gear. The picture is fine; only the soundtrack is not.
+			// Re-encoding the video here (which is what this used to do) burned
+			// ~31x the CPU for nothing — see RemuxAudioNeedsTranscode.
+			name:     "h264/ac3/mkv on chrome direct-streams, re-encoding only the audio",
 			profile:  chrome(),
 			media:    MediaInfo{Container: "mkv", VideoCodec: "h264", HasAudio: true, AudioCodec: "ac3"},
-			want:     Transcode,
-			protocol: ProtocolHLS,
+			want:     DirectStream,
+			protocol: ProtocolFile,
 		},
 		{
 			name:     "hevc/aac/mp4 on chrome transcodes (hevc unsupported anywhere)",
@@ -65,12 +68,17 @@ func TestDecide(t *testing.T) {
 			protocol: ProtocolHLS,
 		},
 		{
-			// F1 regression: Opus-in-MP4 is not a valid direct-play combination.
-			name:     "h264/opus in MP4 on chrome transcodes (opus not valid in mp4)",
+			// F1 regression: Opus-in-MP4 is not a valid direct-play combination —
+			// that is the invariant this case guards, and it still holds. The
+			// remedy is now the cheaper one: the h264 picture is copied and only
+			// the opus track is re-encoded (AudioTranscode, pinned separately in
+			// TestDecideAudioTranscode). The container↔codec matrix is still what
+			// rejects direct play; only the fix-up got cheaper.
+			name:     "h264/opus in MP4 on chrome cannot direct-play; the audio alone is re-encoded",
 			profile:  chrome(),
 			media:    MediaInfo{Container: "mp4", VideoCodec: "h264", HasAudio: true, AudioCodec: "opus"},
-			want:     Transcode,
-			protocol: ProtocolHLS,
+			want:     DirectStream,
+			protocol: ProtocolFile,
 		},
 		{
 			// F5 regression: a video with no audio track must not be flagged audio-unsupported.
@@ -140,6 +148,59 @@ func TestDecide(t *testing.T) {
 			}
 			if out.Protocol != tc.protocol {
 				t.Fatalf("Protocol = %q, want %q", out.Protocol, tc.protocol)
+			}
+		})
+	}
+}
+
+// AudioTranscode is what tells the remux path to re-encode the soundtrack while
+// still copying the picture. Two independent things can demand it: the client
+// can't decode the codec, or our fragmented-MP4 output can't carry it.
+func TestDecideAudioTranscode(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile ClientProfile
+		media   MediaInfo
+		want    bool
+	}{
+		{
+			name:    "aac needs no re-encode — it copies into fMP4 and every client plays it",
+			profile: chrome(),
+			media:   MediaInfo{Container: "mkv", VideoCodec: "h264", HasAudio: true, AudioCodec: "aac"},
+			want:    false,
+		},
+		{
+			name:    "chrome cannot decode e-ac-3, so it is re-encoded",
+			profile: chrome(),
+			media:   MediaInfo{Container: "mkv", VideoCodec: "h264", HasAudio: true, AudioCodec: "eac3"},
+			want:    true,
+		},
+		{
+			// The regression this rule exists for. Safari's profile SAYS it can
+			// decode ac3, so the old audio-aware canRemux green-lit a copy — but
+			// ffmpeg cannot mux AC-3 into a fragmented MP4 with empty_moov at all
+			// ("Cannot write moov atom before AC3 packets"), so the stream died on
+			// the header write. The muxer's limit outranks the client's ability.
+			name:    "safari CAN decode ac3, but fMP4 cannot carry it — re-encode anyway",
+			profile: safari(),
+			media:   MediaInfo{Container: "mkv", VideoCodec: "h264", HasAudio: true, AudioCodec: "ac3"},
+			want:    true,
+		},
+		{
+			name:    "a silent file asks nothing of the audio encoder",
+			profile: chrome(),
+			media:   MediaInfo{Container: "mkv", VideoCodec: "h264"},
+			want:    false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := Decide(tc.profile, tc.media, "")
+			if out.Decision != DirectStream {
+				t.Fatalf("precondition: Decision = %q, want direct_stream", out.Decision)
+			}
+			if out.AudioTranscode != tc.want {
+				t.Fatalf("AudioTranscode = %v, want %v", out.AudioTranscode, tc.want)
 			}
 		})
 	}

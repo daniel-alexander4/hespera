@@ -239,7 +239,9 @@ func (h *Handler) streamMovieRemux(w http.ResponseWriter, r *http.Request) {
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
 	total := movieStoredDuration(src.streamJSON)
 	start := parseStartParam(r.URL.Query().Get("start"), total)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, video.RemuxArgs(clean, aud, start), maxf(total-start, 0)); err != nil {
+	ch, encodeAudio := h.remuxAudioPlan(r, src.streamJSON, src.container, src.size, aud)
+	args := video.RemuxArgs(clean, aud, start, ch, encodeAudio)
+	if err := video.StreamFFmpegPatchMoov(r.Context(), w, args, maxf(total-start, 0)); err != nil {
 		slog.Warn("movie remux stream", "file_id", fileID, "err", err)
 	}
 }

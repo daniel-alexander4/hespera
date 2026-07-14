@@ -66,7 +66,7 @@ func GenerateTrickplay(ctx context.Context, src, outDir string) error {
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-skip_frame", "nokey", // decode keyframes only — the 10x saver
 		"-i", src,
-		"-map", "0:v:0", "-an", "-sn",
+		"-map", "0:V:0", "-an", "-sn",
 		"-vf", vf,
 		"-fps_mode", "vfr",
 		"-q:v", "5",

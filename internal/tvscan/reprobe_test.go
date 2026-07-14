@@ -32,9 +32,9 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	// Candidate: default-empty stream info, file missing on disk (so the probe is
 	// skipped without ffmpeg — we're testing selection + graceful skip).
 	candidate := insertTVFile(t, db, libID, filepath.Join(root, "Show", "S01", "ep1.mkv"), 1, 1, false)
-	// Non-candidate: fully probed (has the display_aspect_ratio key); untouched.
+	// Non-candidate: fully probed (carries every marker key); untouched.
 	probed := insertTVFile(t, db, libID, filepath.Join(root, "Show", "S01", "ep2.mkv"), 2, 2, false)
-	const probedJSON = `{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9"}]}`
+	const probedJSON = `{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9","attached_pic":false}]}`
 	if _, err := db.Exec("UPDATE tv_series_files SET stream_info_json=? WHERE id=?", probedJSON, probed); err != nil {
 		t.Fatalf("seed probed row: %v", err)
 	}
@@ -43,6 +43,14 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	preDAR := insertTVFile(t, db, libID, filepath.Join(root, "Show", "S01", "ep3.mkv"), 3, 3, false)
 	if _, err := db.Exec("UPDATE tv_series_files SET stream_info_json=? WHERE id=?", `{"format":{"duration":"100.0"}}`, preDAR); err != nil {
 		t.Fatalf("seed pre-DAR row: %v", err)
+	}
+	// Candidate: probed before cover-art detection existed (has the aspect key but
+	// no attached_pic key). Without the backfill its cover art stays invisible to
+	// the decision layer and the file transcodes for nothing.
+	preAttachedPic := insertTVFile(t, db, libID, filepath.Join(root, "Show", "S01", "ep4.mkv"), 4, 4, false)
+	if _, err := db.Exec("UPDATE tv_series_files SET stream_info_json=? WHERE id=?",
+		`{"format":{"duration":"100.0"},"streams":[{"display_aspect_ratio":"16:9"}]}`, preAttachedPic); err != nil {
+		t.Fatalf("seed pre-attached_pic row: %v", err)
 	}
 
 	if err := s.ReprobeMissing(ctx, jobID, libID); err != nil {
@@ -53,8 +61,8 @@ func TestReprobeMissingSelectsOnlyEmptyRows(t *testing.T) {
 	if err := db.QueryRow("SELECT progress_total FROM scan_jobs WHERE id=?", jobID).Scan(&total); err != nil {
 		t.Fatalf("read progress_total: %v", err)
 	}
-	if total != 2 {
-		t.Fatalf("progress_total = %d, want 2 (the empty row + the pre-DAR row)", total)
+	if total != 3 {
+		t.Fatalf("progress_total = %d, want 3 (the empty row + the pre-DAR row + the pre-attached_pic row)", total)
 	}
 
 	var got string
