@@ -74,6 +74,11 @@ function initMediaPlayer() {
   const subBurnIn = new Set(); // subtitle ordinals the server burns in (bitmap subs) — these change the video stream
   let hlsFails = 0;               // consecutive fatal hls.js errors with no buffered progress
   const HLS_FAIL_CAP = 4;         // give up (vs. loop) after this many fatals without a FRAG_BUFFERED
+  let destroyed = false;          // this player is being torn down (Turbo swap) — stop all timers/recovery
+  // The furthest point actually WATCHED, grown only by continuous playback. It is the
+  // one thing a dying progressive stream can't fake — see endedIsGenuine. Declared up
+  // here because attachSource (far above its listeners) anchors it on every load.
+  let lastPlayedAbs = 0;
 
   const nativeHLS = video.canPlayType('application/vnd.apple.mpegurl') !== '';
 
@@ -107,6 +112,62 @@ function initMediaPlayer() {
   // decoded — this is what clears it for a deliberately-paused resume start (which
   // never fires 'playing'); benign for normal playback (fires once, early).
   ['playing', 'pause', 'ended', 'error', 'loadeddata'].forEach((e) => video.addEventListener(e, hideSpinner));
+
+  // --- progressive stall watchdog ---
+  // A remux/burn-in stream is one long ffmpeg pipe with no seek index. If that
+  // ffmpeg dies mid-episode (killed, OOM, a bad region of the file), the HTTP body
+  // simply ends — and the element does NOT tell us. Verified in a real Chrome
+  // against a truncated stream: it fires 'waiting' then 'stalled' and hangs there
+  // FOREVER — no 'error', no 'ended', networkState stuck at LOADING, currentTime
+  // frozen (34s later: zero progress, zero events). So there is no event to listen
+  // for; the only detector is noticing that time stopped moving. hls.js already owns
+  // this for the HLS path (its ERROR handler retries), hence the isProgressive gate.
+  // Recovery is the seek we already have: re-anchor the stream at the stall point.
+  const STALL_SECS = 8;            // frozen this long while trying to play → dead stream
+  const STALL_RETRY_CAP = 3;       // then stop retrying and say so (mirrors HLS_FAIL_CAP)
+  const STALL_RECOVERED_SECS = 5;  // this much real playback after a retry = recovered
+  let stallRetries = 0;
+  let recoveredAnchor = -1;        // abs position of the last retry, pending confirmation
+  let lastProgressAt = 0, lastProgressPos = -1, stallTimer = null;
+  // Track the ABSOLUTE position, not video.currentTime: a recovery reload rebases the
+  // element to zero, so currentTime would read as a huge jump and look like progress —
+  // which would clear the retry budget on every retry and loop forever.
+  const noteProgress = () => { lastProgressAt = Date.now(); lastProgressPos = currentAbsTime(); };
+  function checkStall() {
+    // Only a stream that is *trying* to play can be stalled. A deliberate pause, an
+    // in-flight reload, or a healthy buffer are all fine.
+    if (!isProgressive || video.paused || video.ended || reloading || destroyed) { noteProgress(); return; }
+    if (currentAbsTime() !== lastProgressPos) { noteProgress(); return; }
+    // Frozen AND starved: readyState < HAVE_FUTURE_DATA means it has nothing to play
+    // next, which distinguishes a dead pipe from a merely slow tick.
+    if (video.readyState >= 3 /* HAVE_FUTURE_DATA */) { noteProgress(); return; }
+    if (Date.now() - lastProgressAt < STALL_SECS * 1000) return;
+    if (stallRetries >= STALL_RETRY_CAP) {
+      modeLabel.textContent = 'Playback stopped — reload to continue';
+      hideSpinner();
+      return;
+    }
+    stallRetries++;
+    recoveredAnchor = currentAbsTime();
+    console.warn('hespera: progressive stream stalled, re-anchoring at', recoveredAnchor);
+    noteProgress();
+    loadFromSession(currentAud, currentSub, recoveredAnchor);
+  }
+  stallTimer = setInterval(checkStall, 1000);
+  // Real playback after a retry clears the budget (the FRAG_BUFFERED analogue), so a
+  // long healthy session can never exhaust it — but a retry that buys nothing can't
+  // refill it either.
+  video.addEventListener('timeupdate', () => {
+    if (recoveredAnchor >= 0 && currentAbsTime() > recoveredAnchor + STALL_RECOVERED_SECS) {
+      stallRetries = 0;
+      recoveredAnchor = -1;
+    }
+    // Deliberately NOT calling noteProgress() here: it would refresh the stall clock
+    // on any timeupdate, and a browser that ticks timeupdate without advancing the
+    // position would keep the watchdog asleep forever. checkStall compares the
+    // position itself, which is the only honest signal.
+  });
+  ['playing', 'seeking', 'loadstart'].forEach((e) => video.addEventListener(e, noteProgress));
 
   // Anamorphic-aspect correction: some sources (PAL DVD rips) are stored at one
   // pixel grid (e.g. 702×576) but flagged to display at another (16:9) via
@@ -158,6 +219,9 @@ function initMediaPlayer() {
     }
     const clientSeek = progressive ? 0 : seekTo; // only the seekable paths seek the element
     const onReady = () => { if (clientSeek > 0) { try { video.currentTime = clientSeek; } catch (e) {} } };
+    // Anchor the continuity tracker at the intended start; playback grows it from
+    // here, and an 'ended' that arrives without it having grown is a dead stream.
+    lastPlayedAbs = Math.max(0, seekTo || 0);
 
     // Prefer hls.js whenever MSE supports it (Chrome, Firefox, desktop Safari) — the
     // whole transcode player (seeking, error recovery, self-rendered subtitles) is built
@@ -538,17 +602,61 @@ function initMediaPlayer() {
   // therefore re-anchors the stream server-side at the new ?start= (reusing the
   // resume -ss). The scrubber (drag-release + ±10s arrow keys) and the scan
   // commit drive it; the native <video> scrubber can't (it can't address an
-  // unindexed stream).
-  function seekProgressiveTo(targetAbs) {
-    if (reloading) return;
-    targetAbs = Math.max(0, targetAbs);
-    if (sessionDuration > 1 && targetAbs > sessionDuration - 1) targetAbs = sessionDuration - 1;
+  // unindexed stream). It is cheap — measured 0.2s to first byte, ~10x faster
+  // than the HLS segment build it replaced for these files (a stream copy needs
+  // no encode) — so a reload per seek is the right trade; it just must not lose
+  // seeks or resume a paused player.
+  const clampSeek = (t) => {
+    t = Math.max(0, t);
+    if (sessionDuration > 1 && t > sessionDuration - 1) t = sessionDuration - 1;
+    return t;
+  };
+  // A seek requested while a reload is in flight is HELD, not dropped. Dropping it
+  // lost the accumulation: five quick ±10s presses moved 10s, not 50s, because
+  // presses 2-5 landed inside the ~0.2s reload window and vanished.
+  let pendingSeek = null; // {target, keepPaused} awaiting the in-flight reload
+  function seekProgressiveTo(targetAbs, keepPaused) {
+    if (keepPaused === undefined) keepPaused = video.paused;
+    targetAbs = clampSeek(targetAbs);
+    if (reloading) { pendingSeek = { target: targetAbs, keepPaused: keepPaused }; return; }
     reloading = true;
-    loadFromSession(currentAud, currentSub, targetAbs).finally(() => { reloading = false; });
+    loadFromSession(currentAud, currentSub, targetAbs, false, keepPaused).finally(() => {
+      reloading = false;
+      const p = pendingSeek;
+      pendingSeek = null;
+      // Only re-fire for a target that actually moved — otherwise a seek that
+      // merely coincided with its own reload would loop.
+      if (p && Math.abs(p.target - targetAbs) > 0.5) seekProgressiveTo(p.target, p.keepPaused);
+    });
   }
 
+  // ±10s arrow presses are a BURST source (a remote's key-repeat fires every few
+  // tens of ms), and on a progressive stream each one is a full server round-trip
+  // and pipeline rebuild. So they accumulate against a virtual target that the
+  // scrubber renders immediately, and commit once the presses stop — the same
+  // preview-then-commit idiom the scrubber drag and the FF/RW scan already use.
+  // Deliberate single seeks (drag-release, skip-intro, scan commit) stay instant.
+  const ARROW_SEEK_DEBOUNCE_MS = 250;
+  let arrowTarget = null, arrowTimer = null, arrowPaused = false;
+  // The position the UI should show: a pending arrow target outranks the element,
+  // so the scrubber tracks the presses instead of lagging a reload behind them.
+  const displayAbsTime = () => (arrowTarget != null ? arrowTarget : currentAbsTime());
+  function flushArrowSeek() {
+    arrowTimer = null;
+    if (arrowTarget == null) return;
+    const t = arrowTarget;
+    arrowTarget = null;
+    seekProgressiveTo(t, arrowPaused);
+  }
   const seekBy = (delta) => {
-    if (isProgressive) { seekProgressiveTo(currentAbsTime() + delta); return; }
+    if (isProgressive) {
+      if (arrowTarget == null) arrowPaused = video.paused; // capture intent on the FIRST press
+      arrowTarget = clampSeek((arrowTarget != null ? arrowTarget : currentAbsTime()) + delta);
+      updateScrubFromPlayback(); // hoisted; paints the virtual target at once
+      if (arrowTimer) clearTimeout(arrowTimer);
+      arrowTimer = setTimeout(flushArrowSeek, ARROW_SEEK_DEBOUNCE_MS);
+      return;
+    }
     let t = video.currentTime + delta;
     if (t < 0) t = 0;
     if (Number.isFinite(video.duration) && video.duration > 0 && t > video.duration) t = video.duration;
@@ -651,7 +759,15 @@ function initMediaPlayer() {
   let skipAuto = false;
   try { skipAuto = localStorage.getItem('skip_auto') === '1'; } catch (e) {}
 
-  const seekToAbs = (target) => { if (isProgressive) { seekProgressiveTo(target); return; } try { video.currentTime = Math.max(0, target); } catch (e) {} };
+  // keepPaused defaults to "leave the player however the user left it" — a native
+  // currentTime set never resumes, and neither should a progressive reload. The FF/RW
+  // scan commit is the one caller that must override it to false: the scan PAUSES the
+  // video and relies on the seek to resume, so preserving `paused` there would leave
+  // the player frozen at the scanned-to frame.
+  const seekToAbs = (target, keepPaused) => {
+    if (isProgressive) { seekProgressiveTo(target, keepPaused); return; }
+    try { video.currentTime = Math.max(0, target); } catch (e) {}
+  };
   const segId = (s) => s.start + ':' + s.end;
   const skipLabel = (k) => (k === 'commercial' ? 'Skip commercial' : k === 'recap' ? 'Skip recap' : 'Skip intro');
   function segmentAt(t) { for (const s of skipSegments) { if (t >= s.start && t < s.end) return s; } return null; }
@@ -751,7 +867,10 @@ function initMediaPlayer() {
   function updateScrubFromPlayback() {
     if (dragging || scanActive()) return; // the drag / the scan ticker owns the bar
     const dur = sessionDuration || video.duration || 0;
-    renderScrub(dur > 0 ? currentAbsTime() / dur : 0, currentAbsTime());
+    // displayAbsTime, not currentAbsTime: a pending ±10s arrow target outranks the
+    // element, so the bar tracks the presses instead of lagging the reload behind them.
+    const t = displayAbsTime();
+    renderScrub(dur > 0 ? t / dur : 0, t);
   }
   video.addEventListener('timeupdate', updateScrubFromPlayback);
   // timeupdate (~4×/s) is the portable floor for the caption render — it keeps cues
@@ -978,7 +1097,9 @@ function initMediaPlayer() {
     scanDir = 0; scanTier = 0;
     renderScanPill();
     scanHidePreview();
-    if (commit) seekToAbs(scanPos);
+    // keepPaused=false: the scan paused the video, and committing it means "play from
+    // here" (play is literally the button that commits a scan).
+    if (commit) seekToAbs(scanPos, false);
     return true;
   }
   document.addEventListener('turbo:before-cache', () => endScan(false), { once: true });
@@ -1264,7 +1385,53 @@ function initMediaPlayer() {
       upnextCard.querySelector('#upnextCount').textContent = String(left);
     }, 1000);
   }
+  // A progressive stream can lie about ending. It is one long ffmpeg pipe; if that
+  // ffmpeg dies mid-episode the handler returns normally, so Go finishes the chunked
+  // response cleanly — and the browser, seeing a complete resource, fires 'ended'
+  // right there. Verified live by killing the ffmpeg behind a playing episode: the
+  // element fired 'ended' ~30s into a 29-minute file, which marked it WATCHED and
+  // auto-advanced Up Next into the next episode. (No 'error' is fired — there is
+  // nothing else to hook.) So a genuine end is one that happens near the end: short
+  // of that, the stream died, and we recover instead of destroying the user's
+  // position and yanking them out of the show.
+  // Every state the element exposes is a lie at this moment. Measured in a live
+  // Chrome, at the instant a truncated progressive stream "ends": currentTime,
+  // duration AND buffered.end are ALL snapped to the patched moov duration (1767s)
+  // even though only ~12s of video ever arrived. So neither the position nor the
+  // buffer can tell a corpse from a finished episode.
+  //
+  // What cannot be faked is CONTINUITY: playback advances a fraction of a second per
+  // tick, and a 1755-second leap in one tick is not playback. So we simply never
+  // record such a leap — lastPlayedAbs is the furthest point we actually watched, and
+  // a genuine end is one that gets there.
+  //
+  // The server-side fix (streamProgressive aborts the connection instead of ending it
+  // cleanly) is what makes this rare; this is the belt to that pair of braces, and it
+  // still covers a clean EOF arriving from anything between us and the browser.
+  const ENDED_SLACK_SECS = 15;    // getting this close to the end is a real end
+  const PLAYBACK_STEP_MAX = 5;    // seconds one timeupdate can plausibly advance
+  video.addEventListener('timeupdate', () => {
+    const t = currentAbsTime();
+    if (Math.abs(t - lastPlayedAbs) <= PLAYBACK_STEP_MAX) lastPlayedAbs = t; // continuous → real
+  });
+  video.addEventListener('seeked', () => { lastPlayedAbs = currentAbsTime(); }); // a seek is a legitimate jump
+  function endedIsGenuine() {
+    if (!isProgressive || !(sessionDuration > 0)) return true; // HLS/direct: trust it
+    return lastPlayedAbs >= sessionDuration - ENDED_SLACK_SECS;
+  }
   video.addEventListener('ended', () => {
+    if (!endedIsGenuine()) {
+      const at = lastPlayedAbs; // the furthest point actually watched — not the snapped currentTime
+      console.warn('hespera: progressive stream ended early at', at, 'of', sessionDuration, '— stream died, recovering');
+      if (stallRetries >= STALL_RETRY_CAP) {
+        modeLabel.textContent = 'Playback stopped — reload to continue';
+        return;
+      }
+      stallRetries++;
+      recoveredAnchor = at;
+      loadFromSession(currentAud, currentSub, at); // re-anchor where it died
+      return;
+    }
     reportProgress(true);
     if (nextFile > 0) showUpNext();
   });
@@ -1283,6 +1450,11 @@ function initMediaPlayer() {
   // doesn't accumulate across repeat visits.
   document.addEventListener('turbo:before-cache', () => {
     window.hesperaMediaControl = null; // media keys go back to the music engine
+    // Before anything else: mark the player dead so the stall watchdog can't read a
+    // torn-down element (src removed below) as a stalled stream and "recover" it.
+    destroyed = true;
+    if (stallTimer) { clearInterval(stallTimer); stallTimer = null; }
+    if (arrowTimer) { clearTimeout(arrowTimer); arrowTimer = null; }
     lastReport = 0;
     reportProgress(false);
     video.pause();

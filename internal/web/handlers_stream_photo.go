@@ -256,9 +256,7 @@ func (h *Handler) streamPhotoRemux(w http.ResponseWriter, r *http.Request) {
 	start := parseStartParam(r.URL.Query().Get("start"), total)
 	ch, encodeAudio := h.remuxAudioPlan(r, src.streamJSON, src.container, src.size, aud)
 	args := video.RemuxArgs(clean, aud, start, ch, encodeAudio)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, args, maxf(total-start, 0)); err != nil {
-		slog.Warn("photo clip remux stream", "file_id", fileID, "err", err)
-	}
+	streamProgressive(w, r, args, maxf(total-start, 0), "photo clip remux stream", fileID)
 }
 
 func (h *Handler) streamPhotoBurnIn(w http.ResponseWriter, r *http.Request) {
@@ -296,9 +294,7 @@ func (h *Handler) streamPhotoBurnIn(w http.ResponseWriter, r *http.Request) {
 	aud := atoiDefault(r.URL.Query().Get("aud"), 0)
 	total := durationSeconds(probe.Format.Duration)
 	start := parseStartParam(r.URL.Query().Get("start"), total)
-	if err := video.StreamFFmpegPatchMoov(r.Context(), w, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud)), maxf(total-start, 0)); err != nil {
-		slog.Warn("photo clip burn-in stream", "file_id", fileID, "err", err)
-	}
+	streamProgressive(w, r, video.BurnInArgs(clean, sub, aud, 1080, start, audioChannels(&probe, aud)), maxf(total-start, 0), "photo clip burn-in stream", fileID)
 }
 
 func (h *Handler) streamPhotoHLS(w http.ResponseWriter, r *http.Request) {
