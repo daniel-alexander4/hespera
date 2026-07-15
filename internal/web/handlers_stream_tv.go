@@ -224,11 +224,14 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	if out.SubtitleSidecar && sub > 0 {
 		resp.SubtitleURL = fmt.Sprintf("/stream/tv-subtitles/%d?track=%d", fileID, sub)
 	}
-	if pos, dur, done := h.loadTVProgress(r.Context(), fileID); !done {
-		resp.ResumePosition, resp.DurationSecs, resp.Completed = pos, maxf(resp.DurationSecs, dur), done
-	} else {
-		resp.Completed = true
-	}
+	// Watched and resume are independent: a completed item still resumes a genuine
+	// partial re-watch. resumePosition is the sole owner of "is there anything to
+	// resume" — it drops a position sitting at the end of a finished playthrough,
+	// which would otherwise seek to the credits and instantly auto-advance Up Next.
+	pos, dur, done := h.loadTVProgress(r.Context(), fileID)
+	resp.ResumePosition = resumePosition(pos, dur)
+	resp.DurationSecs = maxf(resp.DurationSecs, dur)
+	resp.Completed = done
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -739,4 +742,50 @@ func maxf(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+// --- Watched flag + resume point: one fix, two halves (neither works alone) ---
+//
+// Why the three playback-progress upserts write `completed = MAX(completed,
+// excluded.completed)` rather than taking the client's value: the client reports
+// `completed` on EVERY progress beacon — the 15s tick, `pause`, `beforeunload`,
+// `turbo:before-cache` — and reports `false` unless it has personally watched this
+// playthrough reach the end (`completedReported` starts false on every page load
+// and is never seeded from the session). So `false` means "I haven't seen it
+// finish", NOT "this is unwatched" — and a blind `completed=excluded.completed`
+// upsert read it as the latter and revoked the flag. Three sequences cleared a ✓
+// the user had earned: a genuine finish (the unload beacon, fired after Up Next
+// advanced), the 90%-watched auto-complete (the very next tick), and merely
+// OPENING a watched episode (its first tick). Earn-only at the upsert is the
+// structural fix — it holds for a stale cached client, a second device, and any
+// future client, none of which a client-side guard would cover. Clearing keeps its
+// own dedicated owner, markWatched, which also zeroes the position, so "mark
+// unwatched" still yields a clean slate.
+
+// resumeEndGuardSecs is how close to the end a stored position may be before it
+// stops being a resume point and becomes the residue of a finished playthrough.
+const resumeEndGuardSecs = 15
+
+// resumePosition decides what the player actually starts at, and is the ONLY
+// owner of that decision (the client no longer second-guesses it).
+//
+// A position within resumeEndGuardSecs of the end is not somewhere you left off —
+// it is where a finished playthrough stopped. Handing it back seeks the player to
+// the credits, which fires `ended` immediately, which auto-advances Up Next into
+// the NEXT episode. That is not hypothetical: because the watched flag was being
+// revoked on unload (above), every finished episode has been left at
+// `completed=0, position≈duration`, so re-opening one already skips straight past
+// it. Which is why this guard is deliberately NOT conditioned on `completed` —
+// gating it on the flag would leave exactly those already-written rows still
+// auto-skipping.
+//
+// Everything short of that resumes as stored, INCLUDING a completed item: once the
+// flag is sticky, a partial re-watch of a watched episode keeps both its ✓ and its
+// resume point, which is the whole point of holding the two independent. An unknown
+// duration (0) can't be judged, so the stored position is honored.
+func resumePosition(pos, dur float64) float64 {
+	if dur > 0 && pos >= dur-resumeEndGuardSecs {
+		return 0
+	}
+	return pos
 }

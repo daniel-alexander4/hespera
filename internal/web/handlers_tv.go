@@ -1958,7 +1958,11 @@ VALUES (?, ?, ?, ?, datetime('now'))
 ON CONFLICT(file_id) DO UPDATE SET
   position_seconds=excluded.position_seconds,
   duration_seconds=excluded.duration_seconds,
-  completed=excluded.completed,
+  -- Earn-only: the progress stream can SET the watched flag but never revoke it.
+  -- The client sends completed:false on every tick meaning "I haven't seen it
+  -- finish", not "unwatched". Clearing has its own owner: markWatched. See the
+  -- note above resumePosition (handlers_stream_tv.go).
+  completed=MAX(completed, excluded.completed),
   updated_at=datetime('now')
 `, req.FileID, req.PositionSeconds, req.DurationSeconds, completedInt)
 	if err != nil {
