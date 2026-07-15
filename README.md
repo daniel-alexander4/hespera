@@ -203,6 +203,37 @@ is otherwise idle — they only step aside under contention. On NVMe/SSD media
 disks this tuning rarely matters; it is for rotational disks shared with
 playback.
 
+### Remote control: your desktop may be eating fast-forward and rewind
+
+Hespera honors the hardware media keys a TV remote sends through an IR receiver
+(a Flirc, say): play/pause, fast-forward, rewind, next, previous. On a Linux
+desktop, though, **fast-forward and rewind may never reach it** — and the cause
+is upstream of Hespera.
+
+Cinnamon and GNOME grab the media keysyms globally, then re-dispatch them to the
+browser over MPRIS. That works for play/pause, next and previous, which have
+MPRIS verbs. **MPRIS has no fast-forward or rewind verb**, so the desktop grabs
+those two keys, finds nothing to forward them to, and the press dies there: the
+browser never sees it, as a media action *or* a keystroke. The symptom is
+distinctive — play/pause works, FF/RW do nothing at all.
+
+The fix is to release the two keys so they fall through to the focused window,
+which is all Hespera needs (it already handles them):
+
+```sh
+# Cinnamon
+gsettings set org.cinnamon.desktop.keybindings.media-keys audio-forward "[]"
+gsettings set org.cinnamon.desktop.keybindings.media-keys audio-rewind  "[]"
+
+# GNOME
+gsettings set org.gnome.settings-daemon.plugins.media-keys seek-forward  "[]"
+gsettings set org.gnome.settings-daemon.plugins.media-keys seek-backward "[]"
+```
+
+This only gives up a desktop-wide FF/RW shortcut that, for MPRIS players like a
+browser, was doing nothing in the first place. Leave the play/pause binding
+alone — that one is *how* play/pause reaches Hespera.
+
 ### Configuration
 
 Day-to-day settings (media folder, API keys, feature toggles, subtitle
