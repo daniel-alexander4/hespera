@@ -28,36 +28,39 @@ function fixture({ autoload = '', lyrics = false } = {}) {
         <img id="player-cover-img" /><div id="player-cover-ph"></div>
         <a id="player-track-title"></a>
         <div id="player-artist"></div><div id="player-album-title"></div>
-        <input id="player-seek" type="range" min="0" max="1000" /><span id="player-time"></span>
         <div id="player-karaoke"><div id="player-karaoke-current"></div><div id="player-karaoke-next"></div></div>
-        <div id="player-transport">
-          <button id="player-prev-btn"></button><button id="player-rewind-btn"></button>
-          <button id="player-toggle-btn"><span class="np-glyph-play"></span><span class="np-glyph-pause"></span></button><button id="player-forward-btn"></button>
-          <button id="player-next-btn"></button>
-          <button id="player-lyrics-btn"></button>
-          <details id="player-eq-menu">
-            <summary id="player-eq-btn"></summary>
-            <div class="player-menu-panel player-eq-panel" data-couch-overlay>
-              <div class="eq-presets">${eqPresets}</div>
-              <div class="eq-bands">${eqBands}</div>
-              <button id="player-eq-dismiss" data-couch-dismiss></button>
-            </div>
-          </details>
-          <details id="player-playlist-menu">
-            <summary></summary>
-            <div class="player-menu-panel" data-couch-overlay>
-              <button id="player-add-btn" data-playlist-add></button>
-              <button id="player-save-btn" data-playlist-save></button>
-              <button id="playlist-open-btn"></button>
-              <button id="player-menu-dismiss" data-couch-dismiss></button>
-            </div>
-          </details>
-          <span id="app-clock"></span>
-        </div>
-        <button id="playlist-close-btn"></button>
-        <div id="playlist-drawer"></div><div id="playlist-scrim"></div><ul id="playlist-list"></ul>
       </div>
     </div>
+    <!-- The transport + drawer are SIBLINGS of .player-page in the real template
+         (player.html closes .player-page before the transport), so bindView must
+         find their controls document-scoped, not page-scoped. -->
+    <div id="player-transport">
+      <input id="player-seek" type="range" min="0" max="1000" /><span id="player-time"></span>
+      <button id="player-prev-btn"></button><button id="player-rewind-btn"></button>
+      <button id="player-toggle-btn"><span class="np-glyph-play"></span><span class="np-glyph-pause"></span></button><button id="player-forward-btn"></button>
+      <button id="player-next-btn"></button>
+      <button id="player-lyrics-btn"></button>
+      <details id="player-eq-menu">
+        <summary id="player-eq-btn"></summary>
+        <div class="player-menu-panel player-eq-panel" data-couch-overlay>
+          <div class="eq-presets">${eqPresets}</div>
+          <div class="eq-bands">${eqBands}</div>
+          <button id="player-eq-dismiss" data-couch-dismiss></button>
+        </div>
+      </details>
+      <details id="player-playlist-menu">
+        <summary></summary>
+        <div class="player-menu-panel" data-couch-overlay>
+          <button id="player-add-btn" data-playlist-add></button>
+          <button id="player-save-btn" data-playlist-save></button>
+          <button id="playlist-open-btn"></button>
+          <button id="player-menu-dismiss" data-couch-dismiss></button>
+        </div>
+      </details>
+      <span id="app-clock"></span>
+    </div>
+    <button id="playlist-close-btn"></button>
+    <div id="playlist-drawer"></div><div id="playlist-scrim"></div><ul id="playlist-list"></ul>
   </body></html>`;
 }
 
