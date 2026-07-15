@@ -11,17 +11,21 @@ import (
 	"hespera/internal/video"
 )
 
-// AnalyzeLoudness measures integrated loudness (LUFS) for tracks that don't
-// have it yet (loudness_lufs = 0 — new rows, or rows the scanner reset on a
-// size/mtime change) and writes it back for playback volume leveling. Chained
-// after every music scan, mirroring tvscan.ReprobeMissing: snapshot the
-// candidates, best-effort per file (missing file, ffmpeg error, or DB error is
-// logged/skipped, never fatal), ffmpeg gated by the shared semaphore.
+// AnalyzeLoudness measures integrated loudness (LUFS) and true peak (dBTP) for
+// tracks that don't have both yet and writes them back for playback volume
+// leveling. Candidates are rows missing either measurement: loudness_lufs=0 (new
+// rows, or rows the scanner reset on a size/mtime change) or loudness_tp=0 —
+// which is also the one-shot backfill of rows analyzed before the true-peak
+// column existed (the ReprobeMissing/display_aspect_ratio idiom; the analyzer
+// nudges a real 0 reading off the sentinel, so a re-measured row never re-queues).
+// Chained after every music scan: snapshot the candidates, best-effort per file
+// (missing file, ffmpeg error, or DB error is logged/skipped, never fatal),
+// ffmpeg gated by the shared semaphore.
 func (s *Scanner) AnalyzeLoudness(ctx context.Context, jobID, libraryID int64) error {
 	mediaRoot := filepath.Clean(s.Cfg.MediaRoot)
 
 	rows, err := s.DB.QueryContext(ctx,
-		"SELECT id, abs_path FROM music_tracks WHERE library_id=? AND loudness_lufs=0",
+		"SELECT id, abs_path FROM music_tracks WHERE library_id=? AND (loudness_lufs=0 OR loudness_tp=0)",
 		libraryID,
 	)
 	if err != nil {
@@ -66,14 +70,14 @@ func (s *Scanner) AnalyzeLoudness(ctx context.Context, jobID, libraryID int64) e
 			// File gone/moved — leave it for the next full scan's relink/prune.
 			continue
 		}
-		lufs, err := video.LoudnessScan(ctx, resolved)
+		lufs, truePeak, err := video.LoudnessScan(ctx, resolved)
 		if err != nil {
 			failed++
 			slog.Warn("loudness scan", "track_id", t.id, "path", resolved, "err", err)
 			continue
 		}
 		if _, err := s.DB.ExecContext(ctx,
-			"UPDATE music_tracks SET loudness_lufs=? WHERE id=?", lufs, t.id,
+			"UPDATE music_tracks SET loudness_lufs=?, loudness_tp=? WHERE id=?", lufs, truePeak, t.id,
 		); err != nil {
 			failed++
 			slog.Warn("loudness write", "track_id", t.id, "err", err)

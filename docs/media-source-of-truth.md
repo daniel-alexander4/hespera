@@ -153,6 +153,16 @@ they only parse filenames/tags and probe streams. Matchers
   - Manual upload (`POST /music/album/art`): **album-id-keyed**, survives rescan.
 - `lyrics_cache` (DB) keyed by `(track_id, provider_key)`; caches hits **and**
   misses.
+- **Loudness measurements** (`music_tracks.loudness_lufs`, `loudness_tp`) —
+  integrated loudness and true peak, both from the one `music_loudness` ffmpeg
+  pass chained after a music scan. Derived purely from the bytes, so the scanner
+  **resets both to 0 on a size/mtime change** and the job re-measures. `0` is the
+  "not yet analyzed" sentinel in each (the analyzer nudges a real `0.0` reading to
+  `-0.01`, which matters for the true peak — a brickwalled master genuinely
+  measures `0.00` dBTP, and above it). A row carrying a loudness but **no** true
+  peak is the one-shot backfill of rows measured before that column existed, and
+  is re-analyzed on the next sweep. Nothing here is user-editable and nothing is
+  lost on a move (the relink carries the row); playback leveling reads both.
 
 ### Discovery caches (NOT a source of truth)
 The **Top 100** card on the Playlists page (`/music/playlists`) owns no media

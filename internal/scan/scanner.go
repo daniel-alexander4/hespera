@@ -248,7 +248,8 @@ ON CONFLICT(library_id, abs_path) DO UPDATE SET
   -- a changed file (new size or mtime) invalidates its integrity status and
   -- loudness so the chained integrity_check / music_loudness jobs re-examine it.
   integrity_status=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN '' ELSE integrity_status END,
-  loudness_lufs=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN 0 ELSE loudness_lufs END
+  loudness_lufs=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN 0 ELSE loudness_lufs END,
+  loudness_tp=CASE WHEN file_size_bytes<>excluded.file_size_bytes OR mtime_unix<>excluded.mtime_unix THEN 0 ELSE loudness_tp END
 `, libraryID, artistID, albumID, meta.Title, meta.Track, meta.Disc, resolvedPath, meta.MIMEType, fileSize, mtimeUnix, checksumSHA)
 	if err != nil {
 		_ = tx.Rollback()

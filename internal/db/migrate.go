@@ -407,6 +407,15 @@ func Migrate(db *sql.DB) error {
 	if err := ensureColumn(db, "music_tracks", "loudness_lufs", "REAL NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// loudness_tp is the track's true peak (dBTP) from the same loudnorm pass —
+	// the headroom that caps the leveling boost, so lifting a quiet track can't
+	// push it past full scale. Same 0 = not-yet-analyzed sentinel (the analyzer
+	// nudges a real 0.00 dBTP reading off it), which doubles as the one-shot
+	// backfill marker: rows measured before this column existed carry
+	// loudness_lufs<>0 with loudness_tp=0, and AnalyzeLoudness re-measures them.
+	if err := ensureColumn(db, "music_tracks", "loudness_tp", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// similar_json caches the ListenBrainz similar-artists list (a []SimilarArtist)
 	// for the artist page; similar_fetched_at gates the lazy one-time fetch so a
 	// cache-miss view doesn't re-enqueue on every render.

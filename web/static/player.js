@@ -271,7 +271,8 @@
   };
 
   // --- Volume leveling --- each queue track carries gainDb (server-computed
-  // from its measured LUFS toward the -18 target; 0 until analyzed). A Web
+  // from its measured LUFS toward the target loudness and capped by its measured
+  // true peak, so a boost can't clip; 0 until analyzed). A Web
   // Audio GainNode on the permanent element applies it per track — the
   // media_player.js boost pattern: createMediaElementSource once, and the
   // whole graph is source→gain→destination from creation, so a suspended
