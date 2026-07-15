@@ -1265,7 +1265,31 @@ function initMediaPlayer() {
     overlay.addEventListener('focusout', bump);
     video.addEventListener('pause', showControls);  // paused → pin controls up
     video.addEventListener('play', bump);
-    document.addEventListener('turbo:before-cache', () => clearTimeout(hideTimer), { once: true });
+
+    // Dead-end arrow → bring the chrome up. An Up/Down that moves the ring nowhere
+    // means the viewer has hit the edge of the page's navigation; that press should
+    // surface the controls rather than do nothing at all. This is a backstop: the
+    // wrap's own keydown listener above already bumps whenever focus is INSIDE the
+    // player, and in fullscreen the header is out of the layout (app.css), so the
+    // ring can't strand outside the overlay in the first place. It costs nothing and
+    // holds wherever the ring happens to be.
+    //
+    // Capture phase runs before couch.js's document handler (registered earlier, on
+    // bubble), so `before` is the pre-move focus; the task after the event compares
+    // it against where couch actually left the ring. An engaged control (scrubber,
+    // volume, a select) legitimately keeps focus while the arrows adjust it — the
+    // bump is harmless there, and keeping the chrome up mid-adjust is what we want.
+    const deadEndArrow = (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const before = document.activeElement;
+      setTimeout(() => { if (document.activeElement === before) bump(); }, 0);
+    };
+    document.addEventListener('keydown', deadEndArrow, true);
+
+    document.addEventListener('turbo:before-cache', () => {
+      clearTimeout(hideTimer);
+      document.removeEventListener('keydown', deadEndArrow, true);
+    }, { once: true });
     bump(); // start visible, then fade
   }
 
