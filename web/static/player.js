@@ -701,8 +701,11 @@
       toggleBtn: $('player-toggle-btn'),
       eqBtn: $('player-eq-btn'),
       eqMenu: $('player-eq-menu'),
-      eqPresetBtns: Array.from(page.querySelectorAll('[data-eq-preset]')),
-      eqSliders: Array.from(page.querySelectorAll('[data-eq-band]')),
+      // document-, not page-scoped: the transport (and its EQ panel) is a sibling
+      // of .player-page, not a descendant — same reason every control above is
+      // looked up via getElementById on the document.
+      eqPresetBtns: Array.from(document.querySelectorAll('[data-eq-preset]')),
+      eqSliders: Array.from(document.querySelectorAll('[data-eq-band]')),
     };
 
     // Start with the card hidden (cover expanded) always — loadKaraokeForTrack
