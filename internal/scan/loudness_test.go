@@ -10,9 +10,11 @@ import (
 	"hespera/internal/jobs"
 )
 
-// TestAnalyzeLoudnessSelectsOnlyUnanalyzed verifies the candidate query (only
-// loudness_lufs=0 rows), progress wiring, and the graceful missing-file skip —
-// all without ffmpeg (the reprobe-test pattern).
+// TestAnalyzeLoudnessSelectsOnlyUnanalyzed verifies the candidate query (rows
+// missing EITHER measurement — loudness_lufs=0, or loudness_tp=0 for a row
+// analyzed before the true-peak column existed, which is the one-shot backfill),
+// progress wiring, and the graceful missing-file skip — all without ffmpeg (the
+// reprobe-test pattern).
 func TestAnalyzeLoudnessSelectsOnlyUnanalyzed(t *testing.T) {
 	ctx := context.Background()
 	db := openTestDB(t)
@@ -32,9 +34,16 @@ func TestAnalyzeLoudnessSelectsOnlyUnanalyzed(t *testing.T) {
 	al := seedAlbum(t, db, libID, a, "L Album", 2020, false)
 	// Candidate: unanalyzed, file missing on disk → selected, skipped gracefully.
 	seedTrack(t, db, libID, a, al, "Quiet", 1, filepath.Join(root, "a", "quiet.mp3"))
-	// Non-candidate: already analyzed; must be untouched.
-	seedTrack(t, db, libID, a, al, "Done", 2, filepath.Join(root, "a", "done.mp3"))
-	if _, err := db.Exec("UPDATE music_tracks SET loudness_lufs=-12.5 WHERE title='Done'"); err != nil {
+	// Candidate: has loudness but no true peak — a row measured before the column
+	// existed. This is the backfill, and missing it would leave the track unable
+	// to be boosted forever (an unmeasured peak is never spent).
+	seedTrack(t, db, libID, a, al, "Backfill", 2, filepath.Join(root, "a", "backfill.mp3"))
+	if _, err := db.Exec("UPDATE music_tracks SET loudness_lufs=-9.5, loudness_tp=0 WHERE title='Backfill'"); err != nil {
+		t.Fatal(err)
+	}
+	// Non-candidate: both measurements present; must be untouched.
+	seedTrack(t, db, libID, a, al, "Done", 3, filepath.Join(root, "a", "done.mp3"))
+	if _, err := db.Exec("UPDATE music_tracks SET loudness_lufs=-12.5, loudness_tp=-1.4 WHERE title='Done'"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -46,15 +55,15 @@ func TestAnalyzeLoudnessSelectsOnlyUnanalyzed(t *testing.T) {
 	if err := db.QueryRow("SELECT progress_total FROM scan_jobs WHERE id=?", jobID).Scan(&total); err != nil {
 		t.Fatal(err)
 	}
-	if total != 1 {
-		t.Fatalf("progress_total = %d, want 1 (only the unanalyzed row)", total)
+	if total != 2 {
+		t.Fatalf("progress_total = %d, want 2 (the unanalyzed row + the true-peak backfill)", total)
 	}
-	var lufs float64
-	if err := db.QueryRow("SELECT loudness_lufs FROM music_tracks WHERE title='Done'").Scan(&lufs); err != nil {
+	var lufs, tp float64
+	if err := db.QueryRow("SELECT loudness_lufs, loudness_tp FROM music_tracks WHERE title='Done'").Scan(&lufs, &tp); err != nil {
 		t.Fatal(err)
 	}
-	if lufs != -12.5 {
-		t.Fatalf("analyzed row changed: %v", lufs)
+	if lufs != -12.5 || tp != -1.4 {
+		t.Fatalf("fully-analyzed row changed: lufs=%v tp=%v", lufs, tp)
 	}
 }
 

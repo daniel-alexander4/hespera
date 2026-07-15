@@ -15,23 +15,33 @@ const loudnormOut = `size=N/A time=00:03:20.00 bitrate=N/A speed= 312x
 `
 
 func TestParseLoudnorm(t *testing.T) {
-	got, err := parseLoudnorm(loudnormOut)
-	if err != nil || got != -14.36 {
-		t.Fatalf("parseLoudnorm = %v, %v; want -14.36", got, err)
+	lufs, tp, err := parseLoudnorm(loudnormOut)
+	if err != nil || lufs != -14.36 || tp != -0.42 {
+		t.Fatalf("parseLoudnorm = %v, %v, %v; want -14.36, -0.42", lufs, tp, err)
 	}
 
 	// Digital silence measures -inf → the R128 gating floor, not an error.
-	if got, err := parseLoudnorm(`{"input_i" : "-inf"}`); err != nil || got != -70 {
-		t.Fatalf("-inf → %v, %v; want -70", got, err)
+	if lufs, tp, err := parseLoudnorm(`{"input_i" : "-inf", "input_tp" : "-inf"}`); err != nil || lufs != -70 || tp != -70 {
+		t.Fatalf("-inf → %v, %v, %v; want -70, -70", lufs, tp, err)
 	}
-	// An exact 0.0 is nudged off the "unanalyzed" sentinel.
-	if got, err := parseLoudnorm(`{"input_i" : "0.0"}`); err != nil || got != -0.01 {
-		t.Fatalf("0.0 → %v, %v; want -0.01", got, err)
+	// An exact 0.0 is nudged off the "unanalyzed" sentinel — a real brickwalled
+	// master does measure a true peak of exactly 0.00 dBTP.
+	if lufs, tp, err := parseLoudnorm(`{"input_i" : "0.0", "input_tp" : "0.00"}`); err != nil || lufs != -0.01 || tp != -0.01 {
+		t.Fatalf("0.0 → %v, %v, %v; want -0.01, -0.01", lufs, tp, err)
 	}
-	if _, err := parseLoudnorm("no json here"); err == nil {
+	// A true peak above full scale is a real reading, not an error.
+	if _, tp, err := parseLoudnorm(`{"input_i" : "-8.0", "input_tp" : "0.43"}`); err != nil || tp != 0.43 {
+		t.Fatalf("+0.43 dBTP → %v, %v; want 0.43", tp, err)
+	}
+	if _, _, err := parseLoudnorm("no json here"); err == nil {
 		t.Fatal("garbage should error")
 	}
-	if _, err := parseLoudnorm(`{"input_i" : "not-a-number"}`); err == nil {
+	if _, _, err := parseLoudnorm(`{"input_i" : "not-a-number", "input_tp" : "-1.0"}`); err == nil {
 		t.Fatal("unparseable input_i should error")
+	}
+	// A missing input_tp must error rather than store 0 — 0 is the "unanalyzed"
+	// sentinel, and a row written with it would be re-analyzed on every sweep.
+	if _, _, err := parseLoudnorm(`{"input_i" : "-14.0"}`); err == nil {
+		t.Fatal("missing input_tp should error")
 	}
 }

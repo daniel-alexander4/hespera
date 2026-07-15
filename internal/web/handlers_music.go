@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -88,22 +89,50 @@ type trackRow struct {
 	Flagged       bool    // unrepairable corruption (integrity_status='flagged')
 	FlagDetail    string  // integrity_detail — the human-readable reason
 	LoudnessLUFS  float64 // integrated loudness (0 = not yet analyzed) — volume leveling
+	LoudnessTP    float64 // true peak, dBTP (0 = not yet analyzed) — caps the leveling boost
 }
 
-// levelGainDB converts a track's measured loudness into the playback gain (dB)
-// that levels it to the -18 LUFS target, clamped to ±12 dB so a mismeasured
-// outlier can't blast or vanish. 0 (unanalyzed) applies no gain.
-func levelGainDB(lufs float64) float64 {
+const (
+	// loudnessTargetLUFS is the loudness every track is leveled toward — the
+	// streaming reference (Spotify/YouTube/Tidal). It is deliberately hotter than
+	// the -18 LUFS ReplayGain reference: -18 with no pre-amp attenuated 97% of a
+	// real library by a mean 5.9 dB, and at 6-10 dB down the ear sheds bass and
+	// treble before mids (ISO 226), so a correctly-leveled library read as thin.
+	loudnessTargetLUFS = -14.0
+	// truePeakCeilingDBTP is the peak a boosted track may never exceed. Nothing
+	// downstream can render a signal past full scale faithfully — Web Audio's
+	// destination clips it — so a boost is only ever as large as the track's own
+	// headroom. The 1 dB margin is the usual inter-sample allowance for lossy
+	// codecs, whose decoded peaks overshoot the encoded samples.
+	truePeakCeilingDBTP = -1.0
+	// levelGainLimitDB bounds the gain in both directions against a mismeasured
+	// outlier. It is still load-bearing on the boost side despite the peak cap:
+	// digital silence measures -inf LUFS, which the analyzer floors at -70, and
+	// that would otherwise request a +56 dB lift of the noise floor with all the
+	// headroom in the world to spend on it.
+	levelGainLimitDB = 12.0
+)
+
+// levelGainDB converts a track's measured loudness and true peak into the
+// playback gain (dB) that levels it toward loudnessTargetLUFS. Attenuation is
+// applied as measured; a *boost* is capped at the track's headroom, so lifting a
+// quiet track can never push its peak past truePeakCeilingDBTP. A track whose
+// peak is unmeasured (truePeak == 0 — a row awaiting the backfill sweep) is
+// attenuated normally but never boosted, since its headroom is unknown. Both
+// directions are clamped to ±levelGainLimitDB. 0 (unanalyzed) applies no gain.
+func levelGainDB(lufs, truePeak float64) float64 {
 	if lufs == 0 {
 		return 0
 	}
-	gain := -18 - lufs
-	if gain > 12 {
-		gain = 12
-	} else if gain < -12 {
-		gain = -12
+	gain := loudnessTargetLUFS - lufs
+	if gain > 0 {
+		headroom := 0.0
+		if truePeak != 0 {
+			headroom = math.Max(0, truePeakCeilingDBTP-truePeak)
+		}
+		gain = math.Min(gain, headroom)
 	}
-	return gain
+	return math.Max(-levelGainLimitDB, math.Min(levelGainLimitDB, gain))
 }
 
 type discSection struct {
@@ -1573,7 +1602,7 @@ const popularIncludeAllMaxTracks = 4
 // queue; callers append their own WHERE/ORDER/LIMIT. Column order matches
 // queryPlayerTracks' scan.
 const playerTrackSelect = `
-SELECT t.id, t.album_id, al.title, al.year, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream'), t.loudness_lufs
+SELECT t.id, t.album_id, al.title, al.year, t.title, ar.name, ar.id, t.track_no, t.disc_no, COALESCE(NULLIF(t.mime_type,''), 'application/octet-stream'), t.loudness_lufs, t.loudness_tp
 FROM music_tracks t
 JOIN music_albums al ON al.id=t.album_id
 JOIN music_artists ar ON ar.id=t.artist_id`
@@ -1715,7 +1744,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		Title    string  `json:"title"`
 		Artist   string  `json:"artist"`
 		ArtistID int64   `json:"artistId"` // the now-playing view links the artist name to /music/artist/{id}
-		GainDB   float64 `json:"gainDb"`   // volume-leveling gain toward the -18 LUFS target (0 = unanalyzed)
+		GainDB   float64 `json:"gainDb"`   // volume-leveling gain toward the target loudness, peak-capped (0 = unanalyzed)
 	}
 	out := struct {
 		Title   string           `json:"title"`
@@ -1723,7 +1752,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		Tracks  []queueTrackJSON `json:"tracks"`
 	}{Title: q.Title, BackURL: q.BackURL, Tracks: make([]queueTrackJSON, 0, len(q.Tracks))}
 	for _, t := range q.Tracks {
-		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist, ArtistID: t.ArtistID, GainDB: levelGainDB(t.LoudnessLUFS)})
+		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist, ArtistID: t.ArtistID, GainDB: levelGainDB(t.LoudnessLUFS, t.LoudnessTP)})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -1740,7 +1769,7 @@ func (h *Handler) queryPlayerTracks(ctx context.Context, query string, args ...a
 	tracks := make([]trackRow, 0, 32)
 	for rows.Next() {
 		var t trackRow
-		if err := rows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME, &t.LoudnessLUFS); err != nil {
+		if err := rows.Scan(&t.ID, &t.AlbumID, &t.AlbumTitle, &t.AlbumYear, &t.Title, &t.Artist, &t.ArtistID, &t.TrackNo, &t.DiscNo, &t.MIME, &t.LoudnessLUFS, &t.LoudnessTP); err != nil {
 			return nil, err
 		}
 		t.ArtistDisplay = t.Artist
