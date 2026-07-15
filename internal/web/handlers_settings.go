@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/config"
 	"hespera/internal/integrity"
 	"hespera/internal/jobs"
 	"hespera/internal/match"
@@ -214,30 +215,42 @@ func (h *Handler) settingsAbout(w http.ResponseWriter, r *http.Request) {
 	redirectToSettingsCard(w, r, "about")
 }
 
-// effectiveTMDBKey returns the runtime-configured TMDB API key: the value set
-// via the settings UI (app_settings) if non-empty, otherwise the env-provided
-// key from config. This is the single source of truth for the key across
-// handlers — reading the DB per call lets a UI change take effect without a
-// restart, and avoids the previously-duplicated h.cfg.TMDBAPIKey reads drifting.
+// effectiveTMDBKey returns the runtime-configured TMDB API key, resolving three
+// tiers in order: the settings-UI value (app_settings) → the env-provided key
+// (config) → the bundled release key (config.EmbeddedTMDBKey, link-injected;
+// empty in from-source builds). This is the single source of truth for the key
+// across handlers — reading the DB per call lets a UI change take effect without
+// a restart, and avoids the previously-duplicated h.cfg.TMDBAPIKey reads
+// drifting. The bundled tier makes a fresh release match TV/Movies out of the
+// box; a user/env key still overrides it.
 func (h *Handler) effectiveTMDBKey(ctx context.Context) string {
 	var v string
 	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='tmdb_api_key'").Scan(&v)
 	if v = strings.TrimSpace(v); v != "" {
 		return v
 	}
-	return h.cfg.TMDBAPIKey
+	if h.cfg.TMDBAPIKey != "" {
+		return h.cfg.TMDBAPIKey
+	}
+	return config.EmbeddedTMDBKey
 }
 
-// effectiveFanartKey / effectiveAudioDBKey resolve the optional artist-backfill
-// provider keys the same way as effectiveTMDBKey: the app_settings (UI) value
-// wins, else the env default. Both are optional — empty disables the provider.
+// effectiveFanartKey resolves the fanart.tv key: app_settings (UI) → env →
+// bundled project key (config.EmbeddedFanartKey). fanart's model is exactly
+// this — the project key is embedded and shared by all installs, while the
+// per-user fanarttv_api_key setting is the optional personal-key upgrade that
+// wins when set. effectiveAudioDBKey stays two-tier (UI → env, empty disables):
+// TheAudioDB is not bundled (see config/embedded.go).
 func (h *Handler) effectiveFanartKey(ctx context.Context) string {
 	var v string
 	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='fanarttv_api_key'").Scan(&v)
 	if v = strings.TrimSpace(v); v != "" {
 		return v
 	}
-	return h.cfg.FanartTVAPIKey
+	if h.cfg.FanartTVAPIKey != "" {
+		return h.cfg.FanartTVAPIKey
+	}
+	return config.EmbeddedFanartKey
 }
 
 func (h *Handler) effectiveAudioDBKey(ctx context.Context) string {
@@ -261,22 +274,30 @@ func (h *Handler) effectiveLastfmKey(ctx context.Context) string {
 	return h.cfg.LastfmAPIKey
 }
 
-// effectiveOpenSubtitlesKey resolves the optional OpenSubtitles API key the same
-// way: the app_settings (UI) value wins, else the env default. Empty disables
-// the on-demand TV subtitle search.
+// effectiveOpenSubtitlesKey resolves the OpenSubtitles consumer key: app_settings
+// (UI) → env → bundled release key (config.EmbeddedOpenSubtitlesKey). Embedding
+// one consumer key is the mandated model — their terms ban users who register
+// their own key, and the key carries no download quota (that rides the end
+// user's account), so the bundled tier is what lets subtitle search work out of
+// the box without every user registering.
 func (h *Handler) effectiveOpenSubtitlesKey(ctx context.Context) string {
 	var v string
 	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='opensubtitles_api_key'").Scan(&v)
 	if v = strings.TrimSpace(v); v != "" {
 		return v
 	}
-	return h.cfg.OpenSubtitlesAPIKey
+	if h.cfg.OpenSubtitlesAPIKey != "" {
+		return h.cfg.OpenSubtitlesAPIKey
+	}
+	return config.EmbeddedOpenSubtitlesKey
 }
 
 // effectiveOpenSubtitlesUserAgent resolves the OpenSubtitles consumer User-Agent:
 // the app_settings (UI) value wins, then the env default, else a built-in
-// fallback. The UA must name a consumer app *registered with OpenSubtitles*
-// ("AppName vX.Y") — an unregistered UA is 403'd — so it's user-configurable.
+// fallback. The UA must be formatted "AppName vX.Y" — a malformed UA is 403'd.
+// Registering the name with OpenSubtitles is a courtesy (so they can attribute
+// traffic), not a gate, and the bundled consumer key is registered under the
+// default "Hespera v1.0"; it's user-configurable for custom deployments.
 func (h *Handler) effectiveOpenSubtitlesUserAgent(ctx context.Context) string {
 	var v string
 	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='opensubtitles_user_agent'").Scan(&v)
@@ -384,7 +405,9 @@ func maskKey(k string) string {
 }
 
 // keyStatus reports an API key's display state: whether an effective value
-// exists, its source (custom DB value / env / none), and a masked rendering.
+// exists, its source (custom DB value / env / bundled release key / none), and
+// a masked rendering. "bundled" is inferred — an effective value with no DB or
+// env value in force can only be the link-injected release key.
 func (h *Handler) keyStatus(ctx context.Context, dbKey, envVal, effective string) (configured bool, source, masked string) {
 	var dbVal string
 	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key=?", dbKey).Scan(&dbVal)
@@ -394,6 +417,8 @@ func (h *Handler) keyStatus(ctx context.Context, dbKey, envVal, effective string
 		source = "custom"
 	case strings.TrimSpace(envVal) != "":
 		source = "env"
+	case effective != "":
+		source = "bundled"
 	}
 	return effective != "", source, maskKey(effective)
 }

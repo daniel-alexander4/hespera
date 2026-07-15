@@ -234,7 +234,7 @@
       <small class="form-help">Not configured. TV matching requires a TMDB key.</small>
       {{end}}
       <input type="password" id="tmdb_api_key" name="tmdb_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to clear" />
-      <small class="form-help">Overrides <code>HESPERA_TMDB_API_KEY</code>. Submit blank to clear. Takes effect immediately — no restart.</small>
+      <small class="form-help">Overrides <code>HESPERA_TMDB_API_KEY</code>. Official release builds ship a bundled key, so this is optional — set your own only for a dedicated key. Submit blank to revert to the bundled key. Takes effect immediately — no restart.</small>
     </div>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Save</button>
@@ -250,7 +250,7 @@
       <small class="form-help">Not configured. Backfills artist images when MusicBrainz/Wikidata have none.</small>
       {{end}}
       <input type="password" id="fanarttv_api_key" name="fanarttv_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to clear" />
-      <small class="form-help">Overrides <code>HESPERA_FANARTTV_API_KEY</code>. Get a free key at fanart.tv. Submit blank to clear.</small>
+      <small class="form-help">Overrides <code>HESPERA_FANARTTV_API_KEY</code>. Release builds ship a shared project key; enter your own free <strong>personal</strong> key from fanart.tv for faster access to new artwork. Submit blank to revert.</small>
     </div>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Save</button>
@@ -297,13 +297,13 @@
       {{else}}
       <small class="form-help">Not configured. Lets the TV player search &amp; download subtitles for episodes with no text subtitle track.</small>
       {{end}}
-      <input type="password" id="opensubtitles_api_key" name="opensubtitles_api_key" class="input" autocomplete="off" placeholder="Enter a new key to replace, or leave blank to keep the current one" />
-      <small class="form-help">Overrides <code>HESPERA_OPENSUBTITLES_API_KEY</code>. Free key from opensubtitles.com (100 downloads/day). Leave blank to keep the current key.</small>
+      <input type="password" id="opensubtitles_api_key" name="opensubtitles_api_key" class="input" autocomplete="off" placeholder="Enter a new consumer key, or leave blank to keep the current one" />
+      <small class="form-help">Overrides <code>HESPERA_OPENSUBTITLES_API_KEY</code>. Release builds ship a bundled consumer key, so this is optional; downloads are limited to 5/day per IP until per-account login is added. Set your own only for a custom consumer.</small>
     </div>
     <div class="form-group">
       <label for="opensubtitles_user_agent">User-Agent <small class="form-help">(advanced)</small></label>
       <input type="text" id="opensubtitles_user_agent" name="opensubtitles_user_agent" class="input" autocomplete="off" value="{{.OpenSubtitlesUserAgent}}" placeholder="Hespera v1.0" />
-      <small class="form-help">Consumer app name (<code>AppName vX.Y</code>) — must be <strong>registered with OpenSubtitles</strong> or requests are rejected (403). Overrides <code>HESPERA_OPENSUBTITLES_USER_AGENT</code>; blank reverts to the default.</small>
+      <small class="form-help">Consumer app name, formatted <code>AppName vX.Y</code> — a malformed value is rejected (403). Overrides <code>HESPERA_OPENSUBTITLES_USER_AGENT</code>; blank reverts to the default (<code>Hespera v1.0</code>, matching the bundled key).</small>
     </div>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Save</button>

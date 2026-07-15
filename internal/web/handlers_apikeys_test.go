@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"hespera/internal/config"
 )
 
 func TestMaskKey(t *testing.T) {
@@ -49,6 +51,59 @@ func TestEffectiveTMDBKey(t *testing.T) {
 	}
 	if got := h.effectiveTMDBKey(ctx); got != "env-key" {
 		t.Fatalf("blank db falls back to env: got %q, want env-key", got)
+	}
+}
+
+// TestEffectiveKeyBundledFallback covers the third resolution tier the release
+// binaries add: a link-injected bundled key behind the env default, overridden
+// by both a DB value and an env value. The bundled globals are package-level
+// (normally set only by build.sh -ldflags), so each case saves and restores
+// them to stay hermetic.
+func TestEffectiveKeyBundledFallback(t *testing.T) {
+	restore := func() {
+		config.EmbeddedTMDBKey = ""
+		config.EmbeddedFanartKey = ""
+		config.EmbeddedOpenSubtitlesKey = ""
+	}
+	t.Cleanup(restore)
+	restore()
+
+	h, db := newTestHandler(t)
+	ctx := context.Background()
+
+	config.EmbeddedTMDBKey = "bundled-tmdb"
+	config.EmbeddedFanartKey = "bundled-fanart"
+	config.EmbeddedOpenSubtitlesKey = "bundled-os"
+
+	// Nothing in DB or env → the bundled key is in force for each provider.
+	if got := h.effectiveTMDBKey(ctx); got != "bundled-tmdb" {
+		t.Fatalf("tmdb bundled fallback: got %q, want bundled-tmdb", got)
+	}
+	if got := h.effectiveFanartKey(ctx); got != "bundled-fanart" {
+		t.Fatalf("fanart bundled fallback: got %q, want bundled-fanart", got)
+	}
+	if got := h.effectiveOpenSubtitlesKey(ctx); got != "bundled-os" {
+		t.Fatalf("opensubtitles bundled fallback: got %q, want bundled-os", got)
+	}
+
+	// keyStatus reports the source as "bundled" (not "none") when the effective
+	// value is the bundled key with no DB/env value in force.
+	if cfg, src, _ := h.keyStatus(ctx, "tmdb_api_key", h.cfg.TMDBAPIKey, h.effectiveTMDBKey(ctx)); !cfg || src != "bundled" {
+		t.Fatalf("keyStatus bundled: configured=%v source=%q, want true/bundled", cfg, src)
+	}
+
+	// An env value wins over bundled.
+	h.cfg.TMDBAPIKey = "env-tmdb"
+	if got := h.effectiveTMDBKey(ctx); got != "env-tmdb" {
+		t.Fatalf("env over bundled: got %q, want env-tmdb", got)
+	}
+
+	// A DB value wins over both.
+	if _, err := db.Exec("INSERT INTO app_settings (key, value) VALUES ('tmdb_api_key', 'db-tmdb')"); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.effectiveTMDBKey(ctx); got != "db-tmdb" {
+		t.Fatalf("db over env/bundled: got %q, want db-tmdb", got)
 	}
 }
 
