@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/config"
 	"hespera/internal/jobs"
 	"hespera/internal/match"
 	"hespera/internal/tmdb"
@@ -221,6 +222,7 @@ type settingSpec struct {
 	Kind           settingKind
 	Env            string // env var backing the default (for source reporting)
 	Default        string // built-in fallback when db+env are empty (string kind)
+	Bundled        string // secret: the link-injected release key behind db+env (source reporting)
 	OnStored       string // toggle: the app_settings value meaning "on"
 	OffStored      string // toggle: the app_settings value meaning "off"
 	ApplyOnRestart bool
@@ -231,11 +233,11 @@ type settingSpec struct {
 // (clears the row for on, stores '0' for off); lyrics_enabled defaults OFF
 // (stores '1' for on, clears for off).
 var managedSettings = []settingSpec{
-	{Key: "tmdb_api_key", Kind: kindSecret, Env: "HESPERA_TMDB_API_KEY"},
-	{Key: "fanarttv_api_key", Kind: kindSecret, Env: "HESPERA_FANARTTV_API_KEY"},
+	{Key: "tmdb_api_key", Kind: kindSecret, Env: "HESPERA_TMDB_API_KEY", Bundled: config.EmbeddedTMDBKey},
+	{Key: "fanarttv_api_key", Kind: kindSecret, Env: "HESPERA_FANARTTV_API_KEY", Bundled: config.EmbeddedFanartKey},
 	{Key: "audiodb_api_key", Kind: kindSecret, Env: "HESPERA_THEAUDIODB_API_KEY"},
 	{Key: "lastfm_api_key", Kind: kindSecret, Env: "HESPERA_LASTFM_API_KEY"},
-	{Key: "opensubtitles_api_key", Kind: kindSecret, Env: "HESPERA_OPENSUBTITLES_API_KEY"},
+	{Key: "opensubtitles_api_key", Kind: kindSecret, Env: "HESPERA_OPENSUBTITLES_API_KEY", Bundled: config.EmbeddedOpenSubtitlesKey},
 	{Key: "opensubtitles_user_agent", Kind: kindString, Env: "HESPERA_OPENSUBTITLES_USER_AGENT", Default: "Hespera v1.0"},
 	{Key: "integrity_autorepair", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "watch_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
@@ -270,7 +272,7 @@ func (h *Handler) appSetting(ctx context.Context, key string) string {
 type configEntry struct {
 	Key            string `json:"key"`
 	Kind           string `json:"kind"`
-	Source         string `json:"source"` // custom / env / default / none
+	Source         string `json:"source"` // custom / env / bundled / default / none
 	Value          string `json:"value"`  // masked secret, on|off, string, or path
 	ApplyOnRestart bool   `json:"apply_on_restart,omitempty"`
 }
@@ -285,11 +287,16 @@ func (h *Handler) configEntryFor(ctx context.Context, spec settingSpec) configEn
 		if eff == "" {
 			eff = env
 		}
+		if eff == "" {
+			eff = spec.Bundled
+		}
 		switch {
 		case dbVal != "":
 			e.Source = "custom"
 		case env != "":
 			e.Source = "env"
+		case spec.Bundled != "":
+			e.Source = "bundled"
 		default:
 			e.Source = "none"
 		}

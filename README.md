@@ -240,6 +240,12 @@ Day-to-day settings (media folder, API keys, feature toggles, subtitle
 defaults) live in the in-app **Settings** page. Environment variables cover
 the rest — all `HESPERA_`-prefixed:
 
+> **Bundled provider keys.** Official release binaries ship with bundled keys
+> for TMDB, fanart.tv, and OpenSubtitles, so a fresh download matches TV/Movies
+> and searches subtitles with no setup. A key you enter in Settings (or via the
+> env vars below) always overrides the bundled one. Binaries you build from
+> source carry no bundled keys — supply your own to enable those features.
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `HESPERA_NO_BROWSER` | (unset) | Set → **server mode**: no app window, honors `HESPERA_LISTEN`. Unset → app mode (chromeless window on a random loopback port) |
@@ -247,12 +253,12 @@ the rest — all `HESPERA_`-prefixed:
 | `HESPERA_DATA_DIR` | per-user config dir | Database, caches, artwork |
 | `HESPERA_DB_PATH` | `<data dir>/hespera.sqlite` | Database path |
 | `HESPERA_MEDIA_ROOT` | home dir | Media root (the path-containment boundary; also settable in Settings → Libraries) |
-| `HESPERA_TMDB_API_KEY` | | TMDB key for TV/movie matching (also settable in Settings) |
-| `HESPERA_FANARTTV_API_KEY` | | Optional fanart.tv key — artist image backfill |
-| `HESPERA_THEAUDIODB_API_KEY` | | Optional TheAudioDB key — artist bio/image backfill |
-| `HESPERA_LASTFM_API_KEY` | | Optional Last.fm key — popularity blend for shuffles |
-| `HESPERA_OPENSUBTITLES_API_KEY` | | Optional OpenSubtitles key — on-demand subtitle search |
-| `HESPERA_OPENSUBTITLES_USER_AGENT` | `Hespera v1.0` | OpenSubtitles registered consumer UA |
+| `HESPERA_TMDB_API_KEY` | bundled | TMDB key for TV/movie matching. Official releases ship a bundled key — set your own only for a dedicated key (also settable in Settings) |
+| `HESPERA_FANARTTV_API_KEY` | bundled | fanart.tv key — artist image backfill. Releases ship a shared project key; set your own **personal** key for faster new-artwork access |
+| `HESPERA_THEAUDIODB_API_KEY` | | Optional TheAudioDB key — artist bio/image backfill (user-supplied) |
+| `HESPERA_LASTFM_API_KEY` | | Optional Last.fm key — popularity blend for shuffles (user-supplied) |
+| `HESPERA_OPENSUBTITLES_API_KEY` | bundled | OpenSubtitles consumer key — on-demand subtitle search. Releases ship a bundled consumer key (5 downloads/day per IP) |
+| `HESPERA_OPENSUBTITLES_USER_AGENT` | `Hespera v1.0` | OpenSubtitles consumer UA, formatted `AppName vX.Y` |
 | `HESPERA_LOG_LEVEL` | `info` | Log level (`debug`/`info`/`warn`/`error`). Per-request access logs are emitted at `debug`; the default `info` keeps request serving off the log path. Set `debug` to see per-request logs |
 | `HESPERA_FFMPEG_CONCURRENCY` | 4 | Max concurrent ffmpeg/ffprobe processes |
 | `HESPERA_HLS_ENCODER` | `software` | HLS video encoder: `software` (libx264) or `vaapi` (opt-in hardware encode) |

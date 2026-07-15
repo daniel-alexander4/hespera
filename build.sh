@@ -46,6 +46,22 @@ mkdir -p "$DIST"
 
 LDFLAGS="-s -w -X main.version=$VERSION"
 
+# Bundle the release provider keys so a fresh download matches TV/Movies and
+# searches subtitles with zero config. The keys live OUTSIDE the repo (never in
+# git) in a shell file exporting TMDB_KEY / FANART_KEY / OPENSUBTITLES_KEY;
+# absent → a keyless binary that behaves exactly like a from-source build
+# (user must supply keys). See internal/config/embedded.go.
+KEYS_FILE="${HESPERA_RELEASE_KEYS:-$HOME/.config/hespera/release-keys.env}"
+if [ -f "$KEYS_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$KEYS_FILE"
+  [ -n "${TMDB_KEY:-}" ] && LDFLAGS="$LDFLAGS -X hespera/internal/config.EmbeddedTMDBKey=$TMDB_KEY"
+  [ -n "${FANART_KEY:-}" ] && LDFLAGS="$LDFLAGS -X hespera/internal/config.EmbeddedFanartKey=$FANART_KEY"
+  [ -n "${OPENSUBTITLES_KEY:-}" ] && LDFLAGS="$LDFLAGS -X hespera/internal/config.EmbeddedOpenSubtitlesKey=$OPENSUBTITLES_KEY"
+else
+  echo "note: no release-keys file at $KEYS_FILE — building without bundled provider keys" >&2
+fi
+
 targets=(
   "linux/amd64" "linux/arm64"
   "darwin/amd64" "darwin/arm64"
