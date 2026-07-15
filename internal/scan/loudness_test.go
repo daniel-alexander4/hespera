@@ -34,15 +34,23 @@ func TestAnalyzeLoudnessSelectsOnlyUnanalyzed(t *testing.T) {
 	al := seedAlbum(t, db, libID, a, "L Album", 2020, false)
 	// Candidate: unanalyzed, file missing on disk → selected, skipped gracefully.
 	seedTrack(t, db, libID, a, al, "Quiet", 1, filepath.Join(root, "a", "quiet.mp3"))
-	// Candidate: has loudness but no true peak — a row measured before the column
-	// existed. This is the backfill, and missing it would leave the track unable
-	// to be boosted forever (an unmeasured peak is never spent).
+	// Candidate: quiet enough to be boosted (below the -14 target) but has no true
+	// peak — a row measured before the column existed. This is the backfill, and
+	// missing it would leave the track unable to be boosted forever (an unmeasured
+	// peak is never spent).
 	seedTrack(t, db, libID, a, al, "Backfill", 2, filepath.Join(root, "a", "backfill.mp3"))
-	if _, err := db.Exec("UPDATE music_tracks SET loudness_lufs=-9.5, loudness_tp=0 WHERE title='Backfill'"); err != nil {
+	if _, err := db.Exec("UPDATE music_tracks SET loudness_lufs=-19.5, loudness_tp=0 WHERE title='Backfill'"); err != nil {
+		t.Fatal(err)
+	}
+	// NOT a candidate despite a missing peak: at -9.5 LUFS it is above the target,
+	// so it is only ever attenuated — and a cut never reads the peak. Decoding it
+	// would measure a number nothing will ever use (~63% of a real library).
+	seedTrack(t, db, libID, a, al, "LoudNoPeak", 3, filepath.Join(root, "a", "loud.mp3"))
+	if _, err := db.Exec("UPDATE music_tracks SET loudness_lufs=-9.5, loudness_tp=0 WHERE title='LoudNoPeak'"); err != nil {
 		t.Fatal(err)
 	}
 	// Non-candidate: both measurements present; must be untouched.
-	seedTrack(t, db, libID, a, al, "Done", 3, filepath.Join(root, "a", "done.mp3"))
+	seedTrack(t, db, libID, a, al, "Done", 4, filepath.Join(root, "a", "done.mp3"))
 	if _, err := db.Exec("UPDATE music_tracks SET loudness_lufs=-12.5, loudness_tp=-1.4 WHERE title='Done'"); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +64,7 @@ func TestAnalyzeLoudnessSelectsOnlyUnanalyzed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if total != 2 {
-		t.Fatalf("progress_total = %d, want 2 (the unanalyzed row + the true-peak backfill)", total)
+		t.Fatalf("progress_total = %d, want 2 (the unanalyzed row + the boostable true-peak backfill; the loud peak-less row is skipped)", total)
 	}
 	var lufs, tp float64
 	if err := db.QueryRow("SELECT loudness_lufs, loudness_tp FROM music_tracks WHERE title='Done'").Scan(&lufs, &tp); err != nil {

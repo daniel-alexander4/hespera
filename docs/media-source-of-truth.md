@@ -160,9 +160,14 @@ they only parse filenames/tags and probe streams. Matchers
   "not yet analyzed" sentinel in each (the analyzer nudges a real `0.0` reading to
   `-0.01`, which matters for the true peak — a brickwalled master genuinely
   measures `0.00` dBTP, and above it). A row carrying a loudness but **no** true
-  peak is the one-shot backfill of rows measured before that column existed, and
-  is re-analyzed on the next sweep. Nothing here is user-editable and nothing is
-  lost on a move (the relink carries the row); playback leveling reads both.
+  peak is the one-shot backfill of rows measured before that column existed —
+  but only if the track is **quieter than the leveling target**
+  (`music.NeedsTruePeak`): the peak is read only to cap a *boost*, so a louder
+  track, which is only ever attenuated, keeps `loudness_tp=0` **forever by
+  design** and behaves identically (an unmeasured peak already means "attenuate,
+  never boost"). Do not read a `0` peak on a loud track as missing data. Nothing
+  here is user-editable and nothing is lost on a move (the relink carries the
+  row); playback leveling reads both.
 
 ### Discovery caches (NOT a source of truth)
 The **Top 100** card on the Playlists page (`/music/playlists`) owns no media

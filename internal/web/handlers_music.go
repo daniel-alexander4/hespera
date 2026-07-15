@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -90,49 +89,6 @@ type trackRow struct {
 	FlagDetail    string  // integrity_detail — the human-readable reason
 	LoudnessLUFS  float64 // integrated loudness (0 = not yet analyzed) — volume leveling
 	LoudnessTP    float64 // true peak, dBTP (0 = not yet analyzed) — caps the leveling boost
-}
-
-const (
-	// loudnessTargetLUFS is the loudness every track is leveled toward — the
-	// streaming reference (Spotify/YouTube/Tidal). It is deliberately hotter than
-	// the -18 LUFS ReplayGain reference: -18 with no pre-amp attenuated 97% of a
-	// real library by a mean 5.9 dB, and at 6-10 dB down the ear sheds bass and
-	// treble before mids (ISO 226), so a correctly-leveled library read as thin.
-	loudnessTargetLUFS = -14.0
-	// truePeakCeilingDBTP is the peak a boosted track may never exceed. Nothing
-	// downstream can render a signal past full scale faithfully — Web Audio's
-	// destination clips it — so a boost is only ever as large as the track's own
-	// headroom. The 1 dB margin is the usual inter-sample allowance for lossy
-	// codecs, whose decoded peaks overshoot the encoded samples.
-	truePeakCeilingDBTP = -1.0
-	// levelGainLimitDB bounds the gain in both directions against a mismeasured
-	// outlier. It is still load-bearing on the boost side despite the peak cap:
-	// digital silence measures -inf LUFS, which the analyzer floors at -70, and
-	// that would otherwise request a +56 dB lift of the noise floor with all the
-	// headroom in the world to spend on it.
-	levelGainLimitDB = 12.0
-)
-
-// levelGainDB converts a track's measured loudness and true peak into the
-// playback gain (dB) that levels it toward loudnessTargetLUFS. Attenuation is
-// applied as measured; a *boost* is capped at the track's headroom, so lifting a
-// quiet track can never push its peak past truePeakCeilingDBTP. A track whose
-// peak is unmeasured (truePeak == 0 — a row awaiting the backfill sweep) is
-// attenuated normally but never boosted, since its headroom is unknown. Both
-// directions are clamped to ±levelGainLimitDB. 0 (unanalyzed) applies no gain.
-func levelGainDB(lufs, truePeak float64) float64 {
-	if lufs == 0 {
-		return 0
-	}
-	gain := loudnessTargetLUFS - lufs
-	if gain > 0 {
-		headroom := 0.0
-		if truePeak != 0 {
-			headroom = math.Max(0, truePeakCeilingDBTP-truePeak)
-		}
-		gain = math.Min(gain, headroom)
-	}
-	return math.Max(-levelGainLimitDB, math.Min(levelGainLimitDB, gain))
 }
 
 type discSection struct {
@@ -1752,7 +1708,7 @@ func (h *Handler) musicQueue(w http.ResponseWriter, r *http.Request) {
 		Tracks  []queueTrackJSON `json:"tracks"`
 	}{Title: q.Title, BackURL: q.BackURL, Tracks: make([]queueTrackJSON, 0, len(q.Tracks))}
 	for _, t := range q.Tracks {
-		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist, ArtistID: t.ArtistID, GainDB: levelGainDB(t.LoudnessLUFS, t.LoudnessTP)})
+		out.Tracks = append(out.Tracks, queueTrackJSON{ID: t.ID, AlbumID: t.AlbumID, Album: t.AlbumTitle, Title: t.Title, Artist: t.Artist, ArtistID: t.ArtistID, GainDB: music.LevelGainDB(t.LoudnessLUFS, t.LoudnessTP)})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
