@@ -26,10 +26,12 @@
      prominent, centered transport. media_player.js drives everything by id. */}}
 {{define "media-transport"}}
 <div class="player-controls tv-transport" id="tvTransport">
-  {{/* Prev/next EPISODE (TV only) — media_player.js unhides these when the video
-       carries a non-zero data-prev-file / data-next-file (hidden on movies and at
-       season boundaries). */}}
-  <button id="tvPrevEpBtn" type="button" class="btn btn-sm" aria-label="Previous episode" title="Previous episode" hidden>{{template "icon-skip-back"}}</button>
+  {{/* |< is ALWAYS live: past 10s (or with no previous file at all — a movie, a
+       season's first episode, an extra) it restarts the current file; inside 10s it
+       steps back. So it is never hidden. NEXT still is: media_player.js unhides it
+       only when the video carries a non-zero data-next-file (there is no forward
+       analogue of "restart"). */}}
+  <button id="tvPrevEpBtn" type="button" class="btn btn-sm" aria-label="Previous or restart" title="Previous or restart">{{template "icon-skip-back"}}</button>
   <button id="tvRewindBtn" type="button" class="btn btn-sm" aria-label="Rewind" title="Rewind — press again for 8× / 32×">{{template "icon-rewind"}}</button>
   <button id="tvToggleBtn" type="button" class="btn btn-primary btn-sm" aria-label="Play or pause" title="Play / Pause"><span class="tv-glyph-play">{{template "icon-play"}}</span><span class="tv-glyph-pause">{{template "icon-pause"}}</span></button>
   <button id="tvForwardBtn" type="button" class="btn btn-sm" aria-label="Fast-forward" title="Fast-forward — press again for 8× / 32×">{{template "icon-fast-forward"}}</button>

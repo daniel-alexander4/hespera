@@ -491,8 +491,9 @@ html[data-scale="tv"] .main { max-width: 2000px; }
   color: var(--page-fg);
 }
 /* The inline-flex above otherwise out-specifies the UA [hidden]{display:none},
-   so a hidden button (prev/next episode, Auto-skip) would render as a ghost
-   chip — same trap as .tv-track-pick[hidden]. */
+   so a hidden button (next episode, Auto-skip) would render as a ghost chip —
+   same trap as .tv-track-pick[hidden]. (|< is never hidden: with no previous
+   file it restarts the current one.) */
 .btn[hidden] { display: none; }
 
 .btn-primary {
