@@ -60,6 +60,42 @@
             <button id="player-menu-dismiss" type="button" class="player-menu-dismiss" data-couch-dismiss aria-label="Close playlist menu" tabindex="-1"></button>
           </div>
         </details>
+        {{/* Equalizer — a second native <details> beside Playlist. A 10-band
+             graphic EQ applied client-side by player.js's Web Audio graph; the
+             presets set all bands at once, the vertical sliders tweak one band
+             (couch.js's engage protocol: Enter engages a slider, Up/Down adjust).
+             The panel is data-couch-overlay like Playlist's; unlike it, a pick
+             does NOT close the panel so several presets/tweaks can be tried. */}}
+        <details id="player-eq-menu" class="player-menu player-eq-menu">
+          <summary id="player-eq-btn" class="btn btn-sm" aria-pressed="false" aria-label="Equalizer" title="Equalizer">{{template "icon-sliders-vertical"}}<span>EQ</span>{{template "icon-chevron-down"}}</summary>
+          <div class="player-menu-panel player-eq-panel" data-couch-overlay>
+            <div class="eq-presets" role="group" aria-label="Equalizer presets">
+              <button type="button" class="eq-preset" data-eq-preset="flat">Flat</button>
+              <button type="button" class="eq-preset" data-eq-preset="bass boost">Bass Boost</button>
+              <button type="button" class="eq-preset" data-eq-preset="treble boost">Treble Boost</button>
+              <button type="button" class="eq-preset" data-eq-preset="vocal">Vocal</button>
+              <button type="button" class="eq-preset" data-eq-preset="rock">Rock</button>
+              <button type="button" class="eq-preset" data-eq-preset="jazz">Jazz</button>
+              <button type="button" class="eq-preset" data-eq-preset="classical">Classical</button>
+              <button type="button" class="eq-preset" data-eq-preset="electronic">Electronic</button>
+              <button type="button" class="eq-preset" data-eq-preset="acoustic">Acoustic</button>
+              <button type="button" class="eq-preset" data-eq-preset="loudness">Loudness</button>
+            </div>
+            <div class="eq-bands">
+              <label class="eq-band"><input type="range" data-eq-band="0" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="32 Hz gain"><span class="eq-band-label">32</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="1" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="64 Hz gain"><span class="eq-band-label">64</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="2" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="125 Hz gain"><span class="eq-band-label">125</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="3" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="250 Hz gain"><span class="eq-band-label">250</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="4" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="500 Hz gain"><span class="eq-band-label">500</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="5" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="1 kHz gain"><span class="eq-band-label">1k</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="6" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="2 kHz gain"><span class="eq-band-label">2k</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="7" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="4 kHz gain"><span class="eq-band-label">4k</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="8" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="8 kHz gain"><span class="eq-band-label">8k</span></label>
+              <label class="eq-band"><input type="range" data-eq-band="9" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="16 kHz gain"><span class="eq-band-label">16k</span></label>
+            </div>
+            <button id="player-eq-dismiss" type="button" class="player-menu-dismiss" data-couch-dismiss aria-label="Close equalizer" tabindex="-1"></button>
+          </div>
+        </details>
       </div>
 
       <div class="player-controls">

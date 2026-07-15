@@ -270,12 +270,49 @@
     renderView(); // empty state if the now-playing page is open
   };
 
+  // --- Equalizer (per-device, opt-in, default Flat) --- a 10-band graphic EQ
+  // spliced into the leveling graph BEFORE levelGain, so a loud track's leveling
+  // attenuation also damps an EQ boost. Each band is a peaking biquad; Flat (all
+  // 0 dB) is mathematically unity, so "off" is Flat with nothing disconnected —
+  // matching the always-wired music graph. The preset curves are hand-authored
+  // (not a sourced table), kept moderate against the -14 LUFS leveling; boosting
+  // bands can still clip at the Web Audio destination, as any EQ can. Music only.
+  const EQ_FREQS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+  const EQ_PRESETS = {
+    flat:           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'bass boost':   [6, 5, 4, 2, 0, 0, 0, 0, 0, 0],
+    'treble boost': [0, 0, 0, 0, 0, 0, 2, 4, 5, 6],
+    vocal:          [-2, -3, -3, 0, 3, 4, 4, 3, 0, -2],
+    rock:           [4, 3, 1, -1, -2, 0, 2, 3, 4, 4],
+    jazz:           [3, 2, 1, 2, -1, -1, 0, 1, 2, 3],
+    classical:      [3, 2, 1, 0, 0, 0, -1, -1, -2, -3],
+    electronic:     [4, 3, 1, 0, -2, 1, 0, 1, 3, 4],
+    acoustic:       [3, 3, 2, 0, 1, 1, 2, 2, 3, 2],
+    loudness:       [6, 4, 0, 0, -2, 0, -1, 2, 5, 6],
+  };
+  let eqBands = [];                       // BiquadFilterNode[] once the graph is built
+  let eqPreset = 'flat';
+  let eqGains = EQ_PRESETS.flat.slice();  // current per-band dB (custom-aware)
+  try {
+    const p = localStorage.getItem('music_eq');
+    if (p === 'custom') {
+      const raw = JSON.parse(localStorage.getItem('music_eq_bands') || 'null');
+      if (Array.isArray(raw) && raw.length === EQ_FREQS.length) {
+        eqPreset = 'custom';
+        eqGains = raw.map((n) => Number(n) || 0);
+      }
+    } else if (p && EQ_PRESETS[p]) {
+      eqPreset = p;
+      eqGains = EQ_PRESETS[p].slice();
+    }
+  } catch (e) {}
+
   // --- Volume leveling --- each queue track carries gainDb (server-computed
   // from its measured LUFS toward the target loudness and capped by its measured
   // true peak, so a boost can't clip; 0 until analyzed). A Web
   // Audio GainNode on the permanent element applies it per track — the
   // media_player.js boost pattern: createMediaElementSource once, and the
-  // whole graph is source→gain→destination from creation, so a suspended
+  // whole graph is source→EQ→gain→destination from creation, so a suspended
   // context passes audio through untouched rather than silencing it.
   let levelCtx = null, levelGain = null;
   const levelSetup = () => {
@@ -285,16 +322,70 @@
       levelCtx = new AC();
       const srcNode = levelCtx.createMediaElementSource(audio);
       levelGain = levelCtx.createGain();
-      srcNode.connect(levelGain);
+      // Splice the EQ band chain between the source and levelGain.
+      let node = srcNode;
+      eqBands = EQ_FREQS.map((freq) => {
+        const b = levelCtx.createBiquadFilter();
+        b.type = 'peaking';
+        b.frequency.value = freq;
+        b.Q.value = 1.4;
+        b.gain.value = 0;
+        node.connect(b);
+        node = b;
+        return b;
+      });
+      node.connect(levelGain);
       levelGain.connect(levelCtx.destination);
       levelCtx.addEventListener('statechange', applyLevelGain);
-    } catch (e) { levelCtx = null; levelGain = null; }
+      applyEqGains(); // push the stored preset/custom gains into the fresh nodes
+    } catch (e) { levelCtx = null; levelGain = null; eqBands = []; }
   };
   function applyLevelGain() {
     if (!levelGain || currentPos < 0 || currentPos >= queue.length) return;
     const db = (tracks[queue[currentPos]] || {}).gainDb || 0;
     levelGain.gain.value = Math.pow(10, db / 20);
   }
+  // Push the current per-band gains into the biquad nodes (no-op until built).
+  function applyEqGains() {
+    if (!eqBands.length) return;
+    eqBands.forEach((b, i) => { b.gain.value = eqGains[i] || 0; });
+  }
+  const persistEq = () => {
+    try {
+      localStorage.setItem('music_eq', eqPreset);
+      if (eqPreset === 'custom') localStorage.setItem('music_eq_bands', JSON.stringify(eqGains));
+    } catch (e) {}
+  };
+  // Reflect EQ state on the transport: the button's is-on (any non-Flat curve),
+  // the active preset highlight, and each slider's position.
+  const reflectEq = () => {
+    if (!view) return;
+    const active = eqPreset !== 'flat';
+    if (view.eqBtn) {
+      view.eqBtn.classList.toggle('is-on', active);
+      view.eqBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+    if (view.eqPresetBtns) view.eqPresetBtns.forEach((b) =>
+      b.classList.toggle('is-on', b.dataset.eqPreset === eqPreset));
+    if (view.eqSliders) view.eqSliders.forEach((s, i) => { s.value = String(eqGains[i] || 0); });
+  };
+  const applyEqPreset = (name) => {
+    if (!EQ_PRESETS[name]) return;
+    eqPreset = name;
+    eqGains = EQ_PRESETS[name].slice();
+    applyEqGains();
+    persistEq();
+    reflectEq();
+  };
+  const setEqBand = (i, db) => {
+    if (i < 0 || i >= eqGains.length || !Number.isFinite(db)) return;
+    eqGains = eqGains.slice();
+    eqGains[i] = db;
+    eqPreset = 'custom';
+    applyEqGains();
+    persistEq();
+    reflectEq();
+  };
 
   // --- Near-gapless --- warm the next track's stream into the browser cache
   // while the current one plays, so the src-swap at 'ended' doesn't wait on a
@@ -560,6 +651,7 @@
     const ae = document.activeElement;
     if (curPaused() || view.seeking || transportHover ||
         (view.playlistMenu && view.playlistMenu.open) || // an open dropdown would slide away with the bar
+        (view.eqMenu && view.eqMenu.open) ||
         (ae && ae !== document.body && view.transport.contains(ae) && ae.matches && ae.matches(':focus-visible'))) return;
     applyTransportCollapsed(true);
   };
@@ -607,6 +699,10 @@
       backBtn: $('player-back'),
       addBtn: $('player-add-btn'),
       toggleBtn: $('player-toggle-btn'),
+      eqBtn: $('player-eq-btn'),
+      eqMenu: $('player-eq-menu'),
+      eqPresetBtns: Array.from(page.querySelectorAll('[data-eq-preset]')),
+      eqSliders: Array.from(page.querySelectorAll('[data-eq-band]')),
     };
 
     // Start with the card hidden (cover expanded) always — loadKaraokeForTrack
@@ -668,6 +764,16 @@
       view.playlistCloseBtn.addEventListener('click', () => setPlaylistOpen(false));
     if (view.playlistScrim)
       view.playlistScrim.addEventListener('click', () => setPlaylistOpen(false));
+
+    // Equalizer: presets set every band, a slider tweaks one (→ Custom). Unlike
+    // the playlist dropdown, picking here does NOT close the panel — several
+    // presets/tweaks get tried in one open. reflectEq syncs the initial UI to the
+    // stored preset (the biquad nodes themselves are set lazily by levelSetup).
+    view.eqPresetBtns.forEach((b) =>
+      b.addEventListener('click', () => applyEqPreset(b.dataset.eqPreset)));
+    view.eqSliders.forEach((s) =>
+      s.addEventListener('input', () => setEqBand(Number(s.dataset.eqBand), Number(s.value))));
+    reflectEq();
 
     // Auto-collapsing transport: starts revealed (arming the idle countdown) and
     // re-reveals on activity (see the shared helpers above). No manual tab — it
@@ -809,11 +915,12 @@
     true,
   );
 
-  // A click anywhere outside the playlist dropdown closes it (bound once,
-  // document-level; a no-op when it's closed or the view isn't on the page).
+  // A click anywhere outside an open transport dropdown (playlist or EQ) closes
+  // it (bound once, document-level; a no-op when closed or the view isn't shown).
   document.addEventListener('click', (e) => {
-    if (!view || !view.playlistMenu || !view.playlistMenu.open) return;
-    if (!view.playlistMenu.contains(e.target)) closePlaylistMenu();
+    if (!view) return;
+    if (view.playlistMenu && view.playlistMenu.open && !view.playlistMenu.contains(e.target)) closePlaylistMenu();
+    if (view.eqMenu && view.eqMenu.open && !view.eqMenu.contains(e.target)) view.eqMenu.open = false;
   });
 
   // Reveal the auto-collapsing transport on any activity (bound once, document-
