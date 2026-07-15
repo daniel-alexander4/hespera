@@ -2275,6 +2275,16 @@ html.using-mouse .carousel-chevron.is-shown { display: inline-flex; }
    with the video letterboxed inside it, overlay still pinned to the bottom.
    z-index 260 sits above page content (music transport = 250) but below the
    modal layer (300+), so the subtitle-search dialog stays visible. */
+/* The page's own header (title link + season/parent link) sits BEHIND the
+   fullscreen video — still laid out, still focusable. couch.js's visible() test
+   keys on offsetParent, so the remote's ring would walk up out of the transport
+   onto two controls the viewer cannot see, and the overlay (focus now outside it)
+   would auto-hide: no ring, no chrome, nothing to aim at. Take it out of the
+   layout entirely so the player's own controls are the only navigable things in
+   fullscreen. display:none, NOT visibility:hidden — a visibility-hidden element
+   still has an offsetParent, so couch would keep offering it, the browser would
+   refuse the focus, and the ring would strand instead. */
+html.is-fullscreen .tv-player-header { display: none; }
 html.is-fullscreen .tv-player-video-wrap {
   position: fixed;
   inset: 0;

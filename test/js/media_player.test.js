@@ -1047,6 +1047,36 @@ test('overlay auto-hide neither pins on nor blurs the focused play/pause button'
   assert.strictEqual(doc.activeElement, doc.getElementById('tvToggleBtn'), 'toggle keeps focus while hidden');
 });
 
+test('a dead-end arrow brings the auto-hidden chrome back up', async () => {
+  // The ring can sit outside the player (the page header) with the overlay hidden.
+  // An Up/Down that moves it nowhere means the viewer is at the edge of the page's
+  // navigation — that press must surface the controls rather than do nothing. (In
+  // fullscreen the header is out of the layout entirely, app.css, so the ring can't
+  // strand there in the first place; this is the backstop for every other case.)
+  const env = await boot();
+  const doc = env.document;
+  const wrap = doc.querySelector('.tv-player-video-wrap');
+  doc.getElementById('tvVideo').paused = false; // playing — the hide gate is live
+  await new Promise((r) => setTimeout(r, 2700)); // HIDE_MS
+  assert.ok(wrap.classList.contains('controls-hidden'), 'controls auto-hid');
+
+  // Focus something outside the player and press an arrow that moves nothing.
+  // (No couch.js here, so focus never moves — exactly the dead-end condition.)
+  const outside = doc.createElement('button');
+  doc.body.appendChild(outside);
+  outside.focus();
+  doc.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(!wrap.classList.contains('controls-hidden'), 'a dead-end ArrowDown revealed the chrome');
+
+  // …and Up behaves the same.
+  await new Promise((r) => setTimeout(r, 2700));
+  assert.ok(wrap.classList.contains('controls-hidden'), 'controls hid again');
+  doc.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(!wrap.classList.contains('controls-hidden'), 'a dead-end ArrowUp revealed the chrome');
+});
+
 test('anamorphic aspect correction engages only on rendered-vs-flagged mismatch', async () => {
   // Squeezed render: the browser reports the storage grid (702×576) while the
   // session flags the source as ~16:9 (a PAL DVD rip whose SAR got lost).
