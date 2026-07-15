@@ -11,9 +11,13 @@ const { loadController, makeFetch, flush } = require('./harness');
 // The persistent-player DOM: the layout-shell permanents (audio, #np-cluster)
 // plus the now-playing .player-page view that bindView wires. `lyrics` sets
 // data-lyrics-enabled so the synced-lyrics card path is exercised.
+const EQ_PRESET_NAMES = ['flat', 'bass boost', 'treble boost', 'vocal', 'rock', 'jazz', 'classical', 'electronic', 'acoustic', 'loudness'];
+
 function fixture({ autoload = '', lyrics = false } = {}) {
   const autoAttr = autoload ? ` data-autoload="${autoload}"` : '';
   const lyricsAttr = ` data-lyrics-enabled="${lyrics ? '1' : '0'}"`;
+  const eqPresets = EQ_PRESET_NAMES.map((p) => `<button class="eq-preset" data-eq-preset="${p}"></button>`).join('');
+  const eqBands = Array.from({ length: 10 }, (_, i) => `<input type="range" data-eq-band="${i}" min="-12" max="12" step="1" value="0">`).join('');
   return `<!DOCTYPE html><html><body>
     <audio id="hespera-audio"></audio>
     <div id="np-cluster"><button id="np-toggle"></button><a id="np-title"></a><button id="np-close"></button></div>
@@ -31,6 +35,14 @@ function fixture({ autoload = '', lyrics = false } = {}) {
           <button id="player-toggle-btn"><span class="np-glyph-play"></span><span class="np-glyph-pause"></span></button><button id="player-forward-btn"></button>
           <button id="player-next-btn"></button>
           <button id="player-lyrics-btn"></button>
+          <details id="player-eq-menu">
+            <summary id="player-eq-btn"></summary>
+            <div class="player-menu-panel player-eq-panel" data-couch-overlay>
+              <div class="eq-presets">${eqPresets}</div>
+              <div class="eq-bands">${eqBands}</div>
+              <button id="player-eq-dismiss" data-couch-dismiss></button>
+            </div>
+          </details>
           <details id="player-playlist-menu">
             <summary></summary>
             <div class="player-menu-panel" data-couch-overlay>
@@ -50,14 +62,34 @@ function fixture({ autoload = '', lyrics = false } = {}) {
 }
 
 // Boot player.js with a fetch router, then settle async chains.
-function boot({ autoload, routes, lyrics } = {}) {
+function boot({ autoload, routes, lyrics, storage, stubs } = {}) {
   const env = loadController('player.js', {
     html: fixture({ autoload, lyrics }),
     url: 'http://localhost/music/player',
-    stubs: { fetch: makeFetch(routes || {}) },
+    stubs: Object.assign({ fetch: makeFetch(routes || {}) }, stubs || {}),
+    storage: storage || {},
   });
   env.window.document.dispatchEvent(new env.window.Event('turbo:load'));
   return env;
+}
+
+// A minimal AudioContext double: jsdom has none, so player.js's Web Audio graph
+// no-ops in the other tests. Passed via `stubs` for the one test that verifies
+// the biquad band gains actually get set. Records every node it hands out.
+function makeMockAudioContext() {
+  const param = (v) => ({ value: v });
+  const node = (extra) => Object.assign({ connect() {}, disconnect() {} }, extra);
+  class AC {
+    constructor() { this.state = 'running'; this.destination = node(); AC.biquads = AC.biquads || []; }
+    addEventListener() {}
+    createMediaElementSource() { return node(); }
+    createGain() { return node({ gain: param(1) }); }
+    createBiquadFilter() { const n = node({ type: '', frequency: param(0), Q: param(0), gain: param(0) }); AC.biquads.push(n); return n; }
+    resume() { return Promise.resolve(); }
+    close() {}
+  }
+  AC.biquads = [];
+  return AC;
 }
 
 const hasNoLyrics = (env) => env.document.getElementById('player-main').classList.contains('no-lyrics');
@@ -376,4 +408,78 @@ test('music playbackState writes are suppressed while a video page is active', a
   ms.playbackState = 'playing'; // the video's play listener set this
   env.document.getElementById('hespera-audio').pause();
   assert.strictEqual(ms.playbackState, 'playing', 'paused music left the video\'s state alone');
+});
+
+// --- Equalizer (10-band graphic EQ, per-device, default Flat) ---
+
+test('EQ defaults to Flat (off) and reflects a stored preset on load', async () => {
+  const flat = boot({});
+  await flush();
+  const flatBtn = flat.document.getElementById('player-eq-btn');
+  assert.strictEqual(flatBtn.getAttribute('aria-pressed'), 'false', 'Flat = off');
+  assert.strictEqual(flatBtn.classList.contains('is-on'), false);
+
+  const rock = boot({ storage: { music_eq: 'rock' } });
+  await flush();
+  const rockBtn = rock.document.getElementById('player-eq-btn');
+  assert.strictEqual(rockBtn.getAttribute('aria-pressed'), 'true', 'a preset = on');
+  assert.ok(rockBtn.classList.contains('is-on'));
+  assert.ok(rock.document.querySelector('[data-eq-preset="rock"]').classList.contains('is-on'), 'active preset highlighted');
+  assert.strictEqual(rock.document.querySelector('[data-eq-band="0"]').value, '4', 'sliders reflect the Rock curve');
+});
+
+test('a stored Custom curve is restored from music_eq_bands', async () => {
+  const bands = [1, -2, 3, -4, 5, -6, 0, 0, 2, -1];
+  const env = boot({ storage: { music_eq: 'custom', music_eq_bands: JSON.stringify(bands) } });
+  await flush();
+  assert.ok(env.document.getElementById('player-eq-btn').classList.contains('is-on'), 'custom = on');
+  assert.strictEqual(env.document.querySelector('[data-eq-band="3"]').value, '-4');
+  // No preset button is highlighted for a custom curve.
+  assert.strictEqual(env.document.querySelectorAll('.eq-preset.is-on').length, 0);
+});
+
+test('picking a preset persists it and syncs the sliders', async () => {
+  const env = boot({});
+  await flush();
+  env.document.querySelector('[data-eq-preset="bass boost"]').click();
+  assert.strictEqual(env.window.localStorage.getItem('music_eq'), 'bass boost');
+  assert.strictEqual(env.document.querySelector('[data-eq-band="0"]').value, '6', 'low band lifted');
+  assert.strictEqual(env.document.querySelector('[data-eq-band="9"]').value, '0', 'high band flat');
+  assert.ok(env.document.getElementById('player-eq-btn').classList.contains('is-on'));
+});
+
+test('dragging a band switches to Custom and persists the whole curve', async () => {
+  const env = boot({ storage: { music_eq: 'rock' } });
+  await flush();
+  const band3 = env.document.querySelector('[data-eq-band="3"]');
+  band3.value = '5';
+  band3.dispatchEvent(new env.window.Event('input'));
+  assert.strictEqual(env.window.localStorage.getItem('music_eq'), 'custom');
+  const stored = JSON.parse(env.window.localStorage.getItem('music_eq_bands'));
+  assert.strictEqual(stored.length, 10);
+  assert.strictEqual(stored[3], 5, 'edited band captured');
+  assert.strictEqual(stored[0], 4, 'the rest of the Rock curve preserved');
+  assert.strictEqual(env.document.querySelectorAll('.eq-preset.is-on').length, 0, 'no preset highlighted once custom');
+});
+
+test('EQ is inert and never throws when AudioContext is absent', async () => {
+  const routes = { '/music/queue': { title: 'x', tracks: [{ id: 1, albumId: 1, album: 'A', title: 'T', artist: 'X' }] } };
+  const env = boot({ autoload: 'source=all', routes }); // jsdom has no AudioContext
+  await flush();
+  env.document.querySelector('[data-eq-preset="jazz"]').click();
+  assert.strictEqual(env.window.localStorage.getItem('music_eq'), 'jazz', 'preset still persists with no graph');
+  assert.ok(env.document.getElementById('player-eq-btn').classList.contains('is-on'));
+});
+
+test('the graph builds 10 transparent bands and a preset lifts the right one', async () => {
+  const AC = makeMockAudioContext();
+  const routes = { '/music/queue': { title: 'x', tracks: [{ id: 9, albumId: 1, album: 'A', title: 'T', artist: 'X' }] } };
+  const env = boot({ autoload: 'source=all', routes, stubs: { AudioContext: AC } });
+  await flush();
+  assert.strictEqual(AC.biquads.length, 10, 'ten peaking bands spliced in');
+  assert.ok(AC.biquads.every((b) => b.type === 'peaking'), 'all peaking filters');
+  assert.ok(AC.biquads.every((b) => b.gain.value === 0), 'Flat = every band 0 dB (unity)');
+  env.document.querySelector('[data-eq-preset="bass boost"]').click();
+  assert.strictEqual(AC.biquads[0].gain.value, 6, 'Bass Boost lifts the 32 Hz band');
+  assert.strictEqual(AC.biquads[9].gain.value, 0, 'top band untouched');
 });
