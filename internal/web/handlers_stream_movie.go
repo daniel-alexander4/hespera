@@ -139,11 +139,14 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 	if out.SubtitleSidecar && sub > 0 {
 		resp.SubtitleURL = fmt.Sprintf("/stream/movie-subtitles/%d?track=%d", fileID, sub)
 	}
-	if pos, dur, done := h.loadMovieProgress(r.Context(), fileID); !done {
-		resp.ResumePosition, resp.DurationSecs, resp.Completed = pos, maxf(resp.DurationSecs, dur), done
-	} else {
-		resp.Completed = true
-	}
+	// Watched and resume are independent: a completed item still resumes a genuine
+	// partial re-watch. resumePosition is the sole owner of "is there anything to
+	// resume" — it drops a position sitting at the end of a finished playthrough,
+	// which would otherwise seek to the credits and instantly auto-advance Up Next.
+	pos, dur, done := h.loadMovieProgress(r.Context(), fileID)
+	resp.ResumePosition = resumePosition(pos, dur)
+	resp.DurationSecs = maxf(resp.DurationSecs, dur)
+	resp.Completed = done
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -450,7 +453,9 @@ VALUES (?, ?, ?, ?, datetime('now'))
 ON CONFLICT(file_id) DO UPDATE SET
   position_seconds=excluded.position_seconds,
   duration_seconds=excluded.duration_seconds,
-  completed=excluded.completed,
+  -- Earn-only: the progress stream can SET the watched flag but never revoke it.
+  -- Clearing has its own owner: markWatched. See the note above resumePosition.
+  completed=MAX(completed, excluded.completed),
   updated_at=datetime('now')
 `, req.FileID, req.PositionSeconds, req.DurationSeconds, completedInt)
 	if err != nil {
