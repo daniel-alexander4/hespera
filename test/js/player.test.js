@@ -287,6 +287,44 @@ test('near-gapless: starting a track warms the NEXT track via a preloader Audio'
   assert.strictEqual(audio.getAttribute('src'), '/stream/track/32', 'advances to the warmed track');
 });
 
+// |< is restart-or-previous — the idiom media_player.js now shares (same 10s number).
+test('|< restarts the track past 10s and steps back within it', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [
+      { id: 31, albumId: 9, album: 'A', title: 'One', artist: 'X' },
+      { id: 32, albumId: 9, album: 'A', title: 'Two', artist: 'X' },
+    ] },
+  };
+  const env = boot({ autoload: 'source=all', routes });
+  await flush();
+  const audio = env.document.getElementById('hespera-audio');
+  const prev = env.document.getElementById('player-prev-btn');
+
+  audio.dispatchEvent(new env.window.Event('ended')); // → track 2
+  assert.strictEqual(audio.getAttribute('src'), '/stream/track/32', 'on the second track');
+
+  audio.currentTime = 42;
+  prev.click();
+  assert.strictEqual(audio.getAttribute('src'), '/stream/track/32', 'past 10s → stays on the track');
+  assert.strictEqual(audio.currentTime, 0, '…and restarts it');
+
+  prev.click(); // now at 0s → the second press steps back, with no double-press timer
+  assert.strictEqual(audio.getAttribute('src'), '/stream/track/31', 'within 10s → previous track');
+});
+
+test('|< on the first track of the queue restarts it (never a dead button)', async () => {
+  const routes = {
+    '/music/queue': { title: 'All Songs', tracks: [{ id: 31, albumId: 9, album: 'A', title: 'One', artist: 'X' }] },
+  };
+  const env = boot({ autoload: 'source=all', routes });
+  await flush();
+  const audio = env.document.getElementById('hespera-audio');
+  audio.currentTime = 4; // inside the step-back window, but there is nothing to step back to
+  env.document.getElementById('player-prev-btn').click();
+  assert.strictEqual(audio.currentTime, 0, 'restarts instead of no-oping');
+  assert.strictEqual(audio.getAttribute('src'), '/stream/track/31', 'and stays on the track');
+});
+
 // --- Hardware media keys: player.js owns the page-global Media Session and the
 // keydown fallback; an active video player's window.hesperaMediaControl bridge
 // gets every action first (video page → video control, else music).

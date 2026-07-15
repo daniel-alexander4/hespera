@@ -523,7 +523,11 @@ function initMediaPlayer() {
     if (session.protocol === 'hls' && !nativeHLS && !(window.Hls && Hls.isSupported())) {
       modeLabel.textContent = 'This browser cannot play the transcoded stream';
     }
-    const resume = (seekTo != null) ? seekTo : (session.completed ? 0 : (session.resume_position_seconds || 0));
+    // The server owns "is there anything to resume" (resumePosition, handlers_stream_tv.go):
+    // it already drops a position left at the end of a finished playthrough. Don't
+    // also zero it here on session.completed — watched and resume are independent,
+    // so a partial RE-watch of a watched episode must resume where it was paused.
+    const resume = (seekTo != null) ? seekTo : (session.resume_position_seconds || 0);
     attachSource(session, resume, startPaused);
     attachSubtitle(session);
   }
@@ -692,11 +696,37 @@ function initMediaPlayer() {
   };
   const prevEpBtn = document.getElementById('tvPrevEpBtn');
   const nextEpBtn = document.getElementById('tvNextEpBtn');
-  if (prevEpBtn && prevFile > 0) { prevEpBtn.hidden = false; prevEpBtn.addEventListener('click', () => gotoFile(prevFile)); }
+
+  // |< is the universal transport idiom, not a bare "previous episode": a press past
+  // PREV_RESTART_SECS (or on a file with no predecessor — every movie, a season's first
+  // episode, an extra, the first clip of a list) RESTARTS the current file; a press
+  // inside that window steps back. No double-press timer is needed — a restart puts the
+  // playhead at 0, so the NEXT press falls into the step-back arm on its own. The
+  // playhead IS the state. player.js's playPrev is the same shape, to the second.
+  const PREV_RESTART_SECS = 10; // press |< later than this ⇒ restart rather than step back
+  const restartCurrent = () => {
+    // A scan press paused the video and is running a VIRTUAL playhead; abandon it rather
+    // than seek from it (endScan(false) is the drag/Back path), and resume playback the
+    // way that path does. A finished file is likewise paused — restarting it means watch
+    // it again, so play. Otherwise leave paused-ness alone (a native seek never resumes).
+    const resume = endScan(false) || video.ended;
+    hideUpNext(); // the progressive path swaps the source and fires no `seeking`, so the
+                  // card's 8s countdown would survive the restart and advance us anyway.
+    resetSkip();  // the progressive arm gets this via loadFromSession; do it for both, so
+                  // auto-skip re-arms identically on a restart whatever the playback path.
+    seekToAbs(0, resume ? false : undefined);
+    if (resume) video.play().catch(() => {});
+  };
+  const goPrev = () => {
+    if (prevFile > 0 && currentAbsTime() <= PREV_RESTART_SECS) { gotoFile(prevFile); return; }
+    restartCurrent();
+  };
+  // Bound UNCONDITIONALLY: the button is always live, because restart is always available.
+  if (prevEpBtn) prevEpBtn.addEventListener('click', goPrev);
   if (nextEpBtn && nextFile > 0) { nextEpBtn.hidden = false; nextEpBtn.addEventListener('click', () => gotoFile(nextFile)); }
   // The shared transport ships episode wording; a photos-library clip isn't one.
   if (video.dataset.mediaKind === 'photo') {
-    if (prevEpBtn) { prevEpBtn.title = 'Previous clip'; prevEpBtn.setAttribute('aria-label', 'Previous clip'); }
+    if (prevEpBtn) { prevEpBtn.title = 'Previous clip or restart'; prevEpBtn.setAttribute('aria-label', 'Previous clip or restart'); }
     if (nextEpBtn) { nextEpBtn.title = 'Next clip'; nextEpBtn.setAttribute('aria-label', 'Next clip'); }
   }
 
@@ -704,17 +734,17 @@ function initMediaPlayer() {
   // Session API, whose page-global handlers player.js owns. While this player
   // is active the bridge receives the dispatched actions so the remote drives
   // THE VIDEO — play/pause = the toggle path (play commits an in-progress
-  // scan), FF/RW = the DVR scan, next/prev = adjacent episodes — exactly the
-  // on-screen buttons. Returns true for every media action (a remote press on
-  // a video page must never fall through and skip a music track); cleared on
-  // turbo:before-cache so music control returns to player.js.
+  // scan), FF/RW = the DVR scan, prev = restart-or-previous, next = the adjacent
+  // episode — exactly the on-screen buttons. Returns true for every media action
+  // (a remote press on a video page must never fall through and skip a music
+  // track); cleared on turbo:before-cache so music control returns to player.js.
   window.hesperaMediaControl = (action) => {
     switch (action) {
       case 'play': case 'pause': case 'playpause': togglePlay(); return true;
       case 'seekforward': scanPress(1); return true;
       case 'seekbackward': scanPress(-1); return true;
       case 'nexttrack': if (nextFile > 0) gotoFile(nextFile); return true;
-      case 'previoustrack': if (prevFile > 0) gotoFile(prevFile); return true;
+      case 'previoustrack': goPrev(); return true;
     }
     return false;
   };

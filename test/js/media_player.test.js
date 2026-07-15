@@ -21,7 +21,7 @@ function fixture({ kind = 'tv', fileId = 7, prevFile = 0, nextFile = 0, osEnable
         <div id="subPick" hidden><select id="subSelect"></select></div>
         <div id="speedPick"><input id="speedSlider" type="range" min="0.5" max="2" step="0.25" value="1" /><span id="speedVal"></span></div>
         <div id="tvTransport">
-          <button id="tvPrevEpBtn" hidden></button>
+          <button id="tvPrevEpBtn"></button>
           <button id="tvRewindBtn"></button>
           <button id="tvToggleBtn"></button>
           <button id="tvForwardBtn"></button>
@@ -276,6 +276,25 @@ test('a resume seek on a progressive stream re-anchors via ?start=', async () =>
   assert.ok(/[?&]start=90\b/.test(src), `?start= carries the resume position: got ${src}`);
 });
 
+test('a WATCHED item still resumes its partial re-watch', async () => {
+  // Watched and resume are independent. The client used to zero the resume
+  // whenever session.completed was set, so re-opening a watched episode could only
+  // ever start from the beginning — silently defeating the decoupling. The server
+  // (resumePosition) is now the sole owner of "is there anything to resume"; it has
+  // already dropped a position left at the end of a finished playthrough, so a
+  // position that survives to the client is a genuine one and must be honored.
+  const env = await boot({
+    sessionData: session({
+      protocol: 'file',
+      url: '/stream/tv-remux/7',
+      resume_position_seconds: 900,
+      completed: true,
+    }),
+  });
+  const src = env.document.getElementById('tvVideo').getAttribute('src') || '';
+  assert.ok(/[?&]start=900\b/.test(src), `a watched item resumes where it was paused: got ${src}`);
+});
+
 test('an HLS resume loads the target segment first via startPosition', async () => {
   const Hls = makeMockHls();
   const env = await boot({
@@ -446,17 +465,78 @@ test('a movie fixture drives the /movie endpoints', async () => {
   assert.ok(env.beacons.some((b) => b.url.indexOf('/movie/playback-progress') >= 0), 'movie kind → /movie endpoints');
 });
 
-test('prev/next episode buttons appear only with adjacent files (TV), hidden on movies', async () => {
+// |< is ALWAYS live (restart is always available); >| still hides with no next file.
+test('the |< button is present on every player — a movie has one too', async () => {
   const tv = await boot({ fixtureOpts: { prevFile: 5, nextFile: 9 } });
   assert.strictEqual(tv.document.getElementById('tvPrevEpBtn').hidden, false, 'prev shown with a prior episode');
   assert.strictEqual(tv.document.getElementById('tvNextEpBtn').hidden, false, 'next shown with a following episode');
 
   const boundary = await boot({ fixtureOpts: { prevFile: 5, nextFile: 0 } });
-  assert.strictEqual(boundary.document.getElementById('tvNextEpBtn').hidden, true, 'no next episode → hidden');
+  assert.strictEqual(boundary.document.getElementById('tvNextEpBtn').hidden, true, 'no next episode → next hidden');
 
   const movie = await boot({ fixtureOpts: { kind: 'movie', prevFile: 0, nextFile: 0 } });
-  assert.strictEqual(movie.document.getElementById('tvPrevEpBtn').hidden, true, 'hidden on movies');
-  assert.strictEqual(movie.document.getElementById('tvNextEpBtn').hidden, true, 'hidden on movies');
+  assert.strictEqual(movie.document.getElementById('tvPrevEpBtn').hidden, false, 'a movie still gets |< — it restarts');
+  assert.strictEqual(movie.document.getElementById('tvNextEpBtn').hidden, true, 'no next file → next hidden');
+});
+
+test('|< past 10s restarts the current file instead of stepping back', async () => {
+  const env = await boot({ fixtureOpts: { prevFile: 5, nextFile: 9 } });
+  const video = env.document.getElementById('tvVideo');
+  video.currentTime = 42;
+  env.document.getElementById('tvPrevEpBtn').dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(video.currentTime, 0, 'restarts in place (no navigation to the previous file)');
+});
+
+test('|< within 10s steps back to the previous file (it does NOT restart)', async () => {
+  const env = await boot({ fixtureOpts: { prevFile: 5, nextFile: 9 } });
+  const video = env.document.getElementById('tvVideo');
+  video.currentTime = 5;
+  env.document.getElementById('tvPrevEpBtn').dispatchEvent(new env.window.Event('click'));
+  // gotoFile navigates away (jsdom can't follow it), so the tell is the absence of a
+  // seek: the restart arm would have zeroed the playhead.
+  assert.strictEqual(video.currentTime, 5, 'left the playhead alone → took the step-back arm');
+});
+
+test('|< restarts even inside 10s when there is no previous file', async () => {
+  const env = await boot({ fixtureOpts: { kind: 'movie', prevFile: 0, nextFile: 0 } });
+  const video = env.document.getElementById('tvVideo');
+  video.currentTime = 5;
+  env.document.getElementById('tvPrevEpBtn').dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(video.currentTime, 0, 'nothing to step back to → restart is the terminal behavior');
+});
+
+test('the remote |< (media key) restarts a movie rather than doing nothing', async () => {
+  const env = await boot({ fixtureOpts: { kind: 'movie', prevFile: 0, nextFile: 0 } });
+  const video = env.document.getElementById('tvVideo');
+  video.currentTime = 300;
+  assert.strictEqual(env.window.hesperaMediaControl('previoustrack'), true, 'the bridge claims the action');
+  assert.strictEqual(video.currentTime, 0, 'and it restarts the film');
+});
+
+test('a restart on a progressive stream streams from the top (no ?start=)', async () => {
+  const env = await boot({ sessionData: session({ protocol: 'file', url: '/stream/tv-remux/7' }), fixtureOpts: { prevFile: 0, nextFile: 0 } });
+  const video = env.document.getElementById('tvVideo');
+  video.currentTime = 42; // remux is not byte-seekable → a seek is a source reload
+  env.document.getElementById('tvPrevEpBtn').dispatchEvent(new env.window.Event('click'));
+  await flush();
+  const src = video.getAttribute('src') || '';
+  assert.ok(/\/stream\/tv-remux\/7/.test(src), 'reloaded the progressive source');
+  assert.ok(!/[?&]start=/.test(src), 'and asked for it from the beginning, not ?start=0');
+});
+
+test('|< on the Up Next countdown restarts the file instead of being auto-advanced away', async () => {
+  const env = await boot({ fixtureOpts: { prevFile: 0, nextFile: 9 } });
+  const video = env.document.getElementById('tvVideo');
+  // A real end-of-file: play out, then `ended` arms the 8s auto-advance card.
+  video.currentTime = 3600;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  video.dispatchEvent(new env.window.Event('ended'));
+  const card = env.document.querySelector('.media-upnext');
+  assert.ok(card && !card.hidden, 'Up Next is counting down');
+
+  env.document.getElementById('tvPrevEpBtn').dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(card.hidden, true, 'the countdown is dismissed — it must not navigate to the next episode');
+  assert.strictEqual(video.currentTime, 0, 'and the file restarts');
 });
 
 test('the reload button re-loads the stream at the current position', async () => {
@@ -938,7 +1018,7 @@ test('photo clips: prev/next buttons unhide with clip wording; media keys route 
   const next = doc.getElementById('tvNextEpBtn');
   assert.strictEqual(prev.hidden, false, 'prev clip button shown');
   assert.strictEqual(next.hidden, false, 'next clip button shown');
-  assert.strictEqual(prev.title, 'Previous clip', 'episode wording swapped for clips');
+  assert.strictEqual(prev.title, 'Previous clip or restart', 'episode wording swapped for clips');
   assert.strictEqual(next.getAttribute('aria-label'), 'Next clip');
   // The hardware-media-key bridge consumes next/prev on a clip page too.
   assert.strictEqual(env.window.hesperaMediaControl('nexttrack'), true);

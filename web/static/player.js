@@ -339,8 +339,15 @@
     return false;
   };
 
+  // |< restarts the track once you're past PREV_RESTART_SECS (or when there's nothing
+  // before it), and only steps back inside that window — the universal transport idiom.
+  // No double-press timer: a restart puts the playhead at 0, so the next press lands in
+  // the step-back arm on its own. media_player.js gives the video transport the same
+  // behavior and the same number (the two are separate IIFEs — this repo has no JS module
+  // system or event bus, so the constant is stated in both rather than shared).
+  const PREV_RESTART_SECS = 10;
   const playPrev = () => {
-    if (curTime() > 10 || currentPos <= 0) {
+    if (curTime() > PREV_RESTART_SECS || currentPos <= 0) {
       seekTo(0);
       return;
     }
