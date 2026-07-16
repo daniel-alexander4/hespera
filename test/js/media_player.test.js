@@ -524,6 +524,40 @@ test('a restart on a progressive stream streams from the top (no ?start=)', asyn
   assert.ok(!/[?&]start=/.test(src), 'and asked for it from the beginning, not ?start=0');
 });
 
+// Count completed:true progress reports. sendBeacon ships a Blob (jsdom's has no .text()),
+// so we disable it in the test → reportProgress falls back to fetch, whose stub records the
+// raw JSON body for inspection.
+function completedReports(env) {
+  return env.fetch.calls.filter((c) => {
+    if (c.url.indexOf('playback-progress') < 0) return false;
+    try { return JSON.parse(c.opts.body).completed === true; } catch { return false; }
+  }).length;
+}
+
+test('a |< restart re-arms the 90%-watched completion report', async () => {
+  // No previous file → |< restarts IN PLACE (the one path that doesn't page-reload, so
+  // completedReported must be cleared by hand). Default session duration 3661s → 90% ≈ 3295s.
+  const env = await boot({ fixtureOpts: { kind: 'movie', prevFile: 0, nextFile: 0 } });
+  env.window.navigator.sendBeacon = null; // route reportProgress through the recording fetch
+  const video = env.document.getElementById('tvVideo');
+
+  // Watch past 90% → completion reported once.
+  video.currentTime = 3300;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  await flush();
+  assert.strictEqual(completedReports(env), 1, 'first pass past 90% reports completion once');
+
+  // Restart in place via |<.
+  env.document.getElementById('tvPrevEpBtn').dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(video.currentTime, 0, 'restarted in place');
+
+  // Re-watch past 90% → completion reported AGAIN (the restart re-armed the once-per-load gate).
+  video.currentTime = 3300;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  await flush();
+  assert.strictEqual(completedReports(env), 2, 'the restart re-armed the completion report');
+});
+
 test('|< on the Up Next countdown restarts the file instead of being auto-advanced away', async () => {
   const env = await boot({ fixtureOpts: { prevFile: 0, nextFile: 9 } });
   const video = env.document.getElementById('tvVideo');
