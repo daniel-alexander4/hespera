@@ -714,6 +714,9 @@ function initMediaPlayer() {
                   // card's 8s countdown would survive the restart and advance us anyway.
     resetSkip();  // the progressive arm gets this via loadFromSession; do it for both, so
                   // auto-skip re-arms identically on a restart whatever the playback path.
+    completedReported = false; // a restart is a fresh playthrough, so re-arm the once-per-
+                  // load 90%-watched completion report. gotoFile re-arms via its full page
+                  // reload; this in-place restart is the one path that must do it by hand.
     seekToAbs(0, resume ? false : undefined);
     if (resume) video.play().catch(() => {});
   };
