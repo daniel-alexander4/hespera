@@ -50,9 +50,6 @@ const tmdbPosterBase = "https://image.tmdb.org/t/p/w342"
 // entity while it's queued/running. No-op without a TMDB key. Page handlers call
 // this instead of fetching inline, so request handling never blocks on network.
 func (h *Handler) enqueueMetaFetch(ctx context.Context, dedupeKey, jobType string, run func(ctx context.Context, m *tmdb.Matcher) error) {
-	if !h.effectiveExternalMetadataEnabled(ctx) {
-		return
-	}
 	tmdbKey := h.effectiveTMDBKey(ctx)
 	if tmdbKey == "" {
 		return
@@ -76,9 +73,6 @@ func (h *Handler) enqueueMetaFetch(ctx context.Context, dedupeKey, jobType strin
 // (NewMovieMatcher) so art downloads land in thumbs/movies — using the TV matcher
 // here would write posters to thumbs/tv and expose them to the TV thumbgc sweep.
 func (h *Handler) enqueueMovieMetaFetch(ctx context.Context, dedupeKey, jobType string, run func(ctx context.Context, m *tmdb.Matcher) error) {
-	if !h.effectiveExternalMetadataEnabled(ctx) {
-		return
-	}
 	tmdbKey := h.effectiveTMDBKey(ctx)
 	if tmdbKey == "" {
 		return

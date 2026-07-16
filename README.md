@@ -30,10 +30,7 @@ Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
 - **Couch-friendly** — the whole UI drives with arrow keys or a TV remote,
   scales itself to the physical display size, and honors hardware media keys.
 - **Local-first** — one binary, SQLite, your files stay yours: no accounts,
-  no telemetry, and external services are used only to *fetch* metadata —
-  or not at all: a single Settings toggle ("Fetch metadata from online
-  providers", default on) runs Hespera fully offline, with no outbound
-  calls of any kind.
+  no telemetry, and external services are used only to *fetch* metadata.
 
 ## Install
 

@@ -17,11 +17,6 @@ import (
 // (TMDB) this needs no API key — ListenBrainz/MusicBrainz/Wikipedia are keyless;
 // the fanart.tv/TheAudioDB backfill is optional inside the matcher.
 func (h *Handler) enqueueMusicFetch(ctx context.Context, dedupeKey, jobType string, run func(ctx context.Context, m *match.Matcher) error) {
-	// The umbrella external-metadata gate matters doubly here: these
-	// providers are keyless, so no key check can stand in for it.
-	if !h.effectiveExternalMetadataEnabled(ctx) {
-		return
-	}
 	if _, busy := h.metaFetch.LoadOrStore(dedupeKey, true); busy {
 		return
 	}
