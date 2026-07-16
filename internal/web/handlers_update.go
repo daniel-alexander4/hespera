@@ -20,7 +20,8 @@ import (
 // so the browser downloads it; installing is the user's step. `?auto=1` (the
 // once-per-session startup check) respects the update_check_enabled toggle and
 // answers without any network call when it's off; a bare request (the pill click)
-// always checks.
+// always checks — unless external_metadata_enabled is off, which silences both
+// paths (the offline switch means no outbound calls, click or no click).
 
 // githubLatestURL is GitHub's "latest release" API for Hespera. A package var so
 // tests can point it at a stub. No releases are published there yet — until they
@@ -43,7 +44,10 @@ func (h *Handler) updateCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := updateResponse{Enabled: true, Current: h.version, Managed: managedInstall()}
-	if r.URL.Query().Get("auto") == "1" && !h.effectiveUpdateCheckEnabled(r.Context()) {
+	// The external-metadata master switch silences even the pill-click check —
+	// unlike update_check_enabled (auto-only), "no outbound calls" is absolute.
+	if !h.effectiveExternalMetadataEnabled(r.Context()) ||
+		(r.URL.Query().Get("auto") == "1" && !h.effectiveUpdateCheckEnabled(r.Context())) {
 		resp.Enabled = false
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

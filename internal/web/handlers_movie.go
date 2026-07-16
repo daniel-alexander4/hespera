@@ -534,6 +534,10 @@ func (h *Handler) moviesMatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "TMDB API key not configured", 400)
 		return
 	}
+	if !h.effectiveExternalMetadataEnabled(r.Context()) {
+		http.Error(w, "external metadata is disabled (Settings → Features)", 400)
+		return
+	}
 	matcher := tmdb.NewMovieMatcher(h.db, tmdbKey, h.cfg.DataDir)
 	jobID, err := h.jobs.EnqueueUnique("movie_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
 		return matcher.RunMovieMatch(ctx, jobID, libraryID)
@@ -749,7 +753,7 @@ func (h *Handler) moviePlayer(w http.ResponseWriter, r *http.Request) {
 		"FileID":               fileID,
 		"ExtraTitle":           showExtraTitle,
 		"CaptionVars":          h.captionStyleVars(r.Context()),
-		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "",
+		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "" && h.effectiveExternalMetadataEnabled(r.Context()),
 	})
 }
 
