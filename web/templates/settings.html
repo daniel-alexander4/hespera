@@ -141,28 +141,6 @@
   </form>
 
   <form method="post" action="/settings" class="form-card">
-    <input type="hidden" name="external_metadata_present" value="1" />
-    <div class="form-group">
-      <label class="form-check">
-        <input type="checkbox" name="external_metadata_enabled" value="1"{{if .ExternalMetadataEnabled}} checked{{end}} />
-        Fetch metadata from online providers
-      </label>
-      <small class="form-help">
-        On (default): scans match your media against online providers (TMDB, MusicBrainz,
-        Cover Art Archive, ListenBrainz, Wikipedia, and any keyed extras) and fetch artwork,
-        cast, subtitles, and lyrics. Off: Hespera makes <strong>no outbound metadata calls
-        at all</strong> — scans still ingest files (unmatched), playback and everything
-        already fetched keep working, and local jobs (thumbnails, integrity, loudness) run
-        as usual. This master switch sits above the per-provider API keys; the automatic
-        update check is also disabled while off.
-      </small>
-    </div>
-    <div class="form-actions">
-      <button type="submit" class="btn btn-primary">Save</button>
-    </div>
-  </form>
-
-  <form method="post" action="/settings" class="form-card">
     <input type="hidden" name="watch_present" value="1" />
     <div class="form-group">
       <label class="form-check">

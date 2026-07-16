@@ -73,7 +73,6 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 			"OpenSubtitlesMasked":     osMask,
 			"OpenSubtitlesUserAgent":  h.effectiveOpenSubtitlesUserAgent(ctx),
 			"IntegrityAutoRepair":     h.effectiveIntegrityAutoRepair(ctx),
-			"ExternalMetadataEnabled": h.effectiveExternalMetadataEnabled(ctx),
 			"WatchEnabled":            h.effectiveWatchEnabled(ctx),
 			"JobResumeEnabled":        h.effectiveJobResumeEnabled(ctx),
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
@@ -322,21 +321,6 @@ func (h *Handler) effectiveIntegrityAutoRepair(ctx context.Context) bool {
 	return strings.TrimSpace(v) != "0"
 }
 
-// effectiveExternalMetadataEnabled reports whether Hespera may call external
-// metadata providers at all — the umbrella off-switch ABOVE the per-provider
-// key gates (several providers are keyless: MusicBrainz, Cover Art Archive,
-// ListenBrainz, Wikipedia/Wikidata/Commons, LRCLIB — emptying keys can't stop
-// them). Default ON; '0' turns Hespera fully local: no match/enrich jobs, no
-// lazy metadata backfills, no subtitle/lyrics lookups, no update check. Local
-// work (scan/probe/thumb/trickplay/integrity/loudness) and already-cached data
-// are unaffected. Read per-call at each decision point, so it applies without
-// a restart. The watch_enabled pattern.
-func (h *Handler) effectiveExternalMetadataEnabled(ctx context.Context) bool {
-	var v string
-	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='external_metadata_enabled'").Scan(&v)
-	return strings.TrimSpace(v) != "0"
-}
-
 // effectiveWatchEnabled reports whether the library filesystem watcher may
 // auto-trigger scans on file changes. Default ON — the watcher is the
 // zero-click ingest path; '0' turns it off without a restart (internal/watch
@@ -458,7 +442,6 @@ func (h *Handler) saveAPIKey(ctx context.Context, dbKey, value string) error {
 // '0' for off; default-OFF ones store '1' for on and clear for off).
 var featureToggles = []struct{ sentinel, key string }{
 	{"integrity_present", "integrity_autorepair"},
-	{"external_metadata_present", "external_metadata_enabled"},
 	{"watch_present", "watch_enabled"},
 	{"job_resume_present", "job_resume_enabled"},
 	{"lyrics_present", "lyrics_enabled"},
@@ -802,18 +785,13 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			if err := scanner.ScanMusic(ctx, jID, libID); err != nil {
 				return err
 			}
-			// Chain a music_match job after scan completes — unless external
-			// metadata is off (the match pipeline's providers are largely
-			// keyless, so this toggle is their only gate). The local tail
-			// below (integrity/loudness) runs regardless.
-			if h.effectiveExternalMetadataEnabled(ctx) {
-				matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
-				_, _ = h.jobs.EnqueueUnique("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
-					// Automatic chain run → NOT forced: the re-check TTLs keep a
-					// no-change rerun near-free (new candidates still process).
-					return matcher.RunMusicMatch(ctx, mJID, mLibID, false)
-				})
-			}
+			// Chain a music_match job after scan completes.
+			matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(ctx), h.effectiveAudioDBKey(ctx), h.effectiveLastfmKey(ctx))
+			_, _ = h.jobs.EnqueueUnique("music_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
+				// Automatic chain run → NOT forced: the re-check TTLs keep a
+				// no-change rerun near-free (new candidates still process).
+				return matcher.RunMusicMatch(ctx, mJID, mLibID, false)
+			})
 			// Chain the cheap container/audio integrity check (auto-repairs new/changed files).
 			repair := h.effectiveIntegrityAutoRepair(ctx)
 			_, _ = h.jobs.EnqueueUnique("integrity_check", libID, "system", func(ctx context.Context, iJID, iLibID int64) error {
@@ -836,9 +814,8 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			if err := tvScanner.ScanTV(ctx, jID, libID); err != nil {
 				return err
 			}
-			// Chain a tv_match job after scan completes if a TMDB key is
-			// configured and external metadata is on.
-			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" && h.effectiveExternalMetadataEnabled(ctx) {
+			// Chain a tv_match job after scan completes if TMDB key is configured.
+			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" {
 				tvMatcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
 				_, _ = h.jobs.EnqueueUnique("tv_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 					return tvMatcher.RunTVMatch(ctx, mJID, mLibID)
@@ -876,9 +853,8 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			if err := movieScanner.ScanMovies(ctx, jID, libID); err != nil {
 				return err
 			}
-			// Chain a movie_match job after scan completes if a TMDB key is
-			// configured and external metadata is on.
-			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" && h.effectiveExternalMetadataEnabled(ctx) {
+			// Chain a movie_match job after scan completes if a TMDB key is configured.
+			if tmdbKey := h.effectiveTMDBKey(ctx); tmdbKey != "" {
 				movieMatcher := tmdb.NewMovieMatcher(h.db, tmdbKey, h.cfg.DataDir)
 				_, _ = h.jobs.EnqueueUnique("movie_match", libID, "system", func(ctx context.Context, mJID, mLibID int64) error {
 					return movieMatcher.RunMovieMatch(ctx, mJID, mLibID)

@@ -154,11 +154,6 @@ func (h *Handler) mgmtMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.effectiveExternalMetadataEnabled(ctx) {
-		jsonError(w, "external metadata is disabled (config set external_metadata_enabled on)", http.StatusBadRequest)
-		return
-	}
-
 	var jobType string
 	var executor func(ctx context.Context, jobID, libraryID int64) error
 	switch libType {
@@ -245,7 +240,6 @@ var managedSettings = []settingSpec{
 	{Key: "opensubtitles_api_key", Kind: kindSecret, Env: "HESPERA_OPENSUBTITLES_API_KEY", Bundled: config.EmbeddedOpenSubtitlesKey},
 	{Key: "opensubtitles_user_agent", Kind: kindString, Env: "HESPERA_OPENSUBTITLES_USER_AGENT", Default: "Hespera v1.0"},
 	{Key: "integrity_autorepair", Kind: kindToggle, OnStored: "", OffStored: "0"},
-	{Key: "external_metadata_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "watch_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "job_resume_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "lyrics_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
