@@ -911,6 +911,10 @@ func (h *Handler) tvMatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "TMDB API key not configured", 400)
 		return
 	}
+	if !h.effectiveExternalMetadataEnabled(r.Context()) {
+		http.Error(w, "external metadata is disabled (Settings → Features)", 400)
+		return
+	}
 
 	matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
 	jobID, err := h.jobs.EnqueueUnique("tv_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
@@ -1469,14 +1473,18 @@ WHERE lower(guessed_title) = lower(?) AND status = 'unmatched'
 		return
 	}
 
-	// Fetch metadata via job queue (not detached goroutine).
-	matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
-	capturedTmdbID := tmdbID
-	_, enqErr := h.jobs.Enqueue("tv_metadata_fetch", 0, "user", func(ctx context.Context, jobID, libraryID int64) error {
-		return matcher.FetchShowMetadata(ctx, capturedTmdbID)
-	})
-	if enqErr != nil {
-		slog.Warn("failed to enqueue tv metadata fetch", "tmdb_id", tmdbID, "err", enqErr)
+	// Fetch metadata via job queue (not detached goroutine) — skipped when
+	// external metadata is off (the manual assignment above is a local DB
+	// write and stands; metadata backfills lazily once the toggle is back on).
+	if h.effectiveExternalMetadataEnabled(r.Context()) {
+		matcher := tmdb.NewMatcher(h.db, tmdbKey, h.cfg.DataDir)
+		capturedTmdbID := tmdbID
+		_, enqErr := h.jobs.Enqueue("tv_metadata_fetch", 0, "user", func(ctx context.Context, jobID, libraryID int64) error {
+			return matcher.FetchShowMetadata(ctx, capturedTmdbID)
+		})
+		if enqErr != nil {
+			slog.Warn("failed to enqueue tv metadata fetch", "tmdb_id", tmdbID, "err", enqErr)
+		}
 	}
 
 	if requestWantsJSON(r) {
@@ -1760,7 +1768,7 @@ WHERE f.id = ?
 		"PrevFileID":           prevFileID,
 		"NextFileID":           nextFileID,
 		"Container":            container,
-		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "",
+		"OpenSubtitlesEnabled": h.effectiveOpenSubtitlesKey(r.Context()) != "" && h.effectiveExternalMetadataEnabled(r.Context()),
 		"CaptionVars":          h.captionStyleVars(r.Context()),
 	})
 }

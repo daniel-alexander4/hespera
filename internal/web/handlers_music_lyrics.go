@@ -103,6 +103,14 @@ func (h *Handler) musicLyricsFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Offline gate — after the cache lookup above, so already-fetched lyrics
+	// keep rendering; it outranks force=1 (the per-song opt-in is an opt-in
+	// past the lyrics default, not past "make no external calls").
+	if !h.effectiveExternalMetadataEnabled(r.Context()) {
+		writeLyricsJSON(w, http.StatusOK, true, "external metadata disabled", nil)
+		return
+	}
+
 	candidate, err := fetchBestLrcLibLyrics(r.Context(), title, artist, album)
 	if err != nil {
 		writeLyricsJSON(w, http.StatusBadGateway, false, "lyrics lookup failed: "+err.Error(), nil)

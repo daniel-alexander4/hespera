@@ -61,6 +61,10 @@ func (h *Handler) tvSubtitlesSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := normalizeLang(r.URL.Query().Get("lang"))
 
+	if !h.effectiveExternalMetadataEnabled(r.Context()) {
+		jsonError(w, "external metadata is disabled (Settings → Features)", http.StatusServiceUnavailable)
+		return
+	}
 	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()), h.effectiveOpenSubtitlesUserAgent(r.Context()))
 	if client == nil {
 		jsonError(w, "subtitle search is not configured (set an OpenSubtitles API key in Settings)", http.StatusServiceUnavailable)
@@ -111,6 +115,10 @@ func (h *Handler) movieSubtitlesSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := normalizeLang(r.URL.Query().Get("lang"))
 
+	if !h.effectiveExternalMetadataEnabled(r.Context()) {
+		jsonError(w, "external metadata is disabled (Settings → Features)", http.StatusServiceUnavailable)
+		return
+	}
 	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()), h.effectiveOpenSubtitlesUserAgent(r.Context()))
 	if client == nil {
 		jsonError(w, "subtitle search is not configured (set an OpenSubtitles API key in Settings)", http.StatusServiceUnavailable)
@@ -162,6 +170,12 @@ func (h *Handler) subtitlesFetch(w http.ResponseWriter, r *http.Request, getPref
 		return
 	}
 
+	// Offline gate sits after the cache check above — a previously fetched
+	// subtitle still serves with no egress.
+	if !h.effectiveExternalMetadataEnabled(r.Context()) {
+		jsonError(w, "external metadata is disabled (Settings → Features)", http.StatusServiceUnavailable)
+		return
+	}
 	client := opensubtitles.New(h.effectiveOpenSubtitlesKey(r.Context()), h.effectiveOpenSubtitlesUserAgent(r.Context()))
 	if client == nil {
 		jsonError(w, "subtitle download is not configured", http.StatusServiceUnavailable)

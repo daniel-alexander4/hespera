@@ -50,6 +50,10 @@ func (h *Handler) musicMatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "music library not found", 404)
 		return
 	}
+	if !h.effectiveExternalMetadataEnabled(r.Context()) {
+		http.Error(w, "external metadata is disabled (Settings → Features)", 400)
+		return
+	}
 
 	matcher := match.New(h.db, h.cfg.DataDir, h.effectiveFanartKey(r.Context()), h.effectiveAudioDBKey(r.Context()), h.effectiveLastfmKey(r.Context()))
 	jobID, err := h.jobs.EnqueueUnique("music_match", id, "user", func(ctx context.Context, jobID, libraryID int64) error {
