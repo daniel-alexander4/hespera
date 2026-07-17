@@ -162,14 +162,26 @@ LIMIT ?`
 // tvContinueWatchingQuery is the home Continue-Watching variant of
 // tvRecentlyWatchedQuery: same CTE and forward-only season roll, but a series
 // with nothing left unwatched at-or-after its watch point is DROPPED instead of
-// falling back to a "rewatch" card — matching the movie row's completed=0
-// filter, so the merged home row holds only continuable items. Starting a
-// rewatch resurfaces the show automatically (the progress upsert recomputes
-// completed on every save). The /tv page's "Recently Watched" strip keeps the
-// unfiltered query — there a finished show WAS recently watched.
+// falling back to a "rewatch" card — matching the movie row's filter, so the
+// merged home row holds only continuable items. The /tv page's "Recently
+// Watched" strip keeps the unfiltered query — there a finished show WAS
+// recently watched.
+//
+// Last-touch-wins re-watch rule: when the series' MOST RECENT progress row is
+// an "active resume" — a genuine mid-file position, regardless of the
+// completed flag (see activeResume) — that row's season is the target, so a
+// partial RE-WATCH of a watched episode surfaces here (v0.34.8 keeps ✓ and
+// resume point independent, and resumePosition already resumes completed
+// items; this row is where the re-watch was invisible). A completed row
+// classifies against the 0.90 completion-earn threshold (rewatchFraction),
+// NOT the 0.95 belt: a FIRST watch quit at 90-95% (completed earned at 90%)
+// must stay "Play next", never flip to "Resume". The CTE's bare
+// last_pos/last_dur/last_done ride SQLite's documented bare-column-with-MAX
+// pairing — the same mechanism nr already relies on.
 const tvContinueWatchingQuery = `
 WITH watched AS (
-  SELECT i.series_id AS sid, i.season_number AS nr, MAX(p.updated_at) AS last_watched
+  SELECT i.series_id AS sid, i.season_number AS nr, MAX(p.updated_at) AS last_watched,
+         p.position_seconds AS last_pos, p.duration_seconds AS last_dur, p.completed AS last_done
   FROM tv_playback_progress p
   JOIN tv_series_files f ON f.id = p.file_id
   JOIN tv_series_identities i ON i.file_id = f.id
@@ -178,6 +190,11 @@ WITH watched AS (
 )
 SELECT sid, target_season, recency FROM (
   SELECT w.sid AS sid,
+         CASE WHEN w.last_pos > 0
+                AND NOT (w.last_dur > 0 AND w.last_pos / w.last_dur >=
+                         CASE WHEN COALESCE(w.last_done, 0) = 1 THEN 0.90 ELSE 0.95 END)
+              THEN w.nr
+              ELSE
          (SELECT MIN(i2.season_number)
           FROM tv_series_identities i2
           LEFT JOIN tv_playback_progress p2 ON p2.file_id = i2.file_id
@@ -191,7 +208,8 @@ SELECT sid, target_season, recency FROM (
             -- to "not watched", and dodges divide-by-zero.
             AND NOT (COALESCE(p2.completed, 0) = 1
                      OR (COALESCE(p2.duration_seconds, 0) > 0
-                         AND p2.position_seconds / p2.duration_seconds >= 0.95))) AS target_season,
+                         AND p2.position_seconds / p2.duration_seconds >= 0.95)))
+         END AS target_season,
          CAST(strftime('%s', w.last_watched) AS INTEGER) AS recency
   FROM watched w
 )
@@ -695,14 +713,14 @@ ORDER BY i.episode_numbers_csv
 			return
 		}
 
-		progressPct := 0
-		if dur > 0 {
-			progressPct = int(pos / dur * 100)
-			if progressPct < 0 {
-				progressPct = 0
-			} else if progressPct > 100 {
-				progressPct = 100
-			}
+		// The bar shows for any not-completed progress (as before) — and now
+		// also for a completed episode with an active mid-file RE-WATCH
+		// position (the ✓ and the bar render together; a completed row past
+		// rewatchFraction keeps its bar-less ✓). Template gates on
+		// ProgressPct alone.
+		pct := 0
+		if completed == 0 || activeResume(pos, dur, true) {
+			pct = progressPct(pos, dur)
 		}
 
 		for _, epStr := range strings.Split(epCSV, ",") {
@@ -718,7 +736,7 @@ ORDER BY i.episode_numbers_csv
 			epRow := tvEpisodeRow{
 				EpisodeNumber: epNum,
 				FileID:        fileID,
-				ProgressPct:   progressPct,
+				ProgressPct:   pct,
 				Completed:     completed == 1,
 				Flagged:       integStatus == "flagged",
 				FlagDetail:    integDetail,
@@ -843,7 +861,11 @@ WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'matched'`, seriesI
 
 // markWatched upserts the completed flag for a set of files in one progress
 // table (`tv_playback_progress` / `movie_playback_progress` — identical shape).
-// Unwatching zeroes the position so a replay starts from the top.
+// BOTH directions zero the position: unwatching gives a replay a clean slate,
+// and marking watched mid-file must clear the position too — Continue Watching
+// now surfaces a completed row with an active mid-file position as a re-watch,
+// so a kept position would pin the item in CW against the user's explicit
+// "I'm done with this" gesture.
 func markWatched(ctx context.Context, db *sql.DB, table string, fileIDs []int64, watched bool) error {
 	completed := 0
 	if watched {
@@ -860,7 +882,7 @@ INSERT INTO `+table+` (file_id, position_seconds, duration_seconds, completed, u
 VALUES (?, 0, 0, ?, datetime('now'))
 ON CONFLICT(file_id) DO UPDATE SET
   completed = excluded.completed,
-  position_seconds = CASE WHEN excluded.completed = 1 THEN position_seconds ELSE 0 END,
+  position_seconds = 0,
   updated_at = datetime('now')
 `, id, completed); err != nil {
 			return err
@@ -1810,6 +1832,7 @@ type epFileEntry struct {
 	completed bool
 	posSec    float64
 	durSec    float64
+	updatedAt string // progress row's updated_at ('' = no progress row); datetime('now') text sorts chronologically
 }
 
 // watchedFraction is the position/duration ratio past which an episode counts as
@@ -1827,13 +1850,39 @@ func effectivelyWatched(e epFileEntry) bool {
 	return e.completed || (e.durSec > 0 && e.posSec/e.durSec >= watchedFraction)
 }
 
+// rewatchFraction classifies a COMPLETED row's position: at or past it the
+// position is finished-playthrough residue, below it a genuine re-watch. It
+// equals the client's 90% completion-earn threshold (media_player.js reports
+// completed:true once past 90%) and must never exceed it — a first watch that
+// earned its ✓ at 90% and quit at 92% must classify as finished ("Play next"),
+// never resurface as "Resume". Distinct from watchedFraction (0.95), which
+// belts NOT-completed rows whose completion report never landed.
+const rewatchFraction = 0.90
+
+// activeResume reports a genuine mid-file position — started, and short of the
+// finished boundary for its completed state — DELIBERATELY counting completed
+// rows, so a partial re-watch of a watched episode qualifies (v0.34.8: ✓ and
+// resume point are independent). Must agree with the CASE in
+// tvContinueWatchingQuery and the movie CW filter.
+func activeResume(pos, dur float64, completed bool) bool {
+	if pos <= 0 {
+		return false
+	}
+	boundary := watchedFraction
+	if completed {
+		boundary = rewatchFraction
+	}
+	return !(dur > 0 && pos/dur >= boundary)
+}
+
 // seasonEpisodeFiles returns a season's matched files in numeric episode order
 // (episode_numbers_csv is TEXT — lexical order puts "10" before "2"), each with
 // its watched flag.
 func (h *Handler) seasonEpisodeFiles(ctx context.Context, seriesID string, seasonNum int) []epFileEntry {
 	rows, err := h.db.QueryContext(ctx, `
 SELECT f.id, i.episode_numbers_csv, COALESCE(p.completed, 0),
-       COALESCE(p.position_seconds, 0), COALESCE(p.duration_seconds, 0)
+       COALESCE(p.position_seconds, 0), COALESCE(p.duration_seconds, 0),
+       COALESCE(p.updated_at, '')
 FROM tv_series_identities i
 JOIN tv_series_files f ON f.id = i.file_id
 LEFT JOIN tv_playback_progress p ON p.file_id = f.id
@@ -1847,7 +1896,7 @@ WHERE i.series_id = ? AND i.season_number = ? AND i.status = 'matched'
 	for rows.Next() {
 		var e epFileEntry
 		var completed int
-		if rows.Scan(&e.id, &e.epCSV, &completed, &e.posSec, &e.durSec) == nil {
+		if rows.Scan(&e.id, &e.epCSV, &completed, &e.posSec, &e.durSec, &e.updatedAt) == nil {
 			e.completed = completed == 1
 			entries = append(entries, e)
 		}
@@ -1901,27 +1950,53 @@ func (h *Handler) firstUnwatchedInSeason(ctx context.Context, seriesID string, s
 	return 0
 }
 
-// continueTarget resolves a season's play-from-home target: the first
-// not-completed episode file, with its episode number and resume progress so
-// the home card can distinguish "Resume · S2E3" (real saved progress) from
-// "Play next · S2E4" (a fresh next episode) and draw a resume sliver. fileID is
-// 0 when the season has nothing left unwatched.
+// continueTarget resolves a season's play-from-home target, with its episode
+// number and resume progress so the home card can distinguish "Resume · S2E3"
+// (real saved progress) from "Play next · S2E4" (a fresh next episode) and
+// draw a resume sliver. fileID is 0 when the season has nothing to continue.
+//
+// Last-touch-wins: if the season's most recently saved progress row is an
+// active mid-file resume — including a completed episode being RE-WATCHED —
+// that episode is the target ("pick up where you left off" means the newest
+// touch). Otherwise the first not-effectively-watched episode, as before.
+// Must agree with tvContinueWatchingQuery's CASE or the card degrades to a
+// 2-click season link.
 func (h *Handler) continueTarget(ctx context.Context, seriesID string, seasonNum int) (fileID int64, epNum, pct int, inProgress bool) {
-	for _, e := range h.seasonEpisodeFiles(ctx, seriesID, seasonNum) {
+	entries := h.seasonEpisodeFiles(ctx, seriesID, seasonNum)
+	var newest *epFileEntry
+	for i := range entries {
+		if entries[i].updatedAt == "" {
+			continue // no progress row
+		}
+		if newest == nil || entries[i].updatedAt > newest.updatedAt {
+			newest = &entries[i]
+		}
+	}
+	if newest != nil && activeResume(newest.posSec, newest.durSec, newest.completed) {
+		return newest.id, firstEpNum(newest.epCSV), progressPct(newest.posSec, newest.durSec), true
+	}
+	for _, e := range entries {
 		if effectivelyWatched(e) {
 			continue
 		}
-		if e.durSec > 0 {
-			pct = int(e.posSec / e.durSec * 100)
-			if pct < 0 {
-				pct = 0
-			} else if pct > 100 {
-				pct = 100
-			}
-		}
-		return e.id, firstEpNum(e.epCSV), pct, e.posSec > 0
+		return e.id, firstEpNum(e.epCSV), progressPct(e.posSec, e.durSec), e.posSec > 0
 	}
 	return 0, 0, 0, false
+}
+
+// progressPct clamps a position/duration pair to a 0-100 integer percentage.
+func progressPct(pos, dur float64) int {
+	if dur <= 0 {
+		return 0
+	}
+	pct := int(pos / dur * 100)
+	if pct < 0 {
+		return 0
+	}
+	if pct > 100 {
+		return 100
+	}
+	return pct
 }
 
 // --- TV Playback Progress ---

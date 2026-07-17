@@ -41,7 +41,7 @@
         {{if .Flagged}}<span class="badge badge-warn" title="{{if .FlagDetail}}{{.FlagDetail}}{{else}}Unrepairable (bitstream) corruption{{end}}">corrupt</span>{{end}}
       </div>
       {{if .AirDate}}<div class="tv-episode-date">{{.AirDate}}</div>{{end}}
-      {{if and .ProgressPct (not .Completed)}}<div class="tv-episode-progress"><div class="tv-episode-progress-bar" style="width:{{.ProgressPct}}%"></div></div>{{end}}
+      {{if .ProgressPct}}<div class="tv-episode-progress"><div class="tv-episode-progress-bar" style="width:{{.ProgressPct}}%"></div></div>{{end}}
       {{if .Overview}}<div class="tv-episode-overview">{{.Overview}}</div>{{end}}
     </div>
     {{if .FileID}}
