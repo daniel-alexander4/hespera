@@ -29,6 +29,35 @@ func TestDecide(t *testing.T) {
 			protocol: ProtocolFile,
 		},
 		{
+			// Audio-only (an audiobook m4b: aac in mp4, cover art skipped by
+			// FromProbe so no video codec). There is no picture to judge —
+			// forcing a transcode here was the bug the audiobooks vertical hit.
+			name:     "audio-only aac/mp4 on chrome direct-plays",
+			profile:  chrome(),
+			media:    MediaInfo{Container: "mp4", HasAudio: true, AudioCodec: "aac"},
+			want:     DirectPlay,
+			protocol: ProtocolFile,
+		},
+		{
+			// Audio-only with an undecodable codec: remux the audio into fMP4
+			// (re-encoded to AAC by the AudioTranscode gear) — never the HLS
+			// video-transcode path, which has no video stream to encode.
+			name:     "audio-only ac3/mp4 on chrome remuxes the audio",
+			profile:  chrome(),
+			media:    MediaInfo{Container: "mp4", HasAudio: true, AudioCodec: "ac3"},
+			want:     DirectStream,
+			protocol: ProtocolFile,
+		},
+		{
+			// An EMPTY probe (no audio known either) is NOT audio-only — the
+			// fail-safe toward transcode holds for unprobed video files.
+			name:     "empty probe still fails safe to transcode",
+			profile:  chrome(),
+			media:    MediaInfo{Container: "mkv"},
+			want:     Transcode,
+			protocol: ProtocolHLS,
+		},
+		{
 			// The middle gear. The picture is fine; only the soundtrack is not.
 			// Re-encoding the video here (which is what this used to do) burned
 			// ~31x the CPU for nothing — see RemuxAudioNeedsTranscode.

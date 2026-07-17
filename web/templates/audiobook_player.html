@@ -1,0 +1,37 @@
+{{define "content"}}
+{{/* Audiobook player — the movie player shell, audio-only (media_player.js
+     derives the endpoints from data-media-kind="audiobook"). The <video>
+     element renders no frames; the cover art sits behind the overlay as the
+     visual. |< / >| step chapters (media_player.js, chapter marks from the
+     session); there is no prev/next FILE for a standalone book. */}}
+<div class="tv-player-page">
+  <div class="tv-player-header">
+    <h1><a href="/audiobooks" class="btn btn-head">{{.BookTitle}}</a></h1>
+    {{if .Author}}<h2>{{.Author}}</h2>{{end}}
+  </div>
+
+  <div class="tv-player-video-wrap audiobook-wrap" id="tvPlayerWrap" style="{{.CaptionVars}}">
+    {{if .HasThumb}}
+    <img class="audiobook-player-cover" src="/art/audiobook/{{.FileID}}" alt="{{.BookTitle}}" />
+    {{else}}
+    <div class="audiobook-player-cover album-art-ph">{{template "icon-headphones"}}</div>
+    {{end}}
+    <video id="tvVideo" class="tv-video" autoplay
+           data-media-kind="audiobook"
+           data-file-id="{{.FileID}}"
+           data-prev-file="0"
+           data-next-file="0">
+      Your browser does not support audio playback.
+    </video>
+    <div class="media-overlay" id="mediaOverlay">
+      {{template "media-seekbar" .}}
+      {{template "media-transport" .}}
+      {{template "media-controls" .}}
+    </div>
+  </div>
+
+</div>
+{{end}}
+
+{{/* Same Turbo cached-preview opt-out as the TV/movie players. */}}
+{{define "headmeta"}}<meta name="turbo-cache-control" content="no-preview">{{end}}

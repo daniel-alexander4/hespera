@@ -153,6 +153,17 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/book/reading-progress", h.bookReadingProgress)
 	mux.HandleFunc("/art/book/", h.bookArt)
 
+	// Audiobooks browse / player / streaming (the fourth thin clone of the
+	// movie playback layer, audio-only: direct play or a progressive audio
+	// remux — never HLS, there is no video to transcode).
+	mux.HandleFunc("/audiobooks", h.audiobooksHome)
+	mux.HandleFunc("/audiobook/player", h.audiobookPlayer)
+	mux.HandleFunc("/audiobook/playback-session", h.audiobookPlaybackSession)
+	mux.HandleFunc("/audiobook/playback-progress", h.audiobookPlaybackProgress)
+	mux.HandleFunc("/stream/audiobook/", h.streamAudiobookDirect)
+	mux.HandleFunc("/stream/audiobook-remux/", h.streamAudiobookRemux)
+	mux.HandleFunc("/art/audiobook/", h.audiobookArt)
+
 	// Movie browse / detail / player / match
 	mux.HandleFunc("/movies", h.moviesHome)
 	mux.HandleFunc("/movie/player", h.moviePlayer)

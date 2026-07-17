@@ -28,6 +28,12 @@ func IsTextSubtitle(codec string) bool {
 // none (so a stale/bogus index never forces a needless transcode).
 func FromProbe(p *video.ProbeResult, container string, fileSizeBytes int64, audioOrdinal, subOrdinal int) MediaInfo {
 	m := MediaInfo{Container: strings.ToLower(strings.TrimPrefix(strings.TrimSpace(container), "."))}
+	// m4a/m4b are MP4 containers with a different brand — audiobook and
+	// audio-only files that every mp4-capable client plays identically. Judge
+	// them under the mp4 caps instead of failing an unknown-container lookup.
+	if m.Container == "m4a" || m.Container == "m4b" {
+		m.Container = "mp4"
+	}
 	if p == nil {
 		return m
 	}

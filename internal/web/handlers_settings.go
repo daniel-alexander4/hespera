@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/audiobookscan"
 	"hespera/internal/bookscan"
 	"hespera/internal/config"
 	"hespera/internal/integrity"
@@ -909,6 +910,24 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			})
 			return nil
 		})
+	case "audiobooks":
+		abScanner := audiobookscan.New(h.cfg, h.db)
+		abScanner.ShouldYield = h.jobs.HasQueuedInteractive
+		jobID, err = h.jobs.Enqueue("audiobook_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
+			if err := abScanner.ScanAudiobooks(ctx, jID, libID); err != nil {
+				return err
+			}
+			// Chain a reprobe of files whose scan-time probe failed (the
+			// playback session needs the stored duration/codecs up front).
+			_, _ = h.jobs.EnqueueUnique("audiobook_probe", libID, "system", func(ctx context.Context, pJID, pLibID int64) error {
+				return abScanner.ReprobeMissing(ctx, pJID, pLibID)
+			})
+			// Chain cover-thumbnail generation (missing-only).
+			_, _ = h.jobs.EnqueueUnique("audiobook_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+				return abScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
+			})
+			return nil
+		})
 	default:
 		return 0, errUnsupportedLibraryType
 	}
@@ -1124,6 +1143,8 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 		collectReap("SELECT id FROM photos WHERE library_id=?", "photos", photoscan.ThumbFileNames)
 	case "books":
 		collectReap("SELECT id FROM books WHERE library_id=?", "books", bookscan.ThumbFileNames)
+	case "audiobooks":
+		collectReap("SELECT id FROM audiobooks WHERE library_id=?", "audiobooks", audiobookscan.ThumbFileNames)
 	case "tv":
 		collectReap("SELECT id FROM tv_series_files WHERE library_id=?", "episodes",
 			tvscan.EpisodeThumbRelPaths)
@@ -1233,7 +1254,7 @@ func (h *Handler) settingsTagEditor(w http.ResponseWriter, r *http.Request) {
 
 func validLibraryType(v string) bool {
 	switch v {
-	case "music", "movies", "tv", "home_media", "books":
+	case "music", "movies", "tv", "home_media", "books", "audiobooks":
 		return true
 	default:
 		return false

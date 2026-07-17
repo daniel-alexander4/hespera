@@ -485,3 +485,24 @@ Citations here use file + function names (stable) rather than line numbers
 ### Derived artifacts
 - Cover thumbnails: `DataDir/thumbs/books/book_<id>.webp` (480px, `book_thumb` job, missing-only) — the EPUB cover entry / CBZ first page extracted to a temp file and encoded via `video.PhotoThumb`. `thumb_path` states mirror photos: `''` pending, `unavailable` = no extractable cover (PDF/Tier-2 — no pure-Go rasterizer) or a real decode failure, else the path; `video.ErrBusy` leaves `''` for retry.
 - Id-keyed and deleted by prune when the row goes; a moved file's cover regenerates under the surviving row's id. **Deleting a books library** reaps every cover in the same request (`librariesDelete`); thumbgc doesn't cover `thumbs/books`.
+
+---
+
+## 9. Audiobooks
+
+### Path & ownership
+- One row per file in `audiobooks` (`UNIQUE(library_id, abs_path)`). **No matching and no external metadata** — identity comes from container tags (m4b convention: `album` = book title — the `title` tag often names a chapter — and `artist` = author), falling back to the filename (underscores read as spaces). Everything re-derives on rescan except playback progress.
+- `stream_info_json` (the full `video.Probe` result) is the playback session's input, exactly as for `tv_series_files`/`movie_files`: codecs decide direct-play vs audio remux, `chapters` become the session's chapter marks, `duration_seconds`/`chapter_count` are denormalized for the grid.
+- Any audio file in an audiobooks library is an audiobook (the library type marks intent); multi-file folder grouping (a directory of per-chapter mp3s = one book) is Tier 2 — each file lists as its own row until then.
+
+### Scan logic (`internal/audiobookscan/scanner.go`)
+- Walk skips dot-dirs/dot-files + `@eaDir`. Unchanged (size+mtime) = pure skip; changed bytes re-probe/re-tag and reset `thumb_path` to `''`.
+- A probe failure stores `'{}'` and never fails the scan — the chained `audiobook_probe` (reprobe twin) backfills `stream_info_json` + duration + chapters.
+- Chain: `audiobook_scan` → `audiobook_probe` → `audiobook_thumb`.
+
+### Manual state (NOT re-derivable)
+- `audiobook_playback_progress` (PK `file_id`): position/duration/earn-only `completed` — the tv/movie/photo playback-progress twin (same client beacons, same `MAX(completed)` upsert, same `resumePosition` end-guard). Move-relink transfers it on `(file_size_bytes, mtime_unix)`, strictly 1:1, before prune.
+
+### Derived artifacts
+- Cover thumbnails: `DataDir/thumbs/audiobooks/audiobook_<id>.webp` (480px, `audiobook_thumb`, missing-only) — the attached-pic stream via `video.ExtractCoverArt` → `video.PhotoThumb`. `thumb_path` tri-state as photos (`''` pending / `unavailable` no-cover-or-failed / path); `video.ErrBusy` leaves `''` for retry.
+- Id-keyed; prune and `librariesDelete` reap them; thumbgc doesn't cover `thumbs/audiobooks`.

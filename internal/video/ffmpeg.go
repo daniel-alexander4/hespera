@@ -106,6 +106,33 @@ func RemuxArgs(src string, audioOrdinal int, startSec float64, srcChannels int, 
 	)
 }
 
+// AudioRemuxArgs is RemuxArgs for an audio-only source (audiobooks): no video
+// map (the only "video" stream is attached-pic cover art, and -map 0:V:0 would
+// error on a file with none), audio copied when the fMP4 muxer can carry it,
+// else encoded to AAC. Unlike the video remux there is no -noaccurate_seek —
+// with no copied video keeping pre-roll, ffmpeg's accurate seek is exact, so a
+// resume lands on the requested second (no keyframe snap to report).
+func AudioRemuxArgs(src string, audioOrdinal int, startSec float64, srcChannels int, encodeAudio bool) []string {
+	args := []string{"-hide_banner", "-loglevel", "error"}
+	if startSec > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(startSec, 'f', -1, 64))
+	}
+	args = append(args, "-i", src, "-map", audioMap(audioOrdinal), "-vn", "-sn")
+	if encodeAudio {
+		args = append(args, "-c:a", "aac", "-b:a", "160k")
+		args = append(args, audioFilterArgs(srcChannels)...)
+	} else {
+		args = append(args, "-c:a", "copy")
+	}
+	if startSec > 0 {
+		args = append(args, "-avoid_negative_ts", "make_zero")
+	}
+	return append(args,
+		"-movflags", "frag_keyframe+empty_moov+faststart",
+		"-f", "mp4", "pipe:1",
+	)
+}
+
 // BurnInArgs builds ffmpeg args to burn a bitmap subtitle (PGS/DVD/DVB) into the
 // video and stream the result as a fragmented MP4 to stdout — the burn-in
 // counterpart of RemuxArgs, used when a selected subtitle can't be delivered as

@@ -137,6 +137,19 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
 		WHERE title != '' AND (lower(title) LIKE ? OR lower(author) LIKE ?)`+
 		fmt.Sprintf(rank, "lower(title)", "lower(title)"), like, like, prefix, searchSectionCap))
 
+	// Audiobooks — same title/author shape; a hit opens the player (which
+	// resumes server-side).
+	add("Audiobooks", h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
+		var id int64
+		var title, author string
+		if err := scan(&id, &title, &author); err != nil {
+			return searchRow{}, err
+		}
+		return searchRow{Href: fmt.Sprintf("/audiobook/player?file=%d", id), Text: title, Context: author}, nil
+	}, `SELECT id, title, author FROM audiobooks
+		WHERE title != '' AND (lower(title) LIKE ? OR lower(author) LIKE ?)`+
+		fmt.Sprintf(rank, "lower(title)", "lower(title)"), like, like, prefix, searchSectionCap))
+
 	// People: actor names, plus character names resolved to the actor who
 	// played them ("as Character in Title") — credits already store both.
 	people := h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {

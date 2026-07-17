@@ -2742,3 +2742,15 @@ code {
 .book-reader-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 .book-reader-page { max-width: 100%; height: auto; }
 .book-reader-pdf { width: 100%; height: calc(100vh - 10rem); border: 0; border-radius: 8px; }
+
+/* --- Audiobooks --- */
+/* The player's <video> renders no frames (audio-only source); the cover art
+   sits behind the overlay as the visual. */
+.audiobook-wrap { position: relative; background: var(--bg-deep); }
+.audiobook-player-cover { position: absolute; inset: 0; margin: auto; max-width: 60%; max-height: 82%; object-fit: contain; pointer-events: none; border-radius: 8px; }
+.audiobook-player-cover.album-art-ph { display: flex; align-items: center; justify-content: center; width: 14rem; height: 14rem; }
+.audiobook-player-cover.album-art-ph .icon { width: 5rem; height: 5rem; }
+/* Card progress: a thin sliver along the cover's bottom edge; ✓ when finished. */
+.audiobook-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 0.25rem; background: rgba(0,0,0,0.45); }
+.audiobook-progress > span { display: block; height: 100%; background: var(--accent); }
+.audiobook-done { position: absolute; top: 0.35rem; right: 0.35rem; background: var(--accent); color: var(--bg-deep); border-radius: 999px; width: 1.4rem; height: 1.4rem; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }

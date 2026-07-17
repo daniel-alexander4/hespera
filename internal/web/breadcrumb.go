@@ -14,12 +14,13 @@ type crumb struct {
 
 // Shared roots so every trail spells the top-level sections identically.
 var (
-	bcHome     = crumb{"Home", "/"}
-	bcMusic    = crumb{"Music", "/music"}
-	bcTV       = crumb{"TV Shows", "/tv"}
-	bcMovies   = crumb{"Movies", "/movies"}
-	bcBooks    = crumb{"Books", "/books"}
-	bcSettings = crumb{"Settings", "/settings"}
+	bcHome       = crumb{"Home", "/"}
+	bcMusic      = crumb{"Music", "/music"}
+	bcTV         = crumb{"TV Shows", "/tv"}
+	bcMovies     = crumb{"Movies", "/movies"}
+	bcBooks      = crumb{"Books", "/books"}
+	bcAudiobooks = crumb{"Audiobooks", "/audiobooks"}
+	bcSettings   = crumb{"Settings", "/settings"}
 )
 
 // bcArtist builds the crumb linking to a local artist page.

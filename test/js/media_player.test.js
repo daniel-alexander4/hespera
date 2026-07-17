@@ -64,7 +64,11 @@ function session(overrides = {}) {
 
 // Boot the controller against a session and settle the async load chain.
 async function boot({ fixtureOpts, sessionData, stubs, storage, url } = {}) {
-  const routes = { '/tv/playback-session': sessionData || session(), '/movie/playback-session': sessionData || session() };
+  const routes = {
+    '/tv/playback-session': sessionData || session(),
+    '/movie/playback-session': sessionData || session(),
+    '/audiobook/playback-session': sessionData || session(),
+  };
   const env = loadController('media_player.js', {
     html: fixture(fixtureOpts),
     url: url || 'http://localhost/tv/player?file=7',
@@ -1267,4 +1271,63 @@ test('anamorphic aspect correction engages only on rendered-vs-flagged mismatch'
   Object.defineProperty(v2, 'videoHeight', { configurable: true, value: 576 });
   v2.dispatchEvent(new env2.window.Event('loadedmetadata'));
   assert.ok(!v2.classList.contains('aspect-fix'), 'no DAR → no correction');
+});
+
+// --- audiobooks (kind "audiobook": audio-only, chapter-stepping transport) ---
+
+const audiobookSession = (extra) => session(Object.assign({
+  url: '/stream/audiobook/7',
+  duration_seconds: 7200,
+  chapters: [
+    { start: 0, title: 'Chapter One' },
+    { start: 600, title: 'Chapter Two' },
+    { start: 1200, title: 'Chapter Three' },
+  ],
+}, extra || {}));
+
+test('mediaPlayerConfig knows the audiobook endpoints', async () => {
+  const env = await boot();
+  const ab = env.window.mediaPlayerConfig('audiobook');
+  assert.strictEqual(ab.sessionURL, '/audiobook/playback-session');
+  assert.strictEqual(ab.progressURL, '/audiobook/playback-progress');
+  assert.ok(ab.progressiveRe.test('/stream/audiobook-remux/7'));
+  assert.ok(!ab.progressiveRe.test('/stream/audiobook/7'), 'direct play is not progressive');
+});
+
+test('an audiobook with chapters reveals >| and steps chapters', async () => {
+  const env = await boot({ fixtureOpts: { kind: 'audiobook' }, sessionData: audiobookSession() });
+  const video = env.document.getElementById('tvVideo');
+  const nextBtn = env.document.getElementById('tvNextEpBtn');
+  assert.strictEqual(nextBtn.hidden, false, 'chapter marks reveal >| despite data-next-file=0');
+
+  video.currentTime = 650; // inside Chapter Two
+  nextBtn.dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(video.currentTime, 1200, '>| jumps to the next chapter start');
+
+  // |< deep into a chapter returns to ITS start; pressed again within the
+  // restart window it steps to the previous chapter.
+  video.currentTime = 650;
+  const prevBtn = env.document.getElementById('tvPrevEpBtn');
+  prevBtn.dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(video.currentTime, 600, '|< returns to the current chapter start');
+  prevBtn.dispatchEvent(new env.window.Event('click'));
+  assert.strictEqual(video.currentTime, 0, '|< again steps to the previous chapter');
+});
+
+test('a chapterless audiobook keeps >| hidden and |< restarts the file', async () => {
+  const env = await boot({ fixtureOpts: { kind: 'audiobook' }, sessionData: audiobookSession({ chapters: [] }) });
+  const video = env.document.getElementById('tvVideo');
+  assert.strictEqual(env.document.getElementById('tvNextEpBtn').hidden, true);
+  video.currentTime = 500;
+  env.document.getElementById('tvPrevEpBtn').dispatchEvent(new env.window.Event('click'));
+  await flush();
+  assert.strictEqual(video.currentTime, 0, '|< falls back to the file restart idiom');
+});
+
+test('audiobook progress beacons hit the audiobook endpoint', async () => {
+  const env = await boot({ fixtureOpts: { kind: 'audiobook' }, sessionData: audiobookSession() });
+  const video = env.document.getElementById('tvVideo');
+  video.currentTime = 42;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.ok(env.beacons.some((b) => b.url.indexOf('/audiobook/playback-progress') >= 0));
 });
