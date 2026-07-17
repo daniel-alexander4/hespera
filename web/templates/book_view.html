@@ -1,0 +1,32 @@
+{{define "content"}}
+<div class="book-detail">
+  <div class="book-detail-cover band-album-card--poster">
+    <div class="band-album-art">
+      {{if .HasThumb}}
+      <img src="/art/book/{{.ID}}" alt="{{.BookTitle}}" />
+      {{else}}
+      <div class="album-art-ph">{{template "icon-book"}}</div>
+      {{end}}
+    </div>
+  </div>
+  <div class="book-detail-meta">
+    <h2>{{.BookTitle}}</h2>
+    {{if .Author}}<p class="book-author">{{.Author}}</p>{{end}}
+    <p class="book-facts">
+      {{if .Format}}{{.Format}}{{else}}Unsupported format{{end}}
+      {{if .PageCount}} · {{.PageCount}} {{if eq .UnitName "Page"}}pages{{else}}chapters{{end}}{{end}}
+      {{if .Completed}} · Finished ✓{{end}}
+    </p>
+    {{if .Readable}}
+    <div class="book-actions">
+      <a class="btn btn-primary" href="/book/reader?id={{.ID}}">
+        {{if .HasProgress}}Resume — {{.UnitName}} {{.AtUnit}}{{if .PageCount}} of {{.PageCount}}{{end}}{{else}}Read{{end}}
+      </a>
+      {{if .HasProgress}}<a class="btn" href="/book/reader?id={{.ID}}&begin=1">Start over</a>{{end}}
+    </div>
+    {{else}}
+    <p class="book-unreadable">This file lists in the library but can't be opened in the reader{{if not .Format}} — it appears damaged or isn't a supported book format{{end}}.</p>
+    {{end}}
+  </div>
+</div>
+{{end}}

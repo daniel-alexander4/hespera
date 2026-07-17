@@ -18,6 +18,7 @@ var (
 	bcMusic    = crumb{"Music", "/music"}
 	bcTV       = crumb{"TV Shows", "/tv"}
 	bcMovies   = crumb{"Movies", "/movies"}
+	bcBooks    = crumb{"Books", "/books"}
 	bcSettings = crumb{"Settings", "/settings"}
 )
 

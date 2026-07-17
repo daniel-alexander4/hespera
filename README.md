@@ -1,7 +1,7 @@
 # Hespera
 
-A local app for your **Music, TV, Movies, and Photos**, with automatic metadata
-matching. Written in Go: a single static binary that opens a chromeless app
+A local app for your **Music, TV, Movies, Photos, and Books**, with automatic
+metadata matching. Written in Go: a single static binary that opens a chromeless app
 window on your machine (loopback-only — a single-machine app, not a network
 server). SQLite storage, server-rendered HTML, no external services required to
 run. A headless server mode is also available if you want to reach it from
@@ -24,6 +24,9 @@ Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
   thumbnails, Up Next auto-advance, and watched/resume tracking.
 - **Photos** — a capture-date timeline built from EXIF (with a folders view
   and year filters); home-video clips play through the same engine as TV.
+- **Books** — EPUB, CBZ comics, and PDF in an in-app reader with covers,
+  embedded metadata, and per-book resume; nothing to configure and no
+  external services (metadata comes from the files themselves).
 - **Library care** — a filesystem watcher auto-scans new media, corruption
   detection with lossless container auto-repair, loudness leveling, and jobs
   interrupted by a shutdown resume automatically on the next launch.

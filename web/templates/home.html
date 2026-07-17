@@ -20,13 +20,15 @@
   </div>
 </div>
 
-{{if or .HasMusic (or (gt .Stats.Series 0) (gt .Stats.Movies 0))}}
+{{if or .HasMusic (or (gt .Stats.Series 0) (or (gt .Stats.Movies 0) (gt .Stats.Books 0)))}}
 <div class="home-stats text-muted">
   {{if .HasMusic}}{{.Stats.Artists}} artists · {{.Stats.Albums}} albums{{end}}
   {{if and .HasMusic (gt .Stats.Series 0)}} · {{end}}
   {{if gt .Stats.Series 0}}{{.Stats.Series}} series · {{.Stats.Episodes}} episodes{{end}}
   {{if and (or .HasMusic (gt .Stats.Series 0)) (gt .Stats.Movies 0)}} · {{end}}
   {{if gt .Stats.Movies 0}}{{.Stats.Movies}} movies{{end}}
+  {{if and (or .HasMusic (or (gt .Stats.Series 0) (gt .Stats.Movies 0))) (gt .Stats.Books 0)}} · {{end}}
+  {{if gt .Stats.Books 0}}{{.Stats.Books}} books{{end}}
 </div>
 {{end}}
 
@@ -46,6 +48,10 @@
   <a href="/photos" class="card">
     <h3>{{template "icon-image"}}Home Media</h3>
     <p>Browse your photos and home videos</p>
+  </a>
+  <a href="/books" class="card">
+    <h3>{{template "icon-book"}}Books</h3>
+    <p>Read your ebooks and comics</p>
   </a>
 </div>
 
@@ -168,6 +174,27 @@
     <div class="band-album-meta">
       <div class="artist-card-name">{{.Title}}</div>
       {{if .Year}}<div class="artist-card-stats">{{.Year}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if .RecentlyAddedBooks}}
+<h3 class="section-title">Recently Added Books</h3>
+<div class="home-carousel-row">
+  {{range .RecentlyAddedBooks}}
+  <a href="/books/view?id={{.ID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .HasThumb}}
+      <img src="/art/book/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">{{template "icon-book"}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      {{if .Author}}<div class="artist-card-stats">{{.Author}}</div>{{end}}
     </div>
   </a>
   {{end}}

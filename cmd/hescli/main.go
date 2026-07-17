@@ -69,7 +69,7 @@ Usage:
 
 Commands:
   library list                             List libraries
-  library add --name N --type T --path P   Add a library (type: music|tv|movies|home_media)
+  library add --name N --type T --path P   Add a library (type: music|tv|movies|home_media|books)
   library rm <id>                          Delete a library
   scan <id>                                Scan a library (chains match + integrity)
   match <id>                               Match a library's metadata
@@ -112,7 +112,7 @@ func isHelp(s string) bool {
 
 // cmdHelp is the per-command usage printed for `hescli <cmd> -h|--help|?`.
 var cmdHelp = map[string]string{
-	"library":    "hescli library <list|add|rm>\n  list                            List libraries\n  add --name N --type T --path P  Add a library (type: music|tv|movies|home_media)\n  rm <id>                         Delete a library\n",
+	"library":    "hescli library <list|add|rm>\n  list                            List libraries\n  add --name N --type T --path P  Add a library (type: music|tv|movies|home_media|books)\n  rm <id>                         Delete a library\n",
 	"scan":       "hescli scan <library-id>\n  Scan a library, chaining match + integrity + probe/thumb/trickplay.\n",
 	"match":      "hescli match <library-id>\n  Match a library's metadata.\n",
 	"integrity":  "hescli integrity <library-id>\n  Deep integrity check (full decode, flag-only — no repair).\n",
@@ -190,7 +190,7 @@ func libraryCmd(c *client, args []string) error {
 	case "add":
 		fs := flag.NewFlagSet("library add", flag.ContinueOnError)
 		name := fs.String("name", "", "library name")
-		typ := fs.String("type", "", "library type (music|tv|movies|home_media)")
+		typ := fs.String("type", "", "library type (music|tv|movies|home_media|books)")
 		path := fs.String("path", "", "root path (must be under the media folder)")
 		if err := fs.Parse(args[1:]); err != nil {
 			if err == flag.ErrHelp {
@@ -499,7 +499,7 @@ _hescli() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
   local cmds="library scan match integrity config jobs status completion version help"
   local cfgkeys="tmdb_api_key fanarttv_api_key audiodb_api_key lastfm_api_key opensubtitles_api_key opensubtitles_user_agent integrity_autorepair watch_enabled job_resume_enabled lyrics_enabled update_check_enabled default_audio_lang default_subtitle_lang subtitles_default_on subtitle_size subtitle_bg subtitle_position media_root"
-  local types="music tv movies home_media"
+  local types="music tv movies home_media books"
   local statuses="queued running done failed canceled"
 
   cmd=""

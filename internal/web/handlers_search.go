@@ -125,6 +125,18 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
 	}, `SELECT s.tmdb_id, s.title, s.release_date `+movieListBase+
 		` WHERE s.title != '' AND lower(s.title) LIKE ?`+fmt.Sprintf(rank, "lower(s.title)", "lower(s.title)"), like, prefix, searchSectionCap))
 
+	// Books — matched by title or author; the author shows as context.
+	add("Books", h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
+		var id int64
+		var title, author string
+		if err := scan(&id, &title, &author); err != nil {
+			return searchRow{}, err
+		}
+		return searchRow{Href: fmt.Sprintf("/books/view?id=%d", id), Text: title, Context: author}, nil
+	}, `SELECT id, title, author FROM books
+		WHERE title != '' AND (lower(title) LIKE ? OR lower(author) LIKE ?)`+
+		fmt.Sprintf(rank, "lower(title)", "lower(title)"), like, like, prefix, searchSectionCap))
+
 	// People: actor names, plus character names resolved to the actor who
 	// played them ("as Character in Title") — credits already store both.
 	people := h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {

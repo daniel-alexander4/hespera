@@ -1,0 +1,33 @@
+{{define "content"}}
+{{if .LibraryEmpty}}
+<div class="empty-state">
+  <p>No books library yet. Add one under <a href="/settings?open=libraries">Settings → Libraries</a> (type: Books), then scan it.</p>
+</div>
+{{else}}
+<h2 class="section-title">Books</h2>
+<div class="band-albums-grid book-grid" data-grid-pager data-page="{{.Page.Page}}" data-total-pages="{{.Page.TotalPages}}">
+  {{template "book-cards" .}}
+</div>
+{{template "grid-pager" .Page}}
+{{end}}
+{{end}}
+
+{{/* Book cards, factored out so the full page and the ?grid=1 fragment render
+     identical markup. */}}
+{{define "book-cards"}}
+{{range .Cards}}
+<a href="/books/view?id={{.ID}}" class="band-album-card band-album-card--poster book-card" title="{{.Title}}{{if .Author}} · {{.Author}}{{end}}">
+  <div class="band-album-art">
+    {{if .HasThumb}}
+    <img src="/art/book/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+    {{else}}
+    <div class="album-art-ph">{{template "icon-book"}}</div>
+    {{end}}
+  </div>
+  <div class="band-album-meta">
+    <div class="artist-card-name">{{.Title}}</div>
+    {{if .Author}}<div class="artist-card-stats">{{.Author}}</div>{{end}}
+  </div>
+</a>
+{{end}}
+{{end}}
