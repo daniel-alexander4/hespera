@@ -1223,31 +1223,49 @@ function initMediaPlayer() {
     const HIDE_MS = 2500;
     const JITTER_PX = 6; // sub-threshold pointermove = sensor noise, not activity
     let hideTimer = null, lastX = null, lastY = null;
-    const showControls = () => wrap.classList.remove('controls-hidden');
+    // Where the remote's ring was when the chrome auto-hid. The hide parks
+    // focus on the toggle (the one control allowed to hold focus while the
+    // chrome is hidden — the OK-to-pause idiom); the next ARROW press restores
+    // the ring here so navigation continues where the viewer left it. Any
+    // other reveal (pointer move, pause) invalidates the stash — the viewer
+    // has moved on.
+    let ringStash = null;
+    const showControls = () => { wrap.classList.remove('controls-hidden'); ringStash = null; };
     const hideControls = () => {
-      // Keyboard/remote focus (couch arrow-nav) sets :focus-visible — don't yank
-      // controls out from under the control being arrowed through. Mouse-click
-      // focus is :focus only (not :focus-visible), so it doesn't pin here.
-      // The play/pause button is the one exemption on BOTH rules below: boot
-      // focuses it (see the end of init), and it must neither pin the overlay
-      // open forever nor lose focus on hide — an invisibly-focused toggle
-      // firing on Enter/Space is a deliberate pause (the TV-app idiom), unlike
-      // the stray-button re-fire the blur guard exists for.
       const ae = document.activeElement;
-      if (video.paused || dragging ||
-        (overlay.contains(ae) && ae !== toggleBtn && ae.matches(':focus-visible'))) return;
-      // Reaching here, a focused overlay control is mouse-focused (not
-      // :focus-visible). The hidden overlay is opacity:0 + pointer-events:none —
-      // which blocks the pointer but NOT keyboard activation, so a button the
-      // mouse last clicked would re-fire on Space/Enter while invisible. Drop its
-      // focus before hiding. <button> only: never a <select> (blur would close an
-      // open popup; a mouse-picked select blurs itself on change — blurIfMouse) and
-      // not the scrubber/volume (their arrow behavior is harmless). A REMOTE user's
-      // focused select is :focus-visible and pins the overlay open above, like any
-      // other keyboard-focused control. Blur before the class-add so the
-      // synchronous focusout→bump re-show is immediately overridden — overlay still
-      // ends hidden.
-      if (overlay.contains(ae) && ae !== toggleBtn && ae.tagName === 'BUTTON') ae.blur();
+      if (video.paused || dragging) return;
+      // An engaged control (couch's capture protocol — a select being arrowed,
+      // the scrubber, volume) legitimately owns the arrows mid-adjust. Yanking
+      // its focus would fire couch's focusout auto-release, COMMITTING an
+      // engaged select's change under the viewer — never hide over it.
+      if (ae && ae.hasAttribute && ae.hasAttribute('data-couch-engaged')) return;
+      const focusedControl = overlay.contains(ae) && ae !== toggleBtn;
+      if (focusedControl && usingMouse()) {
+        // Mouse path — unchanged. A mouse-clicked <select> matches
+        // :focus-visible in Chrome (the blurIfMouse fact) and pins the overlay
+        // while its popup is open; hiding + moving focus would snap the popup
+        // shut mid-browse.
+        if (ae.matches(':focus-visible')) return;
+        // A mouse-focused stray <button> would re-fire on Space/Enter while
+        // invisible (the hidden overlay is opacity:0 + pointer-events:none,
+        // which blocks the pointer but NOT keyboard activation). Blur before
+        // the class-add so the synchronous focusout→bump re-show is
+        // immediately overridden — overlay still ends hidden. <button> only:
+        // never a <select> (blur closes an open popup) and not the
+        // scrubber/volume (their arrow behavior is harmless).
+        if (ae.tagName === 'BUTTON') ae.blur();
+      } else if (focusedControl) {
+        // Remote/keyboard path (v0.36.x): the ring resting on a picker no
+        // longer pins the chrome open forever — hide ring and all. Park focus
+        // on the toggle (extending its existing keeps-focus-while-hidden
+        // exemption to be everyone's parking spot: OK while hidden = pause,
+        // the TV-app idiom), and stash where the ring was for the next arrow.
+        // Stash AFTER the focus() call — its synchronous focusin→showControls
+        // clears the (stale) stash, and this write must land after that.
+        const was = ae;
+        toggleBtn.focus({ preventScroll: true });
+        ringStash = was;
+      }
       wrap.classList.add('controls-hidden');
     };
     const bump = () => {
@@ -1263,7 +1281,21 @@ function initMediaPlayer() {
       lastX = e.clientX; lastY = e.clientY;
       bump();
     });
-    ['pointerdown', 'keydown'].forEach((ev) => wrap.addEventListener(ev, bump));
+    wrap.addEventListener('pointerdown', bump);
+    wrap.addEventListener('keydown', (e) => {
+      // An ARROW while hidden restores the ring to the stash before couch.js's
+      // document handler computes the move, so navigation continues from where
+      // the viewer left off — the chrome coming back with the ring in place.
+      // Arrows only: Enter/OK while hidden must stay the pause idiom (focus is
+      // parked on the toggle), never invisibly re-engage a picker.
+      if (ringStash && wrap.classList.contains('controls-hidden') &&
+        (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const s = ringStash; // consume before focus() — its focusin clears the stash
+        ringStash = null;
+        if (document.contains(s)) s.focus({ preventScroll: true });
+      }
+      bump();
+    });
     overlay.addEventListener('focusin', showControls);
     overlay.addEventListener('focusout', bump);
     video.addEventListener('pause', showControls);  // paused → pin controls up

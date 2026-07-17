@@ -1111,6 +1111,82 @@ test('a dead-end arrow brings the auto-hidden chrome back up', async () => {
   assert.ok(!wrap.classList.contains('controls-hidden'), 'a dead-end ArrowUp revealed the chrome');
 });
 
+test('remote: the chrome hides over a focused control and an arrow restores the ring', async () => {
+  // The v0.33.6 no-blur fix left the remote's ring pinning the overlay open
+  // after a track pick. Now the idle hide parks focus on the toggle (OK while
+  // hidden still = pause) and the next ARROW restores the ring where it was.
+  const env = await boot();
+  const doc = env.document;
+  const wrap = doc.querySelector('.tv-player-video-wrap');
+  const mute = doc.getElementById('tvMuteBtn');
+  doc.getElementById('tvVideo').paused = false;
+  mute.focus(); // the remote's ring rests on an overlay control (no using-mouse class → remote path)
+  await new Promise((r) => setTimeout(r, 2700));
+  assert.ok(wrap.classList.contains('controls-hidden'), 'chrome hid despite the focused control');
+  assert.strictEqual(doc.activeElement, doc.getElementById('tvToggleBtn'), 'focus parked on the toggle');
+
+  doc.activeElement.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(!wrap.classList.contains('controls-hidden'), 'the arrow revealed the chrome');
+  assert.strictEqual(doc.activeElement, mute, 'and restored the ring to the stashed control');
+});
+
+test('remote: Enter while hidden stays the pause idiom — no ring restore', async () => {
+  const env = await boot();
+  const doc = env.document;
+  const wrap = doc.querySelector('.tv-player-video-wrap');
+  const mute = doc.getElementById('tvMuteBtn');
+  const toggle = doc.getElementById('tvToggleBtn');
+  doc.getElementById('tvVideo').paused = false;
+  mute.focus();
+  await new Promise((r) => setTimeout(r, 2700));
+  assert.ok(wrap.classList.contains('controls-hidden'), 'chrome hid');
+
+  toggle.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(!wrap.classList.contains('controls-hidden'), 'Enter revealed the chrome (bump)');
+  assert.strictEqual(doc.activeElement, toggle, 'but the ring stayed on the toggle — Enter never re-engages a picker');
+
+  // The reveal invalidated the stash: hiding again with the toggle focused and
+  // then pressing an arrow must NOT jump back to the long-abandoned control.
+  await new Promise((r) => setTimeout(r, 2700));
+  assert.ok(wrap.classList.contains('controls-hidden'), 'chrome hid again');
+  toggle.dispatchEvent(new env.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.notStrictEqual(doc.activeElement, mute, 'a stale stash never restores');
+});
+
+test('an engaged control is never hidden over mid-adjust', async () => {
+  // Yanking focus off an engaged control would fire couch's focusout
+  // auto-release and COMMIT an engaged select's change — the hide must wait.
+  const env = await boot();
+  const doc = env.document;
+  const wrap = doc.querySelector('.tv-player-video-wrap');
+  const vol = doc.getElementById('tvVolume');
+  doc.getElementById('tvVideo').paused = false;
+  vol.setAttribute('data-couch-engaged', '');
+  vol.focus();
+  await new Promise((r) => setTimeout(r, 2700));
+  assert.ok(!wrap.classList.contains('controls-hidden'), 'chrome stayed up over the engaged control');
+});
+
+test('mouse path never parks focus on the toggle (park/stash is remote-only)', async () => {
+  // jsdom's :focus-visible matches ANY focused element (Chrome's mouse-click
+  // heuristic doesn't exist here), so whether the mouse path pins or blurs is
+  // Chrome territory (the Playwright/live ceiling). What IS testable — and is
+  // the invariant this change must hold — is that mouse modality never takes
+  // the remote branch: focus is never moved to the toggle by the idle hide.
+  const env = await boot();
+  const doc = env.document;
+  doc.documentElement.classList.add('using-mouse'); // couch's modality class
+  const mute = doc.getElementById('tvMuteBtn');
+  doc.getElementById('tvVideo').paused = false;
+  mute.focus();
+  await new Promise((r) => setTimeout(r, 2700));
+  assert.notStrictEqual(doc.activeElement, doc.getElementById('tvToggleBtn'),
+    'the mouse path never parks focus on the toggle');
+});
+
 test('anamorphic aspect correction engages only on rendered-vs-flagged mismatch', async () => {
   // Squeezed render: the browser reports the storage grid (702×576) while the
   // session flags the source as ~16:9 (a PAL DVD rip whose SAR got lost).
