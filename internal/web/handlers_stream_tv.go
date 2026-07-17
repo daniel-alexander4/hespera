@@ -95,9 +95,17 @@ type playbackSessionResponse struct {
 	AudioCodec     string            `json:"audio_codec"`
 	DurationSecs   float64           `json:"duration_seconds"`
 	ResumePosition float64           `json:"resume_position_seconds"`
-	Completed      bool              `json:"completed"`
-	AudioTracks    []sessionTrack    `json:"audio_tracks,omitempty"`
-	SubtitleTracks []sessionTrack    `json:"subtitle_tracks,omitempty"`
+	// StreamStart is where a progressive stream for the resume/seek position
+	// will actually begin: a remux stream-copies video, so its input -ss lands
+	// on the previous keyframe — up to one GOP before the requested position.
+	// The client anchors streamStartOffset here so absolute-timed subtitle cues
+	// and reported progress sit on the real timeline. Equals the requested
+	// position whenever no snap applies (burn-in/direct/HLS, start 0,
+	// non-indexed container, probe failure). See effectiveStreamStart.
+	StreamStart    float64        `json:"stream_start_seconds"`
+	Completed      bool           `json:"completed"`
+	AudioTracks    []sessionTrack `json:"audio_tracks,omitempty"`
+	SubtitleTracks []sessionTrack `json:"subtitle_tracks,omitempty"`
 	// The track ordinals the server actually applied, echoing back any
 	// defaults it resolved (language-preference audio, subtitles-on) so the
 	// client's pickers stay in sync with the served stream. 0 = none/unpinned.
@@ -210,11 +218,11 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 		AppliedSubtitle: sub,
 		VideoDAR:        probe.VideoDisplayAspect(),
 	}
-	if clean, perr := h.resolveTVPath(src.absPath); perr == nil {
-		resp.SkipSegments = skipSegmentsFor(&probe, clean)
-	} else {
-		resp.SkipSegments = skipSegmentsFor(&probe, "")
+	cleanPath, perr := h.resolveTVPath(src.absPath)
+	if perr != nil {
+		cleanPath = ""
 	}
+	resp.SkipSegments = skipSegmentsFor(&probe, cleanPath)
 	resp.Chapters = chapterMarks(&probe)
 	resp.SkipSegments = append(resp.SkipSegments, h.dbTVSkipSegments(r.Context(), fileID)...)
 	// Lazily fingerprint this episode's season for intros, once, in the background
@@ -232,6 +240,15 @@ func (h *Handler) tvPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	resp.ResumePosition = resumePosition(pos, dur)
 	resp.DurationSecs = maxf(resp.DurationSecs, dur)
 	resp.Completed = done
+	// Where the progressive stream will actually begin, for the position the
+	// client is about to request: the seek target it sent (?start=, present on
+	// in-play seeks) else the resume position it will adopt from this response.
+	startReq := resp.ResumePosition
+	if raw := q.Get("start"); raw != "" {
+		startReq = parseStartParam(raw, resp.DurationSecs)
+	}
+	isRemux := out.Decision == playback.DirectStream && !(out.SubtitleBurnIn && sub > 0)
+	resp.StreamStart = h.effectiveStreamStart(r.Context(), cleanPath, mi.Container, isRemux, startReq)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -788,4 +805,36 @@ func resumePosition(pos, dur float64) float64 {
 		return 0
 	}
 	return pos
+}
+
+// indexBackedContainer reports whether the container's demuxer seek is
+// reproducible — i.e. ffprobe's -read_intervals lands where ffmpeg's input -ss
+// will (measured identical on mp4 and mkv). mpegts is deliberately absent: its
+// index-less seek OVERSHOOTS the request and ffprobe and ffmpeg land in
+// different places, so no reliable stream start exists to report there — a
+// wrong correction would be worse than none.
+func indexBackedContainer(container string) bool {
+	switch container {
+	case "mkv", "webm", "mp4", "m4v", "mov":
+		return true
+	}
+	return false
+}
+
+// effectiveStreamStart resolves where the progressive stream for startSec will
+// actually begin (the session's stream_start_seconds). Only a remux needs the
+// correction: it stream-copies video, so an input -ss lands on the previous
+// keyframe, up to one GOP before the request. Burn-in re-encodes (accurate
+// seek → exact) and direct/HLS seek natively, so everything else — including
+// any lookup failure and non-index-backed containers — answers startSec
+// unchanged, which is exactly the pre-correction behavior.
+func (h *Handler) effectiveStreamStart(ctx context.Context, cleanPath, container string, isRemux bool, startSec float64) float64 {
+	if !isRemux || startSec <= 0 || cleanPath == "" || !indexBackedContainer(container) {
+		return startSec
+	}
+	landing, err := video.SeekLanding(ctx, cleanPath, startSec)
+	if err != nil {
+		return startSec
+	}
+	return landing
 }

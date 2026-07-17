@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -234,6 +235,117 @@ func TestTVPlaybackSessionBadFile(t *testing.T) {
 	h.tvPlaybackSession(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+// stream_start_seconds: the fixture files don't exist on disk, so the keyframe
+// lookup always falls back — these tests pin the PLUMBING (which position the
+// server answers for, and that every non-correctable case echoes it exactly).
+// The actual keyframe-snap value is pinned by TestSeekLandingRealClip in
+// internal/video against a real ffmpeg.
+func TestTVPlaybackSessionStreamStart(t *testing.T) {
+	h, db := newTestHandler(t)
+	const chromeUA = "Mozilla/5.0 Chrome/120 Safari/537"
+	remuxProbe := video.ProbeResult{
+		Format:  video.ProbeFormat{Duration: "1000"},
+		Streams: []video.ProbeStream{{CodecType: "video", CodecName: "h264", Width: 1280, Height: 720}, {CodecType: "audio", CodecName: "aac", IsDefault: true}},
+	}
+
+	t.Run("derived from the resume position when no start is pinned", func(t *testing.T) {
+		id := insertTVFileWithProbe(t, db, "mkv", remuxProbe, 100<<20)
+		if _, err := db.Exec(
+			"INSERT INTO tv_playback_progress(file_id,position_seconds,duration_seconds,completed) VALUES(?,?,?,0)",
+			id, 90.0, 1000.0,
+		); err != nil {
+			t.Fatalf("insert progress: %v", err)
+		}
+		resp := getSession(t, h, id, chromeUA, "")
+		if resp.Decision != "direct_stream" {
+			t.Fatalf("decision = %q, want direct_stream (the remux fixture)", resp.Decision)
+		}
+		if resp.StreamStart != 90.0 {
+			t.Fatalf("stream_start = %v, want 90 (fallback echoes the resume position)", resp.StreamStart)
+		}
+	})
+
+	t.Run("a pinned ?start= outranks the stored resume", func(t *testing.T) {
+		id := insertTVFileWithProbe(t, db, "mkv", remuxProbe, 100<<20)
+		if _, err := db.Exec(
+			"INSERT INTO tv_playback_progress(file_id,position_seconds,duration_seconds,completed) VALUES(?,?,?,0)",
+			id, 90.0, 1000.0,
+		); err != nil {
+			t.Fatalf("insert progress: %v", err)
+		}
+		resp := getSession(t, h, id, chromeUA, "&start=37")
+		if resp.StreamStart != 37.0 {
+			t.Fatalf("stream_start = %v, want 37 (the pinned seek target)", resp.StreamStart)
+		}
+	})
+
+	t.Run("no resume and no start answers 0", func(t *testing.T) {
+		id := insertTVFileWithProbe(t, db, "mkv", remuxProbe, 100<<20)
+		resp := getSession(t, h, id, chromeUA, "")
+		if resp.StreamStart != 0 {
+			t.Fatalf("stream_start = %v, want 0", resp.StreamStart)
+		}
+	})
+
+	t.Run("non-remux decisions echo the position untouched", func(t *testing.T) {
+		id := insertTVFileWithProbe(t, db, "mp4", remuxProbe, 100<<20) // mp4 h264+aac → direct_play
+		if _, err := db.Exec(
+			"INSERT INTO tv_playback_progress(file_id,position_seconds,duration_seconds,completed) VALUES(?,?,?,0)",
+			id, 250.0, 1000.0,
+		); err != nil {
+			t.Fatalf("insert progress: %v", err)
+		}
+		resp := getSession(t, h, id, chromeUA, "")
+		if resp.Decision != "direct_play" {
+			t.Fatalf("decision = %q, want direct_play", resp.Decision)
+		}
+		if resp.StreamStart != 250.0 {
+			t.Fatalf("stream_start = %v, want 250 (echo, no correction attempted)", resp.StreamStart)
+		}
+	})
+}
+
+func TestIndexBackedContainer(t *testing.T) {
+	cases := map[string]bool{
+		"mkv": true, "webm": true, "mp4": true, "m4v": true, "mov": true,
+		// mpegts overshoots -ss and ffprobe/ffmpeg land in different places —
+		// no reliable stream start exists to report, so it stays uncorrected.
+		"ts": false, "mts": false, "avi": false, "mpg": false, "": false,
+	}
+	for container, want := range cases {
+		if got := indexBackedContainer(container); got != want {
+			t.Fatalf("indexBackedContainer(%q) = %v, want %v", container, got, want)
+		}
+	}
+}
+
+func TestEffectiveStreamStartFallbacks(t *testing.T) {
+	h, _ := newTestHandler(t)
+	ctx := context.Background()
+	// Every non-correctable shape must echo the input exactly (= the
+	// pre-correction behavior): non-remux, start 0, unresolved path,
+	// non-indexed container, and a lookup failure (missing file).
+	cases := []struct {
+		name            string
+		path, container string
+		isRemux         bool
+		start, want     float64
+	}{
+		{"non-remux echoes", "/nope.mkv", "mkv", false, 42, 42},
+		{"start zero echoes", "/nope.mkv", "mkv", true, 0, 0},
+		{"empty path echoes", "", "mkv", true, 42, 42},
+		{"non-indexed container echoes", "/nope.ts", "ts", true, 42, 42},
+		{"lookup failure echoes", "/definitely/not/a/file.mkv", "mkv", true, 42, 42},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := h.effectiveStreamStart(ctx, tc.path, tc.container, tc.isRemux, tc.start); got != tc.want {
+				t.Fatalf("effectiveStreamStart = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

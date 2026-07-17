@@ -166,6 +166,18 @@ func (h *Handler) photoPlaybackSession(w http.ResponseWriter, r *http.Request) {
 	resp.ResumePosition = resumePosition(pos, dur)
 	resp.DurationSecs = maxf(resp.DurationSecs, dur)
 	resp.Completed = done
+	// Actual progressive stream start for the position the client is about to
+	// request (see tvPlaybackSession).
+	startReq := resp.ResumePosition
+	if raw := q.Get("start"); raw != "" {
+		startReq = parseStartParam(raw, resp.DurationSecs)
+	}
+	cleanPath, perr := h.resolveMediaPath(src.absPath)
+	if perr != nil {
+		cleanPath = ""
+	}
+	isRemux := out.Decision == playback.DirectStream && !(out.SubtitleBurnIn && sub > 0)
+	resp.StreamStart = h.effectiveStreamStart(r.Context(), cleanPath, mi.Container, isRemux, startReq)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
