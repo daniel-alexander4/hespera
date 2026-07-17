@@ -20,7 +20,7 @@
   </div>
 </div>
 
-{{if or .HasMusic (or (gt .Stats.Series 0) (or (gt .Stats.Movies 0) (gt .Stats.Books 0)))}}
+{{if or .HasMusic (or (gt .Stats.Series 0) (or (gt .Stats.Movies 0) (or (gt .Stats.Books 0) (gt .Stats.Audiobooks 0))))}}
 <div class="home-stats text-muted">
   {{if .HasMusic}}{{.Stats.Artists}} artists · {{.Stats.Albums}} albums{{end}}
   {{if and .HasMusic (gt .Stats.Series 0)}} · {{end}}
@@ -29,6 +29,8 @@
   {{if gt .Stats.Movies 0}}{{.Stats.Movies}} movies{{end}}
   {{if and (or .HasMusic (or (gt .Stats.Series 0) (gt .Stats.Movies 0))) (gt .Stats.Books 0)}} · {{end}}
   {{if gt .Stats.Books 0}}{{.Stats.Books}} books{{end}}
+  {{if and (or .HasMusic (or (gt .Stats.Series 0) (or (gt .Stats.Movies 0) (gt .Stats.Books 0)))) (gt .Stats.Audiobooks 0)}} · {{end}}
+  {{if gt .Stats.Audiobooks 0}}{{.Stats.Audiobooks}} audiobooks{{end}}
 </div>
 {{end}}
 
@@ -52,6 +54,10 @@
   <a href="/books" class="card">
     <h3>{{template "icon-book"}}Books</h3>
     <p>Read your ebooks and comics</p>
+  </a>
+  <a href="/audiobooks" class="card">
+    <h3>{{template "icon-headphones"}}Audiobooks</h3>
+    <p>Listen to your audiobooks</p>
   </a>
 </div>
 
@@ -190,6 +196,27 @@
       <img src="/art/book/{{.ID}}" alt="{{.Title}}" loading="lazy" />
       {{else}}
       <div class="album-art-ph">{{template "icon-book"}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      {{if .Author}}<div class="artist-card-stats">{{.Author}}</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{end}}
+
+{{if .RecentlyAddedAudiobooks}}
+<h3 class="section-title">Recently Added Audiobooks</h3>
+<div class="home-carousel-row">
+  {{range .RecentlyAddedAudiobooks}}
+  <a href="/audiobook/player?file={{.ID}}" class="band-album-card band-album-card--poster">
+    <div class="band-album-art">
+      {{if .HasThumb}}
+      <img src="/art/audiobook/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+      {{else}}
+      <div class="album-art-ph">{{template "icon-headphones"}}</div>
       {{end}}
     </div>
     <div class="band-album-meta">

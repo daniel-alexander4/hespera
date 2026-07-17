@@ -11,12 +11,13 @@ import (
 
 // homeStats is the compact library summary shown under the landing-page cards.
 type homeStats struct {
-	Artists  int
-	Albums   int
-	Series   int
-	Episodes int
-	Movies   int
-	Books    int
+	Artists    int
+	Albums     int
+	Series     int
+	Episodes   int
+	Movies     int
+	Books      int
+	Audiobooks int
 }
 
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
@@ -55,12 +56,16 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("home: load recently-added books failed", "err", err)
 	}
+	recentlyAddedAudiobooks, err := h.loadAudiobookRecentlyAdded(ctx, 12)
+	if err != nil {
+		slog.Warn("home: load recently-added audiobooks failed", "err", err)
+	}
 
 	stats := h.loadHomeStats(ctx, musicLib)
 
 	hasActivity := len(continueWatching) > 0 || len(recentlyPlayed) > 0 ||
 		len(recentlyAddedAlbums) > 0 || len(recentlyAddedTV) > 0 || len(recentlyAddedMovies) > 0 ||
-		len(recentlyAddedBooks) > 0
+		len(recentlyAddedBooks) > 0 || len(recentlyAddedAudiobooks) > 0
 
 	// First-run: no libraries configured yet → the landing page shows a setup
 	// prompt (set the media folder, add a library) instead of empty carousels.
@@ -68,19 +73,20 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	_ = h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM libraries").Scan(&libCount)
 
 	h.render(w, "home.html", map[string]any{
-		"Title":               "Home",
-		"MusicLibraryID":      musicLib,
-		"HasMusic":            musicLib > 0,
-		"EraPicker":           h.eraPicker(ctx, musicLib),
-		"ContinueWatching":    continueWatching,
-		"RecentlyPlayed":      recentlyPlayed,
-		"RecentlyAddedAlbums": recentlyAddedAlbums,
-		"RecentlyAddedTV":     recentlyAddedTV,
-		"RecentlyAddedMovies": recentlyAddedMovies,
-		"RecentlyAddedBooks":  recentlyAddedBooks,
-		"Stats":               stats,
-		"HasActivity":         hasActivity,
-		"NeedsSetup":          libCount == 0,
+		"Title":                   "Home",
+		"MusicLibraryID":          musicLib,
+		"HasMusic":                musicLib > 0,
+		"EraPicker":               h.eraPicker(ctx, musicLib),
+		"ContinueWatching":        continueWatching,
+		"RecentlyPlayed":          recentlyPlayed,
+		"RecentlyAddedAlbums":     recentlyAddedAlbums,
+		"RecentlyAddedTV":         recentlyAddedTV,
+		"RecentlyAddedMovies":     recentlyAddedMovies,
+		"RecentlyAddedBooks":      recentlyAddedBooks,
+		"RecentlyAddedAudiobooks": recentlyAddedAudiobooks,
+		"Stats":                   stats,
+		"HasActivity":             hasActivity,
+		"NeedsSetup":              libCount == 0,
 	})
 }
 
@@ -174,6 +180,7 @@ func (h *Handler) loadHomeStats(ctx context.Context, musicLib int64) homeStats {
 		"SELECT COUNT(DISTINCT tmdb_id) FROM movie_files WHERE match_status='matched' AND tmdb_id != 0",
 	).Scan(&s.Movies)
 	_ = h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM books").Scan(&s.Books)
+	_ = h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audiobooks").Scan(&s.Audiobooks)
 	return s
 }
 

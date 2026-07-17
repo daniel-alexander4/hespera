@@ -22,6 +22,19 @@ function mediaPlayerConfig(kind) {
       subtitleFetchURL: '/photo/subtitles/fetch',
     };
   }
+  if (kind === 'audiobook') {
+    // Audio-only: direct play or a progressive audio remux — never HLS or
+    // burn-in. The subtitle URLs are unused (no tracks) but defined so the
+    // dialog code never sees undefined.
+    return {
+      sessionURL: '/audiobook/playback-session',
+      progressURL: '/audiobook/playback-progress',
+      playerURL: '/audiobook/player',
+      progressiveRe: /\/stream\/audiobook-remux\//,
+      subtitleSearchURL: '/audiobook/subtitles/search',
+      subtitleFetchURL: '/audiobook/subtitles/fetch',
+    };
+  }
   if (kind === 'movie') {
     return {
       sessionURL: '/movie/playback-session',
@@ -52,6 +65,9 @@ function initMediaPlayer() {
   const fileID = parseInt(video.dataset.fileId, 10);
   const prevFile = parseInt(video.dataset.prevFile, 10) || 0;
   const nextFile = parseInt(video.dataset.nextFile, 10) || 0;
+  // Audiobooks are audio-only and standalone: |< / >| step CHAPTERS (from the
+  // session's chapter marks) instead of adjacent files.
+  const isAudiobook = video.dataset.mediaKind === 'audiobook';
   const audioSelect = document.getElementById('audioSelect');
   const subSelect = document.getElementById('subSelect');
   const modeLabel = document.getElementById('playbackMode');
@@ -527,6 +543,9 @@ function initMediaPlayer() {
     sessionDuration = session.duration_seconds || sessionDuration;
     skipSegments = session.skip_segments || [];
     chapterList = session.chapters || [];
+    // A chaptered audiobook gets its >| (next chapter) revealed once the marks
+    // arrive; a chapterless one keeps it hidden (nothing to step to).
+    if (isAudiobook && nextEpBtn && chapterList.length) nextEpBtn.hidden = false;
     resetSkip();
     renderScrubMarks();
     // #playbackMode is the error surface only — the normal decision (direct/remux/
@@ -733,13 +752,47 @@ function initMediaPlayer() {
     seekToAbs(0, resume ? false : undefined);
     if (resume) video.play().catch(() => {});
   };
+  // Audiobook chapter stepping: |< keeps the restart idiom at chapter
+  // granularity — deep into a chapter it returns to that chapter's start,
+  // within the first seconds it steps to the previous one (and restarts the
+  // book from the first). >| jumps to the next chapter start; past the last
+  // boundary it's a no-op. Chapter starts come from the session's chapter
+  // marks (chapterList), so these read them live rather than caching.
+  const chapterStarts = () => (chapterList || []).map((c) => c.start || 0).sort((a, b) => a - b);
+  const chapterPrev = () => {
+    const t = currentAbsTime();
+    let cur = 0;
+    for (const s of chapterStarts()) { if (s <= t + 0.25) cur = s; else break; }
+    if (t - cur > PREV_RESTART_SECS) { seekToAbs(cur); return; }
+    if (cur <= 0.25) { restartCurrent(); return; } // already in the first chapter
+    let prev = 0;
+    for (const s of chapterStarts()) { if (s < cur - 0.25) prev = s; else break; }
+    seekToAbs(prev);
+  };
+  const chapterNext = () => {
+    const t = currentAbsTime();
+    const next = chapterStarts().find((s) => s > t + 0.25);
+    if (typeof next === 'number') seekToAbs(next);
+  };
   const goPrev = () => {
+    if (isAudiobook && chapterStarts().length) { chapterPrev(); return; }
     if (prevFile > 0 && currentAbsTime() <= PREV_RESTART_SECS) { gotoFile(prevFile); return; }
     restartCurrent();
+  };
+  const goNext = () => {
+    if (isAudiobook) { chapterNext(); return; }
+    if (nextFile > 0) gotoFile(nextFile);
   };
   // Bound UNCONDITIONALLY: the button is always live, because restart is always available.
   if (prevEpBtn) prevEpBtn.addEventListener('click', goPrev);
   if (nextEpBtn && nextFile > 0) { nextEpBtn.hidden = false; nextEpBtn.addEventListener('click', () => gotoFile(nextFile)); }
+  // The audiobook >| is chapter-driven: wire it now, reveal it once the session
+  // delivers chapter marks (see loadFromSession).
+  if (nextEpBtn && isAudiobook) nextEpBtn.addEventListener('click', goNext);
+  if (isAudiobook) {
+    if (prevEpBtn) { prevEpBtn.title = 'Previous chapter or restart'; prevEpBtn.setAttribute('aria-label', 'Previous chapter or restart'); }
+    if (nextEpBtn) { nextEpBtn.title = 'Next chapter'; nextEpBtn.setAttribute('aria-label', 'Next chapter'); }
+  }
   // The shared transport ships episode wording; a photos-library clip isn't one.
   if (video.dataset.mediaKind === 'photo') {
     if (prevEpBtn) { prevEpBtn.title = 'Previous clip or restart'; prevEpBtn.setAttribute('aria-label', 'Previous clip or restart'); }
@@ -759,7 +812,7 @@ function initMediaPlayer() {
       case 'play': case 'pause': case 'playpause': togglePlay(); return true;
       case 'seekforward': scanPress(1); return true;
       case 'seekbackward': scanPress(-1); return true;
-      case 'nexttrack': if (nextFile > 0) gotoFile(nextFile); return true;
+      case 'nexttrack': goNext(); return true;
       case 'previoustrack': goPrev(); return true;
     }
     return false;

@@ -1,0 +1,35 @@
+{{define "content"}}
+{{if .LibraryEmpty}}
+<div class="empty-state">
+  <p>No audiobooks library yet. Add one under <a href="/settings?open=libraries">Settings → Libraries</a> (type: Audiobooks), then scan it.</p>
+</div>
+{{else}}
+<h2 class="section-title">Audiobooks</h2>
+<div class="band-albums-grid audiobook-grid" data-grid-pager data-page="{{.Page.Page}}" data-total-pages="{{.Page.TotalPages}}">
+  {{template "audiobook-cards" .}}
+</div>
+{{template "grid-pager" .Page}}
+{{end}}
+{{end}}
+
+{{/* Audiobook cards, factored out so the full page and the ?grid=1 fragment
+     render identical markup. Opening a card goes straight to the player, which
+     resumes server-side; |< in the transport restarts. */}}
+{{define "audiobook-cards"}}
+{{range .Cards}}
+<a href="/audiobook/player?file={{.ID}}" class="band-album-card band-album-card--poster audiobook-card" title="{{.Title}}{{if .Author}} · {{.Author}}{{end}}">
+  <div class="band-album-art">
+    {{if .HasThumb}}
+    <img src="/art/audiobook/{{.ID}}" alt="{{.Title}}" loading="lazy" />
+    {{else}}
+    <div class="album-art-ph">{{template "icon-headphones"}}</div>
+    {{end}}
+    {{if .Completed}}<span class="audiobook-done">✓</span>{{else if .ProgressPct}}<span class="audiobook-progress"><span style="width: {{.ProgressPct}}%"></span></span>{{end}}
+  </div>
+  <div class="band-album-meta">
+    <div class="artist-card-name">{{.Title}}</div>
+    <div class="artist-card-stats">{{.Author}}{{if and .Author .DurationText}} · {{end}}{{.DurationText}}</div>
+  </div>
+</a>
+{{end}}
+{{end}}

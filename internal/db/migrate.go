@@ -14,7 +14,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media','books')),
+  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media','books','audiobooks')),
   root_path TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -342,6 +342,42 @@ CREATE TABLE IF NOT EXISTS book_reading_progress (
   book_id INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
   spine_index INTEGER NOT NULL DEFAULT 0,
   scroll_fraction REAL NOT NULL DEFAULT 0,
+  completed INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Audiobooks (the fourth thin clone of the movie playback layer, audio-only):
+-- path-keyed identity, no provider matching — title/author come from the
+-- container tags (m4b: album = book title, artist = author), chapters and
+-- duration from the stored probe. stream_info_json feeds the playback session
+-- exactly as tv_series_files/movie_files do.
+CREATE TABLE IF NOT EXISTS audiobooks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+  abs_path TEXT NOT NULL,
+  container TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  author TEXT NOT NULL DEFAULT '',
+  duration_seconds REAL NOT NULL DEFAULT 0,
+  chapter_count INTEGER NOT NULL DEFAULT 0,
+  file_size_bytes INTEGER NOT NULL DEFAULT 0,
+  mtime_unix INTEGER NOT NULL DEFAULT 0,
+  stream_info_json TEXT NOT NULL DEFAULT '{}',
+  thumb_path TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(library_id, abs_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audiobooks_title ON audiobooks(title, id);
+CREATE INDEX IF NOT EXISTS idx_audiobooks_created ON audiobooks(created_at, id);
+
+-- Resume-to-the-second, the tv/movie/photo playback-progress twin (same
+-- client beacons, same earn-only completed at the upsert).
+CREATE TABLE IF NOT EXISTS audiobook_playback_progress (
+  file_id INTEGER PRIMARY KEY REFERENCES audiobooks(id) ON DELETE CASCADE,
+  position_seconds REAL NOT NULL DEFAULT 0,
+  duration_seconds REAL NOT NULL DEFAULT 0,
   completed INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -867,7 +903,8 @@ func migrateLibraryTypeHomeMedia(db *sql.DB) error {
 }
 
 // migrateLibraryTypeBooks widens the libraries type CHECK to admit 'books'
-// (the ebooks/comics vertical). Same rebuild mechanics and rationale as
+// (the ebooks/comics vertical) and 'audiobooks' (both added in the same
+// unreleased window, so one rebuild covers them). Same rebuild mechanics and rationale as
 // migrateLibraryTypeHomeMedia above (SQLite can't ALTER a CHECK; ids preserved
 // so child FKs stay valid; foreign_keys OFF on one pooled connection).
 // Idempotent: skipped once the schema names 'books'.
@@ -876,7 +913,7 @@ func migrateLibraryTypeBooks(db *sql.DB) error {
 	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='libraries'").Scan(&ddl); err != nil {
 		return fmt.Errorf("read libraries schema: %w", err)
 	}
-	if strings.Contains(ddl, "'books'") {
+	if strings.Contains(ddl, "'books'") && strings.Contains(ddl, "'audiobooks'") {
 		return nil // already on the new type set
 	}
 	ctx := context.Background()
@@ -897,7 +934,7 @@ func migrateLibraryTypeBooks(db *sql.DB) error {
 		`CREATE TABLE libraries_new (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media','books')),
+  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media','books','audiobooks')),
   root_path TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`,

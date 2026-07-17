@@ -120,6 +120,8 @@ func New(d Deps) (*Handler, error) {
 		"books_home.html",
 		"book_view.html",
 		"book_reader.html",
+		"audiobooks_home.html",
+		"audiobook_player.html",
 		"movies_home.html",
 		"movie_detail.html",
 		"movie_match_review.html",

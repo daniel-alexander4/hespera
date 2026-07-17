@@ -116,6 +116,11 @@ func Decide(p ClientProfile, m MediaInfo, modeOverride string) Output {
 	container := strings.ToLower(strings.TrimSpace(m.Container))
 	video := strings.ToLower(strings.TrimSpace(m.VideoCodec))
 	audio := strings.ToLower(strings.TrimSpace(m.AudioCodec))
+	// Affirmatively audio-only (audiobooks): a probed audio stream and no real
+	// picture (FromProbe leaves VideoCodec empty when the only "video" is
+	// attached-pic cover art). An EMPTY probe — neither audio nor video known —
+	// is not audio-only: it keeps the fail-safe-toward-transcode behavior.
+	audioOnly := m.HasAudio && video == ""
 
 	reasons := make([]Reason, 0, 4)
 	if burnIn {
@@ -124,7 +129,10 @@ func Decide(p ClientProfile, m MediaInfo, modeOverride string) Output {
 	if caps, ok := p.Containers[container]; !ok {
 		reasons = append(reasons, ReasonContainerUnsupported)
 	} else {
-		if !caps.Video[video] {
+		// An audio-only source has no video codec to judge — only the audio
+		// decides (audiobooks; without this gate the empty codec failed the
+		// check and audio the browser plays natively transcoded for nothing).
+		if !audioOnly && !caps.Video[video] {
 			reasons = append(reasons, ReasonVideoCodecUnsupported)
 		}
 		if m.HasAudio && !caps.Audio[audio] {
@@ -144,9 +152,11 @@ func Decide(p ClientProfile, m MediaInfo, modeOverride string) Output {
 	switch {
 	case len(reasons) == 0:
 		out.Decision, out.Protocol = DirectPlay, ProtocolFile
-	case !burnIn && !resTooHigh && !bitrateTooHigh && canRemux(p, video):
+	case !burnIn && !resTooHigh && !bitrateTooHigh && (canRemux(p, video) || audioOnly):
 		// The video is client-compatible, so it can be stream-copied into the
 		// remux target; only the packaging (and possibly the audio) is wrong.
+		// An audio-only source always remuxes rather than transcodes — there
+		// is no video to re-encode, so the compat path IS the audio remux.
 		reasons = append(reasons, ReasonRemuxToSupported)
 		out.Decision, out.Protocol = DirectStream, ProtocolFile
 		out.AudioTranscode = RemuxAudioNeedsTranscode(p, audio, m.HasAudio)

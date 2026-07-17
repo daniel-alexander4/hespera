@@ -41,6 +41,7 @@ var stubPages = []string{
 	"tv_season.html", "tv_match_review.html", "tv_player.html", "person.html",
 	"photos_home.html", "photo_view.html", "photo_player.html",
 	"books_home.html", "book_view.html", "book_reader.html",
+	"audiobooks_home.html", "audiobook_player.html",
 	"movies_home.html", "movie_detail.html", "movie_match_review.html", "movie_player.html",
 }
 
@@ -102,6 +103,9 @@ func stubAssetsFS() fs.FS {
 			`{{if .Readable}}<a class="read" href="/book/reader?id={{.ID}}">{{if .HasProgress}}Resume {{.UnitName}} {{.AtUnit}}{{else}}Read{{end}}</a>{{end}}{{end}}`,
 		"templates/book_reader.html": `{{define "content"}}<div id="bookReader" data-kind="{{.Kind}}" ` +
 			`data-start-index="{{.StartIndex}}" data-start-fraction="{{.StartFraction}}" data-entries="{{.EntriesJSON}}"></div>{{end}}`,
+		"templates/audiobooks_home.html": `{{define "content"}}{{template "audiobook-cards" .}}` +
+			`<span id="pg">{{.Page.Page}}/{{.Page.TotalPages}}</span>{{end}}` +
+			`{{define "audiobook-cards"}}{{range .Cards}}<a class="ab" href="/audiobook/player?file={{.ID}}">{{.Title}}</a>{{end}}{{end}}`,
 		// Integrity-badge wiring: render the flag fields the detail handlers pass.
 		"templates/tv_season.html": `{{define "content"}}{{range .Episodes}}<div class="ep">{{.EpisodeNumber}}` +
 			`{{if .Flagged}}<span class="badge badge-warn" title="{{.FlagDetail}}">corrupt</span>{{end}}</div>{{end}}{{end}}`,
@@ -161,7 +165,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 35
+	expectedPages := 37
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}
