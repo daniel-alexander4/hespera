@@ -651,6 +651,50 @@ test('seeking a PAUSED progressive stream leaves it paused', async () => {
   assert.strictEqual(video.paused, true, 'a paused seek must not resume playback');
 });
 
+// --- stream_start_seconds: anchoring the offset at the ACTUAL stream start ---
+// A remux stream-copies video, so the server's input -ss lands on the previous
+// keyframe — up to one GOP before the requested position. The session reports
+// where the stream really begins (stream_start_seconds); the client anchors
+// streamStartOffset there while the ?start= URL still carries the REQUEST.
+
+test('a progressive resume anchors the timeline at the server-reported stream start', async () => {
+  const env = await boot({ sessionData: remux({ resume_position_seconds: 90, stream_start_seconds: 86 }) });
+  const video = env.document.getElementById('tvVideo');
+  const src = video.getAttribute('src') || '';
+  assert.ok(/[?&]start=90\b/.test(src), `the URL carries the REQUESTED position: got ${src}`);
+  video.currentTime = 5;
+  video.dispatchEvent(new env.window.Event('timeupdate'));
+  assert.strictEqual(env.document.getElementById('mediaCur').textContent, '1:31', 'elapsed = 86 (actual start) + 5, not 90 + 5');
+  const bodies = await beaconBodies(env);
+  const last = JSON.parse(bodies[bodies.length - 1]);
+  assert.strictEqual(last.position_seconds, 91, 'progress reports the real timeline position');
+});
+
+test('a missing or out-of-range stream_start_seconds falls back to the requested position', async () => {
+  for (const extra of [{}, { stream_start_seconds: 95 }, { stream_start_seconds: -3 }]) {
+    const env = await boot({ sessionData: remux(Object.assign({ resume_position_seconds: 90 }, extra)) });
+    const video = env.document.getElementById('tvVideo');
+    video.currentTime = 5;
+    video.dispatchEvent(new env.window.Event('timeupdate'));
+    assert.strictEqual(env.document.getElementById('mediaCur').textContent, '1:35',
+      `offset falls back to the request for ${JSON.stringify(extra)}`);
+  }
+});
+
+test('an in-play seek re-fetches the session WITH the target (&start=) so the server can compute the landing', async () => {
+  const env = await boot({ sessionData: remux() });
+  const video = env.document.getElementById('tvVideo');
+  // The boot fetch carries no start — the server derives the landing from the
+  // resume position the same response hands back.
+  const bootCall = env.fetch.calls.find((c) => c.url.indexOf('/tv/playback-session') >= 0);
+  assert.ok(bootCall && bootCall.url.indexOf('start=') < 0, `boot session fetch has no start: ${bootCall && bootCall.url}`);
+  video.currentTime = 42;
+  env.document.getElementById('tvReloadBtn').dispatchEvent(new env.window.Event('click'));
+  await flush();
+  const seekCall = env.fetch.calls.filter((c) => c.url.indexOf('/tv/playback-session') >= 0).pop();
+  assert.ok(/[?&]start=42\b/.test(seekCall.url), `seek session fetch carries the target: ${seekCall.url}`);
+});
+
 test('the FF/RW scan commit DOES resume — the one seek that must override "stay paused"', async () => {
   const env = await boot({ sessionData: remux() });
   const video = env.document.getElementById('tvVideo');

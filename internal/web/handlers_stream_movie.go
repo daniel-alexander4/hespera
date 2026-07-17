@@ -130,11 +130,11 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 		AppliedSubtitle: sub,
 		VideoDAR:        probe.VideoDisplayAspect(),
 	}
-	if clean, perr := h.resolveMediaPath(src.absPath); perr == nil {
-		resp.SkipSegments = skipSegmentsFor(&probe, clean)
-	} else {
-		resp.SkipSegments = skipSegmentsFor(&probe, "")
+	cleanPath, perr := h.resolveMediaPath(src.absPath)
+	if perr != nil {
+		cleanPath = ""
 	}
+	resp.SkipSegments = skipSegmentsFor(&probe, cleanPath)
 	resp.Chapters = chapterMarks(&probe)
 	if out.SubtitleSidecar && sub > 0 {
 		resp.SubtitleURL = fmt.Sprintf("/stream/movie-subtitles/%d?track=%d", fileID, sub)
@@ -147,6 +147,14 @@ func (h *Handler) moviePlaybackSession(w http.ResponseWriter, r *http.Request) {
 	resp.ResumePosition = resumePosition(pos, dur)
 	resp.DurationSecs = maxf(resp.DurationSecs, dur)
 	resp.Completed = done
+	// Actual progressive stream start for the position the client is about to
+	// request (see tvPlaybackSession).
+	startReq := resp.ResumePosition
+	if raw := q.Get("start"); raw != "" {
+		startReq = parseStartParam(raw, resp.DurationSecs)
+	}
+	isRemux := out.Decision == playback.DirectStream && !(out.SubtitleBurnIn && sub > 0)
+	resp.StreamStart = h.effectiveStreamStart(r.Context(), cleanPath, mi.Container, isRemux, startReq)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

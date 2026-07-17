@@ -212,16 +212,24 @@ function initMediaPlayer() {
     const progressive = isProgressive;
     let url = session.url;
     if (progressive && seekTo > 0) {
-      streamStartOffset = seekTo;
+      // Anchor the offset at the server-reported ACTUAL stream start
+      // (stream_start_seconds): a remux stream-copies video, so its input -ss
+      // lands on the previous keyframe — up to one GOP before seekTo — and
+      // anchoring at the request would paint absolute-timed subtitle cues early
+      // and overstate saved progress by that delta. The URL still carries the
+      // REQUESTED position (re-requesting the snapped value could re-snap a
+      // GOP earlier); a missing or out-of-range field falls back to the request.
+      const ss = session.stream_start_seconds;
+      streamStartOffset = (typeof ss === 'number' && ss >= 0 && ss <= seekTo) ? ss : seekTo;
       url += (url.indexOf('?') >= 0 ? '&' : '?') + 'start=' + encodeURIComponent(seekTo);
     } else {
       streamStartOffset = 0;
     }
     const clientSeek = progressive ? 0 : seekTo; // only the seekable paths seek the element
     const onReady = () => { if (clientSeek > 0) { try { video.currentTime = clientSeek; } catch (e) {} } };
-    // Anchor the continuity tracker at the intended start; playback grows it from
+    // Anchor the continuity tracker at the true start; playback grows it from
     // here, and an 'ended' that arrives without it having grown is a dead stream.
-    lastPlayedAbs = Math.max(0, seekTo || 0);
+    lastPlayedAbs = Math.max(0, progressive ? streamStartOffset : (seekTo || 0));
 
     // Prefer hls.js whenever MSE supports it (Chrome, Firefox, desktop Safari) — the
     // whole transcode player (seeking, error recovery, self-rendered subtitles) is built
@@ -487,7 +495,12 @@ function initMediaPlayer() {
     currentAud = aud; currentSub = sub;
     let session;
     try {
-      const resp = await fetch(`${cfg.sessionURL}?file=${fileID}&aud=${aud}&sub=${sub}`, { headers: { Accept: 'application/json' } });
+      // A pinned seek target rides along (&start=) so the server can report
+      // where the progressive stream will actually begin for it
+      // (stream_start_seconds); without one the server derives it from the
+      // resume position this same response carries.
+      const startArg = seekTo != null ? `&start=${encodeURIComponent(seekTo)}` : '';
+      const resp = await fetch(`${cfg.sessionURL}?file=${fileID}&aud=${aud}&sub=${sub}${startArg}`, { headers: { Accept: 'application/json' } });
       session = await resp.json();
     } catch (e) {
       modeLabel.textContent = 'Unable to start playback';
