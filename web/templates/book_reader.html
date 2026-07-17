@@ -1,0 +1,31 @@
+{{define "content"}}
+<div class="book-reader" id="bookReader"
+     data-book-id="{{.ID}}"
+     data-kind="{{.Kind}}"
+     data-entry-count="{{.EntryCount}}"
+     data-start-index="{{.StartIndex}}"
+     data-start-fraction="{{.StartFraction}}"
+     {{if .EntriesJSON}}data-entries="{{.EntriesJSON}}"{{end}}>
+
+  {{if eq .Kind "pdf"}}
+  {{/* Chromium's built-in viewer owns rendering, paging, and zoom. */}}
+  <embed class="book-reader-pdf" src="/book/file/{{.ID}}" type="application/pdf" />
+  {{else}}
+  <div class="book-reader-bar">
+    <button type="button" class="btn" id="bookPrevBtn">{{template "icon-chevron-left"}} Prev</button>
+    <span class="book-reader-pos" id="bookPos"></span>
+    <button type="button" class="btn" id="bookNextBtn">Next {{template "icon-chevron-right"}}</button>
+  </div>
+  {{if eq .Kind "epub"}}
+  {{/* One spine document at a time; relative hrefs inside it resolve against
+       /book/asset/{id}/... naturally. sandbox without allow-scripts keeps any
+       embedded JS inert; allow-same-origin lets the reader track scroll. */}}
+  <iframe class="book-reader-frame" id="bookFrame" sandbox="allow-same-origin" title="{{.BookTitle}}"></iframe>
+  {{else}}
+  <div class="book-reader-stage" id="bookStage" tabindex="0">
+    <img class="book-reader-page" id="bookPage" alt="{{.BookTitle}}" />
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}

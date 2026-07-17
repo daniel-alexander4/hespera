@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"hespera/internal/bookscan"
 	"hespera/internal/config"
 	"hespera/internal/integrity"
 	"hespera/internal/jobs"
@@ -895,6 +896,19 @@ func (h *Handler) EnqueueLibraryScan(ctx context.Context, id int64, createdBy st
 			})
 			return nil
 		})
+	case "books":
+		bookScanner := bookscan.New(h.cfg, h.db)
+		bookScanner.ShouldYield = h.jobs.HasQueuedInteractive
+		jobID, err = h.jobs.Enqueue("book_scan", id, createdBy, func(ctx context.Context, jID, libID int64) error {
+			if err := bookScanner.ScanBooks(ctx, jID, libID); err != nil {
+				return err
+			}
+			// Chain cover-thumbnail generation (missing-only: new/changed files).
+			_, _ = h.jobs.EnqueueUnique("book_thumb", libID, "system", func(ctx context.Context, tJID, tLibID int64) error {
+				return bookScanner.GenerateThumbsMissing(ctx, tJID, tLibID)
+			})
+			return nil
+		})
 	default:
 		return 0, errUnsupportedLibraryType
 	}
@@ -1108,6 +1122,8 @@ func (h *Handler) librariesDelete(w http.ResponseWriter, r *http.Request) {
 	switch libType {
 	case "home_media":
 		collectReap("SELECT id FROM photos WHERE library_id=?", "photos", photoscan.ThumbFileNames)
+	case "books":
+		collectReap("SELECT id FROM books WHERE library_id=?", "books", bookscan.ThumbFileNames)
 	case "tv":
 		collectReap("SELECT id FROM tv_series_files WHERE library_id=?", "episodes",
 			tvscan.EpisodeThumbRelPaths)
@@ -1217,7 +1233,7 @@ func (h *Handler) settingsTagEditor(w http.ResponseWriter, r *http.Request) {
 
 func validLibraryType(v string) bool {
 	switch v {
-	case "music", "movies", "tv", "home_media":
+	case "music", "movies", "tv", "home_media", "books":
 		return true
 	default:
 		return false

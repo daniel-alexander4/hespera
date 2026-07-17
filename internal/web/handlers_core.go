@@ -16,6 +16,7 @@ type homeStats struct {
 	Series   int
 	Episodes int
 	Movies   int
+	Books    int
 }
 
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
@@ -50,11 +51,16 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("home: load recently-added movies failed", "err", err)
 	}
+	recentlyAddedBooks, err := h.loadBookRecentlyAdded(ctx, 12)
+	if err != nil {
+		slog.Warn("home: load recently-added books failed", "err", err)
+	}
 
 	stats := h.loadHomeStats(ctx, musicLib)
 
 	hasActivity := len(continueWatching) > 0 || len(recentlyPlayed) > 0 ||
-		len(recentlyAddedAlbums) > 0 || len(recentlyAddedTV) > 0 || len(recentlyAddedMovies) > 0
+		len(recentlyAddedAlbums) > 0 || len(recentlyAddedTV) > 0 || len(recentlyAddedMovies) > 0 ||
+		len(recentlyAddedBooks) > 0
 
 	// First-run: no libraries configured yet → the landing page shows a setup
 	// prompt (set the media folder, add a library) instead of empty carousels.
@@ -71,6 +77,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		"RecentlyAddedAlbums": recentlyAddedAlbums,
 		"RecentlyAddedTV":     recentlyAddedTV,
 		"RecentlyAddedMovies": recentlyAddedMovies,
+		"RecentlyAddedBooks":  recentlyAddedBooks,
 		"Stats":               stats,
 		"HasActivity":         hasActivity,
 		"NeedsSetup":          libCount == 0,
@@ -166,6 +173,7 @@ func (h *Handler) loadHomeStats(ctx context.Context, musicLib int64) homeStats {
 	_ = h.db.QueryRowContext(ctx,
 		"SELECT COUNT(DISTINCT tmdb_id) FROM movie_files WHERE match_status='matched' AND tmdb_id != 0",
 	).Scan(&s.Movies)
+	_ = h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM books").Scan(&s.Books)
 	return s
 }
 

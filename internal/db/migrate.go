@@ -14,7 +14,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media')),
+  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media','books')),
   root_path TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -309,6 +309,43 @@ CREATE TABLE IF NOT EXISTS photo_playback_progress (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Books (the ebooks/comics vertical): path-keyed identity like photos, no
+-- provider matching — all metadata is embedded (EPUB OPF, CBZ page list, PDF
+-- Info dict) or filename-derived. format '' = recognized-but-unreadable
+-- (corrupt Tier-1 file); Tier-2 formats (mobi/azw3/fb2/cbr) keep their format
+-- string but have no reader. page_count = spine items (epub) / pages (cbz).
+CREATE TABLE IF NOT EXISTS books (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+  abs_path TEXT NOT NULL,
+  format TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  author TEXT NOT NULL DEFAULT '',
+  page_count INTEGER NOT NULL DEFAULT 0,
+  file_size_bytes INTEGER NOT NULL DEFAULT 0,
+  mtime_unix INTEGER NOT NULL DEFAULT 0,
+  thumb_path TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(library_id, abs_path)
+);
+
+-- The books grid browses alphabetically across all books libraries; home's
+-- Recently Added row orders by created_at.
+CREATE INDEX IF NOT EXISTS idx_books_title ON books(title, id);
+CREATE INDEX IF NOT EXISTS idx_books_created ON books(created_at, id);
+
+-- Reading position: the spine item (epub) / page (cbz) plus the scroll
+-- fraction within it. completed is earn-only at the upsert (MAX), like the
+-- playback progress tables.
+CREATE TABLE IF NOT EXISTS book_reading_progress (
+  book_id INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+  spine_index INTEGER NOT NULL DEFAULT 0,
+  scroll_fraction REAL NOT NULL DEFAULT 0,
+  completed INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS scan_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   library_id INTEGER NOT NULL DEFAULT 0,
@@ -541,6 +578,9 @@ DROP INDEX IF EXISTS idx_photos_library_dir;
 		return err
 	}
 	if err := migrateLibraryTypeHomeMedia(db); err != nil {
+		return err
+	}
+	if err := migrateLibraryTypeBooks(db); err != nil {
 		return err
 	}
 	// Retired feature tables — drop on existing DBs (the CREATEs are gone from the
@@ -821,6 +861,55 @@ func migrateLibraryTypeHomeMedia(db *sql.DB) error {
 		if _, err := tx.ExecContext(ctx, s); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("libraries home_media rebuild: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// migrateLibraryTypeBooks widens the libraries type CHECK to admit 'books'
+// (the ebooks/comics vertical). Same rebuild mechanics and rationale as
+// migrateLibraryTypeHomeMedia above (SQLite can't ALTER a CHECK; ids preserved
+// so child FKs stay valid; foreign_keys OFF on one pooled connection).
+// Idempotent: skipped once the schema names 'books'.
+func migrateLibraryTypeBooks(db *sql.DB) error {
+	var ddl string
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='libraries'").Scan(&ddl); err != nil {
+		return fmt.Errorf("read libraries schema: %w", err)
+	}
+	if strings.Contains(ddl, "'books'") {
+		return nil // already on the new type set
+	}
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+		return err
+	}
+	defer conn.ExecContext(ctx, "PRAGMA foreign_keys=ON") // restore before the conn returns to the pool
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	stmts := []string{
+		`CREATE TABLE libraries_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('music','movies','tv','home_media','books')),
+  root_path TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+		`INSERT INTO libraries_new (id, name, type, root_path, created_at)
+   SELECT id, name, type, root_path, created_at FROM libraries`,
+		`DROP TABLE libraries`,
+		`ALTER TABLE libraries_new RENAME TO libraries`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("libraries books rebuild: %w", err)
 		}
 	}
 	return tx.Commit()

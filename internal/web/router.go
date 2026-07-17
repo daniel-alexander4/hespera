@@ -142,6 +142,17 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/stream/photo-hls/", h.streamPhotoHLS)
 	mux.HandleFunc("/stream/photo-subtitles/", h.streamPhotoSubtitles)
 
+	// Books browse / detail / reader. Reading is in-window (the app window is
+	// a Chromium): EPUB spine docs + CBZ pages serve as zip entries by exact
+	// name, PDFs stream whole into the native viewer.
+	mux.HandleFunc("/books", h.booksHome)
+	mux.HandleFunc("/books/view", h.bookView)
+	mux.HandleFunc("/book/reader", h.bookReader)
+	mux.HandleFunc("/book/asset/", h.bookAsset)
+	mux.HandleFunc("/book/file/", h.bookFile)
+	mux.HandleFunc("/book/reading-progress", h.bookReadingProgress)
+	mux.HandleFunc("/art/book/", h.bookArt)
+
 	// Movie browse / detail / player / match
 	mux.HandleFunc("/movies", h.moviesHome)
 	mux.HandleFunc("/movie/player", h.moviePlayer)
