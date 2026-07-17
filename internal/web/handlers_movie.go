@@ -198,19 +198,28 @@ func movieYear(releaseDate string) string {
 	return ""
 }
 
-// loadMovieContinueWatching returns in-progress (not completed) films, newest
-// activity first — one card per film. A film with two in-progress files (two
-// editions/downloads) is deduped to its most-recently-watched file via the
-// latest CTE + join-back (the TV recently-watched pattern): a bare GROUP BY
-// tmdb_id would pair the MAX(updated_at) with an arbitrary row's file_id and
-// progress, not the most-recent one's.
+// loadMovieContinueWatching returns continuable films, newest activity first —
+// one card per film. A film with two in-progress files (two editions/downloads)
+// is deduped to its most-recently-watched file via the latest CTE + join-back
+// (the TV recently-watched pattern): a bare GROUP BY tmdb_id would pair the
+// MAX(updated_at) with an arbitrary row's file_id and progress, not the
+// most-recent one's.
+//
+// Last-touch-wins, mirroring tvContinueWatchingQuery: the film's most recent
+// progress row decides. It qualifies when not completed OR carrying an active
+// mid-file position (a re-watch of a watched film). The finished boundary is
+// per completed state (see activeResume/rewatchFraction): 0.90 for completed
+// rows (a first watch that earned its ✓ and quit in the credits must not
+// resurface), 0.95 for not-completed ones (the belt for a missed completion
+// report — previously absent here, so such a film sat in the row as a
+// "resume the last second" card).
 func (h *Handler) loadMovieContinueWatching(ctx context.Context, limit int) ([]movieRow, error) {
 	rows, err := h.db.QueryContext(ctx, `
 WITH latest AS (
   SELECT f.tmdb_id AS tid, MAX(p.updated_at) AS last_watched
   FROM movie_playback_progress p
   JOIN movie_files f ON f.id = p.file_id
-  WHERE f.match_status='matched' AND f.tmdb_id != 0 AND COALESCE(p.completed,0)=0
+  WHERE f.match_status='matched' AND f.tmdb_id != 0
   GROUP BY f.tmdb_id
 )
 SELECT f.id, f.tmdb_id,
@@ -219,7 +228,10 @@ SELECT f.id, f.tmdb_id,
 FROM latest l
 JOIN movie_files f ON f.tmdb_id = l.tid
 JOIN movie_playback_progress p ON p.file_id = f.id AND p.updated_at = l.last_watched
-WHERE f.match_status='matched' AND COALESCE(p.completed,0)=0
+WHERE f.match_status='matched'
+  AND (COALESCE(p.completed,0) = 0 OR p.position_seconds > 0)
+  AND NOT (COALESCE(p.duration_seconds,0) > 0 AND p.position_seconds / p.duration_seconds >=
+           CASE WHEN COALESCE(p.completed,0) = 1 THEN 0.90 ELSE 0.95 END)
 GROUP BY f.tmdb_id
 ORDER BY p.updated_at DESC
 LIMIT ?
