@@ -4,8 +4,10 @@
 # literal). The hesplay music-player client ships as its OWN .deb
 # (nfpm-hesplay.yaml) so client boxes don't need the full install — it must
 # not also ship here (two packages owning /usr/bin/hesplay conflict).
-# No systemd unit: Hespera is launched on demand as a desktop app
-# (the .desktop entry below opens a chromeless window) — there is no service.
+# No service is ENABLED by default: Hespera is launched on demand as a desktop
+# app (the .desktop entry below opens a chromeless window). An inert systemd
+# template unit ships for headless boxes — `systemctl enable --now hespera@<user>`
+# opts in; nothing runs until someone does.
 name: hespera
 arch: ${ARCH}
 version: ${VERSION}
@@ -50,6 +52,13 @@ contents:
       mode: 0644
   - src: build/hespera.svg
     dst: /usr/share/icons/hicolor/scalable/apps/hespera.svg
+    file_info:
+      mode: 0644
+  # Headless server unit — shipped inert (not enabled, no maintainer scripts, so
+  # the package stays script-free); `systemctl enable --now hespera@<user>` is
+  # the opt-in. A template, so the instance name picks the account to run as.
+  - src: build/hespera@.service
+    dst: /usr/lib/systemd/system/hespera@.service
     file_info:
       mode: 0644
   # License + third-party attribution (THIRD_PARTY_LICENSES.md is kept current by
