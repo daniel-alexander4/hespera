@@ -179,6 +179,8 @@ hesplay playlist road trip          # play one (names need no quoting)
 hesplay album abbey road            # play an album, in track order
 hesplay artist queen                # an artist's whole catalog, shuffled
 hesplay mix queen                   # a radio mix: that artist + similar artists
+hesplay popular                     # the catalog's most popular songs, shuffled
+hesplay all                         # the whole catalog, shuffled
 hesplay --shuffle album abbey road  # force a shuffle
 hesplay --ordered playlist workout  # play a playlist in its curated order
 ```

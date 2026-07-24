@@ -75,6 +75,8 @@ Commands:
   artist <name|id>    Play an artist's whole catalog in album order
   mix <name|id>       Play a radio mix seeded from an artist (+ similar artists)
   playlist <name|id>  Play a playlist
+  popular             Play the catalog's most popular songs (shuffled)
+  all                 Play the whole catalog (shuffled)
   playlists           List playlists
   version             Print hesplay version (also --version)
 
@@ -160,9 +162,9 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 			fmt.Fprintf(tw, "%d\t%s\t%d\n", p.ID, p.Name, p.Count)
 		}
 		return tw.Flush()
-	case "album", "artist", "mix", "playlist":
+	case "album", "artist", "mix", "playlist", "popular", "all":
 		name := strings.TrimSpace(strings.Join(args[1:], " "))
-		if name == "" {
+		if name == "" && args[0] != "popular" && args[0] != "all" {
 			return fmt.Errorf("%s: expected a name or id", args[0])
 		}
 		eng, err := findEngine()
@@ -193,6 +195,8 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 // list for playlists). picked names what a fuzzy match chose, for printing.
 func (c *client) resolveQueueQuery(verb, name string) (query url.Values, picked string, err error) {
 	switch verb {
+	case "popular", "all": // the web home's Quick Play queues — no name to resolve
+		return url.Values{"source": {verb}}, "", nil
 	case "album":
 		id, picked, err := c.resolveSearch("Albums", "/music/album/", name)
 		if err != nil {
