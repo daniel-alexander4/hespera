@@ -4,10 +4,11 @@
 
 .PHONY: dist release install build test test-js clean bump-patch bump-minor bump-major
 
-# Build the local server + admin binaries into ./bin (quick dev build).
+# Build the local server + admin + player binaries into ./bin (quick dev build).
 build:
 	go build -o ./bin/hespera ./cmd/hespera
 	go build -o ./bin/hescli ./cmd/hescli
+	go build -o ./bin/hesplay ./cmd/hesplay
 
 # Cross-compile every platform + build the .deb packages into dist/.
 dist:

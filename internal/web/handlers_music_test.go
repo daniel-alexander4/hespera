@@ -174,3 +174,54 @@ func TestMusicAlbumsPagination(t *testing.T) {
 	}
 }
 
+// TestMusicQueueArtistSource covers ?source=artist: the artist's whole catalog
+// in album order (year, then title), other artists excluded, bad ids → 404.
+func TestMusicQueueArtistSource(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+	libID, artistID, _, _ := seedMusicData(t, db)
+
+	res, err := db.Exec(`INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, is_compilation) VALUES (?, ?, ?, 'Early Album', 2020, 0)`, libID, artistID, artistID)
+	if err != nil {
+		t.Fatalf("insert early album: %v", err)
+	}
+	earlyID, _ := res.LastInsertId()
+	for i, title := range []string{"Early One", "Early Two"} {
+		if _, err := db.Exec(`INSERT INTO music_tracks (library_id, artist_id, album_id, title, track_no, disc_no, abs_path, mime_type) VALUES (?, ?, ?, ?, ?, 1, ?, 'audio/mpeg')`,
+			libID, artistID, earlyID, title, i+1, fmt.Sprintf("/test/early%d.mp3", i+1)); err != nil {
+			t.Fatalf("insert early track: %v", err)
+		}
+	}
+	res, err = db.Exec(`INSERT INTO music_artists (library_id, name, bio, bio_source_url) VALUES (?, 'Other Artist', '', '')`, libID)
+	if err != nil {
+		t.Fatalf("insert other artist: %v", err)
+	}
+	otherID, _ := res.LastInsertId()
+	res, err = db.Exec(`INSERT INTO music_albums (library_id, artist_id, album_artist_id, title, year, is_compilation) VALUES (?, ?, ?, 'Other Album', 2019, 0)`, libID, otherID, otherID)
+	if err != nil {
+		t.Fatalf("insert other album: %v", err)
+	}
+	otherAlbumID, _ := res.LastInsertId()
+	if _, err := db.Exec(`INSERT INTO music_tracks (library_id, artist_id, album_id, title, track_no, disc_no, abs_path, mime_type) VALUES (?, ?, ?, 'Other Track', 1, 1, '/test/other1.mp3', 'audio/mpeg')`,
+		libID, otherID, otherAlbumID); err != nil {
+		t.Fatalf("insert other track: %v", err)
+	}
+
+	title, titles := queueTitles(t, router, fmt.Sprintf("source=artist&artist=%d", artistID))
+	if title != "Test Artist" {
+		t.Fatalf("queue title = %q, want %q", title, "Test Artist")
+	}
+	want := []string{"Early One", "Early Two", "Track 1"}
+	if fmt.Sprint(titles) != fmt.Sprint(want) {
+		t.Fatalf("queue order = %v, want %v", titles, want)
+	}
+
+	for _, q := range []string{"source=artist&artist=999999", "source=artist", "source=artist&artist=abc"} {
+		req := httptest.NewRequest(http.MethodGet, "/music/queue?"+q, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("queue %q: status %d, want 404", q, rec.Code)
+		}
+	}
+}
