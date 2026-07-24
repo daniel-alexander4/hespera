@@ -336,13 +336,13 @@ func (h *Handler) photoView(w http.ResponseWriter, r *http.Request) {
 		// The clip Play link carries the filter context into the player so
 		// |< / >| step within the list the user was browsing (template.URL —
 		// same autoescaper reason as CtxQuery).
-		"Ctx":         template.URL(ctxQ),
-		"Name":        filepath.Base(absPath),
-		"When":        when,
-		"Dir":         dirRel,
-		"PrevHref":    viewHref(prevID),
-		"NextHref":    viewHref(nextID),
-		"BackHref":    "/photos" + backQ,
+		"Ctx":      template.URL(ctxQ),
+		"Name":     filepath.Base(absPath),
+		"When":     when,
+		"Dir":      dirRel,
+		"PrevHref": viewHref(prevID),
+		"NextHref": viewHref(nextID),
+		"BackHref": "/photos" + backQ,
 	})
 }
 
@@ -406,7 +406,7 @@ func (h *Handler) photoArt(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveGeneratedThumb serves a DB-stored generated-thumbnail path (photo grid
-// thumbs, TV episode thumbs). 404 for the pending ''/'unavailable' states —
+// thumbs, TV episode thumbs). 404 for the pending ”/'unavailable' states —
 // the templates render their own placeholder. Containment before serving the
 // stored path: the same defense-in-depth guard tvArt/personArt apply (a
 // corrupted row must not read outside the data dir).

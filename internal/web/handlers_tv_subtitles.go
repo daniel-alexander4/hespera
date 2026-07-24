@@ -191,8 +191,12 @@ func (h *Handler) subtitlesFetch(w http.ResponseWriter, r *http.Request, getPref
 
 // tvSubtitlesFetch and movieSubtitlesFetch are the routed entry points; they share
 // subtitlesFetch and differ only in the get-endpoint the returned URL names.
-func (h *Handler) tvSubtitlesFetch(w http.ResponseWriter, r *http.Request)    { h.subtitlesFetch(w, r, "/tv") }
-func (h *Handler) movieSubtitlesFetch(w http.ResponseWriter, r *http.Request) { h.subtitlesFetch(w, r, "/movie") }
+func (h *Handler) tvSubtitlesFetch(w http.ResponseWriter, r *http.Request) {
+	h.subtitlesFetch(w, r, "/tv")
+}
+func (h *Handler) movieSubtitlesFetch(w http.ResponseWriter, r *http.Request) {
+	h.subtitlesFetch(w, r, "/movie")
+}
 
 // subtitlesGet serves a cached, converted WebVTT subtitle. Media-agnostic (the
 // cache is keyed by the OpenSubtitles file id), registered under both
