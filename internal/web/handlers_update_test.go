@@ -142,6 +142,11 @@ func TestUpdateCheckUnreachable(t *testing.T) {
 func TestAssetURL(t *testing.T) {
 	assets := []releaseAsset{
 		{Name: "LICENSE", URL: "u0"},
+		// hesplay client assets ride in the same release, listed FIRST — the
+		// server picker must skip them or an update would install the player.
+		{Name: "hesplay_1.2.3_amd64.deb", URL: "x1"},
+		{Name: "hesplay-1.2.3-linux-amd64", URL: "x2"},
+		{Name: "hesplay-1.2.3-darwin-arm64", URL: "x3"},
 		{Name: "hespera_1.2.3_amd64.deb", URL: "u1"},
 		{Name: "hespera_1.2.3_arm64.deb", URL: "u2"},
 		{Name: "hespera-1.2.3-linux-amd64", URL: "u3"},

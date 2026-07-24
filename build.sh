@@ -3,11 +3,13 @@
 # Usage: ./build.sh [-p|--publish] [version]   (version defaults to the VERSION file)
 #
 # Produces one cgo-free static `hespera` binary per OS/arch in dist/ (the
-# server — the assets are embedded, so each binary is fully self-contained),
-# plus a .deb for linux amd64/arm64 when nfpm is installed
-# (go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest). The .deb also
-# carries the `hescli` admin stub and the `hesplay` LAN music player, and
-# declares ffmpeg as a dependency so apt pulls it.
+# server — the assets are embedded, so each binary is fully self-contained)
+# and a `hesplay` client binary per OS/arch, plus .debs for linux amd64/arm64
+# when nfpm is installed
+# (go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest): the hespera
+# .deb (server + hescli, declares ffmpeg) and a standalone hesplay .deb
+# (nfpm-hesplay.yaml) so client boxes — a Pi with speakers — install just the
+# player without the full Hespera.
 #
 # -p / --publish: after building, push main and publish the dist/ artifacts as
 # GitHub release v<version> (the release channel the in-app update pill
@@ -75,20 +77,26 @@ for t in "${targets[@]}"; do
   echo "building $out"
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
     -ldflags "$LDFLAGS" -o "$out" ./cmd/hespera
+  out="$DIST/hesplay-$VERSION-$os-$arch$ext"
+  echo "building $out"
+  CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+    -ldflags "$LDFLAGS" -o "$out" ./cmd/hesplay
 done
 
 if command -v nfpm >/dev/null 2>&1; then
   for arch in amd64 arm64; do
     echo "packaging hespera_${VERSION}_${arch}.deb"
-    # nfpm.yaml references the literal staged paths dist/hespera, dist/hescli
-    # and dist/hesplay.
+    # The nfpm configs reference the literal staged paths dist/hespera,
+    # dist/hescli and dist/hesplay.
     cp "$DIST/hespera-$VERSION-linux-$arch" "$DIST/hespera"
     CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
       -ldflags "$LDFLAGS" -o "$DIST/hescli" ./cmd/hescli
-    CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
-      -ldflags "$LDFLAGS" -o "$DIST/hesplay" ./cmd/hesplay
     ARCH="$arch" VERSION="$VERSION" \
       nfpm package --config build/nfpm.yaml --packager deb --target "$DIST/hespera_${VERSION}_${arch}.deb"
+    echo "packaging hesplay_${VERSION}_${arch}.deb"
+    cp "$DIST/hesplay-$VERSION-linux-$arch" "$DIST/hesplay"
+    ARCH="$arch" VERSION="$VERSION" \
+      nfpm package --config build/nfpm-hesplay.yaml --packager deb --target "$DIST/hesplay_${VERSION}_${arch}.deb"
   done
   rm -f "$DIST/hespera" "$DIST/hescli" "$DIST/hesplay"
 else
@@ -101,7 +109,9 @@ if [ "$PUBLISH" = 1 ]; then
   echo "pushing main and publishing release v$VERSION"
   git push origin main
   # The asset names are load-bearing: the in-app update pill's asset picker
-  # matches hespera_<ver>_<arch>.deb and hespera-<ver>-<os>-<arch> exactly.
+  # matches hespera_<ver>_<arch>.deb and hespera-<ver>-<os>-<arch> exactly —
+  # and requires the hespera prefix, so the hesplay_/hesplay- client assets
+  # riding in the same release are never offered as a server update.
   gh release create "v$VERSION" \
     --title "Hespera $VERSION" \
     --generate-notes \
