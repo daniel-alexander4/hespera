@@ -165,3 +165,24 @@ func TestProbeRejectsStranger(t *testing.T) {
 		t.Fatalf("probe should reject a server without the X-Hespera header")
 	}
 }
+
+func TestShuffleFor(t *testing.T) {
+	cases := []struct {
+		verb                 string
+		shuffleFlag, ordered bool
+		want                 bool
+	}{
+		{"album", false, false, false}, // albums are sequenced works
+		{"artist", false, false, true}, // everything else shuffles by default
+		{"mix", false, false, true},
+		{"playlist", false, false, true},
+		{"album", true, false, true},     // --shuffle forces
+		{"playlist", false, true, false}, // --ordered forces
+		{"playlist", true, true, true},   // both → shuffle wins
+	}
+	for _, c := range cases {
+		if got := shuffleFor(c.verb, c.shuffleFlag, c.ordered); got != c.want {
+			t.Fatalf("shuffleFor(%q, %v, %v) = %v, want %v", c.verb, c.shuffleFlag, c.ordered, got, c.want)
+		}
+	}
+}
