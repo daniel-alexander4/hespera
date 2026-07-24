@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -53,6 +54,16 @@ func main() {
 		os.Exit(2)
 	}
 
+	// `server` manages the saved default — it must work with no server up,
+	// so it's handled before the client/probe path.
+	if args[0] == "server" {
+		if err := cmdServer(args[1:], *server); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Ctrl+C / SIGTERM stops the current track's engine process and exits.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -78,6 +89,7 @@ Commands:
   popular             Play the catalog's most popular songs (shuffled)
   all                 Play the whole catalog (shuffled)
   playlists           List playlists
+  server [url|clear]  Show, set, or clear the saved default server
   version             Print hesplay version (also --version)
 
 Names need no quoting (hesplay album abbey road) and resolve against the
@@ -88,25 +100,120 @@ installed, else ffplay (from ffmpeg).
 Order: an album plays in track order; artist/mix/playlist queues shuffle by
 default — --ordered plays them as listed, --shuffle forces a shuffle.
 
-Server: --server, else $HESPERA_SERVER, else http://127.0.0.1:8080.
+Server: --server, else $HESPERA_SERVER, else the saved default (set once with
+hesplay server http://plex:8080), else http://127.0.0.1:8080.
 `)
 }
 
-// resolveServer applies the --server > $HESPERA_SERVER > loopback-default
-// precedence (the hescli resolveSocket shape) and normalizes the URL so
-// "plex.local:8080" works without a scheme.
+// resolveServer applies the --server > $HESPERA_SERVER > saved default >
+// loopback-default precedence (the hescli resolveSocket shape, plus the
+// `hesplay server` file tier) and normalizes the URL so "plex.local:8080"
+// works without a scheme.
 func resolveServer(flagVal string) string {
-	s := strings.TrimSpace(flagVal)
-	if s == "" {
-		s = strings.TrimSpace(os.Getenv("HESPERA_SERVER"))
+	s, _ := resolveServerWithSource(flagVal)
+	return s
+}
+
+// resolveServerWithSource is resolveServer plus which tier answered, for
+// `hesplay server` to report.
+func resolveServerWithSource(flagVal string) (server, source string) {
+	if s := strings.TrimSpace(flagVal); s != "" {
+		return normalizeServer(s), "--server"
 	}
-	if s == "" {
-		s = "http://127.0.0.1:8080"
+	if s := strings.TrimSpace(os.Getenv("HESPERA_SERVER")); s != "" {
+		return normalizeServer(s), "$HESPERA_SERVER"
 	}
+	if s := savedServer(); s != "" {
+		return normalizeServer(s), "saved default"
+	}
+	return "http://127.0.0.1:8080", "built-in default"
+}
+
+// normalizeServer makes a bare "plex:8080" a usable base URL.
+func normalizeServer(s string) string {
 	if !strings.Contains(s, "://") {
 		s = "http://" + s
 	}
 	return strings.TrimSuffix(s, "/")
+}
+
+// serverConfigPath is the file holding the saved default server URL — one
+// line under the same per-user config dir the server's DataDir defaults to
+// (os.UserConfigDir()/hespera), so it lands somewhere predictable on any OS.
+func serverConfigPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "hespera", "hesplay-server"), nil
+}
+
+// savedServer reads the saved default; any failure (no file, no config dir)
+// is just "no saved default".
+func savedServer() string {
+	p, err := serverConfigPath()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// cmdServer shows, sets, or clears the saved default server. Setting probes
+// the URL and reports, but saves either way — pointing at a box that happens
+// to be down right now is still a valid default.
+func cmdServer(args []string, flagVal string) error {
+	if len(args) > 0 && isHelp(args[0]) {
+		usage()
+		return nil
+	}
+	switch {
+	case len(args) == 0:
+		server, source := resolveServerWithSource(flagVal)
+		fmt.Printf("%s (%s)\n", server, source)
+		if saved := savedServer(); saved != "" && source != "saved default" {
+			fmt.Printf("saved default %s is overridden by %s\n", normalizeServer(saved), source)
+		}
+		return nil
+	case len(args) == 1 && args[0] == "clear":
+		p, err := serverConfigPath()
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(p); err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("no saved default")
+				return nil
+			}
+			return err
+		}
+		fmt.Println("saved default cleared")
+		return nil
+	case len(args) == 1:
+		s := normalizeServer(strings.TrimSpace(args[0]))
+		p, err := serverConfigPath()
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, []byte(s+"\n"), 0o644); err != nil {
+			return err
+		}
+		fmt.Println("saved default:", s)
+		if ver, err := newClient(s).probe(); err == nil {
+			fmt.Printf("Hespera %s answered\n", ver)
+		} else {
+			fmt.Fprintf(os.Stderr, "warn: not answering right now (%v)\n", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("server: expected one URL (got %d arguments) — a URL has no spaces", len(args))
+	}
 }
 
 // shuffleFor resolves the play order: an album is a sequenced work and plays
