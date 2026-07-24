@@ -186,3 +186,13 @@ func TestShuffleFor(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveQueueQueryNoNameSources(t *testing.T) {
+	c := &client{} // popular/all resolve with no server round-trip
+	for _, v := range []string{"popular", "all"} {
+		q, picked, err := c.resolveQueueQuery(v, "")
+		if err != nil || picked != "" || q.Get("source") != v || len(q) != 1 {
+			t.Fatalf("resolveQueueQuery(%q): %v %q %v", v, q, picked, err)
+		}
+	}
+}
