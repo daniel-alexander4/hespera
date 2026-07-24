@@ -164,12 +164,15 @@ server (quitting is closing the app window, or stopping the service).
 
 ### Remote speakers: playing music on another box (`hesplay`)
 
-`hesplay` (installed alongside `hespera`/`hescli`, or `go build ./cmd/hesplay`)
-turns any Linux box with speakers — a headless Raspberry Pi in another room —
-into a music player for a LAN Hespera. It fetches the same queue the web
-player uses (so playlists, ordering, and per-track volume leveling all apply)
-and plays it through **mpv** (recommended: `apt install mpv`) or **ffplay**
-(part of the ffmpeg the .deb already installs).
+`hesplay` turns any box with speakers — a headless Raspberry Pi in another
+room — into a music player for a LAN Hespera. It installs **on its own,
+without the full Hespera**: grab the `hesplay_<version>_<arch>.deb` (or the
+raw `hesplay-<version>-<os>-<arch>` binary) from the
+[releases page](https://github.com/daniel-alexander4/hespera/releases), or
+`go build ./cmd/hesplay`. It fetches the same queue the web player uses (so
+playlists, ordering, and per-track volume leveling all apply) and plays it
+through **mpv** (recommended: `apt install mpv`) or **ffplay** (part of
+ffmpeg) — the .deb pulls mpv in when neither is present.
 
 ```sh
 hesplay server http://plex.local:8080   # save the default server once

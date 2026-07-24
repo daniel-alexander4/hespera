@@ -124,17 +124,20 @@ func (e errStatusCode) Error() string { return "update server returned HTTP " + 
 // the matching .deb (hespera_<ver>_<goarch>.deb); standalone installs want the raw
 // binary (hespera-<ver>-<goos>-<goarch>[.exe]) — build.sh's exact naming. It
 // matches on the os/arch tokens rather than reconstructing the full name, so the
-// naming can drift. Empty when nothing matches (the client falls back to the
+// version part can drift — but the hespera prefix is required: releases also
+// carry the hesplay client's .debs/binaries with the same _<arch>.deb and
+// -<os>-<arch> tokens, and offering one of those would "update" a server into
+// a music player. Empty when nothing matches (the client falls back to the
 // release page).
 func assetURL(goos, goarch string, managed bool, assets []releaseAsset) string {
 	for _, a := range assets {
 		if managed {
-			if strings.HasSuffix(a.Name, "_"+goarch+".deb") {
+			if strings.HasPrefix(a.Name, "hespera_") && strings.HasSuffix(a.Name, "_"+goarch+".deb") {
 				return a.URL
 			}
 			continue
 		}
-		if strings.Contains(a.Name, "-"+goos+"-"+goarch) && !strings.HasSuffix(a.Name, ".deb") {
+		if strings.HasPrefix(a.Name, "hespera-") && strings.Contains(a.Name, "-"+goos+"-"+goarch) && !strings.HasSuffix(a.Name, ".deb") {
 			return a.URL
 		}
 	}

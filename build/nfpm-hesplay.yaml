@@ -1,0 +1,34 @@
+# nfpm config for the standalone hesplay .deb — the LAN music player client on
+# its own, for boxes with speakers (a headless Raspberry Pi) that don't need the
+# full Hespera server install. build.sh sets ARCH/VERSION in the environment and
+# stages the binary to dist/hesplay (nfpm expands ${ARCH}/${VERSION} but not
+# contents.src globs, so the path is literal).
+name: hesplay
+arch: ${ARCH}
+version: ${VERSION}
+section: sound
+priority: optional
+maintainer: Dan <daniel@alexander4.org>
+description: |
+  hesplay — LAN music player for Hespera. Plays music from a Hespera server on
+  this machine's speakers: albums, artists, playlists, and radio mixes, with the
+  server's per-track volume leveling applied. Built for headless boxes.
+# A playback engine is required: mpv (preferred — best headless behavior) or
+# ffplay, which ships inside ffmpeg. apt installs mpv when neither is present.
+depends:
+  - mpv | ffmpeg
+# hespera .debs before 0.39.4 shipped /usr/bin/hesplay themselves; Replaces lets
+# this package take the file over cleanly on a box upgrading from one of those.
+replaces:
+  - hespera (<< 0.39.4)
+contents:
+  - src: dist/hesplay
+    dst: /usr/bin/hesplay
+    file_info:
+      mode: 0755
+  # hesplay is stdlib-only (no third-party Go modules), so the AGPL license
+  # text is the whole copyright story.
+  - src: LICENSE
+    dst: /usr/share/doc/hesplay/copyright
+    file_info:
+      mode: 0644

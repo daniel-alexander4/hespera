@@ -3,11 +3,34 @@
 # produces the per-arch .debs in dist/).
 #
 # Usage:
-#   ./install.sh [version]        install locally (this machine's architecture)
-#   ./install.sh remote [host]    copy the amd64 .deb to host (default: plex) and
-#                                 install it there with sudo over ssh
+#   ./install.sh [version]        install locally (this machine's architecture);
+#                                 installs hespera + the hesplay client .deb
+#   ./install.sh remote [host]    copy the amd64 hespera .deb to host (default:
+#                                 plex) and install it there with sudo over ssh
+#   ./install.sh client [host]    copy JUST the hesplay client .deb to host
+#                                 (default: raspberrypi; arch asked of the box)
+#                                 and install it — no full Hespera needed
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# --- Client deploy: push only the hesplay .deb to a box with speakers ----------
+if [ "${1:-}" = "client" ]; then
+  HOST="${2:-raspberrypi}"
+  VERSION="$(cat VERSION 2>/dev/null || echo 0.0.0)"
+  ARCH="$(ssh "$HOST" dpkg --print-architecture)"
+  DEB="dist/hesplay_${VERSION}_${ARCH}.deb"
+  if [ ! -f "$DEB" ]; then
+    echo "$DEB not found — run ./build.sh first" >&2
+    exit 1
+  fi
+  REMOTE_DEB="/tmp/$(basename "$DEB")"
+  echo "deploying hesplay $VERSION ($ARCH) to $HOST…"
+  scp "$DEB" "$HOST:$REMOTE_DEB"
+  # apt-get resolves the mpv|ffmpeg engine dependency; the file is removed after.
+  ssh -t "$HOST" "sudo apt-get install -y -qq -o APT::Sandbox::User=root '$REMOTE_DEB'; rm -f '$REMOTE_DEB'"
+  echo "installed on $HOST — try: hesplay server http://plex:8080"
+  exit 0
+fi
 
 # --- Remote deploy: push the amd64 .deb to a server and apt-install it ---------
 if [ "${1:-}" = "remote" ]; then
@@ -41,8 +64,18 @@ fi
 echo "installing hespera $VERSION ($ARCH)…"
 # apt-get (not dpkg -i) so the ffmpeg dep resolves; -qq keeps it quiet;
 # APT::Sandbox::User=root lets apt read the .deb from your home dir without the
-# "_apt couldn't access" permission warning.
-sudo apt-get install -y -qq -o APT::Sandbox::User=root "./$DEB"
+# "_apt couldn't access" permission warning. The hesplay client rides along in
+# its own .deb (since 0.39.4 the hespera package no longer ships it) — install
+# both in ONE transaction: hesplay takes over /usr/bin/hesplay from the old
+# hespera package via Replaces, which apt resolves cleanly only when it sees
+# both packages together.
+PLAY_DEB="dist/hesplay_${VERSION}_${ARCH}.deb"
+if [ -f "$PLAY_DEB" ]; then
+  sudo apt-get install -y -qq -o APT::Sandbox::User=root "./$DEB" "./$PLAY_DEB"
+else
+  echo "note: $PLAY_DEB not found — installing hespera only (hesplay is its own .deb now)" >&2
+  sudo apt-get install -y -qq -o APT::Sandbox::User=root "./$DEB"
+fi
 
 # Stop any instance still running the OLD binary. The app's attach-first launch
 # matches a live instance by its recorded app.url and opens a window onto THAT —

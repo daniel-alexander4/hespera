@@ -1,7 +1,10 @@
 # nfpm config for the Hespera .deb. The build scripts set ARCH/VERSION in the
-# environment and stage the binaries to dist/hespera, dist/hescli and
-# dist/hesplay (nfpm expands ${ARCH}/${VERSION} but not contents.src globs, so
-# those paths are literal). No systemd unit: Hespera is launched on demand as a desktop app
+# environment and stage the binaries to dist/hespera and dist/hescli (nfpm
+# expands ${ARCH}/${VERSION} but not contents.src globs, so those paths are
+# literal). The hesplay music-player client ships as its OWN .deb
+# (nfpm-hesplay.yaml) so client boxes don't need the full install — it must
+# not also ship here (two packages owning /usr/bin/hesplay conflict).
+# No systemd unit: Hespera is launched on demand as a desktop app
 # (the .desktop entry below opens a chromeless window) — there is no service.
 name: hespera
 arch: ${ARCH}
@@ -30,13 +33,6 @@ contents:
       mode: 0755
   - src: dist/hescli
     dst: /usr/bin/hescli
-    file_info:
-      mode: 0755
-  # hesplay plays music from a LAN Hespera on this machine's speakers (built
-  # for headless boxes like a Raspberry Pi); mpv preferred, ffplay (from the
-  # ffmpeg dependency above) as fallback.
-  - src: dist/hesplay
-    dst: /usr/bin/hesplay
     file_info:
       mode: 0755
   # Lazy-loaded bash completion for hescli (sources the current script from the
