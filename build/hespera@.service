@@ -1,0 +1,32 @@
+# Hespera headless server — a systemd TEMPLATE unit: the instance name is the
+# account to run as (`systemctl enable --now hespera@dan`). Shipped by the .deb
+# but never enabled by default, so a desktop install is untouched.
+#
+# Why a system template rather than the `--user` unit the README used to make
+# people hand-write: a user unit on a headless box needs `loginctl enable-linger`
+# to survive logout, and every later `systemctl --user` over SSH needs the
+# XDG_RUNTIME_DIR dance. A system unit needs neither.
+#
+# Config lives in /etc/default/hespera (HESPERA_LISTEN=:8080 to serve the LAN,
+# HESPERA_MEDIA_ROOT, HESPERA_DATA_DIR, …). It is deliberately NOT a per-user
+# ~/.config file: %h in a system unit expands to root's home, not User=%i's, so
+# a per-instance env file cannot be addressed here. Nothing else is set, so the
+# defaults hold — loopback-only, data dir under the account's ~/.config/hespera
+# ($HOME comes from User=).
+
+[Unit]
+Description=Hespera media server (%i)
+Documentation=https://github.com/daniel-alexander4/hespera
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=%i
+Environment=HESPERA_NO_BROWSER=1
+EnvironmentFile=-/etc/default/hespera
+ExecStart=/usr/bin/hespera
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -55,9 +55,10 @@ an app-menu entry + icon (pulling **ffmpeg** via apt), plus the `hesplay`
 music-player client, which ships as its own package so other boxes can install
 it without the full Hespera (see [Remote speakers](#remote-speakers-playing-music-on-another-box-hesplay)).
 `./install.sh remote [host]` deploys the server .deb to another machine over
-ssh; `./install.sh client [host]` deploys just the hesplay .deb. No background
-service is installed; launch **Hespera** from your app menu (or run `hespera`)
-and it opens an app window:
+ssh; `./install.sh client [host]` deploys just the hesplay .deb. Nothing runs in
+the background unless you ask for it (a headless server unit ships, disabled —
+see [Serving your household](#serving-your-household)); launch **Hespera** from
+your app menu (or run `hespera`) and it opens an app window:
 
 ```sh
 hespera
@@ -129,29 +130,24 @@ off.
 ### Serving your household
 
 To let other devices in the house use Hespera (phones, laptops, a TV
-browser), run server mode on the machine that holds the media, started at
-boot by a systemd **user** unit:
-
-```ini
-# ~/.config/systemd/user/hespera.service
-[Unit]
-Description=Hespera media server
-
-[Service]
-Environment=HESPERA_NO_BROWSER=1
-Environment=HESPERA_LISTEN=:8080
-ExecStart=/usr/bin/hespera
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
+browser), run server mode on the machine that holds the media. The `.deb`
+ships a systemd unit for exactly this — it is inert until you enable it:
 
 ```sh
-systemctl --user daemon-reload && systemctl --user enable --now hespera
-loginctl enable-linger $USER          # keep it running when logged out
-sudo ufw allow from 192.168.1.0/24 to any port 8080 proto tcp   # your LAN subnet
+echo 'HESPERA_LISTEN=:8080' | sudo tee /etc/default/hespera   # serve the LAN, not just loopback
+sudo systemctl enable --now hespera@$USER                     # start now, and at every boot
+sudo ufw allow from 192.168.1.0/24 to any port 8080 proto tcp # your LAN subnet
 ```
+
+The instance name is the account Hespera runs as (`hespera@dan`), so it uses
+that user's library, database, and artwork — no root, no linger, and no
+`XDG_RUNTIME_DIR` incantation when you come back over SSH. `/etc/default/hespera`
+takes any of the environment variables below (`HESPERA_MEDIA_ROOT`,
+`HESPERA_DATA_DIR`, …); `sudo systemctl restart hespera@$USER` applies changes,
+and `journalctl -u hespera@$USER -f` is the log. Upgrading the package replaces
+the unit file, so run `sudo systemctl daemon-reload` before restarting. Not
+installing from the `.deb`? Copy `build/hespera@.service` to
+`/etc/systemd/system/` yourself — it's the same file.
 
 Devices then browse `http://<hostname>:8080`. Phones and laptops get the
 right UI scale automatically; a TV browser can pin the 10-foot scale once
