@@ -172,7 +172,9 @@ and plays it through **mpv** (recommended: `apt install mpv`) or **ffplay**
 (part of the ffmpeg the .deb already installs).
 
 ```sh
-export HESPERA_SERVER=http://plex.local:8080   # or --server per call
+hesplay server http://plex.local:8080   # save the default server once
+                                        # (--server or $HESPERA_SERVER override per call;
+                                        #  hesplay server shows it, hesplay server clear forgets it)
 
 hesplay playlists                   # list playlists
 hesplay playlist road trip          # play one (names need no quoting)

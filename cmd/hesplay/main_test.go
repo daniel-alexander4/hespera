@@ -10,16 +10,46 @@ import (
 )
 
 func TestResolveServerPrecedence(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate from any real saved default
 	t.Setenv("HESPERA_SERVER", "")
 	if got := resolveServer(""); got != "http://127.0.0.1:8080" {
 		t.Fatalf("default = %q", got)
 	}
-	t.Setenv("HESPERA_SERVER", "http://plex.local:8080/")
-	if got := resolveServer(""); got != "http://plex.local:8080" {
-		t.Fatalf("env = %q (trailing slash should be trimmed)", got)
+	if err := cmdServer([]string{"pi.invalid:9090/"}, ""); err != nil {
+		t.Fatalf("cmdServer set: %v", err)
 	}
-	if got := resolveServer("other:9090"); got != "http://other:9090" {
-		t.Fatalf("flag = %q (flag should win and gain a scheme)", got)
+	if got, src := resolveServerWithSource(""); got != "http://pi.invalid:9090" || src != "saved default" {
+		t.Fatalf("saved = %q (%s) — should beat the built-in default, gain a scheme, drop the slash", got, src)
+	}
+	t.Setenv("HESPERA_SERVER", "http://plex.local:8080/")
+	if got, src := resolveServerWithSource(""); got != "http://plex.local:8080" || src != "$HESPERA_SERVER" {
+		t.Fatalf("env = %q (%s) — env should beat the saved default", got, src)
+	}
+	if got, src := resolveServerWithSource("other:9090"); got != "http://other:9090" || src != "--server" {
+		t.Fatalf("flag = %q (%s) — flag should win over everything", got, src)
+	}
+}
+
+func TestCmdServerClear(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HESPERA_SERVER", "")
+	if err := cmdServer([]string{"clear"}, ""); err != nil {
+		t.Fatalf("clear with nothing saved should be a friendly no-op: %v", err)
+	}
+	if err := cmdServer([]string{"plex.invalid:8080"}, ""); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if got := savedServer(); got != "http://plex.invalid:8080" {
+		t.Fatalf("saved = %q", got)
+	}
+	if err := cmdServer([]string{"clear"}, ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if got := savedServer(); got != "" {
+		t.Fatalf("saved after clear = %q, want empty", got)
+	}
+	if err := cmdServer([]string{"http://a", "http://b"}, ""); err == nil {
+		t.Fatalf("two URLs should error")
 	}
 }
 
