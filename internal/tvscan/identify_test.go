@@ -277,11 +277,11 @@ func TestCleanTitle(t *testing.T) {
 		{"Show.Name.S01E02", "Show Name"},
 		{"Show.Name.S01E01E02", "Show Name"},
 		// FP guards: real title tokens that must NOT be stripped.
-		{"S Club 7", "S Club 7"},          // "S" alone (no digit) survives
-		{"Series 7", "Series 7"},          // not an s+digits token
-		{"District 13", "District 13"},    // bare number survives
-		{"Se7en", "Se7en"},                // digit inside a word survives
-		{"3x3 Eyes", "3x3 Eyes"},          // NxM is not touched by this strip
+		{"S Club 7", "S Club 7"},       // "S" alone (no digit) survives
+		{"Series 7", "Series 7"},       // not an s+digits token
+		{"District 13", "District 13"}, // bare number survives
+		{"Se7en", "Se7en"},             // digit inside a word survives
+		{"3x3 Eyes", "3x3 Eyes"},       // NxM is not touched by this strip
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {

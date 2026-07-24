@@ -32,11 +32,11 @@ func TestPhotoNeighbors(t *testing.T) {
 	// Display order (desc): id4 (2021) > id3 (2020, video) > id2 (2020 still,
 	// tie broken by id) > id5 (2020 still, other dir) > id1 (2019, video).
 	seedPhotos(t, h, [][3]string{
-		{"video", "2019-05-01 10:00:00", "trip"},   // id1
-		{"photo", "2020-06-01 10:00:00", "trip"},   // id2 — same taken_at as id3
-		{"video", "2020-06-01 10:00:00", "trip"},   // id3
-		{"photo", "2021-07-01 10:00:00", "trip"},   // id4
-		{"photo", "2020-01-01 10:00:00", "other"},  // id5
+		{"video", "2019-05-01 10:00:00", "trip"},  // id1
+		{"photo", "2020-06-01 10:00:00", "trip"},  // id2 — same taken_at as id3
+		{"video", "2020-06-01 10:00:00", "trip"},  // id3
+		{"photo", "2021-07-01 10:00:00", "trip"},  // id4
+		{"photo", "2020-01-01 10:00:00", "other"}, // id5
 	})
 	ctx := context.Background()
 

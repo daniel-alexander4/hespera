@@ -28,8 +28,8 @@ const ffmpegMinMajor = 7
 type healthRow struct {
 	Status  string `json:"status"` // ok | warn | missing | na
 	Version string `json:"version,omitempty"`
-	Name    string `json:"name,omitempty"`   // browser display name
-	Detail  string `json:"detail"`           // the short "why" shown under the row
+	Name    string `json:"name,omitempty"` // browser display name
+	Detail  string `json:"detail"`         // the short "why" shown under the row
 }
 
 type aboutHealth struct {
