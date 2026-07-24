@@ -176,11 +176,15 @@ export HESPERA_SERVER=http://plex.local:8080   # or --server per call
 
 hesplay playlists                   # list playlists
 hesplay playlist road trip          # play one (names need no quoting)
-hesplay album abbey road            # play an album
-hesplay artist queen                # an artist's whole catalog in album order
+hesplay album abbey road            # play an album, in track order
+hesplay artist queen                # an artist's whole catalog, shuffled
 hesplay mix queen                   # a radio mix: that artist + similar artists
-hesplay --shuffle album abbey road  # shuffle
+hesplay --shuffle album abbey road  # force a shuffle
+hesplay --ordered playlist workout  # play a playlist in its curated order
 ```
+
+An album plays in track order; artist, mix, and playlist queues shuffle by
+default (`--ordered` plays them as listed).
 
 Names resolve against the server's search — the closest match plays and is
 printed. Finished tracks are reported back, so Recently Played and listen

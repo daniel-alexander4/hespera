@@ -37,7 +37,8 @@ var version = "dev"
 
 func main() {
 	server := flag.String("server", "", "Hespera server URL (default: $HESPERA_SERVER, else http://127.0.0.1:8080)")
-	shuffle := flag.Bool("shuffle", false, "shuffle the queue before playing")
+	shuffle := flag.Bool("shuffle", false, "force a shuffle (albums play in track order by default)")
+	ordered := flag.Bool("ordered", false, "play in listed order (artist/mix/playlist shuffle by default)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = usage
 	flag.Parse()
@@ -57,7 +58,7 @@ func main() {
 	defer stop()
 
 	c := newClient(resolveServer(*server))
-	if err := dispatch(ctx, c, args, *shuffle); err != nil {
+	if err := dispatch(ctx, c, args, shuffleFor(args[0], *shuffle, *ordered)); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -67,7 +68,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `hesplay — Hespera LAN music player
 
 Usage:
-  hesplay [--server URL] [--shuffle] <command> [args]
+  hesplay [--server URL] [--shuffle|--ordered] <command> [args]
 
 Commands:
   album <name|id>     Play an album
@@ -81,6 +82,9 @@ Names need no quoting (hesplay album abbey road) and resolve against the
 server's search — the closest match plays and is printed; a purely numeric
 argument that matches no name is tried as an id. Playback engine: mpv when
 installed, else ffplay (from ffmpeg).
+
+Order: an album plays in track order; artist/mix/playlist queues shuffle by
+default — --ordered plays them as listed, --shuffle forces a shuffle.
 
 Server: --server, else $HESPERA_SERVER, else http://127.0.0.1:8080.
 `)
@@ -101,6 +105,19 @@ func resolveServer(flagVal string) string {
 		s = "http://" + s
 	}
 	return strings.TrimSuffix(s, "/")
+}
+
+// shuffleFor resolves the play order: an album is a sequenced work and plays
+// in track order; everything else (artist catalog, mix, playlist) shuffles by
+// default. --shuffle and --ordered force either way (--shuffle wins if both).
+func shuffleFor(verb string, shuffleFlag, orderedFlag bool) bool {
+	if shuffleFlag {
+		return true
+	}
+	if orderedFlag {
+		return false
+	}
+	return verb != "album"
 }
 
 // isHelp reports whether an argument is a help request in any accepted form.
