@@ -1564,8 +1564,9 @@ JOIN music_albums al ON al.id=t.album_id
 JOIN music_artists ar ON ar.id=t.artist_id`
 
 // musicPlayer renders the queue-based player. The queue is built from a
-// ?source=: a single album (default, ?album=N), the whole library (all),
-// the most-played tracks (popular), or a year range (era, ?from=&to=). All of
+// ?source=: a single album (default, ?album=N), an artist's catalog (artist,
+// ?artist=N), the whole library (all), the most-played tracks (popular), or a
+// year range (era, ?from=&to=). All of
 // them reuse the player's existing client-side queue/shuffle/stream/lyrics; the
 // collection playlists pass &shuffle=1.
 // playerQueue is an ordered, source-resolved track queue plus its display
@@ -1577,8 +1578,8 @@ type playerQueue struct {
 	Tracks  []trackRow
 }
 
-// buildPlayerQueue resolves the ?source= switch (single album / all / popular /
-// era / playlist / mix) into an ordered queue. notFound signals invalid params
+// buildPlayerQueue resolves the ?source= switch (single album / artist / all /
+// popular / era / playlist / mix) into an ordered queue. notFound signals invalid params
 // (→ 404); err is a server error. It is the one owner of player queue-building;
 // both the HTML now-playing view and the /music/queue JSON endpoint route
 // through it so the queue never grows a second, drifting copy.
@@ -1599,6 +1600,20 @@ func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound boo
 		q.BackURL = fmt.Sprintf("/music/playlist?id=%d", playlistID)
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` JOIN playlist_tracks pt ON pt.track_id=t.id WHERE pt.playlist_id=? ORDER BY pt.position`, playlistID)
+	case "artist":
+		// The artist's whole catalog in album order (year, then title). Distinct
+		// from "mix", which blends in similar artists — this is just their music.
+		artistID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("artist")), 10, 64)
+		if perr != nil || artistID <= 0 {
+			return q, true, nil
+		}
+		if qerr := h.db.QueryRowContext(r.Context(),
+			"SELECT name FROM music_artists WHERE id=?", artistID).Scan(&q.Title); qerr != nil {
+			return q, true, nil
+		}
+		q.BackURL = fmt.Sprintf("/music/artist/%d", artistID)
+		q.Tracks, err = h.queryPlayerTracks(r.Context(),
+			playerTrackSelect+` WHERE t.artist_id=? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, artistID)
 	case "mix":
 		artistID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("artist")), 10, 64)
 		seedTrackID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("track")), 10, 64)

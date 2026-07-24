@@ -6,8 +6,8 @@
 # server — the assets are embedded, so each binary is fully self-contained),
 # plus a .deb for linux amd64/arm64 when nfpm is installed
 # (go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest). The .deb also
-# carries the `hescli` admin stub and declares ffmpeg as a dependency so apt
-# pulls it.
+# carries the `hescli` admin stub and the `hesplay` LAN music player, and
+# declares ffmpeg as a dependency so apt pulls it.
 #
 # -p / --publish: after building, push main and publish the dist/ artifacts as
 # GitHub release v<version> (the release channel the in-app update pill
@@ -80,14 +80,17 @@ done
 if command -v nfpm >/dev/null 2>&1; then
   for arch in amd64 arm64; do
     echo "packaging hespera_${VERSION}_${arch}.deb"
-    # nfpm.yaml references the literal staged paths dist/hespera and dist/hescli.
+    # nfpm.yaml references the literal staged paths dist/hespera, dist/hescli
+    # and dist/hesplay.
     cp "$DIST/hespera-$VERSION-linux-$arch" "$DIST/hespera"
     CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
       -ldflags "$LDFLAGS" -o "$DIST/hescli" ./cmd/hescli
+    CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+      -ldflags "$LDFLAGS" -o "$DIST/hesplay" ./cmd/hesplay
     ARCH="$arch" VERSION="$VERSION" \
       nfpm package --config build/nfpm.yaml --packager deb --target "$DIST/hespera_${VERSION}_${arch}.deb"
   done
-  rm -f "$DIST/hespera" "$DIST/hescli"
+  rm -f "$DIST/hespera" "$DIST/hescli" "$DIST/hesplay"
 else
   echo "nfpm not found — skipping .deb. Install: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest"
 fi

@@ -162,6 +162,31 @@ profiles); the security posture below applies (trusted network only); and
 there is no shutdown control in the UI, so a phone can't stop the family
 server (quitting is closing the app window, or stopping the service).
 
+### Remote speakers: playing music on another box (`hesplay`)
+
+`hesplay` (installed alongside `hespera`/`hescli`, or `go build ./cmd/hesplay`)
+turns any Linux box with speakers — a headless Raspberry Pi in another room —
+into a music player for a LAN Hespera. It fetches the same queue the web
+player uses (so playlists, ordering, and per-track volume leveling all apply)
+and plays it through **mpv** (recommended: `apt install mpv`) or **ffplay**
+(part of the ffmpeg the .deb already installs).
+
+```sh
+export HESPERA_SERVER=http://plex.local:8080   # or --server per call
+
+hesplay playlists                   # list playlists
+hesplay playlist road trip          # play one (names need no quoting)
+hesplay album abbey road            # play an album
+hesplay artist queen                # an artist's whole catalog in album order
+hesplay mix queen                   # a radio mix: that artist + similar artists
+hesplay --shuffle album abbey road  # shuffle
+```
+
+Names resolve against the server's search — the closest match plays and is
+printed. Finished tracks are reported back, so Recently Played and listen
+counts include what played upstairs. Ctrl+C stops. The security posture below
+applies: `hesplay` talks to the same unauthenticated LAN port as any browser.
+
 ### Security posture
 
 Hespera has **no authentication layer, by design** — it is a single-machine
