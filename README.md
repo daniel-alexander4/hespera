@@ -47,14 +47,17 @@ macOS, and Windows** (amd64 + arm64).
 ### Debian / Ubuntu (recommended)
 
 ```sh
-./install.sh
+./build.sh && ./install.sh
 ```
 
-Builds Hespera, packages a `.deb`, and installs it — placing `hespera` and
-`hescli` in `/usr/bin`, an app-menu entry + icon, and pulling the runtime
-dependencies (**ffmpeg**, **openssh-client**) via apt. No background service is
-installed; launch **Hespera** from your app menu (or run `hespera`) and it opens
-an app window:
+Packages and installs the `.deb`s — `hespera` and `hescli` in `/usr/bin` with
+an app-menu entry + icon (pulling **ffmpeg** via apt), plus the `hesplay`
+music-player client, which ships as its own package so other boxes can install
+it without the full Hespera (see [Remote speakers](#remote-speakers-playing-music-on-another-box-hesplay)).
+`./install.sh remote [host]` deploys the server .deb to another machine over
+ssh; `./install.sh client [host]` deploys just the hesplay .deb. No background
+service is installed; launch **Hespera** from your app menu (or run `hespera`)
+and it opens an app window:
 
 ```sh
 hespera
@@ -79,15 +82,17 @@ work without it.
 Requires Go 1.23+.
 
 ```sh
-make build        # local ./bin/hespera + ./bin/hescli (quick dev build)
+make build        # local ./bin/hespera + ./bin/hescli + ./bin/hesplay (quick dev build)
 make dist         # cross-compile all platforms + .deb packages into dist/
 make install      # build, package, and install on this Debian/Ubuntu machine
 make test         # go test ./...
 make release      # build + publish dist/ as GitHub release v<VERSION> (needs gh + nfpm)
 ```
 
-`build.sh` produces one cgo-free static `hespera` binary per OS/arch in `dist/`,
-plus `.deb` packages for Linux amd64/arm64 (needs
+`build.sh` produces one cgo-free static `hespera` binary and one `hesplay`
+client binary per OS/arch in `dist/`, plus `.deb` packages for Linux
+amd64/arm64 — `hespera_<ver>_<arch>.deb` (server + hescli) and the standalone
+`hesplay_<ver>_<arch>.deb` (needs
 [`nfpm`](https://github.com/goreleaser/nfpm): `go install
 github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`).
 
@@ -169,10 +174,12 @@ room — into a music player for a LAN Hespera. It installs **on its own,
 without the full Hespera**: grab the `hesplay_<version>_<arch>.deb` (or the
 raw `hesplay-<version>-<os>-<arch>` binary) from the
 [releases page](https://github.com/daniel-alexander4/hespera/releases), or
-`go build ./cmd/hesplay`. It fetches the same queue the web player uses (so
-playlists, ordering, and per-track volume leveling all apply) and plays it
-through **mpv** (recommended: `apt install mpv`) or **ffplay** (part of
-ffmpeg) — the .deb pulls mpv in when neither is present.
+`go build ./cmd/hesplay`. From a repo checkout, `./install.sh client [host]`
+pushes the built .deb to a box over ssh and installs it there. It fetches the
+same queue the web player uses (so playlists, ordering, and per-track volume
+leveling all apply) and plays it through **mpv** (recommended:
+`apt install mpv`) or **ffplay** (part of ffmpeg) — the .deb pulls mpv in
+when neither is present.
 
 ```sh
 hesplay server http://plex.local:8080   # save the default server once
