@@ -19,14 +19,17 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -377,13 +380,122 @@ func findEngine() (engine, error) {
 // args builds the engine invocation for one track: audio-only, quiet, with the
 // queue's leveling gain applied as a filter (0 dB = unity, so an unanalyzed
 // track passes through untouched). mpv goes through its lavfi bridge — stable
-// across mpv versions, same ffmpeg volume syntax as ffplay.
-func (e engine) args(streamURL string, gainDB float64) []string {
+// across mpv versions, same ffmpeg volume syntax as ffplay. A non-empty
+// ipcPath adds mpv's JSON IPC socket, which the stall guard below polls.
+func (e engine) args(streamURL string, gainDB float64, ipcPath string) []string {
 	af := fmt.Sprintf("volume=%.2fdB", gainDB)
 	if e.name == "mpv" {
-		return []string{"--no-video", "--really-quiet", "--af=lavfi=[" + af + "]", streamURL}
+		a := []string{"--no-video", "--really-quiet", "--af=lavfi=[" + af + "]"}
+		if ipcPath != "" {
+			a = append(a, "--input-ipc-server="+ipcPath)
+		}
+		return append(a, streamURL)
 	}
 	return []string{"-nodisp", "-autoexit", "-loglevel", "error", "-af", af, streamURL}
+}
+
+// --- stall guard ---
+//
+// One process per track means a wedged engine takes the whole queue down with
+// it: hesplay waits on the child, so a process that neither plays nor exits
+// freezes playback with no error, no skip, and nothing on screen. Seen live on
+// the Pi — mpv blocked forever inside its pipewire audio-output init (probing
+// a stack that box doesn't run), holding no audio device, and deaf to SIGTERM.
+// The engine's own position is the only honest progress signal, so mpv is
+// given an IPC socket and polled; a position that stops advancing — or never
+// starts — is a wedge.
+const (
+	stallPoll    = 3 * time.Second
+	stallTimeout = 20 * time.Second
+)
+
+// stallSocket is the per-track IPC socket path, or "" when the guard can't run:
+// ffplay has no IPC at all, and mpv on Windows speaks named pipes, which need
+// more than the stdlib to dial. Those engines play unguarded, exactly as before.
+func stallSocket(e engine, trackID int64) string {
+	if e.name != "mpv" || runtime.GOOS == "windows" {
+		return ""
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("hesplay-%d-%d.sock", os.Getpid(), trackID))
+}
+
+// stallTracker turns a series of position samples into a stalled/not verdict.
+// A sample that couldn't be read (socket not up yet, or time-pos unavailable
+// because playback never started) counts as no progress — that is precisely
+// what a wedge before the first frame looks like.
+type stallTracker struct {
+	pos      float64
+	lastMove time.Time
+}
+
+func newStallTracker(now time.Time) *stallTracker {
+	return &stallTracker{pos: -1, lastMove: now}
+}
+
+func (s *stallTracker) observe(pos float64, ok bool, now time.Time) bool {
+	if ok && pos > s.pos {
+		s.pos, s.lastMove = pos, now
+		return false
+	}
+	return now.Sub(s.lastMove) > stallTimeout
+}
+
+// watchStall polls the engine socket until done is closed and kills a wedged
+// process, recording the fact in killed so the play loop can tell a stall from
+// an ordinary engine failure. SIGKILL, not SIGTERM: a wedged mpv ignores the
+// polite signal (measured — still alive three and a half minutes after one).
+func watchStall(done <-chan struct{}, proc *os.Process, sock string, killed *atomic.Bool) {
+	tick := time.NewTicker(stallPoll)
+	defer tick.Stop()
+	st := newStallTracker(time.Now())
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-tick.C:
+			pos, ok := ipcTimePos(sock)
+			if !st.observe(pos, ok, now) {
+				continue
+			}
+			killed.Store(true)
+			_ = proc.Kill()
+			return
+		}
+	}
+}
+
+// ipcTimePos asks mpv for the current playback position over its JSON IPC
+// socket. Every failure mode — socket absent, no reply, property unavailable —
+// reports not-ok rather than an error, since the tracker treats them all the
+// same way: no progress.
+func ipcTimePos(sock string) (float64, bool) {
+	conn, err := net.DialTimeout("unix", sock, time.Second)
+	if err != nil {
+		return 0, false
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.WriteString(conn, `{"command":["get_property","time-pos"]}`+"\n"); err != nil {
+		return 0, false
+	}
+	dec := json.NewDecoder(conn)
+	for {
+		var msg struct {
+			Data  *float64 `json:"data"`
+			Error string   `json:"error"`
+			Event string   `json:"event"`
+		}
+		if err := dec.Decode(&msg); err != nil {
+			return 0, false
+		}
+		if msg.Event != "" {
+			continue // mpv pushes events down the same socket; skip to the reply
+		}
+		if msg.Error != "success" || msg.Data == nil {
+			return 0, false
+		}
+		return *msg.Data, true
+	}
 }
 
 // play runs the queue through the engine, one process per track — clean
@@ -403,11 +515,35 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 			return nil
 		}
 		fmt.Printf("♪ %d/%d  %s — %s\n", i+1, len(tracks), t.Title, t.Artist)
+		sock := stallSocket(e, t.ID)
 		start := time.Now()
-		cmd := exec.CommandContext(ctx, e.path, e.args(c.base+"/stream/track/"+strconv.FormatInt(t.ID, 10), t.GainDB)...)
+		cmd := exec.CommandContext(ctx, e.path, e.args(c.base+"/stream/track/"+strconv.FormatInt(t.ID, 10), t.GainDB, sock)...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		runErr := cmd.Run()
+
+		var stalled atomic.Bool
+		runErr := cmd.Start()
+		if runErr == nil {
+			done := make(chan struct{})
+			if sock != "" {
+				go watchStall(done, cmd.Process, sock, &stalled)
+			}
+			runErr = cmd.Wait()
+			close(done)
+			if sock != "" {
+				os.Remove(sock) // mpv unlinks its own on a clean exit; a killed one doesn't
+			}
+		}
 		played := time.Since(start)
+
+		// A stalled track was never heard, so it is never reported: a wedged
+		// engine must not land in Recently Played or bump a listen count. It
+		// doesn't feed the instant-failure guard either — the queue is moving,
+		// one engine just had to be put down.
+		if stalled.Load() {
+			quickFails = 0
+			fmt.Fprintf(os.Stderr, "warn: %s stalled on %q (no playback progress for %s), killed and skipping\n", e.name, t.Title, stallTimeout)
+			continue
+		}
 		c.reportPlay(t.ID, played, runErr == nil && ctx.Err() == nil)
 
 		switch {
