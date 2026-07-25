@@ -201,6 +201,16 @@ printed. Finished tracks are reported back, so Recently Played and listen
 counts include what played upstairs. Ctrl+C stops. The security posture below
 applies: `hesplay` talks to the same unauthenticated LAN port as any browser.
 
+**A wedged player can't freeze the queue.** `hesplay` runs one engine process
+per track and waits for it, so an engine that neither plays nor exits would
+otherwise stall playback indefinitely with no error and no skip — which mpv
+does if it hangs probing an audio output the box doesn't actually run. So mpv
+is started with a JSON IPC socket and polled: if its playback position stops
+advancing (or never starts) for 20 seconds, the process is killed — SIGKILL,
+since a wedged mpv ignores SIGTERM — and the track is skipped with a warning.
+A skipped track is never reported as played, so listen counts stay honest.
+ffplay has no IPC and plays unguarded.
+
 ### Security posture
 
 Hespera has **no authentication layer, by design** — it is a single-machine

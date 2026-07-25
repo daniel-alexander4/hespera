@@ -2,8 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -55,16 +59,119 @@ func TestCmdServerClear(t *testing.T) {
 
 func TestEngineArgs(t *testing.T) {
 	mpv := engine{name: "mpv", path: "/usr/bin/mpv"}
-	got := mpv.args("http://s/stream/track/7", -3.5)
+	got := mpv.args("http://s/stream/track/7", -3.5, "")
 	want := []string{"--no-video", "--really-quiet", "--af=lavfi=[volume=-3.50dB]", "http://s/stream/track/7"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("mpv args = %v, want %v", got, want)
 	}
+	// The stream URL must stay last, after the IPC flag.
+	got = mpv.args("http://s/stream/track/7", 0, "/tmp/hesplay-1-7.sock")
+	want = []string{"--no-video", "--really-quiet", "--af=lavfi=[volume=0.00dB]", "--input-ipc-server=/tmp/hesplay-1-7.sock", "http://s/stream/track/7"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("mpv args with ipc = %v, want %v", got, want)
+	}
 	ffplay := engine{name: "ffplay", path: "/usr/bin/ffplay"}
-	got = ffplay.args("http://s/stream/track/7", 0)
+	got = ffplay.args("http://s/stream/track/7", 0, "/tmp/ignored.sock")
 	want = []string{"-nodisp", "-autoexit", "-loglevel", "error", "-af", "volume=0.00dB", "http://s/stream/track/7"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("ffplay args = %v, want %v", got, want)
+	}
+}
+
+func TestStallSocket(t *testing.T) {
+	if got := stallSocket(engine{name: "ffplay"}, 7); got != "" {
+		t.Fatalf("ffplay has no IPC, want no socket, got %q", got)
+	}
+	got := stallSocket(engine{name: "mpv"}, 7)
+	if runtime.GOOS == "windows" {
+		if got != "" {
+			t.Fatalf("windows mpv speaks named pipes, want no socket, got %q", got)
+		}
+		return
+	}
+	if !strings.HasSuffix(got, "-7.sock") || !strings.Contains(got, "hesplay-") {
+		t.Fatalf("mpv socket = %q, want a per-track hesplay socket", got)
+	}
+}
+
+func TestStallTracker(t *testing.T) {
+	base := time.Unix(1700000000, 0)
+	within := base.Add(stallTimeout - time.Second)
+	past := base.Add(stallTimeout + time.Second)
+
+	// Advancing playback never stalls, however long the track runs.
+	st := newStallTracker(base)
+	for i, at := range []time.Time{within, past, past.Add(time.Hour)} {
+		if st.observe(float64(i+1)*10, true, at) {
+			t.Fatalf("advancing position stalled at sample %d", i)
+		}
+	}
+
+	// A wedge before the first frame: no readable position, ever.
+	st = newStallTracker(base)
+	if st.observe(0, false, within) {
+		t.Fatalf("stalled inside the grace window")
+	}
+	if !st.observe(0, false, past) {
+		t.Fatalf("want stall once the timeout is exceeded with no progress")
+	}
+
+	// A mid-track freeze: position readable but pinned. The clock runs from the
+	// last real advance, not from process start.
+	st = newStallTracker(base)
+	if st.observe(42, true, base.Add(time.Minute)) {
+		t.Fatalf("first real position stalled")
+	}
+	if st.observe(42, true, base.Add(time.Minute+stallTimeout-time.Second)) {
+		t.Fatalf("stalled before the timeout elapsed since the last advance")
+	}
+	if !st.observe(42, true, base.Add(time.Minute+stallTimeout+time.Second)) {
+		t.Fatalf("want stall on a pinned position past the timeout")
+	}
+}
+
+func TestIPCTimePos(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix sockets only")
+	}
+	// A missing socket is not-ok, not a panic or a hang.
+	if _, ok := ipcTimePos(filepath.Join(t.TempDir(), "absent.sock")); ok {
+		t.Fatalf("absent socket reported ok")
+	}
+
+	cases := []struct {
+		name    string
+		reply   string
+		wantPos float64
+		wantOK  bool
+	}{
+		{"position", `{"data":12.5,"error":"success"}`, 12.5, true},
+		{"event first", "{\"event\":\"file-loaded\"}\n{\"data\":3,\"error\":\"success\"}", 3, true},
+		{"unavailable", `{"error":"property unavailable"}`, 0, false},
+		{"null data", `{"data":null,"error":"success"}`, 0, false},
+		{"garbage", `not json`, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sock := filepath.Join(t.TempDir(), "mpv.sock")
+			ln, err := net.Listen("unix", sock)
+			if err != nil {
+				t.Fatalf("listen: %v", err)
+			}
+			defer ln.Close()
+			go func() {
+				conn, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				io.WriteString(conn, tc.reply+"\n")
+			}()
+			pos, ok := ipcTimePos(sock)
+			if ok != tc.wantOK || pos != tc.wantPos {
+				t.Fatalf("ipcTimePos = (%v, %v), want (%v, %v)", pos, ok, tc.wantPos, tc.wantOK)
+			}
+		})
 	}
 }
 
