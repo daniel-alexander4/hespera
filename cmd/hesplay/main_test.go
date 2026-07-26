@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -585,5 +589,144 @@ func TestCompletionScriptCoversVerbs(t *testing.T) {
 	}
 	if !strings.Contains(bashCompletion, "album|artist|song|mix|playlist)") {
 		t.Fatalf("completion script's name-taking branch is out of sync with the verbs")
+	}
+}
+
+// --- transport keys ---
+
+// TestNextIndex pins the queue-position arithmetic, including the
+// restart-or-previous idiom hesplay shares with the two web players.
+func TestNextIndex(t *testing.T) {
+	deep := prevRestartWindow + time.Second
+	early := prevRestartWindow - time.Second
+	cases := []struct {
+		name   string
+		i      int
+		act    playAction
+		played time.Duration
+		want   int
+	}{
+		{"next advances", 3, actionNext, deep, 4},
+		{"next advances however early", 3, actionNext, time.Second, 4},
+		{"prev early steps back", 3, actionPrev, early, 2},
+		{"prev deep restarts", 3, actionPrev, deep, 3},
+		{"prev exactly at the window still steps back", 3, actionPrev, prevRestartWindow, 2},
+		// Nothing to step back to, so the only sensible move is a restart —
+		// the players' "no predecessor" arm.
+		{"prev on the first track restarts", 0, actionPrev, early, 0},
+		{"prev deep on the first track restarts", 0, actionPrev, deep, 0},
+	}
+	for _, c := range cases {
+		if got := nextIndex(c.i, c.act, c.played); got != c.want {
+			t.Fatalf("%s: nextIndex(%d, %v, %v) = %d, want %d", c.name, c.i, c.act, c.played, got, c.want)
+		}
+	}
+}
+
+// TestAwaitTrackNaturalEnd: with no key pressed, awaitTrack is just cmd.Wait —
+// the engine's own exit and its error reach the caller unchanged.
+func TestAwaitTrackNaturalEnd(t *testing.T) {
+	keys := make(chan playAction)
+	cmd := exec.Command("sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("no sh: %v", err)
+	}
+	if act, err := awaitTrack(context.Background(), cmd, keys); act != actionNone || err != nil {
+		t.Fatalf("clean exit = (%v, %v), want (actionNone, nil)", act, err)
+	}
+
+	cmd = exec.Command("sh", "-c", "exit 3")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	act, err := awaitTrack(context.Background(), cmd, keys)
+	if act != actionNone || err == nil {
+		t.Fatalf("failing exit = (%v, %v), want (actionNone, an error)", act, err)
+	}
+}
+
+// TestAwaitTrackKeyKillsEngine: the point of the whole layer — a key must end a
+// track that would otherwise play for minutes, and must leave no process
+// behind. The engine here sleeps far longer than the test could wait for.
+func TestAwaitTrackKeyKillsEngine(t *testing.T) {
+	for _, act := range []playAction{actionNext, actionPrev, actionQuit} {
+		keys := make(chan playAction, 1)
+		cmd := exec.Command("sleep", "60")
+		if err := cmd.Start(); err != nil {
+			t.Skipf("no sleep: %v", err)
+		}
+		pid := cmd.Process.Pid
+		keys <- act
+
+		done := make(chan struct{})
+		var got playAction
+		var err error
+		go func() { got, err = awaitTrack(context.Background(), cmd, keys); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			_ = cmd.Process.Kill()
+			t.Fatalf("awaitTrack(%v) did not return — a key must not wait out the track", act)
+		}
+		if got != act {
+			t.Fatalf("awaitTrack returned %v, want %v", got, act)
+		}
+		// The kill is expected, so it is not surfaced as a playback error.
+		if err != nil {
+			t.Fatalf("a key-ended track reported err=%v, want nil", err)
+		}
+		// Reaped, not orphaned: signal 0 to a still-live pid would succeed.
+		if perr := syscall.Kill(pid, 0); perr == nil {
+			t.Fatalf("engine pid %d still alive after a transport key", pid)
+		}
+	}
+}
+
+// TestAwaitTrackContextCancel: Ctrl+C stays the shutdown path — the context
+// ends the wait and the error is the context's, not a playback failure.
+func TestAwaitTrackContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, "sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("no sleep: %v", err)
+	}
+	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
+
+	done := make(chan struct{})
+	var act playAction
+	var err error
+	go func() { act, err = awaitTrack(ctx, cmd, nil); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("awaitTrack did not return on context cancel")
+	}
+	if act != actionNone || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancel = (%v, %v), want (actionNone, context.Canceled)", act, err)
+	}
+}
+
+// TestWatchKeysWithoutTerminal: piped stdin (a systemd unit, cron, a pipeline)
+// has no terminal to put in cbreak, so the feature must switch itself off
+// rather than half-engage — a nil restore is what tells play() to leave stdin
+// with the engine.
+func TestWatchKeysWithoutTerminal(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	orig := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = orig }()
+
+	keys, restore := watchKeys(context.Background())
+	if restore != nil {
+		restore()
+		t.Fatalf("a pipe is not a terminal — watchKeys should report no key control")
+	}
+	if keys != nil {
+		t.Fatalf("no terminal should mean no key channel")
 	}
 }

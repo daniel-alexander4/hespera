@@ -109,6 +109,9 @@ shuffle.
 Server: --server, else $HESPERA_SERVER, else the saved default (set once with
 hesplay server http://plex:8080), else http://127.0.0.1:8080.
 
+Keys while playing (needs a terminal): n next, p previous — or restart, once
+more than 10s into a track — and q to quit. Ctrl+C still stops.
+
 Completion: the .deb wires up bash automatically; otherwise source it, e.g.
 source <(hesplay completion bash). Verbs complete offline; album/artist/song/mix
 names come live from the server once two characters are typed (playlists need
@@ -582,6 +585,11 @@ func findEngine() (engine, error) {
 // track passes through untouched). mpv goes through its lavfi bridge — stable
 // across mpv versions, same ffmpeg volume syntax as ffplay. A non-empty
 // ipcPath adds mpv's JSON IPC socket, which the stall guard below polls.
+//
+// Nothing extra is needed for the transport keys: the engine is started without
+// stdin while hesplay owns the keyboard, and mpv was verified not to disturb the
+// cbreak mode hesplay installs (keys act immediately with mpv running, measured
+// in a pty).
 func (e engine) args(streamURL string, gainDB float64, ipcPath string) []string {
 	af := fmt.Sprintf("volume=%.2fdB", gainDB)
 	if e.name == "mpv" {
@@ -698,6 +706,105 @@ func ipcTimePos(sock string) (float64, bool) {
 	}
 }
 
+// --- transport keys ---
+//
+// One process per track and a blocking cmd.Wait means the queue can only ever
+// move forward, at the engine's pace. Skip and previous need hesplay to be
+// watching the keyboard while a track plays, so it reads stdin itself (cbreak,
+// so Ctrl+C still signals) and kills the engine when a key says to move.
+
+// prevRestartWindow is how deep into a track [p] restarts it instead of
+// stepping back — the same idiom and the same 10s as the two web players'
+// PREV_RESTART_SECS (player.js, media_player.js). Three separate
+// implementations by now, but the behaviour a listener learns is one.
+const prevRestartWindow = 10 * time.Second
+
+type playAction int
+
+const (
+	actionNone playAction = iota // the track ended on its own
+	actionNext
+	actionPrev
+	actionQuit
+)
+
+// watchKeys puts the terminal in cbreak and reads single keys until ctx ends,
+// returning the action channel and a restore func. A nil restore means there is
+// no terminal (piped stdin, a systemd unit, cron) and no keys will ever arrive —
+// the channel stays empty, so callers need no second check.
+func watchKeys(ctx context.Context) (<-chan playAction, func()) {
+	restore := enterCbreak()
+	if restore == nil {
+		return nil, nil
+	}
+	// Buffered: a keypress arriving between tracks must not block the reader
+	// goroutine, and the loop drains it on the next track anyway.
+	ch := make(chan playAction, 1)
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if err != nil {
+				return
+			}
+			if n == 0 {
+				continue
+			}
+			act := actionNone
+			switch buf[0] {
+			case 'n', 'N', '.', '>':
+				act = actionNext
+			case 'p', 'P', ',', '<':
+				act = actionPrev
+			case 'q', 'Q':
+				act = actionQuit
+			}
+			if act == actionNone {
+				continue
+			}
+			select {
+			case ch <- act:
+			case <-ctx.Done():
+				return
+			default: // an action is already pending; the newest press is noise
+			}
+		}
+	}()
+	return ch, restore
+}
+
+// awaitTrack waits for whichever comes first: the engine finishing, or a key
+// asking to move. On a key it kills the engine and reaps it, so the caller
+// never leaves a process behind.
+func awaitTrack(ctx context.Context, cmd *exec.Cmd, keys <-chan playAction) (playAction, error) {
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- cmd.Wait() }()
+	select {
+	case err := <-waitCh:
+		return actionNone, err
+	case act := <-keys:
+		_ = cmd.Process.Kill()
+		<-waitCh // reap; the error is the kill we just issued, so it's discarded
+		return act, nil
+	case <-ctx.Done():
+		<-waitCh // CommandContext kills it for us; just don't return before it's reaped
+		return actionNone, ctx.Err()
+	}
+}
+
+// nextIndex applies a transport action to the queue position. [p] mirrors the
+// players' restart-or-previous idiom: deep into a track it restarts that track,
+// early on it steps back, and on the first track it can only restart.
+func nextIndex(i int, act playAction, played time.Duration) int {
+	if act == actionPrev && played <= prevRestartWindow && i > 0 {
+		return i - 1
+	}
+	if act == actionPrev {
+		return i // restart the current track
+	}
+	return i + 1
+}
+
 // play runs the queue through the engine, one process per track — clean
 // boundaries for play-event reporting; the sub-second gap between tracks is
 // the accepted trade for that simplicity. A run of instant failures aborts
@@ -714,25 +821,40 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 	}
 	fmt.Printf("Playing %q — %d %s via %s\n", q.Title, len(tracks), unit, e.name)
 
+	// Transport keys, when there's a terminal to read them from. Stdin can only
+	// have one reader: with keys live it belongs to hesplay, so the engine is
+	// started without it; without a terminal it goes to the engine exactly as
+	// before, leaving mpv's own keybindings intact.
+	keys, restore := watchKeys(ctx)
+	if restore != nil {
+		defer restore()
+		fmt.Println("keys: [n] next  [p] previous/restart  [q] quit")
+	}
+
 	quickFails := 0
-	for i, t := range tracks {
+	for i := 0; i < len(tracks); {
 		if ctx.Err() != nil {
 			return nil
 		}
+		t := tracks[i]
 		fmt.Printf("♪ %d/%d  %s — %s\n", i+1, len(tracks), t.Title, t.Artist)
 		sock := stallSocket(e, t.ID)
 		start := time.Now()
 		cmd := exec.CommandContext(ctx, e.path, e.args(c.base+"/stream/track/"+strconv.FormatInt(t.ID, 10), t.GainDB, sock)...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if restore == nil {
+			cmd.Stdin = os.Stdin
+		}
 
 		var stalled atomic.Bool
+		act := actionNone
 		runErr := cmd.Start()
 		if runErr == nil {
 			done := make(chan struct{})
 			if sock != "" {
 				go watchStall(done, cmd.Process, sock, &stalled)
 			}
-			runErr = cmd.Wait()
+			act, runErr = awaitTrack(ctx, cmd, keys)
 			close(done)
 			if sock != "" {
 				os.Remove(sock) // mpv unlinks its own on a clean exit; a killed one doesn't
@@ -747,8 +869,25 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 		if stalled.Load() {
 			quickFails = 0
 			fmt.Fprintf(os.Stderr, "warn: %s stalled on %q (no playback progress for %s), killed and skipping\n", e.name, t.Title, stallTimeout)
+			i++
 			continue
 		}
+
+		// A keypress ended this track, so the engine's non-zero exit is the kill
+		// we asked for, not a failure: report the partial listen (the server
+		// ignores anything under 15s) but never let it feed the instant-failure
+		// guard, which exists to catch a dead server, not an impatient listener.
+		if act != actionNone {
+			c.reportPlay(t.ID, played, false)
+			quickFails = 0
+			if act == actionQuit {
+				fmt.Println("stopped")
+				return nil
+			}
+			i = nextIndex(i, act, played)
+			continue
+		}
+
 		c.reportPlay(t.ID, played, runErr == nil && ctx.Err() == nil)
 
 		switch {
@@ -767,6 +906,7 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 		default:
 			quickFails = 0
 		}
+		i++
 	}
 	return nil
 }
