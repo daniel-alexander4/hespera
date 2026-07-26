@@ -1646,6 +1646,23 @@ func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound boo
 		q.BackURL = fmt.Sprintf("/music/artist/%d", artistID)
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.artist_id=? ORDER BY al.year, lower(al.title), t.disc_no, t.track_no`, artistID)
+	case "track":
+		// One song on its own — hesplay's `song` verb. Its own source rather
+		// than a client-side filter over the album queue: this function stays
+		// the one owner of queue-building, the track is addressed directly
+		// instead of through whatever album happens to hold it, and the queue
+		// title is the song rather than the album it came from.
+		trackID, perr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("track")), 10, 64)
+		if perr != nil || trackID <= 0 {
+			return q, true, nil
+		}
+		var albumID int64
+		if qerr := h.db.QueryRowContext(r.Context(),
+			"SELECT title, album_id FROM music_tracks WHERE id=?", trackID).Scan(&q.Title, &albumID); qerr != nil {
+			return q, true, nil
+		}
+		q.BackURL = fmt.Sprintf("/music/album/%d", albumID)
+		q.Tracks, err = h.queryPlayerTracks(r.Context(), playerTrackSelect+` WHERE t.id=?`, trackID)
 	case "mix":
 		artistID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("artist")), 10, 64)
 		seedTrackID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("track")), 10, 64)

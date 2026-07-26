@@ -225,3 +225,40 @@ func TestMusicQueueArtistSource(t *testing.T) {
 		}
 	}
 }
+
+// TestMusicQueueTrackSource: hesplay's `song` verb. A single song is its own
+// queue source rather than a client-side filter over the album queue — so the
+// track is addressed directly, and the queue is titled with the song rather
+// than the album it happens to sit on.
+func TestMusicQueueTrackSource(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+	libID, artistID, albumID, trackID := seedMusicData(t, db)
+	if _, err := db.Exec(`INSERT INTO music_tracks (library_id, artist_id, album_id, title, track_no, disc_no, abs_path, mime_type) VALUES (?, ?, ?, 'Track 2', 2, 1, '/test/track2.mp3', 'audio/mpeg')`,
+		libID, artistID, albumID); err != nil {
+		t.Fatalf("insert second track: %v", err)
+	}
+
+	title, titles := queueTitles(t, router, fmt.Sprintf("source=track&track=%d", trackID))
+	if len(titles) != 1 || titles[0] != "Track 1" {
+		t.Fatalf("queue = %v, want just the one requested track", titles)
+	}
+	if title != "Track 1" {
+		t.Fatalf("queue title = %q, want the song title (not the album)", title)
+	}
+
+	for _, q := range []string{"source=track&track=999999", "source=track", "source=track&track=abc", "source=track&track=0"} {
+		req := httptest.NewRequest(http.MethodGet, "/music/queue?"+q, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("queue %q: status %d, want 404", q, rec.Code)
+		}
+	}
+
+	// Not a sweep source: a single track is never subject to the
+	// one-recording-per-song collapse, shuffled or not.
+	if _, titles = queueTitles(t, router, fmt.Sprintf("source=track&track=%d&shuffle=1", trackID)); len(titles) != 1 {
+		t.Fatalf("shuffled single-track queue = %v, want one track", titles)
+	}
+}

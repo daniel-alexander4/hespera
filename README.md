@@ -185,6 +185,7 @@ hesplay server http://plex.local:8080   # save the default server once
 hesplay playlists                   # list playlists
 hesplay playlist road trip          # play one (names need no quoting)
 hesplay album abbey road            # play an album, in track order
+hesplay song bohemian rhapsody      # play a single song
 hesplay artist queen                # an artist's whole catalog, shuffled
 hesplay mix queen                   # a radio mix: that artist + similar artists
 hesplay popular                     # the catalog's most popular songs, shuffled
@@ -193,8 +194,25 @@ hesplay --shuffle album abbey road  # force a shuffle
 hesplay --ordered playlist workout  # play a playlist in its curated order
 ```
 
-An album plays in track order; artist, mix, and playlist queues shuffle by
-default (`--ordered` plays them as listed).
+An album plays in track order and a song is one track; artist, mix, and playlist
+queues shuffle by default (`--ordered` plays them as listed).
+
+**Tab completion.** The .deb wires up bash automatically; otherwise add
+`source <(hesplay completion bash)` to your shell rc (`zsh` works too). Verbs
+and flags complete offline, and `album`, `artist`, `song`, `mix` and `playlist`
+complete **live names from the server** — so `hesplay artist Black<Tab>` lists
+the matching artists and fills one in:
+
+```sh
+$ hesplay artist Black<Tab>
+Black Sabbath   Blackfield   The Black Keys
+```
+
+Names complete once two characters are typed (the server's search minimum);
+playlists need none, so `hesplay playlist <Tab>` lists them all. Completion
+takes one short-timeout request, so a server that's off or unreachable simply
+offers nothing rather than hanging the shell. Multi-word names complete a word
+at a time and need no quoting.
 
 A shuffled catalog sweep — `artist`, `popular`, `all`, and any mix — plays **one
 recording per song**: if a track also exists as a live take, a greatest-hits
