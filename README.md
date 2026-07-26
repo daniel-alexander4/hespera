@@ -214,6 +214,19 @@ takes one short-timeout request, so a server that's off or unreachable simply
 offers nothing rather than hanging the shell. Multi-word names complete a word
 at a time and need no quoting.
 
+**Transport keys.** While a queue is playing, single keys move it:
+
+| key | does |
+|-----|------|
+| `n` | next track (also `.` / `>`) |
+| `p` | previous track, or restart the current one once you're more than 10 seconds in — the same idiom as the web players' `\|<` button (also `,` / `<`) |
+| `q` | stop and quit |
+
+Ctrl+C still stops as before. Keys need a terminal, so a queue started from a
+systemd unit, a cron job, or with redirected input just plays through — there,
+stdin is left to the player engine and mpv's own keybindings apply. Linux only
+(the terminal handling is per-platform); elsewhere hesplay behaves as it did.
+
 A shuffled catalog sweep — `artist`, `popular`, `all`, and any mix — plays **one
 recording per song**: if a track also exists as a live take, a greatest-hits
 copy or a remaster, only one of them joins the queue, picked at random, so a
