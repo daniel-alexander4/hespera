@@ -26,6 +26,13 @@ contents:
     dst: /usr/bin/hesplay
     file_info:
       mode: 0755
+  # Lazy-loaded bash completion (sources the current script from the binary on
+  # first Tab, so it never drifts from the CLI). Verbs complete offline; album /
+  # artist / song / mix / playlist names come live from the server.
+  - src: build/hesplay.bash
+    dst: /usr/share/bash-completion/completions/hesplay
+    file_info:
+      mode: 0644
   # hesplay is stdlib-only (no third-party Go modules), so the AGPL license
   # text is the whole copyright story.
   - src: LICENSE

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -159,3 +160,61 @@ func TestSearchAllSections(t *testing.T) {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// TestSearchLimit: &limit= raises the palette's rows-per-section for callers that
+// want a list rather than a jump target (hesplay's shell completion), bounded so
+// it can't become a whole-library dump. Garbage degrades to the default rather
+// than erroring — an older client sends nothing, a newer one may send anything.
+func TestSearchLimit(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{
+		{"", searchSectionCap},
+		{"abc", searchSectionCap},
+		{"0", searchSectionCap},
+		{"-3", searchSectionCap},
+		{"25", 25},
+		{" 12 ", 12},
+		{"5000", searchSectionMax},
+	} {
+		if got := searchLimit(tc.raw); got != tc.want {
+			t.Fatalf("searchLimit(%q) = %d, want %d", tc.raw, got, tc.want)
+		}
+	}
+}
+
+// TestSearchLimitAppliesToSections: the cap is what actually truncates a real
+// prefix ("Black" naming half a dozen artists), so the parameter has to reach
+// the queries, not just parse.
+func TestSearchLimitAppliesToSections(t *testing.T) {
+	h, db := newTestHandler(t)
+	router := h.Router()
+	libRes, err := db.Exec("INSERT INTO libraries (name, type, root_path) VALUES ('M', 'music', ?)", h.cfg.MediaRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	libID, _ := libRes.LastInsertId()
+	for i := 0; i < searchSectionCap+3; i++ {
+		if _, err := db.Exec("INSERT INTO music_artists (library_id, name, bio, bio_source_url) VALUES (?, ?, '', '')",
+			libID, fmt.Sprintf("Blackwood %d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := section(searchJSON(t, router, "black"), "Artists"); got == nil || len(got.Rows) != searchSectionCap {
+		t.Fatalf("palette default should stay at the cap, got %v", got)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/search?q=black&limit=25", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	var out struct {
+		Sections []searchSection `json:"sections"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := section(out.Sections, "Artists"); got == nil || len(got.Rows) != searchSectionCap+3 {
+		t.Fatalf("limit=25 should return all %d artists, got %v", searchSectionCap+3, got)
+	}
+}

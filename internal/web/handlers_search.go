@@ -5,19 +5,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
 // Global search — the jump-to palette ("/" anywhere). One GET endpoint fans
 // out over the library's entity types and returns fully-shaped rows (href +
 // text + context), so result URLs have exactly one owner. Sections are capped
-// at searchSectionCap rows; per-section ranking is prefix-match-first then
-// name — no clever scoring, the fixed section order does the rest. All plain
-// LIKE scans: measured fine to thousands of titles (see the browse-scale
-// harness); the shows/movies lookups reuse the canonical browse bases rather
-// than growing a second json_extract copy.
+// at searchSectionCap rows (&limit= raises it to searchSectionMax for callers
+// that want a list rather than a jump target — hesplay's shell completion);
+// per-section ranking is prefix-match-first then name — no clever scoring, the
+// fixed section order does the rest. All plain LIKE scans: measured fine to
+// thousands of titles (see the browse-scale harness); the shows/movies lookups
+// reuse the canonical browse bases rather than growing a second json_extract
+// copy.
 
-const searchSectionCap = 5
+const (
+	// searchSectionCap is the palette's rows-per-section — five is a jump list,
+	// not a browse list.
+	searchSectionCap = 5
+	// searchSectionMax bounds what &limit= can ask for, so a client can't turn
+	// the palette into a whole-library dump.
+	searchSectionMax = 50
+)
 
 type searchRow struct {
 	Href    string `json:"href"`
@@ -38,13 +48,28 @@ func (h *Handler) searchAPI(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	sections := []searchSection{}
 	if len([]rune(q)) >= 2 {
-		sections = h.searchSections(r.Context(), q)
+		sections = h.searchSections(r.Context(), q, searchLimit(r.URL.Query().Get("limit")))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"sections": sections})
 }
 
-func (h *Handler) searchSections(ctx context.Context, q string) []searchSection {
+// searchLimit resolves the optional &limit= (rows per section): absent, garbage
+// or non-positive → the palette's own cap, anything larger than
+// searchSectionMax → that ceiling. An older server simply ignores the param and
+// answers with the cap, so a client asking for more degrades rather than fails.
+func searchLimit(raw string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return searchSectionCap
+	}
+	if n > searchSectionMax {
+		return searchSectionMax
+	}
+	return n
+}
+
+func (h *Handler) searchSections(ctx context.Context, q string, limit int) []searchSection {
 	like := "%" + strings.ToLower(q) + "%"
 	prefix := strings.ToLower(q) + "%"
 	var sections []searchSection
@@ -67,7 +92,7 @@ func (h *Handler) searchSections(ctx context.Context, q string) []searchSection 
 		}
 		return searchRow{Href: fmt.Sprintf("/music/artist/%d", id), Text: name}, nil
 	}, `SELECT id, name FROM music_artists WHERE lower(name) LIKE ?`+
-		fmt.Sprintf(rank, "lower(name)", "lower(name)"), like, prefix, searchSectionCap))
+		fmt.Sprintf(rank, "lower(name)", "lower(name)"), like, prefix, limit))
 
 	// Albums (artist + year as context).
 	add("Albums", h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
@@ -83,7 +108,7 @@ func (h *Handler) searchSections(ctx context.Context, q string) []searchSection 
 		}
 		return searchRow{Href: fmt.Sprintf("/music/album/%d", id), Text: title, Context: ctxStr}, nil
 	}, `SELECT al.id, al.title, ar.name, al.year FROM music_albums al JOIN music_artists ar ON ar.id = al.artist_id
-WHERE lower(al.title) LIKE ?`+fmt.Sprintf(rank, "lower(al.title)", "lower(al.title)"), like, prefix, searchSectionCap))
+WHERE lower(al.title) LIKE ?`+fmt.Sprintf(rank, "lower(al.title)", "lower(al.title)"), like, prefix, limit))
 
 	// Songs — the one section that ACTS: Enter starts playback at the track.
 	add("Songs", h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
@@ -94,7 +119,7 @@ WHERE lower(al.title) LIKE ?`+fmt.Sprintf(rank, "lower(al.title)", "lower(al.tit
 		}
 		return searchRow{Href: fmt.Sprintf("/music/player?album=%d&track=%d", albumID, id), Text: title, Context: artist}, nil
 	}, `SELECT t.id, t.album_id, t.title, ar.name FROM music_tracks t JOIN music_artists ar ON ar.id = t.artist_id
-WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)"), like, prefix, searchSectionCap))
+WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)"), like, prefix, limit))
 
 	// TV shows — via the canonical browse base (name lives in the metadata cache).
 	add("TV Shows", h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
@@ -108,7 +133,7 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
 		}
 		return searchRow{Href: "/tv/series/" + id, Text: name, Context: year}, nil
 	}, `SELECT s.series_id, s.name, s.first_air `+tvSeriesListBase+
-		` WHERE s.name != '' AND lower(s.name) LIKE ?`+fmt.Sprintf(rank, "lower(s.name)", "lower(s.name)"), like, prefix, searchSectionCap))
+		` WHERE s.name != '' AND lower(s.name) LIKE ?`+fmt.Sprintf(rank, "lower(s.name)", "lower(s.name)"), like, prefix, limit))
 
 	// Movies — same canonical-base reuse.
 	add("Movies", h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
@@ -123,7 +148,7 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
 		}
 		return searchRow{Href: fmt.Sprintf("/movie/%d", tmdbID), Text: title, Context: year}, nil
 	}, `SELECT s.tmdb_id, s.title, s.release_date `+movieListBase+
-		` WHERE s.title != '' AND lower(s.title) LIKE ?`+fmt.Sprintf(rank, "lower(s.title)", "lower(s.title)"), like, prefix, searchSectionCap))
+		` WHERE s.title != '' AND lower(s.title) LIKE ?`+fmt.Sprintf(rank, "lower(s.title)", "lower(s.title)"), like, prefix, limit))
 
 	// Books — matched by title or author; the author shows as context.
 	add("Books", h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
@@ -135,7 +160,7 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
 		return searchRow{Href: fmt.Sprintf("/books/view?id=%d", id), Text: title, Context: author}, nil
 	}, `SELECT id, title, author FROM books
 		WHERE title != '' AND (lower(title) LIKE ? OR lower(author) LIKE ?)`+
-		fmt.Sprintf(rank, "lower(title)", "lower(title)"), like, like, prefix, searchSectionCap))
+		fmt.Sprintf(rank, "lower(title)", "lower(title)"), like, like, prefix, limit))
 
 	// Audiobooks — same title/author shape; a hit opens the player (which
 	// resumes server-side).
@@ -148,7 +173,7 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
 		return searchRow{Href: fmt.Sprintf("/audiobook/player?file=%d", id), Text: title, Context: author}, nil
 	}, `SELECT id, title, author FROM audiobooks
 		WHERE title != '' AND (lower(title) LIKE ? OR lower(author) LIKE ?)`+
-		fmt.Sprintf(rank, "lower(title)", "lower(title)"), like, like, prefix, searchSectionCap))
+		fmt.Sprintf(rank, "lower(title)", "lower(title)"), like, like, prefix, limit))
 
 	// People: actor names, plus character names resolved to the actor who
 	// played them ("as Character in Title") — credits already store both.
@@ -160,7 +185,7 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
 		}
 		return searchRow{Href: fmt.Sprintf("/person/%d", id), Text: name}, nil
 	}, `SELECT tmdb_id, name FROM people WHERE lower(name) LIKE ?`+
-		fmt.Sprintf(rank, "lower(name)", "lower(name)"), like, prefix, searchSectionCap)
+		fmt.Sprintf(rank, "lower(name)", "lower(name)"), like, prefix, limit)
 	people = append(people, h.searchRows(ctx, func(scan func(...any) error) (searchRow, error) {
 		var personID int64
 		var person, character, title string
@@ -181,9 +206,9 @@ WHERE lower(t.title) LIKE ?`+fmt.Sprintf(rank, "lower(t.title)", "lower(t.title)
          '')
 FROM credits c JOIN people p ON p.tmdb_id = c.person_id
 WHERE c.character_name != '' AND lower(c.character_name) LIKE ?`+
-		fmt.Sprintf(rank, "lower(c.character_name)", "lower(c.character_name)"), like, prefix, searchSectionCap)...)
-	if len(people) > searchSectionCap {
-		people = people[:searchSectionCap]
+		fmt.Sprintf(rank, "lower(c.character_name)", "lower(c.character_name)"), like, prefix, limit)...)
+	if len(people) > limit {
+		people = people[:limit]
 	}
 	add("People", people)
 
@@ -197,7 +222,7 @@ WHERE c.character_name != '' AND lower(c.character_name) LIKE ?`+
 		}
 		return searchRow{Href: fmt.Sprintf("/music/artist/%d", id), Text: name, Context: "mentioned in bio"}, nil
 	}, `SELECT id, name FROM music_artists WHERE bio != '' AND lower(bio) LIKE ? AND lower(name) NOT LIKE ?
-ORDER BY lower(name) LIMIT ?`, like, like, searchSectionCap))
+ORDER BY lower(name) LIMIT ?`, like, like, limit))
 
 	return sections
 }

@@ -85,26 +85,34 @@ Usage:
   hesplay [--server URL] [--shuffle|--ordered] <command> [args]
 
 Commands:
-  album <name|id>     Play an album
-  artist <name|id>    Play an artist's whole catalog in album order
-  mix <name|id>       Play a radio mix seeded from an artist (+ similar artists)
-  playlist <name|id>  Play a playlist
-  popular             Play the catalog's most popular songs (shuffled)
-  all                 Play the whole catalog (shuffled)
-  playlists           List playlists
-  server [url|clear]  Show, set, or clear the saved default server
-  version             Print hesplay version (also --version)
+  album <name|id>      Play an album
+  artist <name|id>     Play an artist's whole catalog in album order
+  song <name|id>       Play a single song
+  mix <name|id>        Play a radio mix seeded from an artist (+ similar artists)
+  playlist <name|id>   Play a playlist
+  popular              Play the catalog's most popular songs (shuffled)
+  all                  Play the whole catalog (shuffled)
+  playlists            List playlists
+  server [url|clear]   Show, set, or clear the saved default server
+  completion <bash|zsh> Print a shell completion script
+  version              Print hesplay version (also --version)
 
 Names need no quoting (hesplay album abbey road) and resolve against the
 server's search — the closest match plays and is printed; a purely numeric
 argument that matches no name is tried as an id. Playback engine: mpv when
 installed, else ffplay (from ffmpeg).
 
-Order: an album plays in track order; artist/mix/playlist queues shuffle by
-default — --ordered plays them as listed, --shuffle forces a shuffle.
+Order: an album plays in track order and a song is one track; artist/mix/playlist
+queues shuffle by default — --ordered plays them as listed, --shuffle forces a
+shuffle.
 
 Server: --server, else $HESPERA_SERVER, else the saved default (set once with
 hesplay server http://plex:8080), else http://127.0.0.1:8080.
+
+Completion: the .deb wires up bash automatically; otherwise source it, e.g.
+source <(hesplay completion bash). Verbs complete offline; album/artist/song/mix
+names come live from the server once two characters are typed (playlists need
+none), so hesplay artist Black<Tab> lists the matching artists.
 `)
 }
 
@@ -219,9 +227,10 @@ func cmdServer(args []string, flagVal string) error {
 	}
 }
 
-// shuffleFor resolves the play order: an album is a sequenced work and plays
-// in track order; everything else (artist catalog, mix, playlist) shuffles by
-// default. --shuffle and --ordered force either way (--shuffle wins if both).
+// shuffleFor resolves the play order: an album is a sequenced work and plays in
+// track order, and a single song has no order to shuffle; everything else
+// (artist catalog, mix, playlist) shuffles by default. --shuffle and --ordered
+// force either way (--shuffle wins if both).
 func shuffleFor(verb string, shuffleFlag, orderedFlag bool) bool {
 	if shuffleFlag {
 		return true
@@ -229,7 +238,7 @@ func shuffleFor(verb string, shuffleFlag, orderedFlag bool) bool {
 	if orderedFlag {
 		return false
 	}
-	return verb != "album"
+	return verb != "album" && verb != "song"
 }
 
 // isHelp reports whether an argument is a help request in any accepted form.
@@ -248,6 +257,17 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 	}
 	if args[0] == "version" {
 		fmt.Println("hesplay", version)
+		return nil
+	}
+	if args[0] == "completion" {
+		return completionCmd(args[1:])
+	}
+	// `complete` backs the completion script above: it answers a keypress, so it
+	// skips the probe below (one round trip, not two) and stays silent on every
+	// failure — a shell offering no candidates is normal, an error printed over
+	// the prompt is not.
+	if args[0] == "complete" {
+		completeCmd(c, args[1:])
 		return nil
 	}
 
@@ -272,7 +292,7 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 			fmt.Fprintf(tw, "%d\t%s\t%d\n", p.ID, p.Name, p.Count)
 		}
 		return tw.Flush()
-	case "album", "artist", "mix", "playlist", "popular", "all":
+	case "album", "artist", "song", "mix", "playlist", "popular", "all":
 		name := strings.TrimSpace(strings.Join(args[1:], " "))
 		if name == "" && args[0] != "popular" && args[0] != "all" {
 			return fmt.Errorf("%s: expected a name or id", args[0])
@@ -323,6 +343,12 @@ func (c *client) resolveQueueQuery(verb, name string, shuffle bool) (query url.V
 			return nil, "", rerr
 		}
 		query, picked = url.Values{"source": {verb}, "artist": {strconv.FormatInt(id, 10)}}, p
+	case "song":
+		id, p, rerr := c.resolveSong(name)
+		if rerr != nil {
+			return nil, "", rerr
+		}
+		query, picked = url.Values{"source": {"track"}, "track": {strconv.FormatInt(id, 10)}}, p
 	default: // playlist
 		rows, rerr := c.fetchPlaylists()
 		if rerr != nil {
@@ -368,6 +394,172 @@ func resolvePlaylist(rows []playlistRow, name string) (int64, string, error) {
 	}
 	return 0, "", fmt.Errorf("no playlist matching %q", name)
 }
+
+// --- shell completion ---
+//
+// Two pieces: `completion <shell>` prints the script (the hescli shape — the
+// .deb installs a one-line stub that sources it from the binary, so it can't
+// drift from the CLI), and the hidden `complete` verb the script calls back
+// into for live names. Verbs and flags complete offline; a name means asking
+// the server, which is why the callback exists at all.
+
+const (
+	// completeTimeout is short on purpose: completion runs on a Tab keypress,
+	// and a shell that hangs for the 15s the player uses is worse than one that
+	// offers nothing. Long enough for a LAN round trip, short enough to feel
+	// like a miss.
+	completeTimeout = 1500 * time.Millisecond
+	// completeLimit is how many candidates to ask for per section. Five (the
+	// server's palette default) truncates a real prefix — "Black" alone can
+	// name half a dozen artists — while a screenful is plenty to choose from.
+	completeLimit = 25
+	// completeMinChars mirrors the server's own minimum: /search answers a
+	// shorter query with nothing, so there's no point spending a round trip.
+	completeMinChars = 2
+)
+
+// completeSections maps each name-taking verb to the search section its names
+// live in. `mix` is seeded by an artist, so it completes artists; `playlist` is
+// absent because playlists come from their own endpoint, not search.
+var completeSections = map[string]string{
+	"album":  "Albums",
+	"artist": "Artists",
+	"song":   "Songs",
+	"mix":    "Artists",
+}
+
+func completionCmd(args []string) error {
+	shell := "bash"
+	if len(args) > 0 {
+		shell = args[0]
+	}
+	switch shell {
+	case "bash":
+		fmt.Print(bashCompletion)
+	case "zsh":
+		// Reuse the bash completion under zsh's bash-compat layer.
+		fmt.Print("autoload -Uz bashcompinit && bashcompinit\n", bashCompletion)
+	default:
+		return fmt.Errorf("completion: unsupported shell %q (want bash or zsh)", shell)
+	}
+	return nil
+}
+
+// completeCmd prints one candidate per line for a verb and the partial name
+// typed so far — the callback the completion script shells out to. Every
+// failure (no server, no match, an unknown verb) prints nothing: the shell
+// falls back to its default completion, which is the right answer for "I can't
+// help here".
+func completeCmd(c *client, args []string) {
+	if len(args) == 0 {
+		return
+	}
+	verb := args[0]
+	partial := strings.TrimSpace(strings.Join(args[1:], " "))
+	c.http.Timeout = completeTimeout
+
+	var names []string
+	if verb == "playlist" {
+		// Playlists come from a plain list, so they complete from nothing typed
+		// — `hesplay playlist <Tab>` shows them all.
+		rows, err := c.fetchPlaylists()
+		if err != nil {
+			return
+		}
+		lower := strings.ToLower(partial)
+		for _, p := range rows {
+			if strings.Contains(strings.ToLower(p.Name), lower) {
+				names = append(names, p.Name)
+			}
+		}
+	} else {
+		section, ok := completeSections[verb]
+		if !ok || len([]rune(partial)) < completeMinChars {
+			return
+		}
+		rows, err := c.fetchSearchSection(section, partial, completeLimit)
+		if err != nil {
+			return
+		}
+		for _, r := range rows {
+			names = append(names, r.Text)
+		}
+	}
+	for _, n := range completionRemainders(names, partial) {
+		fmt.Println(n)
+	}
+}
+
+// completionRemainders reduces each candidate to the text that should replace
+// the word being completed. The shell completes one word at a time, so for the
+// partial "Black Sab" the candidate "Black Sabbath" has to come back as
+// "Sabbath" — the words already typed and closed off by a space are dropped,
+// and a candidate that doesn't share them can't complete this word at all (the
+// server matched it on some later word), so it goes. With no space in the
+// partial the whole candidate is returned, spaces and all: the shell inserts
+// them as separate words, which is exactly how the play verbs read a name —
+// they join argv back together, so no quoting is ever needed.
+func completionRemainders(names []string, partial string) []string {
+	cut := strings.LastIndex(partial, " ")
+	if cut < 0 {
+		return names
+	}
+	prefix := partial[:cut+1] // the closed-off words, trailing space included
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		if len(n) > len(prefix) && strings.EqualFold(n[:len(prefix)], prefix) {
+			out = append(out, n[len(prefix):])
+		}
+	}
+	return out
+}
+
+// bashCompletion completes verbs and flags offline, and hands name completion
+// to `hesplay complete` (above). Written to work unmodified under zsh's
+// bashcompinit, which is why candidates arrive by command substitution — zsh
+// word-splits that, but not a plain parameter expansion.
+const bashCompletion = `# hesplay bash completion
+_hesplay() {
+  local cur cmd vidx i
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  local cmds="album artist song mix playlist popular all playlists server completion version help"
+
+  # The verb is the first non-flag word after the program name.
+  cmd=""; vidx=0
+  for ((i=1; i<COMP_CWORD; i++)); do
+    case "${COMP_WORDS[i]}" in
+      --server) ((i++));;
+      --*|-h) ;;
+      *) cmd="${COMP_WORDS[i]}"; vidx=$i; break;;
+    esac
+  done
+
+  if [[ -z "$cmd" ]]; then
+    COMPREPLY=( $(compgen -W "$cmds --server --shuffle --ordered --version" -- "$cur") ); return
+  fi
+
+  local partial
+  case "$cmd" in
+    completion)
+      COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") ); return;;
+    server)
+      COMPREPLY=( $(compgen -W "clear" -- "$cur") ); return;;
+    album|artist|song|mix|playlist)
+      # Everything after the verb up to the cursor is the partial name; names
+      # need no quoting, so they arrive as separate words and rejoin here.
+      partial="${COMP_WORDS[*]:$((vidx+1)):$((COMP_CWORD-vidx))}";;
+    *)
+      COMPREPLY=(); return;;
+  esac
+
+  # One candidate per line, already trimmed to what should replace this word.
+  local IFS=$'\n'
+  set -o noglob
+  COMPREPLY=( $(hesplay complete "$cmd" "$partial" 2>/dev/null) )
+  set +o noglob
+}
+complete -F _hesplay hesplay
+`
 
 // --- playback engine (mpv preferred, ffplay fallback) ---
 
@@ -515,7 +707,12 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 	if shuffle {
 		rand.Shuffle(len(tracks), func(i, j int) { tracks[i], tracks[j] = tracks[j], tracks[i] })
 	}
-	fmt.Printf("Playing %q — %d tracks via %s\n", q.Title, len(tracks), e.name)
+	// "1 tracks" was a rare wart before the song verb; now it's the common case.
+	unit := "tracks"
+	if len(tracks) == 1 {
+		unit = "track"
+	}
+	fmt.Printf("Playing %q — %d %s via %s\n", q.Title, len(tracks), unit, e.name)
 
 	quickFails := 0
 	for i, t := range tracks {
@@ -604,6 +801,16 @@ func (c *client) probe() (string, error) {
 	return ver, nil
 }
 
+// httpError is a non-200 answer from the server, carrying the status code so a
+// caller can react to a specific one (see fetchQueue's too-old-server hint)
+// without matching on message text.
+type httpError struct {
+	status int
+	msg    string
+}
+
+func (e *httpError) Error() string { return e.msg }
+
 // getJSON issues a GET and decodes a 200 JSON body into out.
 func (c *client) getJSON(path string, query url.Values, out any) error {
 	u := c.base + path
@@ -621,7 +828,7 @@ func (c *client) getJSON(path string, query url.Values, out any) error {
 		if msg == "" {
 			msg = resp.Status
 		}
-		return fmt.Errorf("%s: %s", strings.TrimPrefix(path, "/"), msg)
+		return &httpError{status: resp.StatusCode, msg: fmt.Sprintf("%s: %s", strings.TrimPrefix(path, "/"), msg)}
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("bad response from server: %w", err)
@@ -647,6 +854,15 @@ type queue struct {
 func (c *client) fetchQueue(query url.Values) (queue, error) {
 	var q queue
 	if err := c.getJSON("/music/queue", query, &q); err != nil {
+		// A server predating single-song playback has no source=track case, so
+		// it falls through to its single-album branch, finds no album param and
+		// 404s — identical to the 404 a genuinely absent track id gets. Name
+		// both rather than hand a bare HTTP error to someone who just typed
+		// `hesplay song`; when a song name matched, it's the server.
+		var herr *httpError
+		if query.Get("source") == "track" && errors.As(err, &herr) && herr.status == http.StatusNotFound {
+			return q, fmt.Errorf("the server has no track %s — either the id is stale, or this Hespera predates single-song playback and needs upgrading", query.Get("track"))
+		}
 		return q, err
 	}
 	if len(q.Tracks) == 0 {
@@ -675,41 +891,71 @@ type searchRow struct {
 	Context string `json:"context"`
 }
 
-// resolveSearch resolves a name to an id via the server's search palette: rows
-// carry their id only inside the href (/music/artist/{id}, /music/album/{id}),
-// so it's parsed off the given prefix. An exact (case-insensitive) title match
-// wins, else the first row — search already ranks prefix matches first. picked
-// names the choice so the caller can print it; a purely numeric argument that
-// matches no name is taken as an id.
-func (c *client) resolveSearch(section, hrefPrefix, name string) (id int64, picked string, err error) {
+// fetchSearchSection returns the rows of one labeled section of the server's
+// search palette. limit asks for that many rows per section (0 leaves the
+// server's own cap of 5 — a server that predates the parameter ignores it and
+// answers with the cap, so asking for more degrades rather than fails).
+func (c *client) fetchSearchSection(section, q string, limit int) ([]searchRow, error) {
+	vals := url.Values{"q": {q}}
+	if limit > 0 {
+		vals.Set("limit", strconv.Itoa(limit))
+	}
 	var res struct {
 		Sections []struct {
 			Label string      `json:"label"`
 			Rows  []searchRow `json:"rows"`
 		} `json:"sections"`
 	}
-	if err := c.getJSON("/search", url.Values{"q": {name}}, &res); err != nil {
-		return 0, "", err
+	if err := c.getJSON("/search", vals, &res); err != nil {
+		return nil, err
 	}
-	var pick searchRow
 	for _, s := range res.Sections {
-		if s.Label != section {
+		if s.Label == section {
+			return s.Rows, nil
+		}
+	}
+	return nil, nil
+}
+
+// pickSearchRow chooses which row a typed name resolves to: an exact
+// (case-insensitive) match on the row's text if there is one, else the first
+// eligible row — search already ranks prefix matches first. keep filters rows
+// the caller can't use (nil accepts all).
+func pickSearchRow(rows []searchRow, name string, keep func(searchRow) bool) searchRow {
+	var pick searchRow
+	for _, r := range rows {
+		if keep != nil && !keep(r) {
 			continue
 		}
-		for _, r := range s.Rows {
-			if !strings.HasPrefix(r.Href, hrefPrefix) {
-				continue
-			}
-			if pick.Href == "" {
-				pick = r
-			}
-			if strings.EqualFold(r.Text, name) {
-				pick = r
-				break
-			}
+		if strings.EqualFold(r.Text, name) {
+			return r
 		}
-		break
+		if pick.Href == "" {
+			pick = r
+		}
 	}
+	return pick
+}
+
+// pickedLabel is how a fuzzy match is reported back to the user — the row's
+// text plus its disambiguating context ("Nevermind (Nirvana · 1991)").
+func pickedLabel(r searchRow) string {
+	if r.Context == "" {
+		return r.Text
+	}
+	return r.Text + " (" + r.Context + ")"
+}
+
+// resolveSearch resolves a name to an id via the server's search palette: rows
+// carry their id only inside the href (/music/artist/{id}, /music/album/{id}),
+// so it's parsed off the given prefix. picked names the choice so the caller can
+// print it; a purely numeric argument that matches no name is taken as an id.
+func (c *client) resolveSearch(section, hrefPrefix, name string) (id int64, picked string, err error) {
+	rows, err := c.fetchSearchSection(section, name, 0)
+	if err != nil {
+		return 0, "", err
+	}
+	pick := pickSearchRow(rows, name, func(r searchRow) bool { return strings.HasPrefix(r.Href, hrefPrefix) })
 	if pick.Href == "" {
 		if id, perr := strconv.ParseInt(name, 10, 64); perr == nil && id > 0 {
 			return id, "", nil
@@ -720,11 +966,42 @@ func (c *client) resolveSearch(section, hrefPrefix, name string) (id int64, pick
 	if err != nil || id <= 0 {
 		return 0, "", fmt.Errorf("cannot parse an id from %q", pick.Href)
 	}
-	picked = pick.Text
-	if pick.Context != "" {
-		picked += " (" + pick.Context + ")"
+	return id, pickedLabel(pick), nil
+}
+
+// resolveSong resolves a song name to a track id. Songs are the one search
+// section whose row ACTS rather than navigates, so its href is a player URL
+// (/music/player?album=N&track=N) and the id lives in the query string, not
+// behind a path prefix — hence its own resolver rather than resolveSearch.
+func (c *client) resolveSong(name string) (id int64, picked string, err error) {
+	rows, err := c.fetchSearchSection("Songs", name, 0)
+	if err != nil {
+		return 0, "", err
 	}
-	return id, picked, nil
+	pick := pickSearchRow(rows, name, nil)
+	if pick.Href == "" {
+		if id, perr := strconv.ParseInt(name, 10, 64); perr == nil && id > 0 {
+			return id, "", nil
+		}
+		return 0, "", fmt.Errorf("no song matching %q", name)
+	}
+	if id, err = trackIDFromHref(pick.Href); err != nil {
+		return 0, "", err
+	}
+	return id, pickedLabel(pick), nil
+}
+
+// trackIDFromHref pulls the track id out of a Songs row's player href.
+func trackIDFromHref(href string) (int64, error) {
+	u, perr := url.Parse(href)
+	if perr != nil {
+		return 0, fmt.Errorf("cannot parse a track id from %q", href)
+	}
+	id, perr := strconv.ParseInt(u.Query().Get("track"), 10, 64)
+	if perr != nil || id <= 0 {
+		return 0, fmt.Errorf("cannot parse a track id from %q", href)
+	}
+	return id, nil
 }
 
 // reportPlay feeds play_history (Recently Played, listen counts) — best-effort
