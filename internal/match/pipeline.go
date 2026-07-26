@@ -167,6 +167,16 @@ func (m *Matcher) RunMusicMatch(ctx context.Context, jobID, libraryID int64, for
 		slog.Warn("popularity phase", "err", err)
 	}
 
+	// --- Phase 1c: Similar artists from ListenBrainz (non-fatal) ---
+	// Also after enrichment, for the same MBID reason. This pre-warms what was
+	// a purely lazy, one-artist-at-a-time cache: Instant Mix degrades to a
+	// single-artist queue when the seed's list isn't cached, so on a library
+	// where nothing has been fetched, essentially every first mix is wrong.
+	// Warming here makes a mix right the first time it's asked for.
+	if err := m.fetchSimilarArtists(ctx, jobID, libraryID, force); err != nil {
+		slog.Warn("similar artists phase", "err", err)
+	}
+
 	// --- Phase 2: Album matching ---
 	if err := m.matchAlbums(ctx, jobID, libraryID, force); err != nil {
 		return err
@@ -208,6 +218,10 @@ const (
 	enrichRecheckTTL     = 30 * 24 * time.Hour
 	popularityRecheckTTL = 7 * 24 * time.Hour
 	matchRecheckTTL      = 30 * 24 * time.Hour
+	// Similar-artist lists come from a trained model over listening data and
+	// move slowly — slower than listen counts — so they sit with the 30-day
+	// group rather than popularity's 7.
+	similarRecheckTTL = 30 * 24 * time.Hour
 )
 
 // recheckCutoff renders the TTL comparison value for a checked-at column, and
