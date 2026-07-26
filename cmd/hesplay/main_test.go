@@ -274,7 +274,7 @@ func TestClientAgainstFakeServer(t *testing.T) {
 		t.Fatalf("picked label: %q %v", picked, err)
 	}
 
-	query, _, err := c.resolveQueueQuery("album", "Nevermind")
+	query, _, err := c.resolveQueueQuery("album", "Nevermind", false)
 	if err != nil {
 		t.Fatalf("resolveQueueQuery: %v", err)
 	}
@@ -327,9 +327,27 @@ func TestShuffleFor(t *testing.T) {
 func TestResolveQueueQueryNoNameSources(t *testing.T) {
 	c := &client{} // popular/all resolve with no server round-trip
 	for _, v := range []string{"popular", "all"} {
-		q, picked, err := c.resolveQueueQuery(v, "")
+		q, picked, err := c.resolveQueueQuery(v, "", false)
 		if err != nil || picked != "" || q.Get("source") != v || len(q) != 1 {
 			t.Fatalf("resolveQueueQuery(%q): %v %q %v", v, q, picked, err)
+		}
+	}
+}
+
+// TestResolveQueueQueryShuffleParam: the shuffle decision is told to the server,
+// not just applied locally — that is what makes a shuffled sweep come back with
+// one recording per song instead of the studio and live copies of the same
+// track. An ordered play must not carry the flag, or it would silently lose
+// tracks the user asked to hear in full.
+func TestResolveQueueQueryShuffleParam(t *testing.T) {
+	c := &client{}
+	for _, v := range []string{"popular", "all"} {
+		q, _, err := c.resolveQueueQuery(v, "", true)
+		if err != nil || q.Get("shuffle") != "1" {
+			t.Fatalf("resolveQueueQuery(%q, shuffle) = %v %v, want shuffle=1", v, q, err)
+		}
+		if q, _, err = c.resolveQueueQuery(v, "", false); err != nil || q.Has("shuffle") {
+			t.Fatalf("resolveQueueQuery(%q, ordered) = %v %v, want no shuffle param", v, q, err)
 		}
 	}
 }

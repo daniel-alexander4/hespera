@@ -281,7 +281,7 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 		if err != nil {
 			return err
 		}
-		query, picked, err := c.resolveQueueQuery(args[0], name)
+		query, picked, err := c.resolveQueueQuery(args[0], name, shuffle)
 		if err != nil {
 			return err
 		}
@@ -303,33 +303,41 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 // resolveQueueQuery turns a verb + name/id into the /music/queue params,
 // resolving names to ids server-side (search for artists/albums, the playlist
 // list for playlists). picked names what a fuzzy match chose, for printing.
-func (c *client) resolveQueueQuery(verb, name string) (query url.Values, picked string, err error) {
+// shuffle rides along as &shuffle=1 — the same flag the web player sends. The
+// server answers a shuffled catalog sweep with one recording per song, dropping
+// the live or compilation copy of a track already in the queue, so the local
+// shuffle below can't serve the same song twice.
+func (c *client) resolveQueueQuery(verb, name string, shuffle bool) (query url.Values, picked string, err error) {
 	switch verb {
 	case "popular", "all": // the web home's Quick Play queues — no name to resolve
-		return url.Values{"source": {verb}}, "", nil
+		query = url.Values{"source": {verb}}
 	case "album":
-		id, picked, err := c.resolveSearch("Albums", "/music/album/", name)
-		if err != nil {
-			return nil, "", err
+		id, p, rerr := c.resolveSearch("Albums", "/music/album/", name)
+		if rerr != nil {
+			return nil, "", rerr
 		}
-		return url.Values{"album": {strconv.FormatInt(id, 10)}}, picked, nil
+		query, picked = url.Values{"album": {strconv.FormatInt(id, 10)}}, p
 	case "artist", "mix":
-		id, picked, err := c.resolveSearch("Artists", "/music/artist/", name)
-		if err != nil {
-			return nil, "", err
+		id, p, rerr := c.resolveSearch("Artists", "/music/artist/", name)
+		if rerr != nil {
+			return nil, "", rerr
 		}
-		return url.Values{"source": {verb}, "artist": {strconv.FormatInt(id, 10)}}, picked, nil
+		query, picked = url.Values{"source": {verb}, "artist": {strconv.FormatInt(id, 10)}}, p
 	default: // playlist
-		rows, err := c.fetchPlaylists()
-		if err != nil {
-			return nil, "", err
+		rows, rerr := c.fetchPlaylists()
+		if rerr != nil {
+			return nil, "", rerr
 		}
-		id, picked, err := resolvePlaylist(rows, name)
-		if err != nil {
-			return nil, "", err
+		id, p, rerr := resolvePlaylist(rows, name)
+		if rerr != nil {
+			return nil, "", rerr
 		}
-		return url.Values{"source": {"playlist"}, "playlist": {strconv.FormatInt(id, 10)}}, picked, nil
+		query, picked = url.Values{"source": {"playlist"}, "playlist": {strconv.FormatInt(id, 10)}}, p
 	}
+	if shuffle {
+		query.Set("shuffle", "1")
+	}
+	return query, picked, nil
 }
 
 // resolvePlaylist matches a playlist by name — exact (case-insensitive) first,
