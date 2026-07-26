@@ -196,6 +196,12 @@ hesplay --ordered playlist workout  # play a playlist in its curated order
 An album plays in track order; artist, mix, and playlist queues shuffle by
 default (`--ordered` plays them as listed).
 
+A shuffled catalog sweep — `artist`, `popular`, `all`, and any mix — plays **one
+recording per song**: if a track also exists as a live take, a greatest-hits
+copy or a remaster, only one of them joins the queue, picked at random, so a
+shuffle can't serve you the same song twice in a handful of tracks. Deliberate
+orderings keep everything: an album, a playlist, and `--ordered` are untouched.
+
 Names resolve against the server's search — the closest match plays and is
 printed. Finished tracks are reported back, so Recently Played and listen
 counts include what played upstairs. Ctrl+C stops. The security posture below

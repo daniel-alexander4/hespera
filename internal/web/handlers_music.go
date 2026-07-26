@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1563,26 +1564,57 @@ FROM music_tracks t
 JOIN music_albums al ON al.id=t.album_id
 JOIN music_artists ar ON ar.id=t.artist_id`
 
-// musicPlayer renders the queue-based player. The queue is built from a
-// ?source=: a single album (default, ?album=N), an artist's catalog (artist,
-// ?artist=N), the whole library (all), the most-played tracks (popular), or a
-// year range (era, ?from=&to=). All of
-// them reuse the player's existing client-side queue/shuffle/stream/lyrics; the
-// collection playlists pass &shuffle=1.
 // playerQueue is an ordered, source-resolved track queue plus its display
-// metadata — the single shape the now-playing view (musicPlayer) and the JSON
-// queue endpoint (musicQueue) both consume, built once by buildPlayerQueue.
+// metadata — the single shape the JSON queue endpoint (musicQueue) consumes,
+// built once by buildPlayerQueue.
 type playerQueue struct {
 	Title   string
 	BackURL string
 	Tracks  []trackRow
 }
 
+// sweepSources are the machine-assembled catalog queues, as opposed to an album
+// (a sequenced work) or a playlist (the user's own curation). Only these are
+// eligible for the one-recording-per-song collapse below.
+var sweepSources = map[string]bool{"artist": true, "all": true, "popular": true, "era": true}
+
+// trackSongKey identifies "the same song by the same artist" — the grouping key
+// for one-recording-per-song. It pairs the artist id with
+// match.NormalizeForDedup(title), the same normalizer the album duplicate
+// finder (match/dedup.go) and the ListenBrainz popularity join
+// (match/pipeline.go) already use: it strips a trailing "(Live)", a year stamp
+// and remaster/deluxe annotations, so "Whole Lotta Rosie" and "Whole Lotta
+// Rosie (Live)" collapse — while leading digits survive, so "99 Problems" stays
+// itself (and a filename-derived "06 Back In Black" simply doesn't match a
+// tagged copy, which is a missed collapse, never a wrong one).
+func trackSongKey(t trackRow) string {
+	return strconv.FormatInt(t.ArtistID, 10) + "\x00" + match.NormalizeForDedup(t.Title)
+}
+
+// dedupeByTitle keeps one row per trackSongKey — the first of each group, so
+// the caller controls which recording wins by controlling the input order.
+func dedupeByTitle(rows []trackRow) []trackRow {
+	if len(rows) < 2 {
+		return rows
+	}
+	out := make([]trackRow, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, t := range rows {
+		key := trackSongKey(t)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, t)
+	}
+	return out
+}
+
 // buildPlayerQueue resolves the ?source= switch (single album / artist / all /
 // popular / era / playlist / mix) into an ordered queue. notFound signals invalid params
-// (→ 404); err is a server error. It is the one owner of player queue-building;
-// both the HTML now-playing view and the /music/queue JSON endpoint route
-// through it so the queue never grows a second, drifting copy.
+// (→ 404); err is a server error. It is the one owner of player queue-building —
+// the /music/queue JSON endpoint is its only caller, and both the web player and
+// hesplay come through there, so the queue never grows a second, drifting copy.
 func (h *Handler) buildPlayerQueue(r *http.Request) (q playerQueue, notFound bool, err error) {
 	source := strings.TrimSpace(r.URL.Query().Get("source"))
 	q.BackURL = "/music"
@@ -1666,6 +1698,20 @@ ORDER BY t.popularity DESC, t.id`, libraryID, popularIncludeAllMaxTracks, popula
 		q.BackURL = fmt.Sprintf("/music/album/%d", albumID)
 		q.Tracks, err = h.queryPlayerTracks(r.Context(),
 			playerTrackSelect+` WHERE t.album_id=? ORDER BY t.disc_no, t.track_no, lower(t.title)`, albumID)
+	}
+
+	// A shuffled catalog sweep plays one recording per song. A library carrying
+	// compilations, greatest-hits discs or a live album holds the same song
+	// several times, and a uniform shuffle then serves it twice within a handful
+	// of tracks — which reads as a broken shuffle. Deliberate orderings are
+	// exempt: an album is a sequenced work, a playlist is the user's own
+	// curation, and an ordered (no &shuffle=1) sweep is a request for
+	// everything. Shuffling before the collapse is what makes "first of each
+	// group" a random recording rather than always the same one; the client
+	// shuffles again, which is harmless — both passes are uniform.
+	if err == nil && sweepSources[source] && r.URL.Query().Get("shuffle") == "1" {
+		rand.Shuffle(len(q.Tracks), func(i, j int) { q.Tracks[i], q.Tracks[j] = q.Tracks[j], q.Tracks[i] })
+		q.Tracks = dedupeByTitle(q.Tracks)
 	}
 	return q, false, err
 }

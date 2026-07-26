@@ -118,12 +118,33 @@ ORDER BY t.artist_id, t.popularity DESC, t.id`, args...)
 func drawMix(pool []trackRow, weights map[int64]int, seedArtistID, seedTrackID int64) []trackRow {
 	byArtist := map[int64][]trackRow{}
 	var seed *trackRow
+
+	// One recording per song, like a shuffled catalog sweep — and the pool needs
+	// it more than most: popularity is credited by normalized title (the match
+	// pipeline's ListenBrainz join), so a song that also exists as a live or
+	// compilation copy contributes several rows carrying the SAME high score,
+	// and the per-artist top-N window pulls them in together. The seed is taken
+	// first so it always wins its own group and still opens the mix.
+	seen := map[string]struct{}{}
+	if seedTrackID > 0 {
+		for _, t := range pool {
+			if t.ID == seedTrackID {
+				tt := t
+				seed = &tt
+				seen[trackSongKey(t)] = struct{}{}
+				break
+			}
+		}
+	}
 	for _, t := range pool {
-		if seedTrackID > 0 && t.ID == seedTrackID {
-			tt := t
-			seed = &tt
+		if seed != nil && t.ID == seed.ID {
 			continue
 		}
+		key := trackSongKey(t)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
 		byArtist[t.ArtistID] = append(byArtist[t.ArtistID], t)
 	}
 	for id := range byArtist {
