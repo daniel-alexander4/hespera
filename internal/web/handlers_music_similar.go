@@ -93,19 +93,13 @@ func (h *Handler) localArtistIDsByMBID(ctx context.Context, list []match.Similar
 	return out
 }
 
-// fetchArtistSimilar is the artist_similar_fetch job body: pull the similar list
-// and cache it on the artist row. The fetched-at marker is written even on an
-// empty/failed result so the page doesn't re-enqueue every view.
+// fetchArtistSimilar is the artist_similar_fetch job body: cache one artist's
+// similar list on its row. The work lives in match.StoreArtistSimilar — the
+// single writer of those two columns, shared with the match pipeline's
+// pre-warming phase, so the lazy and bulk paths can't drift in what they store.
+// This lazy path remains the belt for an artist added between match runs.
 func (h *Handler) fetchArtistSimilar(ctx context.Context, m *match.Matcher, artistID int64, mbid string) error {
-	list := m.SimilarArtists(ctx, mbid)
-	payload, err := json.Marshal(list)
-	if err != nil {
-		payload = []byte("[]")
-	}
-	_, err = h.db.ExecContext(ctx,
-		"UPDATE music_artists SET similar_json=?, similar_fetched_at=datetime('now') WHERE id=?",
-		string(payload), artistID)
-	return err
+	return m.StoreArtistSimilar(ctx, artistID, mbid)
 }
 
 // musicArtistExternal renders the dedicated page for an out-of-catalog artist (a
