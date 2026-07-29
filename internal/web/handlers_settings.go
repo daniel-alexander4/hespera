@@ -55,6 +55,18 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 		adbCfg, adbSrc, adbMask := h.keyStatus(ctx, "audiodb_api_key", h.cfg.TheAudioDBAPIKey, h.effectiveAudioDBKey(ctx))
 		lfmCfg, lfmSrc, lfmMask := h.keyStatus(ctx, "lastfm_api_key", h.cfg.LastfmAPIKey, h.effectiveLastfmKey(ctx))
 		osCfg, osSrc, osMask := h.keyStatus(ctx, "opensubtitles_api_key", h.cfg.OpenSubtitlesAPIKey, h.effectiveOpenSubtitlesKey(ctx))
+		// The mode picker follows the power button's render-gate rule: shown only
+		// on the machine's own screen, so a LAN device is never offered a control
+		// aimed at a display it isn't looking at. The availability probe is env +
+		// LookPath only (no subprocess), and is skipped entirely when off.
+		displayCtl := h.effectiveDisplayControlEnabled(ctx)
+		showDisplay := displayCtl && isLoopbackRequest(r)
+		displayReason := ""
+		if showDisplay {
+			if ok, reason := h.displayAvailable(); !ok {
+				displayReason = reason
+			}
+		}
 		h.render(w, "settings.html", map[string]any{
 			"Breadcrumb":              []crumb{bcHome},
 			"Title":                   "Settings",
@@ -80,6 +92,10 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
 			"UpdateCheckEnabled":      h.effectiveUpdateCheckEnabled(ctx),
 			"PowerButtonEnabled":      h.effectivePowerButtonEnabled(ctx),
+			"DisplayControlEnabled":   displayCtl,
+			"ShowDisplayPicker":       showDisplay,
+			"DisplayControlReason":    displayReason,
+			"DisplayMode":             h.effectiveDisplayMode(ctx),
 			"DefaultAudioLang":        h.effectiveDefaultAudioLang(ctx),
 			"DefaultSubtitleLang":     h.effectiveDefaultSubtitleLang(ctx),
 			"SubtitlesDefaultOn":      h.effectiveSubtitlesDefaultOn(ctx),
@@ -407,6 +423,28 @@ func (h *Handler) effectiveUpdateCheckEnabled(ctx context.Context) bool {
 	return strings.TrimSpace(v) == "1"
 }
 
+// effectiveDisplayControlEnabled reports whether the settings page offers the
+// runtime display-mode picker. Default OFF (opt-in) — the power_button_enabled
+// pattern, and off for the same reason: on a desktop install the window sits on
+// a screen the desktop already manages, and only an appliance box wants an app
+// changing its video mode.
+func (h *Handler) effectiveDisplayControlEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='display_control_enabled'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
+// effectiveDisplayMode is the confirmed display mode to re-apply at boot, in
+// display.FormatSetting's form ("HDMI-1 1920x1080 60.00"). Empty means none.
+// Written only by displayModeKeep — a stored value is always one someone
+// confirmed they could see. hescli can set it unvalidated, so every reader
+// parses defensively.
+func (h *Handler) effectiveDisplayMode(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='display_mode'").Scan(&v)
+	return strings.TrimSpace(v)
+}
+
 // maskKey renders an API key for display without exposing it: the last 4
 // characters behind a dot mask, or just the mask for very short values.
 func maskKey(k string) string {
@@ -463,6 +501,7 @@ var featureToggles = []struct{ sentinel, key string }{
 	{"lyrics_present", "lyrics_enabled"},
 	{"update_present", "update_check_enabled"},
 	{"power_button_present", "power_button_enabled"},
+	{"display_control_present", "display_control_enabled"},
 }
 
 // settingsJobs is the old standalone page URL — now the Job Status card.

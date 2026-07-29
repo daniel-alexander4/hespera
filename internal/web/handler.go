@@ -71,6 +71,19 @@ type Handler struct {
 	// /poweroff). A field so tests can stub it — a test that reached the real
 	// systemctl would halt the machine running the suite.
 	powerOff func() error
+	// displayAvailable / displayOutputs / displaySetMode are the runtime
+	// mode-control seams, fields for the same reason displayClassAt is one: a
+	// test must never shell out to xrandr on the machine running the suite —
+	// still less change its screen mode.
+	displayAvailable func() (bool, string)
+	displayOutputs   func(ctx context.Context) ([]display.Output, error)
+	displaySetMode   func(ctx context.Context, output string, m display.Mode) error
+	// displayMu guards displayPending: the armed undo for a runtime display-mode
+	// change (Settings → Features). The timer lives here rather than in the page
+	// because the page is on the screen that just changed — a browser that
+	// crashed, or a mode the TV can't show, must still be undone.
+	displayMu      sync.Mutex
+	displayPending *displayPending
 }
 
 func New(d Deps) (*Handler, error) {
@@ -203,8 +216,11 @@ func New(d Deps) (*Handler, error) {
 		tmdbValidate: func(ctx context.Context, key string) (bool, error) {
 			return tmdb.NewClient(key).ValidateKey(ctx)
 		},
-		displayClassAt: display.ClassAt,
-		powerOff:       systemctlPowerOff,
+		displayClassAt:   display.ClassAt,
+		powerOff:         systemctlPowerOff,
+		displayAvailable: display.Available,
+		displayOutputs:   display.Outputs,
+		displaySetMode:   display.SetMode,
 	}
 
 	// Boot auto-resume: re-kick the scan chain of any library whose jobs the
@@ -213,6 +229,12 @@ func New(d Deps) (*Handler, error) {
 	h.resumeInterruptedJobs(context.Background())
 
 	go h.pruneTVCacheLoop()
+
+	// Re-apply the confirmed display mode, if there is one, once the machine's X
+	// session is up. In a goroutine because it waits: on a kiosk the autologin
+	// shell starts X after this service. A no-op unless the owner opted in and
+	// confirmed a mode.
+	go h.applySavedDisplayMode()
 
 	return h, nil
 }

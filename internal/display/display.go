@@ -17,6 +17,7 @@ package display
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -108,6 +109,175 @@ func Displays(ctx context.Context) ([]Display, error) {
 		return drmDisplays(), nil // XWayland that reports no physical mm
 	}
 	return ds, nil
+}
+
+// Mode is one selectable video mode on an output: a resolution paired with one
+// of the refresh rates xrandr lists beside it.
+type Mode struct {
+	W, H      int
+	Rate      float64
+	Current   bool // xrandr's '*' — the mode in force
+	Preferred bool // xrandr's '+' — the sink's own preference, from EDID
+}
+
+// Output is a connector xrandr knows about, with every mode it offers.
+// Deliberately NOT Display: that type exists to classify a display's physical
+// size and drops any output without EDID millimetres, which is exactly the
+// output a mis-negotiating TV presents. Mode control cares about connectors.
+type Output struct {
+	Name      string
+	Connected bool
+	Modes     []Mode
+}
+
+// reOutputLine matches the un-indented header that opens each output's block:
+//
+//	HDMI-1 connected primary 1920x1080+0+0 (normal ...) 528mm x 297mm
+//	DP-1 disconnected (normal left inverted right x axis y axis)
+var reOutputLine = regexp.MustCompile(`^(\S+) (connected|disconnected)\b`)
+
+// reModeLine matches an indented mode line, capturing the resolution and the
+// whole refresh-rate column that follows: "   1920x1080     60.00*+  50.00".
+var reModeLine = regexp.MustCompile(`^\s+(\d+)x(\d+)\s+(\S.*?)\s*$`)
+
+// Outputs enumerates every connector and the modes it offers. Unlike Displays
+// this needs a real X server — there is no sysfs fallback, because setting a
+// mode needs a display server regardless, so an output list nothing can act on
+// would only be a lie.
+func Outputs(ctx context.Context) ([]Output, error) {
+	out, err := xrandrQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var outs []Output
+	for _, line := range strings.Split(string(out), "\n") {
+		if m := reOutputLine.FindStringSubmatch(line); m != nil {
+			outs = append(outs, Output{Name: m[1], Connected: m[2] == "connected"})
+			continue
+		}
+		if len(outs) == 0 {
+			continue // the "Screen 0: ..." preamble
+		}
+		m := reModeLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		w, _ := strconv.Atoi(m[1])
+		h, _ := strconv.Atoi(m[2])
+		last := &outs[len(outs)-1]
+		for _, mode := range parseRates(w, h, m[3]) {
+			last.addMode(mode)
+		}
+	}
+	return outs, nil
+}
+
+// parseRates turns one mode line's refresh-rate column into a Mode per rate.
+// The '*' (current) and '+' (preferred) markers may be attached to the rate
+// ("60.00*+") or stand alone ("60.00 +") depending on xrandr's column padding,
+// so a bare marker token applies to the rate before it. A rate that doesn't
+// parse (an interlaced "59.94i", say) is skipped rather than guessed at.
+func parseRates(w, h int, rest string) []Mode {
+	var ms []Mode
+	for _, tok := range strings.Fields(rest) {
+		num := strings.Trim(tok, "*+")
+		if num == "" {
+			if len(ms) > 0 {
+				ms[len(ms)-1].Current = ms[len(ms)-1].Current || strings.Contains(tok, "*")
+				ms[len(ms)-1].Preferred = ms[len(ms)-1].Preferred || strings.Contains(tok, "+")
+			}
+			continue
+		}
+		rate, err := strconv.ParseFloat(num, 64)
+		if err != nil {
+			continue
+		}
+		ms = append(ms, Mode{
+			W: w, H: h, Rate: rate,
+			Current:   strings.Contains(tok, "*"),
+			Preferred: strings.Contains(tok, "+"),
+		})
+	}
+	return ms
+}
+
+// sameMode is mode identity for this package: resolution plus refresh rate to
+// the same 2dp the setting stores and xrandr --rate is given. Anything finer
+// isn't addressable, so it isn't a difference.
+func sameMode(a, b Mode) bool {
+	return a.W == b.W && a.H == b.H && math.Abs(a.Rate-b.Rate) < 0.01
+}
+
+// addMode appends m unless the output already lists an addressable duplicate.
+// Real hardware produces them: a laptop panel here advertises two distinct
+// 1920x1080 modelines that both round to 60.05, and xrandr is addressed by
+// resolution + rate — so they are one mode as far as anything here can say, and
+// keeping both would put two identical rows in the picker with the same stored
+// value. Markers are merged into the survivor rather than dropped with the
+// copy, so "in use"/"recommended" doesn't depend on which came first.
+func (o *Output) addMode(m Mode) {
+	for i := range o.Modes {
+		if sameMode(o.Modes[i], m) {
+			o.Modes[i].Current = o.Modes[i].Current || m.Current
+			o.Modes[i].Preferred = o.Modes[i].Preferred || m.Preferred
+			return
+		}
+	}
+	o.Modes = append(o.Modes, m)
+}
+
+// CurrentMode returns the mode an output is presently in. ok=false means
+// xrandr marked none — the output isn't displaying, so there is nothing to
+// restore, which is why a change to it is refused rather than made un-undoable.
+func (o Output) CurrentMode() (Mode, bool) {
+	for _, m := range o.Modes {
+		if m.Current {
+			return m, true
+		}
+	}
+	return Mode{}, false
+}
+
+// FormatSetting renders an output and mode as the single string the
+// display_mode setting stores and the picker offers as an option value:
+// "HDMI-1 1920x1080 60.00". One value keeps the whole choice in one form
+// field, which is what lets `hescli config set display_mode` set it too.
+func FormatSetting(output string, m Mode) string {
+	return fmt.Sprintf("%s %dx%d %.2f", output, m.W, m.H, m.Rate)
+}
+
+// ParseSetting splits a stored display_mode value back into an output name and
+// a mode. ok=false on anything malformed — hescli writes this key with no
+// validation at all, so a typo has to degrade to "no saved mode", never panic
+// and never half-apply.
+func ParseSetting(s string) (string, Mode, bool) {
+	f := strings.Fields(s)
+	if len(f) != 3 {
+		return "", Mode{}, false
+	}
+	res := strings.SplitN(f[1], "x", 2)
+	if len(res) != 2 {
+		return "", Mode{}, false
+	}
+	w, err1 := strconv.Atoi(res[0])
+	h, err2 := strconv.Atoi(res[1])
+	rate, err3 := strconv.ParseFloat(f[2], 64)
+	if err1 != nil || err2 != nil || err3 != nil || w <= 0 || h <= 0 || rate <= 0 {
+		return "", Mode{}, false
+	}
+	return f[0], Mode{W: w, H: h, Rate: rate}, true
+}
+
+// Offers reports whether this output still lists the given mode. The guard on
+// both the apply path and the boot-time re-apply: a saved mode that the sink no
+// longer advertises (a different TV plugged in) must be skipped, not forced.
+func (o Output) Offers(m Mode) bool {
+	for _, have := range o.Modes {
+		if sameMode(have, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // drmRoot is the sysfs DRM directory — a variable so tests can point it at a
