@@ -67,6 +67,10 @@ type Handler struct {
 	// lookup.
 	appMode        bool
 	displayClassAt func(ctx context.Context, x, y int) string
+	// powerOff halts the machine (the home screen's power button → POST
+	// /poweroff). A field so tests can stub it — a test that reached the real
+	// systemctl would halt the machine running the suite.
+	powerOff func() error
 }
 
 func New(d Deps) (*Handler, error) {
@@ -200,6 +204,7 @@ func New(d Deps) (*Handler, error) {
 			return tmdb.NewClient(key).ValidateKey(ctx)
 		},
 		displayClassAt: display.ClassAt,
+		powerOff:       systemctlPowerOff,
 	}
 
 	// Boot auto-resume: re-kick the scan chain of any library whose jobs the
@@ -220,6 +225,43 @@ func (h *Handler) Shutdown() {
 	}
 }
 
+// isLoopbackRequest reports whether the request came from the machine Hespera
+// runs on. The home screen's power button uses it as a render gate too, so a
+// LAN device is never shown a control its own request would be refused.
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	return net.ParseIP(host).IsLoopback()
+}
+
+// allowLocalPost gates the machine-level destructive endpoints (/shutdown,
+// /poweroff): POST-only, loopback-only, same-origin. The loopback rule is the
+// load-bearing one — on a LAN-serving deployment every household device renders
+// the same UI, and one tap must not stop the server (or halt the box) for
+// everyone; that stays reserved for the machine Hespera runs on. A reverse proxy
+// on that machine forwards from loopback, so its authenticated users keep these
+// controls by design. Same-origin blocks a cross-site page's fetch (its Origin
+// is foreign); same-origin navigations omit Origin and never reach a POST route.
+func (h *Handler) allowLocalPost(w http.ResponseWriter, r *http.Request, action string) bool {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return false
+	}
+	if !isLoopbackRequest(r) {
+		http.Error(w, action+" is only available on the machine Hespera runs on", http.StatusForbidden)
+		return false
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return false
+		}
+	}
+	return true
+}
+
 // shutdown quits the whole app (the topbar power button). It responds first, then
 // triggers the graceful shutdown so the client gets a reply before the server
 // stops. POST-only, same-origin (a destructive action): a cross-site page's
@@ -230,19 +272,8 @@ func (h *Handler) Shutdown() {
 // for the machine Hespera runs on (a reverse proxy on that machine forwards
 // from loopback, so its authenticated users keep the button by design).
 func (h *Handler) shutdown(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+	if !h.allowLocalPost(w, r, "shutdown") {
 		return
-	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err != nil || !net.ParseIP(host).IsLoopback() {
-		http.Error(w, "shutdown is only available on the machine Hespera runs on", http.StatusForbidden)
-		return
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		if u, err := url.Parse(origin); err != nil || u.Host != r.Host {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
 	}
 	if h.quit == nil {
 		http.Error(w, "shutdown not available", http.StatusServiceUnavailable)

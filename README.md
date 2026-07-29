@@ -262,6 +262,45 @@ end. For anything beyond that (shared LAN, remote access), put a reverse
 proxy with authentication in front (Caddy `basic_auth`, nginx `auth_basic`,
 Tailscale, etc.) — that is the supported pattern, not an app-level login.
 
+### Power button: shutting down an appliance box
+
+On a TV box with no keyboard, the only way to stop the machine is usually to
+pull the plug — which is how filesystems end up replaying journals and
+external drives collect unclean power cycles. Hespera can show a power button
+on the home screen instead, which shuts the machine down through systemd:
+the service stops, the database is flushed, and your library filesystem is
+unmounted cleanly.
+
+It is **off by default**, and deliberately awkward to turn on, because the
+same binary runs household servers and desktop app windows where halting the
+host would be destructive. To enable it:
+
+1. Turn on **Settings → Features → "Show a power button on the home screen"**
+   (or `hescli config set power_button_enabled 1`).
+2. Grant the user Hespera runs as permission to power off the machine, by
+   creating `/etc/polkit-1/rules.d/50-hespera-poweroff.rules`:
+
+   ```javascript
+   polkit.addRule(function (action, subject) {
+     if (action.id == "org.freedesktop.login1.power-off" &&
+         subject.user == "YOUR_USERNAME") {
+       return polkit.Result.YES;
+     }
+   });
+   ```
+
+That polkit rule is **not** shipped in the package on purpose: installing a
+rule that lets a web UI halt its host would be a silent privilege escalation
+on every machine Hespera is installed on. Granting it is your decision, per
+machine. Without it the button still appears, but reports an error instead of
+powering off.
+
+Two safeguards apply regardless of the setting: the button is shown and
+accepted **only in a browser on the machine itself** (other devices on your
+network never see it, and their requests are refused), and it always asks for
+confirmation first — a remote's arrow keys pass through the home screen's
+utility row, and a single stray press should not end playback for everyone.
+
 ### Performance: sharing a disk with another media server
 
 Hespera runs all of its background work — library scans, integrity checks,

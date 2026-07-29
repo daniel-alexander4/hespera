@@ -79,6 +79,7 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 			"JobResumeEnabled":        h.effectiveJobResumeEnabled(ctx),
 			"LyricsEnabled":           h.effectiveLyricsEnabled(ctx),
 			"UpdateCheckEnabled":      h.effectiveUpdateCheckEnabled(ctx),
+			"PowerButtonEnabled":      h.effectivePowerButtonEnabled(ctx),
 			"DefaultAudioLang":        h.effectiveDefaultAudioLang(ctx),
 			"DefaultSubtitleLang":     h.effectiveDefaultSubtitleLang(ctx),
 			"SubtitlesDefaultOn":      h.effectiveSubtitlesDefaultOn(ctx),
@@ -382,6 +383,19 @@ func (h *Handler) effectiveSubtitlesDefaultOn(ctx context.Context) bool {
 	return strings.TrimSpace(v) == "1"
 }
 
+// effectivePowerButtonEnabled reports whether the home screen offers a power
+// button that halts the machine. Default OFF (opt-in) — stored as '1' when
+// enabled, absent = off. The lyrics_enabled pattern, and default-off is
+// load-bearing rather than merely cautious: the same binary runs a household
+// server and a desktop app window, where halting the host on a stray click
+// would be destructive. It is meant for an appliance install (a TV box), and
+// even then only answers on loopback.
+func (h *Handler) effectivePowerButtonEnabled(ctx context.Context) bool {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='power_button_enabled'").Scan(&v)
+	return strings.TrimSpace(v) == "1"
+}
+
 // effectiveUpdateCheckEnabled reports whether the once-per-session automatic
 // update check (the topbar version pill's startup fetch) is on. Default OFF
 // (opt-in — no phone-home until the user asks for it): stored as '1' when
@@ -448,6 +462,7 @@ var featureToggles = []struct{ sentinel, key string }{
 	{"job_resume_present", "job_resume_enabled"},
 	{"lyrics_present", "lyrics_enabled"},
 	{"update_present", "update_check_enabled"},
+	{"power_button_present", "power_button_enabled"},
 }
 
 // settingsJobs is the old standalone page URL — now the Job Status card.
