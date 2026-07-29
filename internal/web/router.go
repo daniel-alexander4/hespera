@@ -10,6 +10,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/", h.home)
 	mux.HandleFunc("/healthz", h.healthz)
 	mux.HandleFunc("/shutdown", h.shutdown)
+	mux.HandleFunc("/poweroff", h.poweroff)
 	mux.HandleFunc("/display/scale", h.displayScale)
 	mux.HandleFunc("/update/check", h.updateCheck)
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {

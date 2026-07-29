@@ -87,6 +87,10 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		"Stats":                   stats,
 		"HasActivity":             hasActivity,
 		"NeedsSetup":              libCount == 0,
+		// Both halves matter: the setting is the owner's opt-in, and the loopback
+		// check keeps the control off every other device's home screen — a LAN
+		// browser would only be refused by /poweroff anyway.
+		"ShowPowerButton": h.effectivePowerButtonEnabled(ctx) && isLoopbackRequest(r),
 	})
 }
 

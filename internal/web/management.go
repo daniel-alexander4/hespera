@@ -243,6 +243,7 @@ var managedSettings = []settingSpec{
 	{Key: "watch_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "job_resume_enabled", Kind: kindToggle, OnStored: "", OffStored: "0"},
 	{Key: "lyrics_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
+	{Key: "power_button_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "update_check_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "default_audio_lang", Kind: kindString},
 	{Key: "default_subtitle_lang", Kind: kindString},

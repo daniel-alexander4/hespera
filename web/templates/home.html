@@ -17,8 +17,78 @@
     <button type="button" class="util-btn" data-search-open aria-label="Search" title="Search ( / )">{{template "icon-search"}}</button>
     <button type="button" class="util-btn" data-app-reload aria-label="Reload" title="Reload">{{template "icon-rotate-cw"}}</button>
     <button type="button" class="util-btn" data-app-fullscreen aria-label="Full screen" title="Full screen"><span class="fs-enter">{{template "icon-maximize"}}</span><span class="fs-exit">{{template "icon-minimize"}}</span></button>
+    {{if .ShowPowerButton}}<button type="button" id="power-btn" class="util-btn" aria-label="Power off" title="Power off this machine">{{template "icon-power"}}</button>{{end}}
   </div>
 </div>
+
+{{if .ShowPowerButton}}
+{{/* Confirm before halting the box. The arrow ring walks straight through
+     .home-utils, so a bare one-press power button would be a stray keypress
+     away from ending playback for the whole household. A couch overlay: Back
+     dismisses via the hidden dismiss button, and couch.js scopes focus to the
+     panel while it's open. */}}
+<div id="power-modal" class="playlist-modal hidden" data-couch-overlay>
+  <div class="playlist-panel">
+    <div class="plpick-head">
+      <strong>Power off?</strong>
+      <button id="power-cancel" type="button" class="btn btn-sm" data-couch-dismiss aria-label="Cancel">Cancel</button>
+    </div>
+    <p class="form-help">This shuts down the whole machine. Anyone watching or listening on another device will lose it until the machine is switched back on by hand.</p>
+    <div class="form-actions">
+      <button id="power-confirm" type="button" class="btn btn-primary">Power off</button>
+    </div>
+    <p id="power-status" class="form-help"></p>
+  </div>
+</div>
+
+<script>
+// Page-local (home only) — Turbo swaps the body, so these listeners die with
+// the elements they're bound to. No document-level listener, nothing to tear
+// down on turbo:before-cache.
+(function () {
+  var btn = document.getElementById('power-btn'),
+      modal = document.getElementById('power-modal'),
+      confirm = document.getElementById('power-confirm'),
+      cancel = document.getElementById('power-cancel'),
+      status = document.getElementById('power-status');
+  if (!btn || !modal || !confirm || !cancel || !status) return;
+
+  function close() {
+    modal.classList.add('hidden');
+    status.textContent = '';
+    confirm.disabled = false;
+    btn.focus();
+  }
+
+  btn.addEventListener('click', function () {
+    status.textContent = '';
+    confirm.disabled = false;
+    modal.classList.remove('hidden');
+    // Land the ring on Cancel, not the destructive button.
+    cancel.focus();
+  });
+  cancel.addEventListener('click', close);
+  modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+
+  confirm.addEventListener('click', function () {
+    confirm.disabled = true;
+    status.textContent = 'Powering off…';
+    // Same-origin fetch: carries an Origin header, so it satisfies both the
+    // global CSRF guard and /poweroff's own same-origin check.
+    fetch('/poweroff', { method: 'POST' }).then(function (res) {
+      if (res.ok) return; // the machine is going down; leave the message up
+      return res.text().then(function (msg) {
+        confirm.disabled = false;
+        status.textContent = msg || ('Power off failed (' + res.status + ')');
+      });
+    }).catch(function () {
+      // A dropped connection mid-shutdown is the success case, not an error.
+      status.textContent = 'Powering off…';
+    });
+  });
+})();
+</script>
+{{end}}
 
 {{if or .HasMusic (or (gt .Stats.Series 0) (or (gt .Stats.Movies 0) (or (gt .Stats.Books 0) (gt .Stats.Audiobooks 0))))}}
 <div class="home-stats text-muted">
