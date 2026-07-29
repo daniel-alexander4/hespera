@@ -309,6 +309,46 @@ network never see it, and their requests are refused), and it always asks for
 confirmation first — a remote's arrow keys pass through the home screen's
 utility row, and a single stray press should not end playback for everyone.
 
+### Screen mode: when a TV shows nothing, or the wrong size
+
+A computer and a TV agree on a video mode when they're plugged together. If
+the TV was switched off, or on another input, at the moment the machine
+booted, they never had that conversation — so you get no picture at all, or a
+picture at some resolution the TV would rather not use. Until now the only
+cure was editing the kernel command line on the boot partition and rebooting.
+
+Hespera can pick the mode instead, from **Settings → Features → "Let Hespera
+set this machine's screen mode"** (off by default). Choose a resolution and
+refresh rate, and it applies at once — then asks whether you can still see
+anything. If you don't confirm within fifteen seconds it puts the old mode
+back on its own, so a mode your TV can't display fixes itself rather than
+leaving you with a black screen and no way to undo it. A mode you *do*
+confirm is remembered and re-applied every time Hespera starts, so it
+survives reboots.
+
+Requirements and limits, in one place:
+
+- **Linux running X11 only.** It uses `xrandr`, from the `x11-xserver-utils`
+  package. On macOS and Windows the desktop owns display configuration and
+  the setting doesn't appear.
+- **If Hespera runs as a background service**, it has no display session of
+  its own, so it can't reach the screen until you tell it which one:
+  add `DISPLAY=:0` to `/etc/default/hespera` and restart the service. (If
+  your X session keeps its authority file somewhere unusual, add
+  `XAUTHORITY=/path/to/.Xauthority` too.) Until you do, the setting says so
+  rather than offering a control that quietly does nothing.
+- Like the power button, it is shown and accepted **only in a browser on the
+  machine itself** — other devices on your network never see it.
+- `hescli config set display_mode "HDMI-1 1920x1080 60.00"` sets it from an
+  SSH session, which is the way in when there's nothing on the screen to look
+  at. That takes effect at the next restart.
+- It can only choose among modes the screen tells the computer it supports.
+  If the connector reports **nothing attached** — a TV that was off at boot,
+  showing no EDID at all — there is no list to choose from, and the fix is
+  still a forced mode on the kernel command line (`video=HDMI-A-1:1920x1080@60D`
+  in `/boot/firmware/cmdline.txt` on a Raspberry Pi) or a saved EDID file.
+  Kill switch: `HESPERA_NO_DISPLAY_CONTROL=1`.
+
 ### Performance: sharing a disk with another media server
 
 Hespera runs all of its background work — library scans, integrity checks,

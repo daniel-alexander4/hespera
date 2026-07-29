@@ -237,6 +237,236 @@
     </div>
   </form>
 
+  <form method="post" action="/settings" class="form-card">
+    <input type="hidden" name="display_control_present" value="1" />
+    <div class="form-group">
+      <label class="form-check">
+        <input type="checkbox" name="display_control_enabled" value="1"{{if .DisplayControlEnabled}} checked{{end}} />
+        Let Hespera set this machine's screen mode
+      </label>
+      <small class="form-help">
+        Off (default). On: you can pick the resolution and refresh rate for a screen
+        attached to this machine &mdash; useful when a TV shows nothing, or the wrong
+        size, because it and the computer disagreed about the mode when they were
+        plugged together. The chosen mode is re-applied every time Hespera starts.
+        Like the power button, it appears and works only in a browser on the machine
+        itself. Linux with X11 only; on a machine running Hespera as a background
+        service, add <code>DISPLAY=:0</code> to <code>/etc/default/hespera</code> so it
+        can reach the screen.
+      </small>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+
+  {{if .ShowDisplayPicker}}
+  <div class="form-card">
+    <div class="form-group">
+      <label class="form-label" for="display_mode">Screen mode</label>
+      {{if .DisplayControlReason}}
+      <small class="form-help">{{.DisplayControlReason}}</small>
+      {{else}}
+      <select name="display_mode" id="display_mode"><option value="">Reading this machine's screens&hellip;</option></select>
+      <small class="form-help">
+        Changing this takes effect at once, and is undone by itself unless you confirm
+        it &mdash; so a mode your screen can't show puts itself right after a few
+        seconds instead of leaving you with nothing to look at.
+        {{if .DisplayMode}}Saved: <code>{{.DisplayMode}}</code>.{{end}}
+      </small>
+      {{end}}
+    </div>
+    {{if not .DisplayControlReason}}
+    <div class="form-actions">
+      <button type="button" class="btn btn-primary" id="display-apply">Change screen mode</button>
+    </div>
+    <p class="form-help" id="display-status"></p>
+    {{end}}
+  </div>
+
+  {{if not .DisplayControlReason}}
+  {{/* Keep-or-lose-it confirmation. The countdown shown here is cosmetic: the
+       server owns the real timer, because this page is on the screen that just
+       changed and may be showing nothing at all. Focus lands on Keep — the
+       button whose outcome DIFFERS from doing nothing — and Cancel carries
+       data-couch-dismiss, so the remote's Back is the safe path. */}}
+  <div id="display-modal" class="playlist-modal hidden" data-couch-overlay>
+    <div class="playlist-panel">
+      <div class="plpick-head">
+        <strong>Keep this screen mode?</strong>
+        <button id="display-cancel" type="button" class="btn btn-sm" data-couch-dismiss aria-label="Go back to the old mode">Go back</button>
+      </div>
+      <p class="form-help">
+        If you can read this, press Keep. If you can't, do nothing &mdash; the old mode
+        comes back on its own in <span id="display-count">15</span> seconds.
+      </p>
+      <div class="form-actions">
+        <button id="display-keep" type="button" class="btn btn-primary">Keep</button>
+      </div>
+      <p id="display-modal-status" class="form-help"></p>
+    </div>
+  </div>
+
+  <script>
+  // Page-local, and only shipped when the control is switched on and this is the
+  // machine's own browser. Turbo swaps the body, so these listeners die with the
+  // elements they're bound to; the one thing that outlives them is the countdown
+  // interval, which is cleared in close() and on turbo:before-cache.
+  (function () {
+    var sel = document.getElementById('display_mode'),
+        apply = document.getElementById('display-apply'),
+        status = document.getElementById('display-status'),
+        modal = document.getElementById('display-modal'),
+        keep = document.getElementById('display-keep'),
+        cancel = document.getElementById('display-cancel'),
+        count = document.getElementById('display-count'),
+        modalStatus = document.getElementById('display-modal-status');
+    if (!sel || !apply || !modal || !keep || !cancel) return;
+
+    var timer = null, pending = '';
+
+    function post(url, params) {
+      var body = new URLSearchParams(params);
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+    }
+
+    function close() {
+      if (timer) { clearInterval(timer); timer = null; }
+      modal.classList.add('hidden');
+      modalStatus.textContent = '';
+      pending = '';
+      apply.disabled = false;
+      apply.focus();
+    }
+
+    // Fill the list only when the card is actually opened — the same lazy rule
+    // the About card's health probes use, so an ordinary settings load runs no
+    // xrandr at all.
+    var card = sel.closest('details'), loaded = false;
+    function loadModes() {
+      if (loaded) return;
+      loaded = true;
+      fetch('/display/modes', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          sel.textContent = '';
+          if (!d.available) {
+            var o = document.createElement('option');
+            o.textContent = d.reason || 'No screens available';
+            sel.appendChild(o);
+            sel.disabled = true;
+            apply.disabled = true;
+            return;
+          }
+          (d.outputs || []).forEach(function (out) {
+            var group = document.createElement('optgroup');
+            group.label = out.name;
+            (out.modes || []).forEach(function (m) {
+              var o = document.createElement('option');
+              o.value = m.value;
+              o.textContent = m.label + (m.current ? ' — in use' : (m.preferred ? ' — recommended' : ''));
+              if (m.current) o.selected = true;
+              group.appendChild(o);
+            });
+            sel.appendChild(group);
+          });
+          if (!sel.options.length) {
+            var none = document.createElement('option');
+            none.textContent = 'No screen is connected';
+            sel.appendChild(none);
+            sel.disabled = true;
+            apply.disabled = true;
+          }
+        })
+        .catch(function () {
+          sel.textContent = '';
+          var o = document.createElement('option');
+          o.textContent = 'Could not read the screens on this machine';
+          sel.appendChild(o);
+          sel.disabled = true;
+          apply.disabled = true;
+        });
+    }
+    if (card && card.open) loadModes();
+    else if (card) card.addEventListener('toggle', function () { if (card.open) loadModes(); });
+
+    apply.addEventListener('click', function () {
+      var mode = sel.value;
+      if (!mode) return;
+      status.textContent = '';
+      apply.disabled = true;
+      post('/display/mode', { mode: mode }).then(function (res) {
+        if (!res.ok) {
+          return res.text().then(function (msg) {
+            apply.disabled = false;
+            status.textContent = msg || ('Could not change the screen mode (' + res.status + ')');
+          });
+        }
+        return res.json().then(function (d) {
+          pending = d.applied;
+          var left = d.revert_seconds || 15;
+          count.textContent = String(left);
+          modalStatus.textContent = '';
+          keep.disabled = false;
+          modal.classList.remove('hidden');
+          keep.focus();
+          timer = setInterval(function () {
+            left--;
+            if (left <= 0) {
+              close();
+              status.textContent = 'The old screen mode came back — the change was not confirmed.';
+              return;
+            }
+            count.textContent = String(left);
+          }, 1000);
+        });
+      }).catch(function () {
+        apply.disabled = false;
+        status.textContent = 'Could not reach Hespera to change the screen mode.';
+      });
+    });
+
+    keep.addEventListener('click', function () {
+      keep.disabled = true;
+      var mode = pending;
+      post('/display/mode/confirm', { mode: mode, keep: '1' }).then(function (res) {
+        if (!res.ok) {
+          return res.text().then(function (msg) {
+            keep.disabled = false;
+            modalStatus.textContent = msg || 'Could not keep that mode.';
+          });
+        }
+        close();
+        status.textContent = 'Saved. Hespera will use this mode from now on.';
+      }).catch(function () {
+        keep.disabled = false;
+        modalStatus.textContent = 'Could not reach Hespera to keep that mode.';
+      });
+    });
+
+    cancel.addEventListener('click', function () {
+      var mode = pending;
+      close();
+      status.textContent = 'Putting the old screen mode back…';
+      post('/display/mode/confirm', { mode: mode, keep: '0' }).then(function () {
+        status.textContent = 'The old screen mode is back.';
+      }).catch(function () {
+        status.textContent = 'The old screen mode will come back on its own in a few seconds.';
+      });
+    });
+
+    document.addEventListener('turbo:before-cache', function () {
+      if (timer) { clearInterval(timer); timer = null; }
+    }, { once: true });
+  })();
+  </script>
+  {{end}}
+  {{end}}
+
   </div>
 </details>
 

@@ -12,6 +12,9 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/shutdown", h.shutdown)
 	mux.HandleFunc("/poweroff", h.poweroff)
 	mux.HandleFunc("/display/scale", h.displayScale)
+	mux.HandleFunc("/display/modes", h.displayModes)
+	mux.HandleFunc("/display/mode", h.displayModeApply)
+	mux.HandleFunc("/display/mode/confirm", h.displayModeConfirm)
 	mux.HandleFunc("/update/check", h.updateCheck)
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, h.staticFS, "hespera-favicon.ico")
