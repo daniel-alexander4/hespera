@@ -282,12 +282,20 @@ host would be destructive. To enable it:
 
    ```javascript
    polkit.addRule(function (action, subject) {
-     if (action.id == "org.freedesktop.login1.power-off" &&
+     if ((action.id == "org.freedesktop.login1.power-off" ||
+          action.id == "org.freedesktop.login1.power-off-multiple-sessions") &&
          subject.user == "YOUR_USERNAME") {
        return polkit.Result.YES;
      }
    });
    ```
+
+   Both action ids are needed, not just the first: logind escalates to the
+   `-multiple-sessions` variant whenever another session is open, and on an
+   appliance box — a kiosk on tty1, plus any SSH login — that is the normal
+   state rather than the exception. Note also that the service runs with no
+   active login session, so the rule has to return `YES` outright; a rule
+   relying on polkit's "active session" path will never match it.
 
 That polkit rule is **not** shipped in the package on purpose: installing a
 rule that lets a web UI halt its host would be a silent privilege escalation
