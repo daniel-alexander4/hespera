@@ -156,3 +156,73 @@ test('a non-arrow key passes through to couch even while engaged', () => {
   press(env, 'a'); // an unhandled key must bubble (not captured)
   assert.strictEqual(env.couch(), before + 1, 'unhandled keys still reach couch');
 });
+
+// --- The measuring tape -------------------------------------------------
+// The tape is pure year arithmetic written to inline styles — it never reads
+// layout (setup() runs on pickers inside a display:none subtab panel), so it is
+// fully assertable here. Visual density and label collision need real layout and
+// stay in the Playwright smoke.
+
+const bootSpan = (min, max) => {
+  const env = loadController('era_slider.js', {
+    html: fixture().replace(`data-min="${MIN}"`, `data-min="${min}"`).replace(`data-max="${MAX}"`, `data-max="${max}"`),
+    url: 'http://localhost/music',
+  });
+  env.document.dispatchEvent(new env.window.Event('turbo:load'));
+  return env;
+};
+const ticks = (env, sel = '.era-tick') => [...env.document.querySelectorAll(sel)];
+const tickYears = (env, min, max) => {
+  // Recover each tick's year from its inline left%, which is pct(y) over (span+1) bands.
+  const denom = max - min + 1;
+  return ticks(env).map((t) => Math.round((parseFloat(t.style.left) / 100) * denom) + min);
+};
+const labels = (env) => ticks(env, '.era-tick-label').map((l) => l.textContent);
+
+test('a narrow span keeps one tick per year; a wide span steps to two', () => {
+  const narrow = bootSpan(1990, 2020); // span 30
+  assert.strictEqual(ticks(narrow).length, 31, 'span 30 draws a mark per year');
+
+  const wide = bootSpan(1900, 2023); // span 123 — the reported library
+  assert.strictEqual(ticks(wide).length, 62, 'span 123 halves to a 2-year step');
+  const ys = tickYears(wide, 1900, 2023);
+  assert.ok(ys.every((y) => y % 2 === 0), 'every wide-span tick lands on an even year');
+});
+
+test('an odd min year still lands a tick and a label on every decade', () => {
+  // The trap: anchoring the loop at min (odd) with a 2-year step emits only odd
+  // years, so every decade — major tick and label alike — silently vanishes.
+  const env = bootSpan(1955, 2023); // span 68, step 2, min is ODD
+  const majors = tickYears(env, 1955, 2023).filter((y) => y % 10 === 0);
+  assert.deepStrictEqual(majors, [1960, 1970, 1980, 1990, 2000, 2010, 2020], 'every decade has a tick');
+  assert.strictEqual(ticks(env, '.era-tick--major').length, 7, 'each decade tick is the major tier');
+  assert.strictEqual(labels(env).length, 7, 'each decade tick carries a label');
+});
+
+test('decade labels are two digits, and a century stays a full year', () => {
+  const env = bootSpan(1900, 2023);
+  assert.deepStrictEqual(
+    labels(env),
+    ['1900', '10', '20', '30', '40', '50', '60', '70', '80', '90', '2000', '10', '20'],
+    'centuries anchor the repeated 10/20 either side of them',
+  );
+});
+
+test('the 5-year mid tier survives at step 1 and cannot fire at step 2', () => {
+  const narrow = bootSpan(1990, 2020); // step 1
+  assert.ok(ticks(narrow, '.era-tick--mid').length > 0, 'mid marks break up a per-year run');
+  const wide = bootSpan(1900, 2023); // step 2 — a 5-mark is odd, so unreachable
+  assert.strictEqual(ticks(wide, '.era-tick--mid').length, 0, 'no mid marks survive an even-only step');
+});
+
+test('an absurd span draws no tape at all (the DOM-bomb belt)', () => {
+  const env = bootSpan(1900, 20132013);
+  assert.strictEqual(ticks(env).length, 0, 'the >300 bail-out runs before any tick is built');
+});
+
+test('a second turbo:load does not double the tape', () => {
+  const env = bootSpan(1900, 2023);
+  const before = ticks(env).length;
+  env.document.dispatchEvent(new env.window.Event('turbo:load'));
+  assert.strictEqual(ticks(env).length, before, 'the inited WeakSet keeps setup idempotent');
+});

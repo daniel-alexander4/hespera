@@ -2617,8 +2617,9 @@ code {
   box-shadow: 0 0 0 2px var(--accent-bg), 0 0 12px var(--accent);
 }
 
-/* The measuring tape: tick marks rise from a baseline, full-year numbers sit
-   below it. pointer-events:none so all drags fall through to track/window/handles. */
+/* The measuring tape: tick marks rise from a baseline, decade numbers sit below
+   it (two digits, full year at a century).
+   pointer-events:none so all drags fall through to track/window/handles. */
 .era-tape { position: absolute; inset: 0; pointer-events: none; }
 .era-tape::after {
   content: ""; position: absolute; left: 6px; right: 6px; bottom: 21px; height: 1px;
@@ -2627,7 +2628,9 @@ code {
 .era-tick { position: absolute; bottom: 21px; width: 1px; background: var(--text-soft); transform: translateX(-50%); }
 .era-tick--minor { height: 5px; }
 .era-tick--mid { height: 9px; }
-.era-tick--major { width: 2px; height: 14px; background: var(--text); }
+/* Decades carry the tape's structure, so they stand well clear of the 2-year
+   marks: 18px off the bottom:21px baseline is 39px of the 46px track. */
+.era-tick--major { width: 2px; height: 18px; background: var(--text); }
 .era-tick-label {
   position: absolute; bottom: 4px; transform: translateX(-50%); z-index: 3;
   font-size: 0.76rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
