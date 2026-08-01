@@ -2626,14 +2626,15 @@ code {
   background: var(--text-soft);
 }
 .era-tick { position: absolute; bottom: 21px; width: 1px; background: var(--text-soft); transform: translateX(-50%); }
+/* A tape measure: every mark is the same 1px stroke in the same colour, and
+   only the LENGTH ranks them — minor, half again for the 5s, double for a
+   decade. Height is the whole hierarchy, so none of these override the width
+   or background inherited from .era-tick. (The decade mark used to be 2px of
+   brighter --page-fg, which read as heavy rather than long; before that it set
+   a non-existent var(--text) and was invisible outright.) */
 .era-tick--minor { height: 5px; }
-.era-tick--mid { height: 9px; }
-/* Decades carry the tape's structure, so they stand well clear of the 2-year
-   marks: 18px off the bottom:21px baseline is 39px of the 46px track.
-   --page-fg, NOT --text: there is no --text in the palette, so the original
-   var(--text) resolved to nothing and left every decade mark fully transparent
-   — sized, positioned, and invisible since the tape was first built. */
-.era-tick--major { width: 2px; height: 18px; background: var(--page-fg); }
+.era-tick--mid { height: 7px; }
+.era-tick--major { height: 10px; }
 .era-tick-label {
   position: absolute; bottom: 4px; transform: translateX(-50%); z-index: 3;
   font-size: 0.76rem; font-weight: 700; color: var(--page-fg); font-variant-numeric: tabular-nums;
