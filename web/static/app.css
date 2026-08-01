@@ -2629,11 +2629,14 @@ code {
 .era-tick--minor { height: 5px; }
 .era-tick--mid { height: 9px; }
 /* Decades carry the tape's structure, so they stand well clear of the 2-year
-   marks: 18px off the bottom:21px baseline is 39px of the 46px track. */
-.era-tick--major { width: 2px; height: 18px; background: var(--text); }
+   marks: 18px off the bottom:21px baseline is 39px of the 46px track.
+   --page-fg, NOT --text: there is no --text in the palette, so the original
+   var(--text) resolved to nothing and left every decade mark fully transparent
+   — sized, positioned, and invisible since the tape was first built. */
+.era-tick--major { width: 2px; height: 18px; background: var(--page-fg); }
 .era-tick-label {
   position: absolute; bottom: 4px; transform: translateX(-50%); z-index: 3;
-  font-size: 0.76rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
+  font-size: 0.76rem; font-weight: 700; color: var(--page-fg); font-variant-numeric: tabular-nums;
   text-shadow: 0 0 4px var(--surface-panel), 0 0 4px var(--surface-panel);
 }
 
