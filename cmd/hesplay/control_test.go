@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -208,6 +209,7 @@ func TestHandlersRejectWrongMethods(t *testing.T) {
 		{http.MethodGet, "/api/next"},
 		{http.MethodGet, "/api/prev"},
 		{http.MethodGet, "/api/stop"},
+		{http.MethodGet, "/api/pause"},
 	}
 	for _, c := range cases {
 		rr := httptest.NewRecorder()
@@ -215,6 +217,39 @@ func TestHandlersRejectWrongMethods(t *testing.T) {
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("%s %s = %d, want 405", c.method, c.path, rr.Code)
 		}
+	}
+}
+
+// Pause has nothing to act on when idle, and must say so rather than pretend.
+func TestPauseRefusedWhenIdle(t *testing.T) {
+	h := newTestController().routes()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/pause", strings.NewReader(`{"paused":true}`)))
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("POST /api/pause while idle = %d, want 409", rr.Code)
+	}
+}
+
+// An idle box reports paused=false, and reports whether pausing is possible at
+// all — ffplay has no IPC, so the remote hides the control instead of offering
+// one that can only fail.
+func TestStateReportsPauseCapability(t *testing.T) {
+	h := newTestController().routes()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	var got struct {
+		Paused   bool `json:"paused"`
+		CanPause bool `json:"canPause"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("state is not JSON: %v", err)
+	}
+	if got.Paused {
+		t.Fatal("an idle box reported paused=true")
+	}
+	// newTestController uses engine{name: "mpv"}, which can pause on unix.
+	if !got.CanPause && runtime.GOOS != "windows" {
+		t.Fatal("an mpv box reported canPause=false")
 	}
 }
 
