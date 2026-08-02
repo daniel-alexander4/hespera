@@ -142,6 +142,29 @@ h2:first-child { margin-top: 0; }
 .q-row.is-now .q-n { color: var(--accent); }
 .q-row.is-now .q-a { color: var(--text); }
 
+/* The playing row carries its own transport and progress, so it is a card
+   rather than a line. It sits in the list where the song is, which is where the
+   eye already is — the old fixed footer put those controls below everything. */
+.np-card {
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--mantle);
+  padding: 0.5rem 0.6rem 0.6rem;
+}
+.np-card .np-head { display: grid; grid-template-columns: auto 1fr; gap: 0.6rem; align-items: center; }
+.np-card .np-cover { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--surface); }
+.np-card .np-text { min-width: 0; }
+.np-card .np-t { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.np-card .np-a { font-size: 0.78rem; color: var(--subtext); overflow-wrap: anywhere; }
+
+/* Percentage only — no clock. A thin track that fills; nothing to drag, because
+   seeking is not something the engine exposes here. */
+.np-bar { height: 4px; border-radius: 2px; background: var(--surface); margin: 0.55rem 0 0.5rem; overflow: hidden; }
+.np-bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s linear; }
+.np-bar.is-unknown { opacity: 0.35; }
+
+.np-controls { display: flex; justify-content: center; gap: 0.4rem; }
+
 .icon-btn {
   appearance: none;
   min-width: 44px; min-height: 44px;

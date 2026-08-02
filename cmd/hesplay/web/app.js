@@ -82,14 +82,14 @@
   let isPaused = false;
   function applyPaused(p) {
     isPaused = p;
-    const b = $('pause');
-    b.textContent = p ? '▶' : '⏸';
-    b.setAttribute('aria-label', p ? 'Resume' : 'Pause');
-    const row = document.querySelector('.q-row.is-now');
-    if (row) {
-      row.querySelector('.q-n').textContent = p ? '⏸' : '▶';
-      row.setAttribute('aria-label', (p ? 'Resume ' : 'Pause ') + (row.dataset.title || ''));
-    }
+    // Either or both may be on screen: the card's button on home, the footer's
+    // while browsing.
+    ['row-pause', 'pause'].forEach((id) => {
+      const b = $(id);
+      if (!b) return;
+      b.textContent = p ? '▶' : '⏸';
+      b.setAttribute('aria-label', p ? 'Resume' : 'Pause');
+    });
   }
 
   async function action(path) {
@@ -160,7 +160,10 @@
       return;
     }
     const n = st.now;
-    now.hidden = false;
+    // The footer exists for the screens that have no queue list. On home the
+    // playing row IS the transport, so a second copy below the fold would be
+    // two sets of controls for one song.
+    now.hidden = stack[stack.length - 1] === 'home';
     // canPause is false on an ffplay box, which has no IPC to pause through —
     // hide the control rather than offer one that can only fail.
     $('pause').hidden = !st.canPause;
@@ -234,18 +237,80 @@
       btn.append(n, t);
       btn.dataset.title = r.title;
       if (r.current) {
-        // The playing row is the pause control. Tapping it to restart the track
-        // read as a glitch, and leaving it inert wasted the one row you are
-        // most likely to reach for.
-        btn.setAttribute('aria-current', 'true');
-        btn.addEventListener('click', () => setPaused(!isPaused));
+        // The playing row is a card: cover, title, progress and the transport,
+        // sitting where the song is rather than in a bar below the whole list.
+        li.appendChild(nowCard(st, r));
       } else {
         btn.addEventListener('click', () => jump(r.index));
+        li.appendChild(btn);
       }
-
-      li.appendChild(btn);
       list.appendChild(li);
     });
+  }
+
+  // nowCard renders the playing song with its own controls. Rebuilt only when
+  // the row set changes; the progress bar and pause glyph are updated in place
+  // on every poll so a 2s tick never rebuilds the DOM under a finger.
+  function nowCard(st, r) {
+    const n = st.now || {};
+    const card = document.createElement('div');
+    card.className = 'np-card';
+    card.setAttribute('aria-current', 'true');
+
+    const head = document.createElement('div');
+    head.className = 'np-head';
+    const cover = document.createElement('img');
+    cover.className = 'np-cover';
+    cover.id = 'np-cover';
+    cover.alt = '';
+    if (n.albumId > 0) cover.src = '/art/album/' + n.albumId; else cover.hidden = true;
+    const text = document.createElement('div');
+    text.className = 'np-text';
+    const t = document.createElement('div');
+    t.className = 'np-t';
+    t.textContent = r.title;
+    const a = document.createElement('div');
+    a.className = 'np-a';
+    a.textContent = [n.artist, n.album].filter(Boolean).join(' — ');
+    text.append(t, a);
+    head.append(cover, text);
+
+    const bar = document.createElement('div');
+    bar.className = 'np-bar';
+    bar.id = 'np-bar';
+    bar.appendChild(document.createElement('i'));
+
+    const ctl = document.createElement('div');
+    ctl.className = 'np-controls';
+    const mk = (id, label, glyph, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'icon-btn';
+      b.id = id;
+      b.setAttribute('aria-label', label);
+      b.textContent = glyph;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    ctl.append(
+      mk('row-prev', 'Previous', '⏮', () => action('/api/prev')),
+      mk('row-pause', isPaused ? 'Resume' : 'Pause', isPaused ? '▶' : '⏸', () => setPaused(!isPaused)),
+      mk('row-next', 'Next', '⏭', () => action('/api/next')),
+      mk('row-stop', 'Stop', '⏹', () => action('/api/stop')),
+    );
+    if (!st.canPause) ctl.querySelector('#row-pause').hidden = true;
+
+    card.append(head, bar, ctl);
+    return card;
+  }
+
+  // Update the bar in place — no re-render, so it can tick every poll.
+  function applyProgress(p) {
+    const bar = $('np-bar');
+    if (!bar) return;
+    const known = typeof p === 'number' && p >= 0;
+    bar.classList.toggle('is-unknown', !known);
+    bar.firstChild.style.width = known ? (Math.min(1, p) * 100).toFixed(1) + '%' : '0%';
   }
 
   async function refresh() {
@@ -253,6 +318,8 @@
       const st = await api('/api/state');
       renderNow(st);
       renderQueue(st);
+      applyPaused(!!st.paused);
+      applyProgress(st.progress);
     } catch (_) {
       // A failed poll is normal when the box is briefly unreachable; the next
       // tick recovers and an error toast every 2s would be unusable.
@@ -275,6 +342,7 @@
     });
     $('bar-title').textContent = title || 'hesplay';
     $('back-btn').hidden = stack.length <= 1;
+    refresh(); // the footer's visibility depends on which screen is showing
   }
 
   function push(name, title) { stack.push(name); showScreen(name, title); }
