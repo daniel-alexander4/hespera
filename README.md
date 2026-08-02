@@ -227,6 +227,34 @@ systemd unit, a cron job, or with redirected input just plays through — there,
 stdin is left to the player engine and mpv's own keybindings apply. Linux only
 (the terminal handling is per-platform); elsewhere hesplay behaves as it did.
 
+**Phone remote.** `hesplay --listen :8090` serves a small installable web app
+from the player itself — open `http://<that-box>:8090` on your phone and Add to
+Home Screen. It gives you playlist buttons (play or shuffle), the two quick-play
+queues, and once something is playing, artwork, what's on, and previous / next /
+stop.
+
+```sh
+hesplay --listen :8090                     # serve the remote and wait
+hesplay --listen :8090 playlist road trip  # …and start playing right away
+```
+
+The music comes out of **that box's** speakers, not the phone's — the phone only
+sends the buttons, so locking it, switching apps, or walking out of range stops
+nothing. The app's one setting is which Hespera to stream from, and saving it
+there is the same as running `hesplay server <url>` on the box.
+
+This is why the remote is an HTTP surface rather than an ssh session to the box:
+hesplay traps only SIGINT and SIGTERM, so the SIGHUP that follows a dropped ssh
+session would kill playback mid-song — and detaching it to survive that removes
+the terminal, which switches the transport keys off entirely. Over a shell,
+surviving disconnection and having controls are mutually exclusive.
+
+`--listen` is off unless you pass it, and it has **no authentication**, the same
+posture as Hespera itself: anyone who can reach that port can change what is
+playing on that box. The blast radius is playback there — it is not a shell and
+it cannot touch the library. Bind it on a network you would already trust with
+the speakers.
+
 A shuffled catalog sweep — `artist`, `popular`, `all`, and any mix — plays **one
 recording per song**: if a track also exists as a live take, a greatest-hits
 copy or a remaster, only one of them joins the queue, picked at random, so a

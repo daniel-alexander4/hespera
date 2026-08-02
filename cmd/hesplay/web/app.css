@@ -1,0 +1,159 @@
+/* app.css — Catppuccin Mocha, matching Hespera's own palette so the remote and
+   the web UI read as one product. Dark only: this is a phone remote used in a
+   living room, and Hespera itself has no light mode.
+
+   Everything is sized for a thumb: 44px is the minimum comfortable touch target
+   on both platforms, and the transport sits in the bottom third where a hand
+   holding the phone already is. */
+:root {
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --surface: #313244;
+  --text: #cdd6f4;
+  --subtext: #a6adc8;
+  --accent: #cba6f7;
+  --on-accent: #1e1e2e;
+  --danger: #f38ba8;
+
+  --pad: 1rem;
+  --radius: 12px;
+  /* The transport is fixed; main scrolls behind it. */
+  --now-h: 5.5rem;
+}
+
+* { box-sizing: border-box; }
+
+/* The hidden attribute is only display:none in the UA stylesheet, so ANY author
+   display rule silently beats it — .now is display:grid, which left the idle
+   transport bar on screen. Restate it as a rule that wins. */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding-bottom: calc(var(--now-h) + env(safe-area-inset-bottom));
+  background: var(--base);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* A remote has nothing to select and no pinch-zoom to offer; suppressing the
+     callout stops a long press on a playlist feeling like a text selection. */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bar {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--pad);
+  padding: calc(env(safe-area-inset-top) + 0.6rem) var(--pad) 0.6rem;
+  background: var(--mantle);
+  border-bottom: 1px solid var(--surface);
+}
+.bar h1 { margin: 0; font-size: 1.1rem; letter-spacing: 0.02em; }
+
+main { padding: var(--pad); }
+h2 {
+  margin: 1.4rem 0 0.6rem;
+  font-size: 0.82rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--subtext);
+}
+h2:first-child { margin-top: 0; }
+
+/* Quick play is two square-ish tiles; playlists are full-width rows, because a
+   playlist name plus its two action buttons has no room to sit half-width. */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+#playlists { grid-template-columns: 1fr; }
+
+.btn {
+  appearance: none;
+  min-height: 44px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--surface);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.btn:active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* A playlist tile: name, then its track count as a quiet second line. Two lines
+   max — a long playlist name wraps rather than truncating to nothing useful. */
+.tile { display: flex; flex-direction: column; gap: 0.2rem; min-height: 60px; justify-content: center; }
+.tile .count { font-size: 0.78rem; font-weight: 400; color: var(--subtext); }
+.tile:active .count { color: var(--on-accent); }
+
+/* Each playlist gets Play and Shuffle. Shuffle is the wider default for a
+   playlist, so it is the one that reads as primary. */
+.pl { display: grid; grid-template-columns: 1fr auto auto; gap: 0.4rem; align-items: stretch; }
+.pl .name {
+  display: flex; flex-direction: column; justify-content: center; gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--surface); border-radius: var(--radius);
+  background: var(--mantle);
+  min-width: 0;
+}
+.pl .name b { font-weight: 600; overflow-wrap: anywhere; }
+.pl .go { min-width: 44px; padding: 0.6rem 0.7rem; text-align: center; font-size: 1.15rem; }
+
+.icon-btn {
+  appearance: none;
+  min-width: 44px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--text);
+  font-size: 1.35rem; line-height: 1;
+  cursor: pointer;
+}
+.icon-btn:active { background: var(--surface); }
+
+.panel {
+  padding: var(--pad);
+  background: var(--mantle);
+  border-bottom: 1px solid var(--surface);
+}
+.panel label { display: block; margin-bottom: 0.4rem; font-size: 0.82rem; color: var(--subtext); }
+.panel input {
+  width: 100%; min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--surface); border-radius: var(--radius);
+  background: var(--base); color: var(--text);
+  font: inherit;
+}
+.row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.6rem; }
+.msg { font-size: 0.85rem; color: var(--subtext); }
+.msg.err { color: var(--danger); }
+
+.now {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 0.75rem;
+  height: calc(var(--now-h) + env(safe-area-inset-bottom));
+  padding: 0.6rem var(--pad) calc(0.6rem + env(safe-area-inset-bottom));
+  background: var(--mantle);
+  border-top: 1px solid var(--surface);
+}
+.art {
+  width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
+  background: var(--surface);
+}
+.meta { min-width: 0; }
+.np-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-sub { font-size: 0.82rem; color: var(--subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.transport { display: flex; gap: 0.15rem; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--now-h) + env(safe-area-inset-bottom) + 0.75rem);
+  z-index: 4;
+  max-width: calc(100vw - 2 * var(--pad));
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--surface); color: var(--text);
+  font-size: 0.88rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.toast.err { background: var(--danger); color: var(--on-accent); }

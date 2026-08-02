@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e1e2e">
+<!-- mobile-web-app-capable is the standard; the apple- prefix is deprecated but
+     still what older iOS reads, so both ship. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>hesplay</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="bar">
+  <h1>hesplay</h1>
+  <button id="settings-btn" class="icon-btn" aria-label="Settings" aria-expanded="false">⚙</button>
+</header>
+
+<!-- The one setting: which Hespera this box streams from. -->
+<section id="settings" class="panel" hidden>
+  <label for="server">Hespera server</label>
+  <input id="server" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+         spellcheck="false" placeholder="http://plex:8080">
+  <div class="row">
+    <button id="server-save" class="btn">Save</button>
+    <span id="server-msg" class="msg" role="status"></span>
+  </div>
+</section>
+
+<main>
+  <h2>Quick play</h2>
+  <div class="grid" id="quick">
+    <button class="btn tile" data-source="popular" data-shuffle="1">Most popular</button>
+    <button class="btn tile" data-source="all" data-shuffle="1">Everything</button>
+  </div>
+
+  <h2>Playlists</h2>
+  <p id="pl-empty" class="msg" hidden>No playlists yet.</p>
+  <div class="grid" id="playlists"></div>
+</main>
+
+<!-- Transport. Hidden until something is playing, so the idle app is just buttons. -->
+<footer id="now" class="now" hidden>
+  <img id="art" class="art" alt="" width="56" height="56">
+  <div class="meta">
+    <div id="np-title" class="np-title"></div>
+    <div id="np-sub" class="np-sub"></div>
+  </div>
+  <div class="transport">
+    <button id="prev" class="icon-btn" aria-label="Previous">⏮</button>
+    <button id="next" class="icon-btn" aria-label="Next">⏭</button>
+    <button id="stop" class="icon-btn" aria-label="Stop">⏹</button>
+  </div>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
