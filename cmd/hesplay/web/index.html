@@ -18,7 +18,8 @@
 <body>
 
 <header class="bar">
-  <h1>hesplay</h1>
+  <button id="back-btn" class="icon-btn" aria-label="Back" hidden>‹</button>
+  <h1 id="bar-title">hesplay</h1>
   <button id="settings-btn" class="icon-btn" aria-label="Settings" aria-expanded="false">⚙</button>
 </header>
 
@@ -47,9 +48,41 @@
     <button class="btn tile" data-source="all" data-shuffle="1">Everything</button>
   </div>
 
+  <h2>Library</h2>
+  <div class="grid">
+    <button id="browse-btn" class="btn tile">Browse artists</button>
+  </div>
+
   <h2>Playlists</h2>
   <p id="pl-empty" class="msg" hidden>No playlists yet.</p>
   <div class="grid" id="playlists"></div>
+</main>
+
+<!-- Browse: A-Z strip, then that letter's artists. -->
+<main id="screen-browse" hidden>
+  <div id="letters" class="letters"></div>
+  <p id="browse-msg" class="msg"></p>
+  <div id="artists" class="rows"></div>
+</main>
+
+<!-- One artist: play/shuffle the whole catalog, then its albums. -->
+<main id="screen-artist" hidden>
+  <div class="act-row">
+    <button class="btn act" data-act="artist-play">▶ Play</button>
+    <button class="btn act" data-act="artist-shuffle">🔀 Shuffle</button>
+  </div>
+  <h2 id="artist-albums-h">Albums</h2>
+  <div id="artist-albums" class="rows"></div>
+</main>
+
+<!-- One album: play/shuffle it, then pick a song. -->
+<main id="screen-album" hidden>
+  <div class="act-row">
+    <button class="btn act" data-act="album-play">▶ Play</button>
+    <button class="btn act" data-act="album-shuffle">🔀 Shuffle</button>
+  </div>
+  <h2>Songs</h2>
+  <ol id="album-tracks" class="queue"></ol>
 </main>
 
 <!-- Transport. Hidden until something is playing, so the idle app is just buttons. -->

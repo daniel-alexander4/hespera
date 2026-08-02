@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,7 +68,8 @@ type nowPlaying struct {
 // outside the lock (it blocks for the length of a track) and reports back
 // through setState.
 type controller struct {
-	eng engine
+	eng    engine
+	browse *browseIndex
 
 	mu         sync.Mutex
 	c          *client            // upstream Hespera; swapped by PUT /api/server
@@ -85,7 +87,7 @@ type controller struct {
 }
 
 func newController(c *client, e engine) *controller {
-	return &controller{c: c, eng: e}
+	return &controller{c: c, eng: e, browse: newBrowseIndex()}
 }
 
 func (ct *controller) upstream() *client {
@@ -296,7 +298,13 @@ func (ct *controller) resolveAndStart(ctx context.Context, req playRequest) erro
 	}
 	// The server only shuffles the catalog sweeps (sweepSources), so a shuffled
 	// playlist or album is shuffled here — the same client-side pass the CLI does.
-	ct.start(ctx, q, req.Shuffle, 0)
+	// startAt is meaningless once the order is shuffled, so it is ignored there
+	// rather than indexing into a sequence the caller never saw.
+	start := 0
+	if !req.Shuffle && req.StartAt > 1 && req.StartAt <= len(q.Tracks) {
+		start = req.StartAt - 1
+	}
+	ct.start(ctx, q, req.Shuffle, start)
 	return nil
 }
 
@@ -305,6 +313,7 @@ type playRequest struct {
 	Name    string `json:"name"`
 	ID      int64  `json:"id"`
 	Shuffle bool   `json:"shuffle"`
+	StartAt int    `json:"startAt"` // 1-based; 0 = from the top
 }
 
 // serveControl runs the remote until ctx ends. When args names a queue it is
@@ -365,6 +374,10 @@ func (ct *controller) routes() http.Handler {
 
 	mux.HandleFunc("/api/state", ct.handleState)
 	mux.HandleFunc("/api/playlists", ct.handlePlaylists)
+	mux.HandleFunc("/api/letters", ct.handleLetters)
+	mux.HandleFunc("/api/artists", ct.handleArtists)
+	mux.HandleFunc("/api/artist", ct.handleArtist)
+	mux.HandleFunc("/api/album", ct.handleAlbum)
 	mux.HandleFunc("/api/play", ct.handlePlay)
 	mux.HandleFunc("/api/jump", ct.handleJump)
 	mux.HandleFunc("/api/next", ct.handleAction(actionNext))
@@ -394,6 +407,22 @@ func secureControl(next http.Handler) http.Handler {
 	})
 }
 
+// errGETOnly / errPOSTOnly are the two method rejections every handler shares.
+var (
+	errGETOnly  = errors.New("GET only")
+	errPOSTOnly = errors.New("POST only")
+)
+
+// idParam reads a positive int64 query parameter.
+func idParam(r *http.Request, name string) (int64, error) {
+	v := strings.TrimSpace(r.URL.Query().Get(name))
+	id, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("%s must be a positive id", name)
+	}
+	return id, nil
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -406,7 +435,7 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 
 func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("GET only"))
+		writeErr(w, http.StatusMethodNotAllowed, errGETOnly)
 		return
 	}
 	ct.mu.Lock()
@@ -423,7 +452,7 @@ func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
 
 func (ct *controller) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("GET only"))
+		writeErr(w, http.StatusMethodNotAllowed, errGETOnly)
 		return
 	}
 	rows, err := ct.upstream().fetchPlaylists()
@@ -439,7 +468,7 @@ func (ct *controller) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 
 func (ct *controller) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("POST only"))
+		writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
 		return
 	}
 	var req playRequest
@@ -460,7 +489,7 @@ func (ct *controller) handlePlay(w http.ResponseWriter, r *http.Request) {
 func (ct *controller) handleAction(a playAction) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			writeErr(w, http.StatusMethodNotAllowed, errors.New("POST only"))
+			writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "accepted": ct.send(a)})
@@ -471,7 +500,7 @@ func (ct *controller) handleAction(a playAction) http.HandlerFunc {
 // the queue must outlive the request that started it.
 func (ct *controller) handleJump(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("POST only"))
+		writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
 		return
 	}
 	var body struct {
@@ -490,7 +519,7 @@ func (ct *controller) handleJump(w http.ResponseWriter, r *http.Request) {
 
 func (ct *controller) handleStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("POST only"))
+		writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
 		return
 	}
 	ct.stop()
@@ -542,7 +571,7 @@ func (ct *controller) handleServer(w http.ResponseWriter, r *http.Request) {
 // request the CSP forbids — proxying keeps the app strictly same-origin.
 func (ct *controller) handleArt(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("GET only"))
+		writeErr(w, http.StatusMethodNotAllowed, errGETOnly)
 		return
 	}
 	c := ct.upstream()

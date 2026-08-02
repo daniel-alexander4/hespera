@@ -152,6 +152,54 @@ h2:first-child { margin-top: 0; }
 }
 .icon-btn:active { background: var(--surface); }
 
+/* --- Browse ------------------------------------------------------------- */
+
+/* The A-Z strip. It has to fit 27 buttons across a phone without becoming a
+   scroll region, so they wrap and each is square-ish rather than 44px wide —
+   the tallest constraint that still leaves a comfortable target. */
+.letters {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 0.3rem;
+  margin-bottom: 1rem;
+}
+.letters button {
+  appearance: none;
+  min-height: 40px;
+  border: 1px solid var(--surface);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+}
+.letters button:active, .letters button.is-on {
+  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+}
+/* A letter with no artists behind it is shown but dead — the grid keeps its
+   shape, and a tap that could only ever return nothing is not offered. */
+.letters button:disabled { opacity: 0.25; cursor: default; }
+
+/* Artist / album rows: name on the left, play + shuffle on the right. */
+.rows { display: flex; flex-direction: column; gap: 0.4rem; }
+.row-item { display: grid; grid-template-columns: 1fr auto auto; gap: 0.4rem; }
+.row-item .open {
+  appearance: none;
+  display: flex; flex-direction: column; justify-content: center; gap: 0.15rem;
+  min-height: 48px; padding: 0.6rem 0.75rem;
+  border: 1px solid var(--surface); border-radius: var(--radius);
+  background: var(--mantle); color: var(--text);
+  font: inherit; text-align: left; min-width: 0; cursor: pointer;
+}
+.row-item .open b { font-weight: 600; overflow-wrap: anywhere; }
+.row-item .open .sub { font-size: 0.78rem; color: var(--subtext); }
+.row-item .open:active { background: var(--surface); }
+.row-item .go { min-width: 44px; padding: 0.6rem 0.7rem; text-align: center; font-size: 1.15rem; }
+
+/* Play / shuffle for the whole artist or album, above their lists. */
+.act-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.4rem; }
+.act { text-align: center; }
+
 .panel {
   padding: var(--pad);
   background: var(--mantle);
