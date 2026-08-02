@@ -884,6 +884,11 @@ type playOpts struct {
 	giveStdin bool
 	onState   func(nowPlaying)   // nil on the CLI path
 	onQueue   func([]queueTrack) // the final, post-shuffle order; called once
+	// startAt is the 0-based track to begin on. It exists so the remote can
+	// jump to a tapped row by replaying the SAME list from there, which keeps
+	// playAction a plain enum: a jump is a queue that starts further in, not a
+	// new kind of transport event carrying a payload.
+	startAt int
 }
 
 // playQueue runs the queue through the engine, one process per track — clean
@@ -917,7 +922,11 @@ func playQueue(ctx context.Context, c *client, e engine, q queue, shuffle bool, 
 	}
 
 	quickFails := 0
-	for i := 0; i < len(tracks); {
+	start := opts.startAt
+	if start < 0 || start >= len(tracks) {
+		start = 0
+	}
+	for i := start; i < len(tracks); {
 		if ctx.Err() != nil {
 			return nil
 		}

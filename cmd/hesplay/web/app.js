@@ -53,6 +53,18 @@
     }
   }
 
+  // Jump to a tapped row. Optimistic: move the highlight straight away so the
+  // tap feels immediate, then let the next poll confirm (or correct) it.
+  async function jump(index) {
+    lastQueueKey = ''; // force a re-render even if the poll lands identical rows
+    try {
+      await api('/api/jump', { method: 'POST', body: JSON.stringify({ index: index }) });
+      refresh();
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
   async function action(path) {
     try {
       await api(path, { method: 'POST' });
@@ -167,7 +179,14 @@
     list.textContent = '';
     rows.forEach((r) => {
       const li = document.createElement('li');
-      li.className = 'q-row' + (r.current ? ' is-now' : (st.now && r.index < st.now.index ? ' is-past' : ''));
+
+      // A whole row is the touch target — a 44px-tall <button> spanning it,
+      // rather than a tappable <li>, so it is reachable by keyboard and
+      // announced as an action rather than as a list item.
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'q-row' + (r.current ? ' is-now' : (st.now && r.index < st.now.index ? ' is-past' : ''));
+      btn.setAttribute('aria-label', 'Play ' + r.title + ' by ' + r.artist);
 
       const n = document.createElement('span');
       n.className = 'q-n';
@@ -181,8 +200,17 @@
       a.textContent = r.artist;
       t.appendChild(a);
 
-      li.append(n, t);
-      if (r.current) li.setAttribute('aria-current', 'true');
+      btn.append(n, t);
+      // Tapping the row that is already playing would restart it, which reads
+      // as a glitch rather than an action; leave it alone.
+      if (r.current) {
+        btn.setAttribute('aria-current', 'true');
+        btn.disabled = true;
+      } else {
+        btn.addEventListener('click', () => jump(r.index));
+      }
+
+      li.appendChild(btn);
       list.appendChild(li);
     });
   }
