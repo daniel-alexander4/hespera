@@ -287,43 +287,51 @@
     return wrap;
   }
 
-  let lettersLoaded = false;
-  async function openBrowse() {
-    push('browse', 'Artists');
-    if (lettersLoaded) return;
-    $('browse-msg').textContent = 'Reading the library…';
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat('#');
+
+  // The grid is drawn immediately from the static alphabet, then refined once
+  // the index answers — so the home screen never shows an empty hole while the
+  // player reads the catalog, and a letter that turns out to hold nobody simply
+  // goes dim a moment later.
+  function renderLetterGrid(letters) {
+    const strip = $('letters');
+    strip.textContent = '';
+    (letters || ALPHABET.map((l) => ({ letter: l, count: -1 }))).forEach((l) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = l.letter;
+      b.disabled = l.count === 0;
+      if (l.count >= 0) b.title = l.count === 1 ? '1 artist' : l.count + ' artists';
+      b.addEventListener('click', () => openLetter(l.letter));
+      strip.appendChild(b);
+    });
+  }
+
+  async function loadLetters() {
+    renderLetterGrid(null);
     try {
       const r = await api('/api/letters');
-      const strip = $('letters');
-      strip.textContent = '';
-      r.letters.forEach((l) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = l.letter;
-        b.disabled = l.count === 0;
-        b.title = l.count + ' artists';
-        b.addEventListener('click', () => selectLetter(l.letter, b));
-        strip.appendChild(b);
-      });
-      lettersLoaded = true;
-      $('browse-msg').textContent = r.total + ' artists — pick a letter';
-    } catch (e) {
-      $('browse-msg').textContent = e.message;
-      $('browse-msg').classList.add('err');
+      renderLetterGrid(r.letters);
+      $('artists-h').textContent = 'Artists · ' + r.total;
+    } catch (_) {
+      // Leave the grid live: the letter tap will surface the real error, and a
+      // dead grid on the home screen says less than one that tries.
     }
   }
 
-  async function selectLetter(letter, btn) {
-    document.querySelectorAll('#letters button').forEach((b) => b.classList.toggle('is-on', b === btn));
-    $('browse-msg').textContent = '';
+  async function openLetter(letter) {
+    push('browse', letter === '#' ? 'Artists · #' : 'Artists · ' + letter);
     const box = $('artists');
     box.textContent = '';
+    $('browse-msg').classList.remove('err');
+    $('browse-msg').textContent = 'Loading…';
     try {
       const r = await api('/api/artists?letter=' + encodeURIComponent(letter));
       if (!r.artists.length) {
         $('browse-msg').textContent = 'No artists under ' + letter + '.';
         return;
       }
+      $('browse-msg').textContent = r.artists.length === 1 ? '1 artist' : r.artists.length + ' artists';
       r.artists.forEach((a) => box.appendChild(itemRow(
         a.name, null,
         () => openArtist(a.id, a.name),
@@ -331,6 +339,7 @@
         () => play('artist', a.id, true),
       )));
     } catch (e) {
+      $('browse-msg').classList.add('err');
       $('browse-msg').textContent = e.message;
     }
   }
@@ -412,7 +421,10 @@
       const r = await api('/api/server', { method: 'PUT', body: JSON.stringify({ server: url }) });
       $('server').value = r.server;
       msg.textContent = 'Connected to Hespera ' + (r.version || '');
+      // A new server means a new library: rebuild both lists rather than
+      // leaving the previous box's artists on screen.
       loadPlaylists();
+      loadLetters();
     } catch (e) {
       msg.classList.add('err');
       msg.textContent = e.message;
@@ -434,7 +446,6 @@
       b.addEventListener('click', () => play(b.dataset.source, 0, b.dataset.shuffle === '1'));
     });
 
-    $('browse-btn').addEventListener('click', openBrowse);
     $('back-btn').addEventListener('click', pop);
     document.querySelectorAll('[data-act]').forEach((b) => {
       b.addEventListener('click', () => {
@@ -451,6 +462,7 @@
     $('stop').addEventListener('click', () => action('/api/stop'));
 
     loadPlaylists();
+    loadLetters();
     refresh();
     setInterval(refresh, POLL_MS);
     // Coming back from a locked screen should show the truth immediately rather
