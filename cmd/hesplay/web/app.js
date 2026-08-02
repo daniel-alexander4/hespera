@@ -26,6 +26,26 @@
     return body || {};
   }
 
+  // Icons are <use> references into the sprite in index.html — the same Lucide
+  // paths Hespera uses. createElementNS is required: SVG elements built with
+  // createElement land in the HTML namespace and render as nothing.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function icon(name) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(SVG_NS, 'use');
+    use.setAttribute('href', '#i-' + name);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  // Repoint an existing icon rather than rebuilding the button.
+  function setIcon(el, name) {
+    const use = el && el.querySelector('use');
+    if (use) use.setAttribute('href', '#i-' + name);
+  }
+
   let toastTimer = 0;
   function toast(msg, isErr) {
     const el = $('toast');
@@ -87,7 +107,7 @@
     ['row-pause', 'pause'].forEach((id) => {
       const b = $(id);
       if (!b) return;
-      b.textContent = p ? '▶' : '⏸';
+      setIcon(b, p ? 'play' : 'pause');
       b.setAttribute('aria-label', p ? 'Resume' : 'Pause');
     });
   }
@@ -121,14 +141,14 @@
     const playBtn = document.createElement('button');
     playBtn.className = 'btn go';
     playBtn.type = 'button';
-    playBtn.textContent = '▶';
+    playBtn.appendChild(icon('play'));
     playBtn.setAttribute('aria-label', 'Play ' + p.name);
     playBtn.addEventListener('click', () => play('playlist', p.id, false));
 
     const shufBtn = document.createElement('button');
     shufBtn.className = 'btn go';
     shufBtn.type = 'button';
-    shufBtn.textContent = '🔀';
+    shufBtn.appendChild(icon('shuffle'));
     shufBtn.setAttribute('aria-label', 'Shuffle ' + p.name);
     shufBtn.addEventListener('click', () => play('playlist', p.id, true));
 
@@ -224,7 +244,7 @@
 
       const n = document.createElement('span');
       n.className = 'q-n';
-      n.textContent = r.current ? (isPaused ? '⏸' : '▶') : String(r.index);
+      n.textContent = String(r.index); // the playing row is the card, never this
 
       const t = document.createElement('span');
       t.className = 'q-t';
@@ -288,15 +308,15 @@
       b.className = 'icon-btn';
       b.id = id;
       b.setAttribute('aria-label', label);
-      b.textContent = glyph;
+      b.appendChild(icon(glyph));
       b.addEventListener('click', fn);
       return b;
     };
     ctl.append(
-      mk('row-prev', 'Previous', '⏮', () => action('/api/prev')),
-      mk('row-pause', isPaused ? 'Resume' : 'Pause', isPaused ? '▶' : '⏸', () => setPaused(!isPaused)),
-      mk('row-next', 'Next', '⏭', () => action('/api/next')),
-      mk('row-stop', 'Stop', '⏹', () => action('/api/stop')),
+      mk('row-prev', 'Previous', 'skip-back', () => action('/api/prev')),
+      mk('row-pause', isPaused ? 'Resume' : 'Pause', isPaused ? 'play' : 'pause', () => setPaused(!isPaused)),
+      mk('row-next', 'Next', 'skip-forward', () => action('/api/next')),
+      mk('row-stop', 'Stop', 'square', () => action('/api/stop')),
     );
     if (!st.canPause) ctl.querySelector('#row-pause').hidden = true;
 
@@ -373,12 +393,12 @@
     open.addEventListener('click', onOpen);
 
     const p = document.createElement('button');
-    p.type = 'button'; p.className = 'btn go'; p.textContent = '▶';
+    p.type = 'button'; p.className = 'btn go'; p.appendChild(icon('play'));
     p.setAttribute('aria-label', 'Play ' + label);
     p.addEventListener('click', onPlay);
 
     const s = document.createElement('button');
-    s.type = 'button'; s.className = 'btn go'; s.textContent = '🔀';
+    s.type = 'button'; s.className = 'btn go'; s.appendChild(icon('shuffle'));
     s.setAttribute('aria-label', 'Shuffle ' + label);
     s.addEventListener('click', onShuffle);
 

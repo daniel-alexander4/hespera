@@ -17,10 +17,30 @@
 </head>
 <body>
 
+<!-- Icon sprite: the SAME Lucide paths Hespera uses in
+     web/templates/partials_icons.html, extracted rather than redrawn so the
+     remote and the web UI cannot drift. Monochrome strokes inheriting
+     currentColor, which is why they theme with the palette — emoji did not,
+     and rendered as full-colour glyphs on iOS. -->
+<svg xmlns="http://www.w3.org/2000/svg" class="sprite" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+  <symbol id="i-skip-back" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></symbol>
+  <symbol id="i-skip-forward" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></symbol>
+  <symbol id="i-radio" viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+</svg>
+
+
 <header class="bar">
-  <button id="back-btn" class="icon-btn" aria-label="Back" hidden>‹</button>
+  <button id="back-btn" class="icon-btn" aria-label="Back" hidden><svg class="icon" aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
   <h1 id="bar-title">hesplay</h1>
-  <button id="settings-btn" class="icon-btn" aria-label="Settings" aria-expanded="false">⚙</button>
+  <button id="settings-btn" class="icon-btn" aria-label="Settings" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></button>
 </header>
 
 <!-- The one setting: which Hespera this box streams from. -->
@@ -65,9 +85,9 @@
 <!-- One artist: play/shuffle the whole catalog, then its albums. -->
 <main id="screen-artist" hidden>
   <div class="act-row act-row--3">
-    <button class="btn act" data-act="artist-play">▶ Play</button>
-    <button class="btn act" data-act="artist-shuffle">🔀 Shuffle</button>
-    <button class="btn act" data-act="artist-mix" title="This artist plus similar artists">📻 Mix</button>
+    <button class="btn act" data-act="artist-play"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg> Play</button>
+    <button class="btn act" data-act="artist-shuffle"><svg class="icon" aria-hidden="true"><use href="#i-shuffle"/></svg> Shuffle</button>
+    <button class="btn act" data-act="artist-mix" title="This artist plus similar artists"><svg class="icon" aria-hidden="true"><use href="#i-radio"/></svg> Mix</button>
   </div>
   <h2 id="artist-albums-h">Albums</h2>
   <div id="artist-albums" class="rows"></div>
@@ -76,8 +96,8 @@
 <!-- One album: play/shuffle it, then pick a song. -->
 <main id="screen-album" hidden>
   <div class="act-row">
-    <button class="btn act" data-act="album-play">▶ Play</button>
-    <button class="btn act" data-act="album-shuffle">🔀 Shuffle</button>
+    <button class="btn act" data-act="album-play"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg> Play</button>
+    <button class="btn act" data-act="album-shuffle"><svg class="icon" aria-hidden="true"><use href="#i-shuffle"/></svg> Shuffle</button>
   </div>
   <h2>Songs</h2>
   <ol id="album-tracks" class="queue"></ol>
@@ -91,10 +111,10 @@
     <div id="np-sub" class="np-sub"></div>
   </div>
   <div class="transport">
-    <button id="prev" class="icon-btn" aria-label="Previous">⏮</button>
-    <button id="pause" class="icon-btn" aria-label="Pause" hidden>⏸</button>
-    <button id="next" class="icon-btn" aria-label="Next">⏭</button>
-    <button id="stop" class="icon-btn" aria-label="Stop">⏹</button>
+    <button id="prev" class="icon-btn" aria-label="Previous"><svg class="icon" aria-hidden="true"><use href="#i-skip-back"/></svg></button>
+    <button id="pause" class="icon-btn" aria-label="Pause" hidden><svg class="icon" aria-hidden="true"><use href="#i-pause"/></svg></button>
+    <button id="next" class="icon-btn" aria-label="Next"><svg class="icon" aria-hidden="true"><use href="#i-skip-forward"/></svg></button>
+    <button id="stop" class="icon-btn" aria-label="Stop"><svg class="icon" aria-hidden="true"><use href="#i-square"/></svg></button>
   </div>
 </footer>
 

@@ -23,6 +23,23 @@
 
 * { box-sizing: border-box; }
 
+/* The icon sprite is markup, not art: hidden by a CLASS, never an inline
+   style — style-src 'self' blocks style attributes, so a style="display:none"
+   sprite silently renders as a row of loose glyphs at the top of the page. */
+.sprite { display: none; }
+
+/* Lucide strokes, inheriting currentColor so every button themes for free.
+   These replaced emoji, which rendered as full-colour glyphs on iOS and as a
+   different shape again on Android — the one thing a control set must not do. */
+.icon {
+  width: 1.25em; height: 1.25em;
+  flex: none;
+  fill: none;
+  stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  vertical-align: -0.15em;
+}
+
 /* The hidden attribute is only display:none in the UA stylesheet, so ANY author
    display rule silently beats it — .now is display:grid, which left the idle
    transport bar on screen. Restate it as a rule that wins. */
@@ -97,7 +114,7 @@ h2:first-child { margin-top: 0; }
   min-width: 0;
 }
 .pl .name b { font-weight: 600; overflow-wrap: anywhere; }
-.pl .go { min-width: 44px; padding: 0.6rem 0.7rem; text-align: center; font-size: 1.15rem; }
+.pl .go { min-width: 44px; padding: 0.6rem 0.7rem; display: inline-flex; align-items: center; justify-content: center; }
 
 /* The queue window. Rows are compact — this is a glance, not a browse — and the
    playing row is called out with the accent bar and brighter text rather than a
@@ -175,6 +192,7 @@ h2:first-child { margin-top: 0; }
   cursor: pointer;
 }
 .icon-btn:active { background: var(--surface); }
+.icon-btn .icon { width: 1.35em; height: 1.35em; }
 
 /* --- Browse ------------------------------------------------------------- */
 
@@ -218,7 +236,7 @@ h2:first-child { margin-top: 0; }
 .row-item .open b { font-weight: 600; overflow-wrap: anywhere; }
 .row-item .open .sub { font-size: 0.78rem; color: var(--subtext); }
 .row-item .open:active { background: var(--surface); }
-.row-item .go { min-width: 44px; padding: 0.6rem 0.7rem; text-align: center; font-size: 1.15rem; }
+.row-item .go { min-width: 44px; padding: 0.6rem 0.7rem; display: inline-flex; align-items: center; justify-content: center; }
 
 /* Play / shuffle for the whole artist or album, above their lists. */
 .act-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.4rem; }
@@ -226,6 +244,8 @@ h2:first-child { margin-top: 0; }
 .act-row--3 { grid-template-columns: 1fr 1fr 1fr; }
 .act-row--3 .act { padding: 0.75rem 0.4rem; }
 .act { text-align: center; }
+/* Icon and label on one baseline, centred as a pair. */
+.act { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
 
 .panel {
   padding: var(--pad);
