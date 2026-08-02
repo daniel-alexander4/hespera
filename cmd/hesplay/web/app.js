@@ -69,6 +69,7 @@
           source: source, id: id || 0, shuffle: !!shuffle, startAt: startAt || 0,
         }),
       });
+      toQueueView();
       refresh(); // don't wait for the next poll tick to show what started
     } catch (e) {
       toast(e.message, true);
@@ -366,6 +367,16 @@
   }
 
   function push(name, title) { stack.push(name); showScreen(name, title); }
+
+  // Starting something takes you to the queue. You picked it from a browse
+  // screen, but what you want to see next is what is now playing — and the
+  // playing card lives in the home list. Deliberately only on START: forcing
+  // home on every poll would make it impossible to browse for the next thing
+  // while something plays.
+  function toQueueView() {
+    stack = ['home'];
+    showScreen('home', 'hesplay');
+  }
   function pop() {
     if (stack.length > 1) stack.pop();
     const top = stack[stack.length - 1];
