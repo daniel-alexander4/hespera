@@ -123,8 +123,9 @@ h2:first-child { margin-top: 0; }
   cursor: pointer;
 }
 .q-row:active { background: var(--surface); }
-/* The playing row is disabled — tapping it would restart the track — so it must
-   not look or behave like something greyed out by accident. */
+/* Kept for any row that is ever disabled: it must not read as accidentally
+   greyed out. (The playing row is no longer disabled — it is the pause
+   control.) */
 .q-row:disabled { cursor: default; opacity: 1; }
 .q-row .q-n { font-variant-numeric: tabular-nums; font-size: 0.78rem; text-align: right; }
 .q-row .q-t { min-width: 0; overflow-wrap: anywhere; }
@@ -198,6 +199,9 @@ h2:first-child { margin-top: 0; }
 
 /* Play / shuffle for the whole artist or album, above their lists. */
 .act-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.4rem; }
+/* The artist row carries a third action (Mix); an album has only two. */
+.act-row--3 { grid-template-columns: 1fr 1fr 1fr; }
+.act-row--3 .act { padding: 0.75rem 0.4rem; }
 .act { text-align: center; }
 
 .panel {

@@ -483,6 +483,9 @@
         const a = b.dataset.act;
         if (a === 'artist-play') play('artist', current.artistId, false);
         else if (a === 'artist-shuffle') play('artist', current.artistId, true);
+        // A mix is the server's own weighted draw, seed track first — so it
+        // is NOT shuffled again here; that would throw the seed away.
+        else if (a === 'artist-mix') play('mix', current.artistId, false);
         else if (a === 'album-play') play('album', current.albumId, false);
         else if (a === 'album-shuffle') play('album', current.albumId, true);
       });
