@@ -232,9 +232,9 @@ from the player itself — open `http://<that-box>:8090` on your phone and Add t
 Home Screen. It gives you playlist buttons (play or shuffle), the two quick-play
 queues, an A-Z browse through your artists (play or shuffle an artist, open it
 for its albums, open an album to pick a song), and once something is playing, a
-dozen rows of the queue with the current song marked — tap any row to jump to it,
-or tap the playing row to pause and resume — plus artwork and previous / next /
-stop.
+dozen rows of the queue — the playing song sits among them as a card with its
+artwork, a progress bar, and its own previous / pause / next / stop, and any
+other row is a tap away from playing.
 
 Pause needs mpv (it goes through the same JSON IPC socket the stall guard uses);
 on an ffplay box the control hides itself rather than offering something that

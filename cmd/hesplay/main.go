@@ -756,6 +756,56 @@ func ipcSetPause(sock string, paused bool) error {
 	return nil
 }
 
+// ipcProgress asks mpv for position and duration in one connection, for the
+// remote's progress bar. Two round trips on one socket rather than two dials,
+// because this runs on every state poll. Timeouts are deliberately short: a
+// wedged engine must not make the whole remote feel slow — that is the stall
+// guard's problem, and an unreadable position simply means no bar.
+//
+// music_tracks carries no duration at all, so the engine is the only source.
+func ipcProgress(sock string) (pos, dur float64, ok bool) {
+	if sock == "" {
+		return 0, 0, false
+	}
+	conn, err := net.DialTimeout("unix", sock, 500*time.Millisecond)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(time.Second))
+
+	get := func(prop string) (float64, bool) {
+		if _, err := io.WriteString(conn, `{"command":["get_property","`+prop+`"]}`+"\n"); err != nil {
+			return 0, false
+		}
+		dec := json.NewDecoder(conn)
+		for {
+			var msg struct {
+				Data  *float64 `json:"data"`
+				Error string   `json:"error"`
+				Event string   `json:"event"`
+			}
+			if err := dec.Decode(&msg); err != nil {
+				return 0, false
+			}
+			if msg.Event != "" {
+				continue // mpv pushes events down the same socket; skip to the reply
+			}
+			if msg.Error != "success" || msg.Data == nil {
+				return 0, false
+			}
+			return *msg.Data, true
+		}
+	}
+	if pos, ok = get("time-pos"); !ok {
+		return 0, 0, false
+	}
+	if dur, ok = get("duration"); !ok || dur <= 0 {
+		return pos, 0, false
+	}
+	return pos, dur, true
+}
+
 // ipcTimePos asks mpv for the current playback position over its JSON IPC
 // socket. Every failure mode — socket absent, no reply, property unavailable —
 // reports not-ok rather than an error, since the tracker treats them all the

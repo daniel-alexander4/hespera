@@ -472,6 +472,11 @@ func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
 		// ffplay has no IPC, so the button hides itself rather than offering
 		// something that can only fail.
 		"canPause": stallSocket(ct.eng, 1) != "",
+		// Fraction 0..1 of the track played, or -1 when unknown (no IPC, or the
+		// engine has not reported a duration yet). The remote shows a bar, not a
+		// clock, so a fraction is all it needs — and music_tracks has no duration
+		// column, making the engine the only source.
+		"progress": ct.progress(playing, st.ID),
 	})
 }
 
@@ -540,6 +545,26 @@ func (ct *controller) handleJump(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// progress is the fraction of the current track played, or -1 when it cannot be
+// known. Called on every state poll, so it leans on ipcProgress's short
+// timeouts rather than adding its own retry.
+func (ct *controller) progress(playing bool, trackID int64) float64 {
+	if !playing || trackID == 0 {
+		return -1
+	}
+	pos, dur, ok := ipcProgress(stallSocket(ct.eng, trackID))
+	if !ok || dur <= 0 {
+		return -1
+	}
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > dur {
+		pos = dur
+	}
+	return pos / dur
 }
 
 // handlePause toggles the running engine. Explicit {"paused":bool} is honoured
