@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -86,6 +87,67 @@ func TestRetireClearsOnlyTheCurrentSession(t *testing.T) {
 	ct.mu.Unlock()
 	if !cleared {
 		t.Fatal("the current session did not clear on retire")
+	}
+}
+
+func TestWindowAround(t *testing.T) {
+	ct := newTestController()
+	mk := func(n int) []queueTrack {
+		out := make([]queueTrack, n)
+		for i := range out {
+			out[i] = queueTrack{Title: "t" + strconv.Itoa(i+1), Artist: "a"}
+		}
+		return out
+	}
+
+	if got := ct.windowAround(1); len(got) != 0 {
+		t.Fatalf("window with no queue = %d rows, want 0", len(got))
+	}
+
+	ct.setTracks(mk(100))
+	if got := ct.windowAround(0); len(got) != 0 {
+		t.Fatalf("window with no current track = %d rows, want 0 — an idle queue lists nothing", len(got))
+	}
+
+	// Mid-queue: full window, a little lookback, current flagged exactly once.
+	w := ct.windowAround(50)
+	if len(w) != queueWindow {
+		t.Fatalf("mid-queue window = %d rows, want %d", len(w), queueWindow)
+	}
+	if w[0].Index != 50-queueLookback {
+		t.Fatalf("window starts at %d, want %d (current minus lookback)", w[0].Index, 50-queueLookback)
+	}
+	cur := 0
+	for _, r := range w {
+		if r.Current {
+			cur++
+			if r.Index != 50 {
+				t.Fatalf("Current set on index %d, want 50", r.Index)
+			}
+		}
+	}
+	if cur != 1 {
+		t.Fatalf("%d rows marked Current, want exactly 1", cur)
+	}
+
+	// At the very start there is nothing to look back at.
+	if w := ct.windowAround(1); w[0].Index != 1 {
+		t.Fatalf("window at the head starts at %d, want 1", w[0].Index)
+	}
+
+	// At the end the window slides back rather than showing two lonely rows.
+	w = ct.windowAround(100)
+	if len(w) != queueWindow {
+		t.Fatalf("end-of-queue window = %d rows, want a full %d", len(w), queueWindow)
+	}
+	if last := w[len(w)-1].Index; last != 100 {
+		t.Fatalf("end-of-queue window ends at %d, want 100", last)
+	}
+
+	// A queue shorter than the window lists all of it and nothing more.
+	ct.setTracks(mk(6))
+	if w := ct.windowAround(3); len(w) != 6 {
+		t.Fatalf("short queue window = %d rows, want all 6", len(w))
 	}
 }
 

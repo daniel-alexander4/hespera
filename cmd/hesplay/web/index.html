@@ -34,6 +34,13 @@
 </section>
 
 <main>
+  <!-- While something is playing, the queue is what you came to look at, so it
+       sits above the pickers. Hidden entirely when idle. -->
+  <section id="queue-sec" hidden>
+    <h2 id="queue-h">Playing</h2>
+    <ol id="queue" class="queue"></ol>
+  </section>
+
   <h2>Quick play</h2>
   <div class="grid" id="quick">
     <button class="btn tile" data-source="popular" data-shuffle="1">Most popular</button>

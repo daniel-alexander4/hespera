@@ -882,7 +882,8 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 type playOpts struct {
 	actions   <-chan playAction
 	giveStdin bool
-	onState   func(nowPlaying) // nil on the CLI path
+	onState   func(nowPlaying)   // nil on the CLI path
+	onQueue   func([]queueTrack) // the final, post-shuffle order; called once
 }
 
 // playQueue runs the queue through the engine, one process per track — clean
@@ -908,6 +909,12 @@ func playQueue(ctx context.Context, c *client, e engine, q queue, shuffle bool, 
 		}
 	}
 	defer publish(nowPlaying{}) // zero value = idle, whichever way the loop ends
+	// Published once, AFTER the shuffle: the remote lists what will actually
+	// play, in the order it will play, not the order the server sent.
+	if opts.onQueue != nil {
+		opts.onQueue(tracks)
+		defer opts.onQueue(nil)
+	}
 
 	quickFails := 0
 	for i := 0; i < len(tracks); {

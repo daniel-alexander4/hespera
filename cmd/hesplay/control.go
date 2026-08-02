@@ -75,6 +75,7 @@ type controller struct {
 	cancel  context.CancelFunc // cancels the current session
 	done    chan struct{}      // closed when the current session's loop returns
 	state   nowPlaying
+	tracks  []queueTrack // the current queue in play order, for the remote's list
 	// gen identifies the current session. A finishing loop clears the session
 	// only if it is still the current one: without that check, a queue that ends
 	// a moment after being replaced would clear its successor's state and the
@@ -98,6 +99,65 @@ func (ct *controller) setState(np nowPlaying) {
 	ct.mu.Unlock()
 }
 
+func (ct *controller) setTracks(t []queueTrack) {
+	ct.mu.Lock()
+	ct.tracks = t
+	ct.mu.Unlock()
+}
+
+// queueWindow bounds what the remote is told about. A sweep queue is routinely
+// thousands of tracks ("Most Popular" is 3830 on a real library), and shipping
+// all of them on a 2s poll would be hundreds of KB a tick to render a list
+// nobody scrolls to the end of. A window around the current track is what a
+// phone can actually show, and it re-centres itself as the queue advances.
+const (
+	queueWindow   = 20
+	queueLookback = 2 // a couple of already-played rows, for context
+)
+
+// windowAround returns the visible slice of the queue plus the 1-based absolute
+// position of each row, centred (ish) on the 1-based nowIndex.
+func (ct *controller) windowAround(nowIndex int) []queueEntry {
+	ct.mu.Lock()
+	tracks, total := ct.tracks, len(ct.tracks)
+	ct.mu.Unlock()
+	if total == 0 || nowIndex <= 0 {
+		return []queueEntry{}
+	}
+	start := nowIndex - 1 - queueLookback
+	if start < 0 {
+		start = 0
+	}
+	end := start + queueWindow
+	if end > total {
+		end = total
+		// Near the end of the queue, slide the window back so it stays full
+		// rather than showing two lonely rows.
+		if start = end - queueWindow; start < 0 {
+			start = 0
+		}
+	}
+	out := make([]queueEntry, 0, end-start)
+	for i := start; i < end; i++ {
+		out = append(out, queueEntry{
+			Index:   i + 1,
+			Title:   tracks[i].Title,
+			Artist:  tracks[i].Artist,
+			Current: i+1 == nowIndex,
+		})
+	}
+	return out
+}
+
+// queueEntry is one row of the remote's list. Deliberately not the full
+// queueTrack: the list needs a label and a position, not gain or album ids.
+type queueEntry struct {
+	Index   int    `json:"index"` // 1-based, absolute within the queue
+	Title   string `json:"title"`
+	Artist  string `json:"artist"`
+	Current bool   `json:"current"`
+}
+
 // retire clears the session identified by gen, if it is still current. A queue
 // that simply runs out of tracks — or aborts on a dead server — must stop
 // reporting itself as playing; before this, only an explicit stop() cleared the
@@ -109,7 +169,7 @@ func (ct *controller) retire(gen uint64) {
 		return // already replaced by a newer queue; leave its state alone
 	}
 	ct.cancel, ct.done, ct.actions = nil, nil, nil
-	ct.state = nowPlaying{}
+	ct.state, ct.tracks = nowPlaying{}, nil
 }
 
 // stop cancels the running session and waits for its loop to return. Waiting is
@@ -170,6 +230,7 @@ func (ct *controller) start(parent context.Context, q queue, shuffle bool) {
 		if err := playQueue(ctx, c, ct.eng, q, shuffle, playOpts{
 			actions: actions,
 			onState: ct.setState,
+			onQueue: ct.setTracks,
 		}); err != nil && ctx.Err() == nil {
 			fmt.Println("queue ended:", err)
 		}
@@ -328,8 +389,12 @@ func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
 	ct.mu.Lock()
 	st, playing, base := ct.state, ct.actions != nil, ct.c.base
 	ct.mu.Unlock()
+	// The window rides on the polled state rather than a separate endpoint: it
+	// re-centres itself as the queue advances, so the highlight can never drift
+	// out of step with what is playing.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "playing": playing, "server": base, "now": st,
+		"queue": ct.windowAround(st.Index),
 	})
 }
 
