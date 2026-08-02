@@ -35,6 +35,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -70,6 +71,9 @@ type nowPlaying struct {
 type controller struct {
 	eng    engine
 	browse *browseIndex
+	// paused is shared with the running play loop: it drives the engine's
+	// pause state and holds the stall guard's fire while it is set.
+	paused atomic.Bool
 
 	mu         sync.Mutex
 	c          *client            // upstream Hespera; swapped by PUT /api/server
@@ -173,6 +177,7 @@ func (ct *controller) retire(gen uint64) {
 	}
 	ct.cancel, ct.done, ct.actions = nil, nil, nil
 	ct.state, ct.tracks, ct.queueTitle = nowPlaying{}, nil, ""
+	ct.paused.Store(false)
 }
 
 // stop cancels the running session and waits for its loop to return. Waiting is
@@ -238,6 +243,7 @@ func (ct *controller) start(parent context.Context, q queue, shuffle bool, start
 	actions := make(chan playAction, 1)
 	done := make(chan struct{})
 
+	ct.paused.Store(false)
 	ct.mu.Lock()
 	ct.gen++
 	gen := ct.gen
@@ -255,6 +261,7 @@ func (ct *controller) start(parent context.Context, q queue, shuffle bool, start
 			onState: ct.setState,
 			onQueue: ct.setTracks,
 			startAt: startAt,
+			paused:  &ct.paused,
 		}); err != nil && ctx.Err() == nil {
 			fmt.Println("queue ended:", err)
 		}
@@ -393,6 +400,7 @@ func (ct *controller) routes() http.Handler {
 	mux.HandleFunc("/api/jump", ct.handleJump)
 	mux.HandleFunc("/api/next", ct.handleAction(actionNext))
 	mux.HandleFunc("/api/prev", ct.handleAction(actionPrev))
+	mux.HandleFunc("/api/pause", ct.handlePause)
 	mux.HandleFunc("/api/stop", ct.handleStop)
 	mux.HandleFunc("/api/server", ct.handleServer)
 	mux.HandleFunc("/art/", ct.handleArt)
@@ -458,6 +466,12 @@ func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "playing": playing, "server": base, "now": st,
 		"queue": ct.windowAround(st.Index),
+		// paused is a state of the playing queue, not a third mode: playing
+		// stays true so the transport and the queue list keep their shape.
+		"paused": playing && ct.paused.Load(),
+		// ffplay has no IPC, so the button hides itself rather than offering
+		// something that can only fail.
+		"canPause": stallSocket(ct.eng, 1) != "",
 	})
 }
 
@@ -526,6 +540,40 @@ func (ct *controller) handleJump(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handlePause toggles the running engine. Explicit {"paused":bool} is honoured
+// so a retry cannot flip the state back by accident; an empty body toggles.
+func (ct *controller) handlePause(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
+		return
+	}
+	ct.mu.Lock()
+	playing, trackID := ct.actions != nil, ct.state.ID
+	ct.mu.Unlock()
+	if !playing || trackID == 0 {
+		writeErr(w, http.StatusConflict, errors.New("nothing is playing"))
+		return
+	}
+	var body struct {
+		Paused *bool `json:"paused"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body) // empty body = toggle
+
+	want := !ct.paused.Load()
+	if body.Paused != nil {
+		want = *body.Paused
+	}
+	// Set the flag BEFORE the engine call: it is what holds the stall guard off,
+	// and the guard polls on its own schedule.
+	ct.paused.Store(want)
+	if err := ipcSetPause(stallSocket(ct.eng, trackID), want); err != nil {
+		ct.paused.Store(!want) // the engine did not take it; do not claim it did
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paused": want})
 }
 
 func (ct *controller) handleStop(w http.ResponseWriter, r *http.Request) {

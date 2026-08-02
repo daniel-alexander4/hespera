@@ -706,7 +706,7 @@ func (s *stallTracker) observe(pos float64, ok bool, now time.Time) bool {
 // process, recording the fact in killed so the play loop can tell a stall from
 // an ordinary engine failure. SIGKILL, not SIGTERM: a wedged mpv ignores the
 // polite signal (measured — still alive three and a half minutes after one).
-func watchStall(done <-chan struct{}, proc *os.Process, sock string, killed *atomic.Bool) {
+func watchStall(done <-chan struct{}, proc *os.Process, sock string, killed *atomic.Bool, paused *atomic.Bool) {
 	tick := time.NewTicker(stallPoll)
 	defer tick.Stop()
 	st := newStallTracker(time.Now())
@@ -715,6 +715,14 @@ func watchStall(done <-chan struct{}, proc *os.Process, sock string, killed *ato
 		case <-done:
 			return
 		case now := <-tick.C:
+			// A paused track's time-pos does not move, which is exactly what a
+			// wedge looks like — so without this the guard would SIGKILL the
+			// engine 20s into any pause. Reset the window each tick instead, so
+			// the stall clock starts fresh from the moment playback resumes.
+			if paused != nil && paused.Load() {
+				st = newStallTracker(now)
+				continue
+			}
 			pos, ok := ipcTimePos(sock)
 			if !st.observe(pos, ok, now) {
 				continue
@@ -724,6 +732,28 @@ func watchStall(done <-chan struct{}, proc *os.Process, sock string, killed *ato
 			return
 		}
 	}
+}
+
+// ipcSetPause pauses or resumes the running mpv over the same JSON IPC socket
+// the stall guard already uses. Fire-and-forget on the reply: mpv applies the
+// property before it answers, and a missing reply must not read as a failure to
+// pause. ffplay has no IPC at all, so this is reachable only when stallSocket
+// gave a path (mpv, non-Windows).
+func ipcSetPause(sock string, paused bool) error {
+	if sock == "" {
+		return errors.New("this engine cannot pause")
+	}
+	conn, err := net.DialTimeout("unix", sock, time.Second)
+	if err != nil {
+		return fmt.Errorf("the player is not answering: %w", err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	cmd := fmt.Sprintf(`{"command":["set_property","pause",%t]}`+"\n", paused)
+	if _, err := io.WriteString(conn, cmd); err != nil {
+		return fmt.Errorf("the player is not answering: %w", err)
+	}
+	return nil
 }
 
 // ipcTimePos asks mpv for the current playback position over its JSON IPC
@@ -889,6 +919,10 @@ type playOpts struct {
 	// playAction a plain enum: a jump is a queue that starts further in, not a
 	// new kind of transport event carrying a payload.
 	startAt int
+	// paused is shared with the control server: it flips the engine's pause
+	// state AND tells the stall guard to hold its fire. nil on the CLI path,
+	// which has no pause.
+	paused *atomic.Bool
 }
 
 // playQueue runs the queue through the engine, one process per track — clean
@@ -931,6 +965,11 @@ func playQueue(ctx context.Context, c *client, e engine, q queue, shuffle bool, 
 			return nil
 		}
 		t := tracks[i]
+		// Every track is a new engine process, so it starts unpaused whatever
+		// the last one was doing.
+		if opts.paused != nil {
+			opts.paused.Store(false)
+		}
 		fmt.Printf("♪ %d/%d  %s — %s\n", i+1, len(tracks), t.Title, t.Artist)
 		publish(nowPlaying{
 			Queue: q.Title, Index: i + 1, Total: len(tracks),
@@ -950,7 +989,7 @@ func playQueue(ctx context.Context, c *client, e engine, q queue, shuffle bool, 
 		if runErr == nil {
 			done := make(chan struct{})
 			if sock != "" {
-				go watchStall(done, cmd.Process, sock, &stalled)
+				go watchStall(done, cmd.Process, sock, &stalled, opts.paused)
 			}
 			act, runErr = awaitTrack(ctx, cmd, keys)
 			close(done)

@@ -67,6 +67,31 @@
     }
   }
 
+  // Pause/resume the running engine. Explicit rather than a bare toggle so a
+  // retry after a dropped response cannot flip it back the other way.
+  async function setPaused(want) {
+    try {
+      const r = await api('/api/pause', { method: 'POST', body: JSON.stringify({ paused: want }) });
+      applyPaused(!!r.paused);
+      refresh();
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
+  let isPaused = false;
+  function applyPaused(p) {
+    isPaused = p;
+    const b = $('pause');
+    b.textContent = p ? '▶' : '⏸';
+    b.setAttribute('aria-label', p ? 'Resume' : 'Pause');
+    const row = document.querySelector('.q-row.is-now');
+    if (row) {
+      row.querySelector('.q-n').textContent = p ? '⏸' : '▶';
+      row.setAttribute('aria-label', (p ? 'Resume ' : 'Pause ') + (row.dataset.title || ''));
+    }
+  }
+
   async function action(path) {
     try {
       await api(path, { method: 'POST' });
@@ -136,6 +161,10 @@
     }
     const n = st.now;
     now.hidden = false;
+    // canPause is false on an ffplay box, which has no IPC to pause through —
+    // hide the control rather than offer one that can only fail.
+    $('pause').hidden = !st.canPause;
+    applyPaused(!!st.paused);
     $('np-title').textContent = n.title;
     const bits = [n.artist, n.album].filter(Boolean).join(' — ');
     const pos = n.total > 1 ? ' (' + n.index + '/' + n.total + ')' : '';
@@ -192,7 +221,7 @@
 
       const n = document.createElement('span');
       n.className = 'q-n';
-      n.textContent = r.current ? '▶' : String(r.index);
+      n.textContent = r.current ? (isPaused ? '⏸' : '▶') : String(r.index);
 
       const t = document.createElement('span');
       t.className = 'q-t';
@@ -203,11 +232,13 @@
       t.appendChild(a);
 
       btn.append(n, t);
-      // Tapping the row that is already playing would restart it, which reads
-      // as a glitch rather than an action; leave it alone.
+      btn.dataset.title = r.title;
       if (r.current) {
+        // The playing row is the pause control. Tapping it to restart the track
+        // read as a glitch, and leaving it inert wasted the one row you are
+        // most likely to reach for.
         btn.setAttribute('aria-current', 'true');
-        btn.disabled = true;
+        btn.addEventListener('click', () => setPaused(!isPaused));
       } else {
         btn.addEventListener('click', () => jump(r.index));
       }
@@ -457,6 +488,7 @@
       });
     });
 
+    $('pause').addEventListener('click', () => setPaused(!isPaused));
     $('prev').addEventListener('click', () => action('/api/prev'));
     $('next').addEventListener('click', () => action('/api/next'));
     $('stop').addEventListener('click', () => action('/api/stop'));
