@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // browseKey decides both the sort order and the A-Z bucket, so the article
@@ -67,18 +68,49 @@ func TestByLetter(t *testing.T) {
 	}
 }
 
-// A stale-but-present index must still answer: the browse screens are useless
-// if a momentarily unreachable server empties the artist list.
-func TestEnsureKeepsAServedIndexUntilItCanReplaceIt(t *testing.T) {
+// With nothing to serve, ensure has no choice but to block and report failure.
+func TestEnsureFailsWhenItHasNothingToServe(t *testing.T) {
+	bi := newBrowseIndex()
+	if err := bi.ensure("http://127.0.0.1:1", false); err == nil {
+		t.Fatal("ensure with no index and an unreachable server: expected an error")
+	}
+}
+
+// With an index in hand it must answer immediately even when stale and even
+// when the server is unreachable — the build takes ~22s on the hardware this
+// runs on, so blocking a letter tap on a refresh (or failing one because the
+// server blinked) is worse than serving a ten-minute-old artist list.
+func TestEnsureServesStaleRatherThanBlockingOrFailing(t *testing.T) {
 	bi := newBrowseIndex()
 	bi.artists = []artistRef{{ID: 1, Name: "Blondie", Letter: "B"}}
-	bi.base = "http://unreachable.invalid"
-	// built stays zero, so ensure will try to refetch and fail.
-	if err := bi.ensure("http://unreachable.invalid", false); err == nil {
-		t.Fatal("ensure against an unreachable server: expected an error")
+	bi.base = "http://127.0.0.1:1"
+	// built stays zero, so the index counts as stale and a refresh is due.
+
+	done := make(chan error, 1)
+	go func() { done <- bi.ensure("http://127.0.0.1:1", false) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("stale-but-present index returned an error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ensure blocked on a refresh instead of serving what it had")
 	}
+
 	if got := len(bi.byLetter("B")); got != 1 {
-		t.Fatalf("a failed refresh discarded the cached index: %d artists, want 1", got)
+		t.Fatalf("a failed background refresh discarded the cached index: %d artists, want 1", got)
+	}
+}
+
+// A different server must NOT be served the previous one's artists, so that
+// case blocks and rebuilds even though an index exists.
+func TestEnsureRebuildsWhenTheServerChanges(t *testing.T) {
+	bi := newBrowseIndex()
+	bi.artists = []artistRef{{ID: 1, Name: "Blondie", Letter: "B"}}
+	bi.base = "http://old.invalid"
+	bi.built = time.Now() // fresh — only the base differs
+	if err := bi.ensure("http://127.0.0.1:1", false); err == nil {
+		t.Fatal("pointing at a new server: expected a blocking rebuild, and an error when it fails")
 	}
 }
 

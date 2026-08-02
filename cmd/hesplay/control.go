@@ -331,6 +331,17 @@ func serveControl(ctx context.Context, c *client, addr string, args []string, sh
 	}
 	ct := newController(c, eng)
 
+	// Warm the browse index in the background. The build is slow on the boxes
+	// this actually runs on (21.7s on a Pi 4 over wifi), and a service that
+	// starts at boot has all the time in the world — far better than charging
+	// that to whoever first taps a letter. Failure is fine: the server may not
+	// be up yet, and the first real request rebuilds.
+	go func() {
+		if err := ct.browse.ensure(ct.upstream().base, false); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: could not pre-read the library: %v\n", err)
+		}
+	}()
+
 	if len(args) > 0 {
 		name := strings.TrimSpace(strings.Join(args[1:], " "))
 		if err := ct.resolveAndStart(ctx, playRequest{Source: args[0], Name: name, Shuffle: shuffle}); err != nil {
