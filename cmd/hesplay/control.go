@@ -69,13 +69,14 @@ type nowPlaying struct {
 type controller struct {
 	eng engine
 
-	mu      sync.Mutex
-	c       *client            // upstream Hespera; swapped by PUT /api/server
-	actions chan playAction    // the current session's action channel, nil when idle
-	cancel  context.CancelFunc // cancels the current session
-	done    chan struct{}      // closed when the current session's loop returns
-	state   nowPlaying
-	tracks  []queueTrack // the current queue in play order, for the remote's list
+	mu         sync.Mutex
+	c          *client            // upstream Hespera; swapped by PUT /api/server
+	actions    chan playAction    // the current session's action channel, nil when idle
+	cancel     context.CancelFunc // cancels the current session
+	done       chan struct{}      // closed when the current session's loop returns
+	state      nowPlaying
+	tracks     []queueTrack // the current queue in play order, for the remote's list
+	queueTitle string       // its display title, so a jump can rebuild the same queue
 	// gen identifies the current session. A finishing loop clears the session
 	// only if it is still the current one: without that check, a queue that ends
 	// a moment after being replaced would clear its successor's state and the
@@ -111,7 +112,7 @@ func (ct *controller) setTracks(t []queueTrack) {
 // nobody scrolls to the end of. A window around the current track is what a
 // phone can actually show, and it re-centres itself as the queue advances.
 const (
-	queueWindow   = 20
+	queueWindow   = 12
 	queueLookback = 2 // a couple of already-played rows, for context
 )
 
@@ -169,7 +170,7 @@ func (ct *controller) retire(gen uint64) {
 		return // already replaced by a newer queue; leave its state alone
 	}
 	ct.cancel, ct.done, ct.actions = nil, nil, nil
-	ct.state, ct.tracks = nowPlaying{}, nil
+	ct.state, ct.tracks, ct.queueTitle = nowPlaying{}, nil, ""
 }
 
 // stop cancels the running session and waits for its loop to return. Waiting is
@@ -209,7 +210,26 @@ func (ct *controller) send(a playAction) bool {
 // start replaces whatever is playing with a new queue. The previous session is
 // stopped and reaped first — never concurrently — so two engines can never hold
 // the audio device at once.
-func (ct *controller) start(parent context.Context, q queue, shuffle bool) {
+// jumpTo restarts the CURRENT queue at the 1-based position n, which is how a
+// tapped row plays. Deliberately a restart of the same track list rather than a
+// new transport action: the list is reused verbatim (no re-fetch, and
+// shuffle=false so an already-shuffled queue keeps its order), so positions stay
+// exactly what the remote is showing.
+func (ct *controller) jumpTo(parent context.Context, n int) error {
+	ct.mu.Lock()
+	tracks, title := ct.tracks, ct.queueTitle
+	ct.mu.Unlock()
+	if len(tracks) == 0 {
+		return errors.New("nothing is playing")
+	}
+	if n < 1 || n > len(tracks) {
+		return fmt.Errorf("no track %d in a queue of %d", n, len(tracks))
+	}
+	ct.start(parent, queue{Title: title, Tracks: tracks}, false, n-1)
+	return nil
+}
+
+func (ct *controller) start(parent context.Context, q queue, shuffle bool, startAt int) {
 	ct.stop()
 
 	ctx, cancel := context.WithCancel(parent)
@@ -219,6 +239,7 @@ func (ct *controller) start(parent context.Context, q queue, shuffle bool) {
 	ct.mu.Lock()
 	ct.gen++
 	gen := ct.gen
+	ct.queueTitle = q.Title
 	ct.cancel, ct.done, ct.actions = cancel, done, actions
 	c := ct.c
 	ct.mu.Unlock()
@@ -231,6 +252,7 @@ func (ct *controller) start(parent context.Context, q queue, shuffle bool) {
 			actions: actions,
 			onState: ct.setState,
 			onQueue: ct.setTracks,
+			startAt: startAt,
 		}); err != nil && ctx.Err() == nil {
 			fmt.Println("queue ended:", err)
 		}
@@ -274,7 +296,7 @@ func (ct *controller) resolveAndStart(ctx context.Context, req playRequest) erro
 	}
 	// The server only shuffles the catalog sweeps (sweepSources), so a shuffled
 	// playlist or album is shuffled here — the same client-side pass the CLI does.
-	ct.start(ctx, q, req.Shuffle)
+	ct.start(ctx, q, req.Shuffle, 0)
 	return nil
 }
 
@@ -344,6 +366,7 @@ func (ct *controller) routes() http.Handler {
 	mux.HandleFunc("/api/state", ct.handleState)
 	mux.HandleFunc("/api/playlists", ct.handlePlaylists)
 	mux.HandleFunc("/api/play", ct.handlePlay)
+	mux.HandleFunc("/api/jump", ct.handleJump)
 	mux.HandleFunc("/api/next", ct.handleAction(actionNext))
 	mux.HandleFunc("/api/prev", ct.handleAction(actionPrev))
 	mux.HandleFunc("/api/stop", ct.handleStop)
@@ -442,6 +465,27 @@ func (ct *controller) handleAction(a playAction) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "accepted": ct.send(a)})
 	}
+}
+
+// handleJump plays a tapped row. Like /api/play it uses context.Background():
+// the queue must outlive the request that started it.
+func (ct *controller) handleJump(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("POST only"))
+		return
+	}
+	var body struct {
+		Index int `json:"index"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("bad request: %w", err))
+		return
+	}
+	if err := ct.jumpTo(context.Background(), body.Index); err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (ct *controller) handleStop(w http.ResponseWriter, r *http.Request) {

@@ -151,6 +151,29 @@ func TestWindowAround(t *testing.T) {
 	}
 }
 
+// jumpTo must refuse anything it cannot honour BEFORE tearing down the playing
+// queue — a mistyped row number must not stop the music.
+func TestJumpToRejectsOutOfRange(t *testing.T) {
+	ct := newTestController()
+	if err := ct.jumpTo(context.Background(), 1); err == nil {
+		t.Fatal("jump with nothing playing: expected an error")
+	}
+
+	ct.setTracks([]queueTrack{{Title: "a"}, {Title: "b"}, {Title: "c"}})
+	for _, n := range []int{0, -1, 4, 999} {
+		if err := ct.jumpTo(context.Background(), n); err == nil {
+			t.Fatalf("jump to %d in a 3-track queue: expected an error", n)
+		}
+	}
+	// The refusals must not have disturbed the queue.
+	ct.mu.Lock()
+	got := len(ct.tracks)
+	ct.mu.Unlock()
+	if got != 3 {
+		t.Fatalf("a refused jump changed the queue: %d tracks, want 3", got)
+	}
+}
+
 func TestResolveAndStartRejectsBadRequests(t *testing.T) {
 	ct := newTestController()
 	cases := []struct {
@@ -181,6 +204,7 @@ func TestHandlersRejectWrongMethods(t *testing.T) {
 		{http.MethodPost, "/api/state"},
 		{http.MethodPost, "/api/playlists"},
 		{http.MethodGet, "/api/play"},
+		{http.MethodGet, "/api/jump"},
 		{http.MethodGet, "/api/next"},
 		{http.MethodGet, "/api/prev"},
 		{http.MethodGet, "/api/stop"},

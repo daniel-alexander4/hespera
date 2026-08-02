@@ -104,13 +104,28 @@ h2:first-child { margin-top: 0; }
    filled background, so a long list does not turn into a stripe of colour. */
 .queue { list-style: none; margin: 0; padding: 0; }
 .q-row {
-  display: grid; grid-template-columns: 2.2rem 1fr; align-items: baseline;
+  /* A button, so the whole row is one 44px touch target that also works from a
+     keyboard; appearance is reset because it must read as a list row, not a
+     control. */
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  display: grid; grid-template-columns: 2.2rem 1fr; align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.6rem;
+  border: 0;
   border-left: 3px solid transparent;
   border-radius: 8px;
+  background: transparent;
   color: var(--subtext);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
+.q-row:active { background: var(--surface); }
+/* The playing row is disabled — tapping it would restart the track — so it must
+   not look or behave like something greyed out by accident. */
+.q-row:disabled { cursor: default; opacity: 1; }
 .q-row .q-n { font-variant-numeric: tabular-nums; font-size: 0.78rem; text-align: right; }
 .q-row .q-t { min-width: 0; overflow-wrap: anywhere; }
 .q-row .q-a { display: block; font-size: 0.78rem; color: var(--subtext); }

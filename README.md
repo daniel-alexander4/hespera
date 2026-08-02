@@ -230,8 +230,9 @@ stdin is left to the player engine and mpv's own keybindings apply. Linux only
 **Phone remote.** `hesplay --listen :8090` serves a small installable web app
 from the player itself — open `http://<that-box>:8090` on your phone and Add to
 Home Screen. It gives you playlist buttons (play or shuffle), the two quick-play
-queues, and once something is playing, artwork, what's on, and previous / next /
-stop.
+queues, and once something is playing, a dozen rows of the queue with the
+current song marked — tap any row to jump to it — plus artwork and previous /
+next / stop.
 
 ```sh
 hesplay --listen :8090                     # serve the remote and wait
