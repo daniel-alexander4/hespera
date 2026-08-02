@@ -43,6 +43,7 @@ func main() {
 	server := flag.String("server", "", "Hespera server URL (default: $HESPERA_SERVER, else http://127.0.0.1:8080)")
 	shuffle := flag.Bool("shuffle", false, "force a shuffle (albums play in track order by default)")
 	ordered := flag.Bool("ordered", false, "play in listed order (artist/mix/playlist shuffle by default)")
+	listen := flag.String("listen", "", "serve the phone remote on this address (e.g. :8090); empty = off")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = usage
 	flag.Parse()
@@ -52,14 +53,16 @@ func main() {
 		return
 	}
 	args := flag.Args()
-	if len(args) == 0 {
+	// --listen alone is a complete command: serve the remote and wait for it to
+	// choose something. A verb may still ride along to start playing at once.
+	if len(args) == 0 && strings.TrimSpace(*listen) == "" {
 		usage()
 		os.Exit(2)
 	}
 
 	// `server` manages the saved default — it must work with no server up,
 	// so it's handled before the client/probe path.
-	if args[0] == "server" {
+	if len(args) > 0 && args[0] == "server" {
 		if err := cmdServer(args[1:], *server); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
@@ -72,7 +75,20 @@ func main() {
 	defer stop()
 
 	c := newClient(resolveServer(*server))
-	if err := dispatch(ctx, c, args, shuffleFor(args[0], *shuffle, *ordered)); err != nil {
+
+	verb := ""
+	if len(args) > 0 {
+		verb = args[0]
+	}
+	if addr := strings.TrimSpace(*listen); addr != "" {
+		if err := serveControl(ctx, c, addr, args, shuffleFor(verb, *shuffle, *ordered)); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if err := dispatch(ctx, c, args, shuffleFor(verb, *shuffle, *ordered)); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -83,6 +99,7 @@ func usage() {
 
 Usage:
   hesplay [--server URL] [--shuffle|--ordered] <command> [args]
+  hesplay --listen :8090 [command [args]]      Serve the phone remote
 
 Commands:
   album <name|id>      Play an album
@@ -111,6 +128,13 @@ hesplay server http://plex:8080), else http://127.0.0.1:8080.
 
 Keys while playing (needs a terminal): n next, p previous — or restart, once
 more than 10s into a track — and q to quit. Ctrl+C still stops.
+
+Phone remote: hesplay --listen :8090 serves a small installable web app on this
+box — open http://<this-box>:8090 on your phone and Add to Home Screen. Music
+still plays from THIS box's speakers; the phone only sends the buttons, so
+locking it stops nothing. The remote has one setting, the Hespera server. It has
+no authentication, the same posture as Hespera itself — anyone who can reach the
+port can change what is playing here.
 
 Completion: the .deb wires up bash automatically; otherwise source it, e.g.
 source <(hesplay completion bash). Verbs complete offline; album/artist/song/mix
@@ -176,6 +200,20 @@ func savedServer() string {
 	return strings.TrimSpace(string(b))
 }
 
+// saveServer writes the saved default. The single writer of that file — the
+// `server` verb and the phone remote's PUT /api/server both go through it, so
+// they cannot disagree about the path or the format.
+func saveServer(s string) error {
+	p, err := serverConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(p, []byte(s+"\n"), 0o644)
+}
+
 // cmdServer shows, sets, or clears the saved default server. Setting probes
 // the URL and reports, but saves either way — pointing at a box that happens
 // to be down right now is still a valid default.
@@ -208,14 +246,7 @@ func cmdServer(args []string, flagVal string) error {
 		return nil
 	case len(args) == 1:
 		s := normalizeServer(strings.TrimSpace(args[0]))
-		p, err := serverConfigPath()
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(p, []byte(s+"\n"), 0o644); err != nil {
+		if err := saveServer(s); err != nil {
 			return err
 		}
 		fmt.Println("saved default:", s)
@@ -331,42 +362,65 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 // the live or compilation copy of a track already in the queue, so the local
 // shuffle below can't serve the same song twice.
 func (c *client) resolveQueueQuery(verb, name string, shuffle bool) (query url.Values, picked string, err error) {
+	var id int64
 	switch verb {
 	case "popular", "all": // the web home's Quick Play queues — no name to resolve
+	case "album":
+		id, picked, err = c.resolveSearch("Albums", "/music/album/", name)
+	case "artist", "mix":
+		id, picked, err = c.resolveSearch("Artists", "/music/artist/", name)
+	case "song":
+		id, picked, err = c.resolveSong(name)
+	default: // playlist
+		var rows []playlistRow
+		if rows, err = c.fetchPlaylists(); err == nil {
+			id, picked, err = resolvePlaylist(rows, name)
+		}
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return queueParams(verb, id, shuffle), picked, nil
+}
+
+// queueParams is the single owner of the /music/queue parameter shape. Both the
+// name-resolving path above and the remote's by-id path build queries through
+// it, so a verb can never mean two different things depending on which caller
+// assembled it.
+func queueParams(verb string, id int64, shuffle bool) url.Values {
+	sid := strconv.FormatInt(id, 10)
+	var query url.Values
+	switch verb {
+	case "popular", "all":
 		query = url.Values{"source": {verb}}
 	case "album":
-		id, p, rerr := c.resolveSearch("Albums", "/music/album/", name)
-		if rerr != nil {
-			return nil, "", rerr
-		}
-		query, picked = url.Values{"album": {strconv.FormatInt(id, 10)}}, p
+		// An album is addressed by a bare album= with no source: the server's
+		// default branch. Sending source=album would fall through to the same
+		// place, but this matches what the web player emits.
+		query = url.Values{"album": {sid}}
 	case "artist", "mix":
-		id, p, rerr := c.resolveSearch("Artists", "/music/artist/", name)
-		if rerr != nil {
-			return nil, "", rerr
-		}
-		query, picked = url.Values{"source": {verb}, "artist": {strconv.FormatInt(id, 10)}}, p
+		query = url.Values{"source": {verb}, "artist": {sid}}
 	case "song":
-		id, p, rerr := c.resolveSong(name)
-		if rerr != nil {
-			return nil, "", rerr
-		}
-		query, picked = url.Values{"source": {"track"}, "track": {strconv.FormatInt(id, 10)}}, p
+		query = url.Values{"source": {"track"}, "track": {sid}}
 	default: // playlist
-		rows, rerr := c.fetchPlaylists()
-		if rerr != nil {
-			return nil, "", rerr
-		}
-		id, p, rerr := resolvePlaylist(rows, name)
-		if rerr != nil {
-			return nil, "", rerr
-		}
-		query, picked = url.Values{"source": {"playlist"}, "playlist": {strconv.FormatInt(id, 10)}}, p
+		query = url.Values{"source": {"playlist"}, "playlist": {sid}}
 	}
 	if shuffle {
 		query.Set("shuffle", "1")
 	}
-	return query, picked, nil
+	return query
+}
+
+// knownSource reports whether verb names a queue the server can build. The CLI
+// gets this for free from its own switch; the remote takes the verb off the
+// wire, so an unknown one must be refused rather than silently defaulting to
+// the playlist branch.
+func knownSource(verb string) bool {
+	switch verb {
+	case "popular", "all", "album", "artist", "mix", "song", "playlist":
+		return true
+	}
+	return false
 }
 
 // resolvePlaylist matches a playlist by name — exact (case-insensitive) first,
@@ -805,11 +859,37 @@ func nextIndex(i int, act playAction, played time.Duration) int {
 	return i + 1
 }
 
-// play runs the queue through the engine, one process per track — clean
+// play runs the queue through the engine with the terminal as its action
+// source — the CLI path, unchanged in behaviour.
+func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error {
+	// Transport keys, when there's a terminal to read them from. Stdin can only
+	// have one reader: with keys live it belongs to hesplay, so the engine is
+	// started without it; without a terminal it goes to the engine exactly as
+	// before, leaving mpv's own keybindings intact.
+	keys, restore := watchKeys(ctx)
+	if restore != nil {
+		defer restore()
+		fmt.Println("keys: [n] next  [p] previous/restart  [q] quit")
+	}
+	return playQueue(ctx, c, e, q, shuffle, playOpts{actions: keys, giveStdin: restore == nil})
+}
+
+// playOpts is what a queue run needs beyond the queue itself: where transport
+// actions come from, whether the engine inherits stdin, and where to publish
+// now-playing. It exists so the control server (--listen) can drive the very
+// same loop from HTTP instead of from keypresses — the action channel was
+// always the seam, this just names it.
+type playOpts struct {
+	actions   <-chan playAction
+	giveStdin bool
+	onState   func(nowPlaying) // nil on the CLI path
+}
+
+// playQueue runs the queue through the engine, one process per track — clean
 // boundaries for play-event reporting; the sub-second gap between tracks is
 // the accepted trade for that simplicity. A run of instant failures aborts
 // rather than machine-gunning through a dead server's whole queue.
-func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error {
+func playQueue(ctx context.Context, c *client, e engine, q queue, shuffle bool, opts playOpts) error {
 	tracks := append([]queueTrack(nil), q.Tracks...)
 	if shuffle {
 		rand.Shuffle(len(tracks), func(i, j int) { tracks[i], tracks[j] = tracks[j], tracks[i] })
@@ -821,15 +901,13 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 	}
 	fmt.Printf("Playing %q — %d %s via %s\n", q.Title, len(tracks), unit, e.name)
 
-	// Transport keys, when there's a terminal to read them from. Stdin can only
-	// have one reader: with keys live it belongs to hesplay, so the engine is
-	// started without it; without a terminal it goes to the engine exactly as
-	// before, leaving mpv's own keybindings intact.
-	keys, restore := watchKeys(ctx)
-	if restore != nil {
-		defer restore()
-		fmt.Println("keys: [n] next  [p] previous/restart  [q] quit")
+	keys := opts.actions
+	publish := func(np nowPlaying) {
+		if opts.onState != nil {
+			opts.onState(np)
+		}
 	}
+	defer publish(nowPlaying{}) // zero value = idle, whichever way the loop ends
 
 	quickFails := 0
 	for i := 0; i < len(tracks); {
@@ -838,11 +916,15 @@ func play(ctx context.Context, c *client, e engine, q queue, shuffle bool) error
 		}
 		t := tracks[i]
 		fmt.Printf("♪ %d/%d  %s — %s\n", i+1, len(tracks), t.Title, t.Artist)
+		publish(nowPlaying{
+			Queue: q.Title, Index: i + 1, Total: len(tracks),
+			ID: t.ID, Title: t.Title, Artist: t.Artist, Album: t.Album, AlbumID: t.AlbumID,
+		})
 		sock := stallSocket(e, t.ID)
 		start := time.Now()
 		cmd := exec.CommandContext(ctx, e.path, e.args(c.base+"/stream/track/"+strconv.FormatInt(t.ID, 10), t.GainDB, sock)...)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if restore == nil {
+		if opts.giveStdin {
 			cmd.Stdin = os.Stdin
 		}
 
@@ -977,13 +1059,16 @@ func (c *client) getJSON(path string, query url.Values, out any) error {
 }
 
 // queueTrack mirrors the fields of the server's queue JSON this player uses
-// (unknown fields — albumId, artistId — are ignored by encoding/json).
+// (unknown fields — artistId, backUrl — are ignored by encoding/json). albumId
+// is carried only so the phone remote can build /art/album/{id}; the queue JSON
+// has no artwork URL and no duration of its own.
 type queueTrack struct {
-	ID     int64   `json:"id"`
-	Title  string  `json:"title"`
-	Artist string  `json:"artist"`
-	Album  string  `json:"album"`
-	GainDB float64 `json:"gainDb"`
+	ID      int64   `json:"id"`
+	Title   string  `json:"title"`
+	Artist  string  `json:"artist"`
+	Album   string  `json:"album"`
+	AlbumID int64   `json:"albumId"`
+	GainDB  float64 `json:"gainDb"`
 }
 
 type queue struct {
