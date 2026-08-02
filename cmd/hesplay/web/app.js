@@ -41,11 +41,13 @@
   // id addresses a queue directly; name goes through the server's search. The
   // app always knows the id, so it always sends id — a playlist called "2016"
   // must not be resolved by searching for its own name.
-  async function play(source, id, shuffle) {
+  async function play(source, id, shuffle, startAt) {
     try {
       await api('/api/play', {
         method: 'POST',
-        body: JSON.stringify({ source: source, id: id || 0, shuffle: !!shuffle }),
+        body: JSON.stringify({
+          source: source, id: id || 0, shuffle: !!shuffle, startAt: startAt || 0,
+        }),
       });
       refresh(); // don't wait for the next poll tick to show what started
     } catch (e) {
@@ -226,6 +228,172 @@
     }
   }
 
+  // --- browse ------------------------------------------------------------
+  //
+  // A three-deep stack (browse → artist → album) rather than a router: there is
+  // no URL to keep in sync, and Back only ever means "the screen I came from".
+
+  const SCREENS = ['home', 'browse', 'artist', 'album'];
+  let stack = ['home'];
+  let current = { artistId: 0, artistName: '', albumId: 0, albumTitle: '' };
+
+  function showScreen(name, title) {
+    SCREENS.forEach((s) => {
+      const el = s === 'home' ? document.querySelector('main:not([id])') : $('screen-' + s);
+      if (el) el.hidden = s !== name;
+    });
+    $('bar-title').textContent = title || 'hesplay';
+    $('back-btn').hidden = stack.length <= 1;
+  }
+
+  function push(name, title) { stack.push(name); showScreen(name, title); }
+  function pop() {
+    if (stack.length > 1) stack.pop();
+    const top = stack[stack.length - 1];
+    const titles = { home: 'hesplay', browse: 'Artists', artist: current.artistName, album: current.albumTitle };
+    showScreen(top, titles[top]);
+  }
+
+  // One row: a label that opens the next level, plus play and shuffle for it.
+  function itemRow(label, sub, onOpen, onPlay, onShuffle) {
+    const wrap = document.createElement('div');
+    wrap.className = 'row-item';
+
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'open';
+    const b = document.createElement('b');
+    b.textContent = label;
+    open.appendChild(b);
+    if (sub) {
+      const s = document.createElement('span');
+      s.className = 'sub';
+      s.textContent = sub;
+      open.appendChild(s);
+    }
+    open.addEventListener('click', onOpen);
+
+    const p = document.createElement('button');
+    p.type = 'button'; p.className = 'btn go'; p.textContent = '▶';
+    p.setAttribute('aria-label', 'Play ' + label);
+    p.addEventListener('click', onPlay);
+
+    const s = document.createElement('button');
+    s.type = 'button'; s.className = 'btn go'; s.textContent = '🔀';
+    s.setAttribute('aria-label', 'Shuffle ' + label);
+    s.addEventListener('click', onShuffle);
+
+    wrap.append(open, p, s);
+    return wrap;
+  }
+
+  let lettersLoaded = false;
+  async function openBrowse() {
+    push('browse', 'Artists');
+    if (lettersLoaded) return;
+    $('browse-msg').textContent = 'Reading the library…';
+    try {
+      const r = await api('/api/letters');
+      const strip = $('letters');
+      strip.textContent = '';
+      r.letters.forEach((l) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = l.letter;
+        b.disabled = l.count === 0;
+        b.title = l.count + ' artists';
+        b.addEventListener('click', () => selectLetter(l.letter, b));
+        strip.appendChild(b);
+      });
+      lettersLoaded = true;
+      $('browse-msg').textContent = r.total + ' artists — pick a letter';
+    } catch (e) {
+      $('browse-msg').textContent = e.message;
+      $('browse-msg').classList.add('err');
+    }
+  }
+
+  async function selectLetter(letter, btn) {
+    document.querySelectorAll('#letters button').forEach((b) => b.classList.toggle('is-on', b === btn));
+    $('browse-msg').textContent = '';
+    const box = $('artists');
+    box.textContent = '';
+    try {
+      const r = await api('/api/artists?letter=' + encodeURIComponent(letter));
+      if (!r.artists.length) {
+        $('browse-msg').textContent = 'No artists under ' + letter + '.';
+        return;
+      }
+      r.artists.forEach((a) => box.appendChild(itemRow(
+        a.name, null,
+        () => openArtist(a.id, a.name),
+        () => play('artist', a.id, false),
+        () => play('artist', a.id, true),
+      )));
+    } catch (e) {
+      $('browse-msg').textContent = e.message;
+    }
+  }
+
+  async function openArtist(id, name) {
+    current.artistId = id; current.artistName = name;
+    push('artist', name);
+    const box = $('artist-albums');
+    box.textContent = '';
+    $('artist-albums-h').textContent = 'Albums';
+    try {
+      const r = await api('/api/artist?id=' + id);
+      $('artist-albums-h').textContent = r.albums.length === 1 ? '1 album' : r.albums.length + ' albums';
+      // "N by this artist", not "N tracks": the count is this artist's share of
+      // the album, and on a compilation that is a fraction of it — The Rolling
+      // Stones contribute 50 tracks to an "Essentials" album that holds 173.
+      r.albums.forEach((al) => box.appendChild(itemRow(
+        al.title, al.count + ' by this artist',
+        () => openAlbum(al.id, al.title),
+        () => play('album', al.id, false),
+        () => play('album', al.id, true),
+      )));
+    } catch (e) {
+      $('artist-albums-h').textContent = e.message;
+    }
+  }
+
+  async function openAlbum(id, title) {
+    current.albumId = id; current.albumTitle = title;
+    push('album', title);
+    const list = $('album-tracks');
+    list.textContent = '';
+    try {
+      const r = await api('/api/album?id=' + id);
+      r.tracks.forEach((t) => {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'q-row';
+        btn.setAttribute('aria-label', 'Play ' + t.title);
+        const n = document.createElement('span');
+        n.className = 'q-n';
+        n.textContent = String(t.index);
+        const tt = document.createElement('span');
+        tt.className = 'q-t';
+        tt.textContent = t.title;
+        const ar = document.createElement('span');
+        ar.className = 'q-a';
+        ar.textContent = t.artist;
+        tt.appendChild(ar);
+        btn.append(n, tt);
+        // Play the album from this song: the album queue, positioned. Keeps the
+        // rest of the record queued behind it instead of playing one track and
+        // falling silent.
+        btn.addEventListener('click', () => play('album', id, false, t.index));
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
   // --- settings ----------------------------------------------------------
 
   async function loadServer() {
@@ -264,6 +432,18 @@
 
     document.querySelectorAll('#quick [data-source]').forEach((b) => {
       b.addEventListener('click', () => play(b.dataset.source, 0, b.dataset.shuffle === '1'));
+    });
+
+    $('browse-btn').addEventListener('click', openBrowse);
+    $('back-btn').addEventListener('click', pop);
+    document.querySelectorAll('[data-act]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const a = b.dataset.act;
+        if (a === 'artist-play') play('artist', current.artistId, false);
+        else if (a === 'artist-shuffle') play('artist', current.artistId, true);
+        else if (a === 'album-play') play('album', current.albumId, false);
+        else if (a === 'album-shuffle') play('album', current.albumId, true);
+      });
     });
 
     $('prev').addEventListener('click', () => action('/api/prev'));

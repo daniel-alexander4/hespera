@@ -230,9 +230,16 @@ stdin is left to the player engine and mpv's own keybindings apply. Linux only
 **Phone remote.** `hesplay --listen :8090` serves a small installable web app
 from the player itself — open `http://<that-box>:8090` on your phone and Add to
 Home Screen. It gives you playlist buttons (play or shuffle), the two quick-play
-queues, and once something is playing, a dozen rows of the queue with the
-current song marked — tap any row to jump to it — plus artwork and previous /
-next / stop.
+queues, an A-Z browse through your artists (play or shuffle an artist, open it
+for its albums, open an album to pick a song), and once something is playing, a
+dozen rows of the queue with the current song marked — tap any row to jump to it
+— plus artwork and previous / next / stop.
+
+Browsing is done by the player, not the server: Hespera's artist and album pages
+are HTML, so hesplay reads the catalog once and indexes it itself. That keeps the
+feature working against whatever Hespera version you already run, and the phone
+only ever receives the slice it asked for. Artists file under their name with a
+leading "The" ignored, so The Rolling Stones sits under R.
 
 ```sh
 hesplay --listen :8090                     # serve the remote and wait

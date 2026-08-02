@@ -1075,16 +1075,18 @@ func (c *client) getJSON(path string, query url.Values, out any) error {
 }
 
 // queueTrack mirrors the fields of the server's queue JSON this player uses
-// (unknown fields — artistId, backUrl — are ignored by encoding/json). albumId
-// is carried only so the phone remote can build /art/album/{id}; the queue JSON
-// has no artwork URL and no duration of its own.
+// (unknown fields — backUrl — are ignored by encoding/json). albumId lets the
+// phone remote build /art/album/{id} and group an artist's tracks into albums;
+// artistId is what the A-Z browse index is keyed on. The queue JSON has no
+// artwork URL and no duration of its own.
 type queueTrack struct {
-	ID      int64   `json:"id"`
-	Title   string  `json:"title"`
-	Artist  string  `json:"artist"`
-	Album   string  `json:"album"`
-	AlbumID int64   `json:"albumId"`
-	GainDB  float64 `json:"gainDb"`
+	ID       int64   `json:"id"`
+	Title    string  `json:"title"`
+	Artist   string  `json:"artist"`
+	ArtistID int64   `json:"artistId"`
+	Album    string  `json:"album"`
+	AlbumID  int64   `json:"albumId"`
+	GainDB   float64 `json:"gainDb"`
 }
 
 type queue struct {
