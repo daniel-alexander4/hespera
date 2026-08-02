@@ -142,9 +142,56 @@
     }
   }
 
+  // The queue window. Re-rendered only when the rows actually change, because
+  // this runs on every 2s poll and rebuilding a 20-row list each tick would
+  // fight the user's scroll position.
+  let lastQueueKey = '';
+  function renderQueue(st) {
+    const sec = $('queue-sec');
+    const rows = (st && st.queue) || [];
+    if (!st.playing || rows.length === 0) {
+      sec.hidden = true;
+      lastQueueKey = '';
+      return;
+    }
+    sec.hidden = false;
+    $('queue-h').textContent = st.now && st.now.queue
+      ? st.now.queue + ' · ' + st.now.index + ' of ' + st.now.total
+      : 'Playing';
+
+    const key = rows.map((r) => r.index + (r.current ? '*' : '')).join(',');
+    if (key === lastQueueKey) return;
+    lastQueueKey = key;
+
+    const list = $('queue');
+    list.textContent = '';
+    rows.forEach((r) => {
+      const li = document.createElement('li');
+      li.className = 'q-row' + (r.current ? ' is-now' : (st.now && r.index < st.now.index ? ' is-past' : ''));
+
+      const n = document.createElement('span');
+      n.className = 'q-n';
+      n.textContent = r.current ? '▶' : String(r.index);
+
+      const t = document.createElement('span');
+      t.className = 'q-t';
+      t.textContent = r.title; // textContent: titles are library data, never markup
+      const a = document.createElement('span');
+      a.className = 'q-a';
+      a.textContent = r.artist;
+      t.appendChild(a);
+
+      li.append(n, t);
+      if (r.current) li.setAttribute('aria-current', 'true');
+      list.appendChild(li);
+    });
+  }
+
   async function refresh() {
     try {
-      renderNow(await api('/api/state'));
+      const st = await api('/api/state');
+      renderNow(st);
+      renderQueue(st);
     } catch (_) {
       // A failed poll is normal when the box is briefly unreachable; the next
       // tick recovers and an error toast every 2s would be unusable.

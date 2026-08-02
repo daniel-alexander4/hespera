@@ -99,6 +99,33 @@ h2:first-child { margin-top: 0; }
 .pl .name b { font-weight: 600; overflow-wrap: anywhere; }
 .pl .go { min-width: 44px; padding: 0.6rem 0.7rem; text-align: center; font-size: 1.15rem; }
 
+/* The queue window. Rows are compact — this is a glance, not a browse — and the
+   playing row is called out with the accent bar and brighter text rather than a
+   filled background, so a long list does not turn into a stripe of colour. */
+.queue { list-style: none; margin: 0; padding: 0; }
+.q-row {
+  display: grid; grid-template-columns: 2.2rem 1fr; align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  color: var(--subtext);
+}
+.q-row .q-n { font-variant-numeric: tabular-nums; font-size: 0.78rem; text-align: right; }
+.q-row .q-t { min-width: 0; overflow-wrap: anywhere; }
+.q-row .q-a { display: block; font-size: 0.78rem; color: var(--subtext); }
+/* Already played: dimmed, so the eye lands on the current row and what follows. */
+.q-row.is-past { opacity: 0.45; }
+.q-row.is-now {
+  border-left-color: var(--accent);
+  background: var(--mantle);
+  color: var(--text);
+  font-weight: 600;
+  opacity: 1;
+}
+.q-row.is-now .q-n { color: var(--accent); }
+.q-row.is-now .q-a { color: var(--text); }
+
 .icon-btn {
   appearance: none;
   min-width: 44px; min-height: 44px;
