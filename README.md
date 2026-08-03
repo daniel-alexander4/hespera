@@ -30,6 +30,10 @@ Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
 - **Audiobooks** — chaptered m4b (and plain audio) with embedded covers,
   chapter skipping, variable speed, and resume to the second, played through
   the same transport as TV and movies.
+- **Podcasts** — search Apple's directory or paste any RSS feed, then stream
+  episodes with variable speed and resume to the second. The only part of
+  Hespera that is not about files you own — nothing is downloaded and no audio
+  is stored.
 - **Library care** — a filesystem watcher auto-scans new media, corruption
   detection with lossless container auto-repair, loudness leveling, and jobs
   interrupted by a shutdown resume automatically on the next launch.
@@ -377,6 +381,44 @@ it somewhere is not a way to make the server fetch anything.
 > One limitation worth knowing: SoX exposes no control socket, so noise gets no
 > equivalent of the stall guard above. A noise process that *exits* is noticed
 > and restarted on the next check; one that hangs while still running is not.
+
+### Podcasts
+
+Every other part of Hespera serves files you own. Podcasts do not: a show is a
+remote RSS feed and an episode is a URL somebody else hosts. That difference
+drives everything about how this works.
+
+Open **Podcasts** from the home screen (the card appears once you follow
+something; before that, go to `/podcasts`). Search Apple's directory by name,
+host or topic and press Follow — or paste a feed address directly, which works
+for anything the directory does not list. Episodes play through the same
+transport as audiobooks, so variable speed and resume-to-the-second come with
+them, and your place in an episode survives a refresh of the feed.
+
+**Nothing is downloaded.** There is no offline listening and no cache — an
+episode is streamed while you listen and nothing is written to disk. That is why
+podcasts need no library, no `MEDIA_ROOT` entry and no scan.
+
+**Audio is proxied through Hespera, not fetched by your browser.** It costs a
+little household bandwidth and buys three things: podcast hosts never see your
+device or your IP, there is no mixed-content or cross-origin problem when a show
+is served over plain http, and every outbound request stays behind one guard.
+
+That guard matters more here than anywhere else in Hespera. Everywhere else the
+server only ever contacts a fixed list of services compiled into the binary
+(TMDB, MusicBrainz, and so on) — a podcast subscription is the one case where it
+must reach a host *you* chose. So the address is checked at the moment the
+connection is made, on the address it actually resolved to rather than on the
+name: a feed cannot point Hespera at your router, at another machine on your
+network, at the server itself, or at a cloud metadata endpoint, and a feed that
+redirects toward one of those is refused at the hop that turns. Feed bodies are
+size-capped and time-limited, and the episode-streaming URL takes an episode
+number rather than an address, so nothing can steer it.
+
+Feeds are refreshed when you press **Check for new episodes**; a failure is
+recorded on the show rather than buried in a log. Cover art is displayed
+straight from the show's own host and never copied, so there is nothing to clean
+up when you unfollow — which also removes every episode and your place in them.
 
 ### Security posture
 
