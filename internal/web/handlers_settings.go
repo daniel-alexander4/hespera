@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -221,6 +222,17 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/settings?open=subtitles&saved=1", http.StatusSeeOther)
 			return
 		}
+		if _, ok := r.Form["noise_remote_url"]; ok {
+			// Stored as submitted; effectiveNoiseRemoteURL whitelists the scheme
+			// at READ time, so a value written another way (hescli config set) is
+			// held to exactly the same rule as one typed here.
+			if err := h.saveAPIKey(ctx, "noise_remote_url", strings.TrimSpace(r.FormValue("noise_remote_url"))); err != nil {
+				httpError(w, 500, "internal server error", "save setting failed", "handler", "settings", "err", err)
+				return
+			}
+			http.Redirect(w, r, "/settings?open=features&saved=1", http.StatusSeeOther)
+			return
+		}
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -365,6 +377,37 @@ func (h *Handler) effectiveJobResumeEnabled(ctx context.Context) bool {
 // now-playing lyrics card are on. Default OFF (opt-in) — stored as '1' when
 // enabled, absent = off. The single source of truth for both the client (skips
 // the LRCLIB fetch when off) and the /music/lyrics/fetch endpoint.
+// effectiveNoiseRemoteURL returns the address of a hesplay noise remote, or ""
+// when none is configured (the home card then doesn't render).
+//
+// This value becomes an href, so it is whitelisted to http/https at READ time —
+// the sanitizeLangSetting idiom. Without that a `javascript:` URL stored by any
+// unauthenticated LAN device (hescli config set, or the settings form) would be
+// stored XSS on the home page of everyone in the household.
+//
+// Hespera only ever LINKS here; it never fetches this URL server-side. That is
+// deliberate and is why a user-supplied address is acceptable at all: a server
+// that POSTs to an operator-typed LAN address is the SSRF shape this codebase
+// refuses everywhere else (album art is upload-only, the artist image picker
+// requires membership of a server-fetched candidate set, OpenSubtitles is
+// host-pinned). The browser navigates; the server stays out of it.
+func (h *Handler) effectiveNoiseRemoteURL(ctx context.Context) string {
+	var v string
+	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='noise_remote_url'").Scan(&v)
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	return u.String()
+}
+
 func (h *Handler) effectiveLyricsEnabled(ctx context.Context) bool {
 	var v string
 	_ = h.db.QueryRowContext(ctx, "SELECT value FROM app_settings WHERE key='lyrics_enabled'").Scan(&v)

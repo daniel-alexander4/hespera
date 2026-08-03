@@ -129,6 +129,15 @@
     <h3>{{template "icon-headphones"}}Audiobooks</h3>
     <p>Listen to your audiobooks</p>
   </a>
+  {{if .NoiseRemoteURL}}
+  {{/* Not a library, so it is deliberately last. It links OUT to the hesplay
+       box that owns the speakers and the schedule — that box makes the sound,
+       not this one, which is why this is a link and not an embedded control. */}}
+  <a href="{{.NoiseRemoteURL}}" class="card" rel="noopener">
+    <h3>{{template "icon-audio-lines"}}Noise</h3>
+    <p>Ambient noise on the bedroom speakers</p>
+  </a>
+  {{end}}
 </div>
 
 {{if .HasMusic}}

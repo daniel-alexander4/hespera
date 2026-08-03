@@ -289,6 +289,53 @@ since a wedged mpv ignores SIGTERM — and the track is skipped with a warning.
 A skipped track is never reported as played, so listen counts stay honest.
 ffplay has no IPC and plays unguarded.
 
+**Ambient noise.** `hesplay noise` generates brown, pink, white or tpdf noise on
+that box's speakers — a sleep aid for a bedroom Pi, and a replacement for the
+SoX one-liner people usually wrap in a systemd unit. It needs the **`sox`**
+package (`hesplay noise` says so if it is missing).
+
+```sh
+hesplay noise                     # the default preset, until Ctrl+C
+hesplay noise pink                # a named preset
+hesplay noise --for 45 brown      # a sleep timer, in minutes
+hesplay noise list                # the presets and their tuning
+hesplay noise --print             # the exact SoX command, without playing it
+```
+
+The sound is not flat hiss: the noise is band-passed and then modulated very
+slowly, so it swells and fades like surf rather than sitting at one level. Each
+preset carries its own colour, band centre and width, swell rate and depth,
+reverb, gain and fade-in. A preset's internal buffer length is derived from the
+swell rate rather than configured, so the loop is always a whole number of
+swells and never jumps mid-swell.
+
+**A schedule, reconciled rather than triggered.** Windows live in the same
+config and are checked every 30 seconds — "should noise be playing right now?" —
+instead of being armed as timers. That is the whole reason to prefer this over
+systemd timers: a box rebooted at 23:00, inside a 20:00–10:00 window, starts
+making noise again on the next check rather than staying silent until the
+following evening. Windows may name days, and a window whose end is earlier than
+its start runs overnight; days name the day it *starts* on.
+
+Noise and music take turns rather than mixing — the box has one sound card, and
+on a board with no audio server the second thing to open it simply fails. So
+starting music stops the noise, and when the music ends the noise comes back on
+its own if the window is still open. Starting noise likewise stops the music.
+Pressing **stop** during a scheduled window is treated as "not tonight" and
+suppresses the rest of that window, so the schedule does not immediately undo
+you; the next window starts normally.
+
+Everything is edited from the phone remote's **Noise** screen: preset tuning,
+the weekly schedule, and one tap per preset to start it now. Setting **Noise
+remote** in Hespera's Settings → Features to `http://<that-box>:8090` adds a
+**Noise** card to Hespera's home screen that links there. Hespera never contacts
+that address itself — the card is a plain link your browser follows — so pointing
+it somewhere is not a way to make the server fetch anything.
+
+> One limitation worth knowing: SoX exposes no control socket, so noise gets no
+> equivalent of the stall guard above. A noise process that *exits* is noticed
+> and restarted on the next check; one that hangs while still running is not.
+
 ### Security posture
 
 Hespera has **no authentication layer, by design** — it is a single-machine

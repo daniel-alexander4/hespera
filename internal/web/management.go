@@ -247,6 +247,7 @@ var managedSettings = []settingSpec{
 	{Key: "display_control_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
 	{Key: "display_mode", Kind: kindString, ApplyOnRestart: true},
 	{Key: "update_check_enabled", Kind: kindToggle, OnStored: "1", OffStored: ""},
+	{Key: "noise_remote_url", Kind: kindString},
 	{Key: "default_audio_lang", Kind: kindString},
 	{Key: "default_subtitle_lang", Kind: kindString},
 	{Key: "subtitles_default_on", Kind: kindToggle, OnStored: "1", OffStored: ""},

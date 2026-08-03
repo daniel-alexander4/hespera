@@ -216,6 +216,24 @@
   </form>
 
   <form method="post" action="/settings" class="form-card">
+    <div class="form-group">
+      <label for="noise_remote_url">Noise remote</label>
+      <input type="url" id="noise_remote_url" name="noise_remote_url" class="form-control"
+             value="{{.NoiseRemoteURL}}" placeholder="http://raspberrypi:8090" />
+      <small class="form-help">
+        Address of a box running <code>hesplay --listen</code>, which generates ambient
+        noise on its own speakers. Set it and a <strong>Noise</strong> card appears on the
+        home screen linking there. Hespera never contacts this address itself &mdash; the
+        card is a plain link, so your browser goes there directly. Leave empty to hide the
+        card. Only <code>http://</code> and <code>https://</code> addresses are accepted.
+      </small>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+
+  <form method="post" action="/settings" class="form-card">
     <input type="hidden" name="power_button_present" value="1" />
     <div class="form-group">
       <label class="form-check">
