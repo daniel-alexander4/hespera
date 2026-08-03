@@ -531,6 +531,8 @@ func (ct *controller) routes() http.Handler {
 	mux.HandleFunc("/api/pause", ct.handlePause)
 	mux.HandleFunc("/api/stop", ct.handleStop)
 	mux.HandleFunc("/api/server", ct.handleServer)
+	mux.HandleFunc("/api/noise", ct.handleNoise)
+	mux.HandleFunc("/api/noise/start", ct.handleNoiseStart)
 	mux.HandleFunc("/art/", ct.handleArt)
 
 	return secureControl(mux)
@@ -734,9 +736,130 @@ func (ct *controller) handleStop(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
 		return
 	}
-	ct.stop()
+	// stopByHuman rather than stop: pressing stop while scheduled noise is
+	// playing has to suppress the rest of that window, or the reconciler puts it
+	// straight back on within 30 seconds. A queue stop is unaffected.
+	ct.stopByHuman(time.Now())
 	ct.setState(nowPlaying{})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleNoise reads or replaces the noise configuration. GET also reports which
+// preset is playing, so the remote can render the noise screen from one call.
+//
+// A PUT validates before it writes: an unusable window is refused at the point
+// someone types it rather than discovered by a silent night.
+func (ct *controller) handleNoise(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := loadNoiseConfig()
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		ct.mu.Lock()
+		playing, st := ct.kind == sessionNoise, ct.state
+		ct.mu.Unlock()
+		_, engErr := findNoisePlayer()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "playing": playing, "now": st.Title,
+			"default": cfg.Default, "audioDev": cfg.AudioDev,
+			"presets": cfg.Presets, "schedule": cfg.Schedule,
+			// The UI hides its controls rather than offering something that can
+			// only fail, the way the pause button already does for ffplay.
+			"available": engErr == nil,
+		})
+
+	case http.MethodPut, http.MethodPost:
+		var body noiseConfig
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("bad request: %w", err))
+			return
+		}
+		if len(body.Presets) == 0 {
+			writeErr(w, http.StatusBadRequest, errors.New("at least one preset is required"))
+			return
+		}
+		for i, p := range body.Presets {
+			if strings.TrimSpace(p.Name) == "" {
+				writeErr(w, http.StatusBadRequest, fmt.Errorf("preset %d has no name", i+1))
+				return
+			}
+			n, err := p.normalize()
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+			n.Name = strings.TrimSpace(p.Name)
+			body.Presets[i] = n
+		}
+		if err := validateSchedule(body.Schedule); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		for i, win := range body.Schedule {
+			if strings.TrimSpace(win.Preset) == "" {
+				continue
+			}
+			if _, err := body.findPreset(win.Preset); err != nil {
+				writeErr(w, http.StatusBadRequest, fmt.Errorf("window %d: %w", i+1, err))
+				return
+			}
+		}
+		if err := saveNoiseConfig(body); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("GET or PUT only"))
+	}
+}
+
+// handleNoiseStart plays a preset now. Started as MANUAL, so no window ending
+// stops it and the reconciler leaves it alone — someone asked for it.
+func (ct *controller) handleNoiseStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
+		return
+	}
+	var body struct {
+		Preset string `json:"preset"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&body)
+	}
+	cfg, err := loadNoiseConfig()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	p, err := cfg.findPreset(body.Preset)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if p, err = p.normalize(); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	pl, err := findNoisePlayer()
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	// A manual start clears any latch: asking for noise is the opposite of the
+	// gesture the latch exists to respect.
+	ct.mu.Lock()
+	ct.noiseLatchUntil = time.Time{}
+	ct.mu.Unlock()
+
+	// context.Background() for the same reason /api/play uses it: the session
+	// must outlive the request that started it. r.Context() is cancelled when
+	// the response is written, which would stop the noise instantly.
+	ct.startNoise(context.Background(), pl, p, cfg.AudioDev, false)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "preset": p.Name})
 }
 
 // handleServer shows or repoints the upstream Hespera. A PUT probes first and

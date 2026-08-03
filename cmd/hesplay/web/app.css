@@ -294,3 +294,58 @@ h2:first-child { margin-top: 0; }
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 .toast.err { background: var(--danger); color: var(--on-accent); }
+
+/* --- noise ---------------------------------------------------------------
+   The one screen in the app with a form on it. Inputs are full-width and
+   44px tall for the same reason every other target is: a thumb at bedtime,
+   in the dark, is not accurate. */
+.preset, .win {
+  background: var(--mantle);
+  border: 1px solid var(--surface);
+  border-radius: var(--radius);
+  padding: 0.7rem;
+  margin-bottom: 0.6rem;
+}
+.preset > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  cursor: pointer;
+  /* A summary is a primary control here, so it gets a real touch target. */
+  min-height: 44px;
+  padding: 0.4rem 0;
+}
+.preset > summary b { font-weight: 600; }
+.preset > summary .sub { font-size: 0.78rem; color: var(--subtext); }
+.preset > .btn { margin: 0.2rem 0 0.6rem; }
+
+.field { display: grid; gap: 0.25rem; margin-bottom: 0.55rem; }
+.field > span { font-size: 0.78rem; color: var(--subtext); }
+.field input, .field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.6rem;
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--surface);
+  border-radius: 8px;
+  font: inherit;
+}
+.win .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.win .row .field { margin-bottom: 0.55rem; }
+
+/* Seven day toggles have to fit one phone line, so they wrap rather than
+   scroll — a horizontal scroller here hides Saturday. */
+.days { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.6rem; }
+.day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  background: var(--base);
+  border: 1px solid var(--surface);
+  border-radius: 8px;
+}
+#noise-more { width: 100%; margin-top: 0.6rem; }
+#noise-add-window { width: 100%; margin-bottom: 0.8rem; }
