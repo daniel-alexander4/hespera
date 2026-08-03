@@ -1,0 +1,339 @@
+package main
+
+import (
+	"math"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// originalScriptArgs is the command that has actually been running on the
+// upstairs Pi, verbatim from brownnoise.sh with its defaults substituted
+// (minutes=1440 → repeat 1439, center=1786, wave=0.08). It is the reference the
+// port must not drift from by accident.
+var originalScriptArgs = []string{
+	"--buffer", "131072", "--no-show-progress", "-c", "2", "--null",
+	"synth", "01:00", "brownnoise",
+	"band", "-n", "1786", "499",
+	"tremolo", "0.08", "37",
+	"reverb", "19",
+	"repeat", "1439",
+}
+
+// TestNoiseArgsMatchOriginalExceptIntendedChanges pins the port against the
+// script. Three differences are deliberate and everything else must match:
+// the buffer becomes a whole number of swells (the loop-seam fix), the repeat
+// count is recomputed for that buffer, and a fade-in is appended.
+func TestNoiseArgsMatchOriginalExceptIntendedChanges(t *testing.T) {
+	p, err := defaultNoiseConfig().Presets[0].normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.Name != "brown" {
+		t.Fatalf("expected the first default preset to be brown, got %q", p.Name)
+	}
+	got := p.noiseArgs()
+
+	// Compare position by position up to `synth`'s length argument, which is
+	// the first intended difference.
+	for i := 0; i < 7; i++ {
+		if got[i] != originalScriptArgs[i] {
+			t.Errorf("arg %d: got %q, original %q", i, got[i], originalScriptArgs[i])
+		}
+	}
+	// The waveform and the whole effect chain up to `repeat` must be identical.
+	gotChain := strings.Join(got[8:19], " ")
+	wantChain := strings.Join(originalScriptArgs[8:19], " ")
+	if gotChain != wantChain {
+		t.Errorf("effect chain drifted:\n got %q\nwant %q", gotChain, wantChain)
+	}
+	// And the intended differences are present.
+	if got[7] == "01:00" {
+		t.Error("buffer length was not changed: the loop seam fix is missing")
+	}
+	if !strings.Contains(strings.Join(got, " "), "fade t 3") {
+		t.Errorf("fade-in missing from %v", got)
+	}
+}
+
+// TestNoiseBufferIsWholeSwells is the loop-seam fix itself. The original ran a
+// 12.5s swell inside a 60s buffer — 4.8 swells — so the volume envelope jumped
+// mid-swell at every loop point. The buffer must be a whole number of swells
+// and still at least the 60s floor.
+func TestNoiseBufferIsWholeSwells(t *testing.T) {
+	for _, speed := range []float64{0.08, 0.1, 0.2, 0.05, 0.033, 0.011} {
+		p := noisePreset{Type: "brownnoise", WaveSpeed: speed}
+		p, err := p.normalize()
+		if err != nil {
+			t.Fatalf("normalize %g: %v", speed, err)
+		}
+		buf := p.bufferSecs()
+		period := 1 / p.WaveSpeed
+		swells := buf / period
+		if math.Abs(swells-math.Round(swells)) > 1e-9 {
+			t.Errorf("speed %g: buffer %gs is %g swells of %gs — not a whole number", speed, buf, swells, period)
+		}
+		if buf < noiseMinBufferSecs {
+			t.Errorf("speed %g: buffer %gs is below the %gs floor", speed, buf, noiseMinBufferSecs)
+		}
+		// One swell shorter would drop under the floor — i.e. it rounded UP by
+		// the minimum needed, rather than overshooting.
+		if buf-period >= noiseMinBufferSecs {
+			t.Errorf("speed %g: buffer %gs overshoots; %gs would still clear the floor", speed, buf, buf-period)
+		}
+	}
+}
+
+// TestNoiseGainAndFadeFollowRepeat guards the one ordering mistake that is easy
+// to make and hard to hear as a bug: `repeat` replays everything before it, so
+// a fade placed ahead of it becomes a pulse once per buffer instead of a
+// one-time ease-in.
+func TestNoiseGainAndFadeFollowRepeat(t *testing.T) {
+	p, err := noisePreset{Type: "brown", WaveSpeed: 0.08, GainDB: -3, FadeIn: 5}.normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	args := p.noiseArgs()
+	idx := func(s string) int {
+		for i, a := range args {
+			if a == s {
+				return i
+			}
+		}
+		return -1
+	}
+	rep, gain, fade := idx("repeat"), idx("gain"), idx("fade")
+	if rep < 0 || gain < 0 || fade < 0 {
+		t.Fatalf("expected repeat, gain and fade in %v", args)
+	}
+	if gain < rep {
+		t.Errorf("gain at %d precedes repeat at %d: it would re-apply per loop", gain, rep)
+	}
+	if fade < rep {
+		t.Errorf("fade at %d precedes repeat at %d: it would pulse every buffer", fade, rep)
+	}
+}
+
+// TestNoiseGainOmittedWhenZero: zero gain means "leave the level alone", so the
+// effect must not appear at all — a `gain 0` would be a no-op but it would also
+// mean the shipped brown preset no longer matches the original chain.
+func TestNoiseGainOmittedWhenZero(t *testing.T) {
+	p, _ := noisePreset{Type: "brown", WaveSpeed: 0.08}.normalize()
+	for _, a := range p.noiseArgs() {
+		if a == "gain" {
+			t.Fatalf("gain present with GainDB==0: %v", p.noiseArgs())
+		}
+	}
+}
+
+func TestNoisePresetNormalize(t *testing.T) {
+	t.Run("bare colour accepted", func(t *testing.T) {
+		for _, in := range []string{"brown", "brownnoise", "BROWN", " Pink "} {
+			p, err := noisePreset{Type: in}.normalize()
+			if err != nil {
+				t.Fatalf("%q: %v", in, err)
+			}
+			if !strings.HasSuffix(p.Type, "noise") {
+				t.Errorf("%q normalized to %q", in, p.Type)
+			}
+		}
+	})
+
+	t.Run("unknown type is an error", func(t *testing.T) {
+		if _, err := (noisePreset{Type: "greennoise"}).normalize(); err == nil {
+			t.Fatal("expected an error for an unknown waveform")
+		}
+	})
+
+	t.Run("wave speed clamped to the script's advice", func(t *testing.T) {
+		p, err := noisePreset{Type: "brown", WaveSpeed: 5}.normalize()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.WaveSpeed != noiseMaxWaveSpeed {
+			t.Errorf("WaveSpeed 5 should clamp to %g, got %g", noiseMaxWaveSpeed, p.WaveSpeed)
+		}
+	})
+
+	t.Run("zero fields fall back to the original's values", func(t *testing.T) {
+		p, err := noisePreset{Type: "brown"}.normalize()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.CenterHz != 1786 || p.WidthHz != 499 || p.WaveSpeed != 0.08 || p.WaveDepth != 37 || p.Reverb != 19 {
+			t.Errorf("defaults drifted from the original script: %+v", p)
+		}
+	})
+
+	t.Run("gain is clamped but never defaulted", func(t *testing.T) {
+		p, _ := noisePreset{Type: "brown", GainDB: 0}.normalize()
+		if p.GainDB != 0 {
+			t.Errorf("zero gain must stay zero, got %g", p.GainDB)
+		}
+		if p, _ := (noisePreset{Type: "brown", GainDB: 999}).normalize(); p.GainDB != 20 {
+			t.Errorf("gain 999 should clamp to 20, got %g", p.GainDB)
+		}
+		if p, _ := (noisePreset{Type: "brown", GainDB: -999}).normalize(); p.GainDB != -60 {
+			t.Errorf("gain -999 should clamp to -60, got %g", p.GainDB)
+		}
+	})
+
+	t.Run("NaN and Inf fall back rather than reaching the command", func(t *testing.T) {
+		p, err := noisePreset{Type: "brown", CenterHz: math.NaN(), WaveSpeed: math.Inf(1)}.normalize()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range p.noiseArgs() {
+			if strings.Contains(a, "NaN") || strings.Contains(a, "Inf") {
+				t.Fatalf("non-finite value reached the argument vector: %v", p.noiseArgs())
+			}
+		}
+	})
+}
+
+// TestNoiseArgsAreAllNumericOrKeywords is the injection guard, stated as a
+// property rather than as escaping: every generated argument is either a known
+// SoX keyword or a plain number, so no preset value can become an argument of
+// its own however it got into the config.
+func TestNoiseArgsAreAllNumericOrKeywords(t *testing.T) {
+	keywords := map[string]bool{
+		"--buffer": true, "--no-show-progress": true, "-c": true, "--null": true,
+		"synth": true, "band": true, "-n": true, "tremolo": true, "reverb": true,
+		"repeat": true, "gain": true, "fade": true, "t": true,
+	}
+	for _, typ := range noiseTypes {
+		keywords[typ] = true
+	}
+	p, err := noisePreset{
+		Type: "brown", CenterHz: 1786, WidthHz: 499,
+		WaveSpeed: 0.08, WaveDepth: 37, Reverb: 19, GainDB: -3, FadeIn: 5,
+	}.normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range p.noiseArgs() {
+		if keywords[a] {
+			continue
+		}
+		if strings.ContainsAny(a, " ;|&$`'\"\\\n") {
+			t.Fatalf("argument %q is neither a keyword nor a plain value", a)
+		}
+		if _, err := strconv.ParseFloat(a, 64); err != nil {
+			t.Fatalf("argument %q is neither a keyword nor numeric", a)
+		}
+	}
+}
+
+func TestFindPreset(t *testing.T) {
+	cfg := defaultNoiseConfig()
+
+	t.Run("empty name uses the default", func(t *testing.T) {
+		p, err := cfg.findPreset("")
+		if err != nil || p.Name != "brown" {
+			t.Fatalf("got %q, %v; want brown", p.Name, err)
+		}
+	})
+	t.Run("case insensitive", func(t *testing.T) {
+		if p, err := cfg.findPreset("PINK"); err != nil || p.Name != "pink" {
+			t.Fatalf("got %q, %v; want pink", p.Name, err)
+		}
+	})
+	t.Run("unknown name lists what exists", func(t *testing.T) {
+		_, err := cfg.findPreset("purple")
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if !strings.Contains(err.Error(), "brown") {
+			t.Errorf("error should list the available presets, got %q", err)
+		}
+	})
+}
+
+func TestNoiseConfigRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	// No file yet → the built-in defaults, not an error.
+	cfg, err := loadNoiseConfig()
+	if err != nil {
+		t.Fatalf("load with no file: %v", err)
+	}
+	if len(cfg.Presets) != 4 {
+		t.Fatalf("expected 4 built-in presets, got %d", len(cfg.Presets))
+	}
+
+	cfg.AudioDev = "plughw:0"
+	cfg.Schedule = []noiseWindow{{Start: "20:00", End: "10:00", Days: []int{1, 2}, Preset: "brown"}}
+	cfg.Presets[0].WaveSpeed = 0.12
+	if err := saveNoiseConfig(cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	got, err := loadNoiseConfig()
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.AudioDev != "plughw:0" {
+		t.Errorf("AudioDev round trip: got %q", got.AudioDev)
+	}
+	if len(got.Schedule) != 1 || got.Schedule[0].Start != "20:00" || got.Schedule[0].End != "10:00" {
+		t.Errorf("schedule round trip: got %+v", got.Schedule)
+	}
+	if got.Presets[0].WaveSpeed != 0.12 {
+		t.Errorf("preset round trip: got %g", got.Presets[0].WaveSpeed)
+	}
+
+	// The file is written where it is documented to be.
+	p, err := noiseConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(p) != "hesplay.json" {
+		t.Errorf("config filename: got %q", filepath.Base(p))
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Errorf("config not at %s: %v", p, err)
+	}
+}
+
+// TestLoadNoiseConfigRejectsCorruptFile: silently replacing a tuned preset set
+// with the defaults would be worse than refusing to start.
+func TestLoadNoiseConfigRejectsCorruptFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	p, err := noiseConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadNoiseConfig(); err == nil {
+		t.Fatal("expected an error for a corrupt config, not a silent reset")
+	}
+}
+
+// TestNoiseEnvPinsDeviceOnlyWhenAsked: the systemd unit this replaces pinned
+// AUDIODEV=plughw:0, and SoX's default sink need not be the one mpv picks — but
+// pinning a device that doesn't exist on a laptop would be worse than not
+// pinning at all, so it is opt-in.
+func TestNoiseEnvPinsDeviceOnlyWhenAsked(t *testing.T) {
+	has := func(env []string, k string) bool {
+		for _, e := range env {
+			if strings.HasPrefix(e, k+"=") {
+				return true
+			}
+		}
+		return false
+	}
+	if env := noiseEnv(""); has(env, "AUDIODEV") {
+		t.Error("empty audioDev must not pin a device")
+	}
+	env := noiseEnv("plughw:0")
+	if !has(env, "AUDIODEV") || !has(env, "AUDIODRIVER") {
+		t.Errorf("audioDev should set both AUDIODRIVER and AUDIODEV, got %v", env[len(env)-2:])
+	}
+}
