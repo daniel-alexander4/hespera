@@ -38,8 +38,8 @@ func TestNoiseAPIGetReturnsDefaults(t *testing.T) {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
 	}
 	presets, _ := body["presets"].([]any)
-	if len(presets) != 4 {
-		t.Fatalf("expected the 4 built-in presets, got %d", len(presets))
+	if len(presets) != len(defaultNoiseConfig().Presets) {
+		t.Fatalf("expected the built-in presets, got %d", len(presets))
 	}
 	if body["default"] != "brown" {
 		t.Errorf("default preset: got %v", body["default"])
@@ -79,7 +79,7 @@ func TestNoiseAPIRejectsBadSchedule(t *testing.T) {
 	// And nothing was written: a rejected save must not half-apply.
 	_, body := doJSON(t, h, http.MethodGet, "/api/noise", "")
 	presets, _ := body["presets"].([]any)
-	if len(presets) != 4 {
+	if len(presets) != len(defaultNoiseConfig().Presets) {
 		t.Fatalf("a rejected PUT changed the stored config (%d presets)", len(presets))
 	}
 }
@@ -231,4 +231,3 @@ func TestNoiseStartRejectsUnknownPreset(t *testing.T) {
 		t.Fatal("an unknown preset started a session")
 	}
 }
-
