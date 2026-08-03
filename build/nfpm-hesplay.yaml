@@ -44,6 +44,16 @@ contents:
     dst: /usr/bin/hesplay
     file_info:
       mode: 0755
+  # Phone-remote unit — shipped inert (not enabled, no maintainer scripts, so the
+  # package stays script-free); `systemctl enable --now hesplay@<user>` is the
+  # opt-in. A template, so the instance name picks the account to run as — which
+  # matters here because that account needs access to the sound card. Enabling it
+  # is also what gives the box a noise SCHEDULE: the reconciler lives inside the
+  # --listen process.
+  - src: build/hesplay@.service
+    dst: /usr/lib/systemd/system/hesplay@.service
+    file_info:
+      mode: 0644
   # Lazy-loaded bash completion (sources the current script from the binary on
   # first Tab, so it never drifts from the CLI). Verbs complete offline; album /
   # artist / song / mix / playlist names come live from the server.
