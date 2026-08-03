@@ -91,6 +91,10 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		// check keeps the control off every other device's home screen — a LAN
 		// browser would only be refused by /poweroff anyway.
 		"ShowPowerButton": h.effectivePowerButtonEnabled(ctx) && isLoopbackRequest(r),
+		// A plain link to the hesplay box that generates noise — Hespera never
+		// talks to it, the browser does. Empty (or a non-http scheme) hides the
+		// card rather than rendering a dead one.
+		"NoiseRemoteURL": h.effectiveNoiseRemoteURL(ctx),
 	})
 }
 
