@@ -83,6 +83,17 @@ type controller struct {
 	state      nowPlaying
 	tracks     []queueTrack // the current queue in play order, for the remote's list
 	queueTitle string       // its display title, so a jump can rebuild the same queue
+	// kind is what occupies the one audio slot. Noise sessions have no actions
+	// channel (there is no transport for a waterfall), so "is something playing"
+	// has to be asked of this rather than of actions.
+	kind sessionKind
+	// noiseScheduled records whether the running noise was started by the
+	// reconciler or by a human, which decides whether a window ending stops it.
+	noiseScheduled bool
+	// noiseLatchUntil suppresses scheduled auto-start after a human stops noise
+	// mid-window. Distinct from preemption on purpose: music taking the slot
+	// must not silence the rest of the night.
+	noiseLatchUntil time.Time
 	// gen identifies the current session. A finishing loop clears the session
 	// only if it is still the current one: without that check, a queue that ends
 	// a moment after being replaced would clear its successor's state and the
@@ -176,6 +187,7 @@ func (ct *controller) retire(gen uint64) {
 		return // already replaced by a newer queue; leave its state alone
 	}
 	ct.cancel, ct.done, ct.actions = nil, nil, nil
+	ct.kind, ct.noiseScheduled = sessionNone, false
 	ct.state, ct.tracks, ct.queueTitle = nowPlaying{}, nil, ""
 	ct.paused.Store(false)
 }
@@ -188,12 +200,122 @@ func (ct *controller) stop() {
 	ct.mu.Lock()
 	cancel, done := ct.cancel, ct.done
 	ct.cancel, ct.done, ct.actions = nil, nil, nil
+	ct.kind, ct.noiseScheduled = sessionNone, false
 	ct.mu.Unlock()
 	if cancel == nil {
 		return
 	}
 	cancel()
 	<-done
+}
+
+// stopByHuman is stop() plus the manual-stop latch: stopping noise DURING a
+// scheduled window suppresses that window's remaining hours, so the reconciler
+// does not helpfully restart what someone just switched off. Preemption by a
+// queue deliberately does NOT come through here — see decideNoise.
+func (ct *controller) stopByHuman(now time.Time) {
+	ct.mu.Lock()
+	wasNoise := ct.kind == sessionNoise
+	ct.mu.Unlock()
+
+	if wasNoise {
+		if cfg, err := loadNoiseConfig(); err == nil {
+			if w, active := cfg.activeWindow(now); active {
+				if end, err := w.endsAt(now); err == nil {
+					ct.mu.Lock()
+					ct.noiseLatchUntil = end
+					ct.mu.Unlock()
+				}
+			}
+		}
+	}
+	ct.stop()
+}
+
+// startNoise puts a noise session in the audio slot. Same stop-then-start
+// discipline as a queue — the previous session is cancelled AND reaped before
+// this one begins — which is what keeps two engines off the sound card.
+func (ct *controller) startNoise(parent context.Context, pl noisePlayer, p noisePreset, audioDev string, scheduled bool) {
+	ct.stop()
+
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+
+	ct.paused.Store(false)
+	ct.mu.Lock()
+	ct.gen++
+	gen := ct.gen
+	// No actions channel: there is no next/previous for a waterfall.
+	ct.cancel, ct.done, ct.actions = cancel, done, nil
+	ct.kind, ct.noiseScheduled = sessionNoise, scheduled
+	ct.queueTitle, ct.tracks = "Noise", nil
+	ct.state = nowPlaying{
+		Queue: "Noise", Index: 1, Total: 1,
+		Title:  p.Name + " noise",
+		Artist: strings.TrimSuffix(p.Type, "noise"),
+	}
+	ct.mu.Unlock()
+
+	go func() {
+		defer close(done)
+		defer cancel()
+		defer ct.retire(gen)
+		if err := runNoise(ctx, pl, p, audioDev); err != nil && ctx.Err() == nil {
+			fmt.Println("noise ended:", err)
+		}
+	}()
+}
+
+// runtime snapshots what decideNoise needs, under one lock.
+func (ct *controller) runtime() noiseRuntime {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	return noiseRuntime{Kind: ct.kind, Scheduled: ct.noiseScheduled, LatchUntil: ct.noiseLatchUntil}
+}
+
+// reconcileNoise runs one pass of the schedule. Config is re-read every pass so
+// an edit takes effect without a restart, and because the read is a few hundred
+// bytes off local disk once every noiseTick.
+func (ct *controller) reconcileNoise(ctx context.Context, now time.Time) {
+	cfg, err := loadNoiseConfig()
+	if err != nil {
+		return // a corrupt config must not take playback down with it
+	}
+	action, w := decideNoise(cfg, now, ct.runtime())
+	switch action {
+	case noiseStartAction:
+		p, err := cfg.findPreset(w.Preset)
+		if err != nil {
+			return
+		}
+		if p, err = p.normalize(); err != nil {
+			return
+		}
+		pl, err := findNoisePlayer()
+		if err != nil {
+			return
+		}
+		ct.startNoise(ctx, pl, p, cfg.AudioDev, true)
+	case noiseStopAction:
+		ct.stop()
+	}
+}
+
+// watchNoiseSchedule is the reconciler loop. It runs a pass immediately so a
+// restart INSIDE a window recovers at once rather than at the next tick — the
+// exact case the systemd timers could not handle.
+func (ct *controller) watchNoiseSchedule(ctx context.Context) {
+	ct.reconcileNoise(ctx, time.Now())
+	t := time.NewTicker(noiseTick)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			ct.reconcileNoise(ctx, now)
+		}
+	}
 }
 
 // send pushes a transport action to the running session. Buffered depth 1 with
@@ -249,6 +371,7 @@ func (ct *controller) start(parent context.Context, q queue, shuffle bool, start
 	gen := ct.gen
 	ct.queueTitle = q.Title
 	ct.cancel, ct.done, ct.actions = cancel, done, actions
+	ct.kind = sessionQueue
 	c := ct.c
 	ct.mu.Unlock()
 
@@ -356,6 +479,11 @@ func serveControl(ctx context.Context, c *client, addr string, args []string, sh
 		}
 	}
 
+	// The noise schedule reconciles here rather than from systemd timers. Started
+	// after any command-line verb above so an explicit `hesplay --listen album X`
+	// is not immediately preempted by a window that happens to be open.
+	go ct.watchNoiseSchedule(ctx)
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ct.routes(),
@@ -458,7 +586,7 @@ func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ct.mu.Lock()
-	st, playing, base := ct.state, ct.actions != nil, ct.c.base
+	st, playing, base := ct.state, ct.kind != sessionNone, ct.c.base
 	ct.mu.Unlock()
 	// The window rides on the polled state rather than a separate endpoint: it
 	// re-centres itself as the queue advances, so the highlight can never drift
@@ -575,7 +703,7 @@ func (ct *controller) handlePause(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ct.mu.Lock()
-	playing, trackID := ct.actions != nil, ct.state.ID
+	playing, trackID := ct.kind != sessionNone, ct.state.ID
 	ct.mu.Unlock()
 	if !playing || trackID == 0 {
 		writeErr(w, http.StatusConflict, errors.New("nothing is playing"))
