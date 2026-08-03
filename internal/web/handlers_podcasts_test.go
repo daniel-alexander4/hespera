@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,9 @@ type fakeFetcher struct {
 	body      string
 	getErr    error
 	getStatus int
+	gotTerm   string
+	dir       []podcast.DirectoryResult
+	dirErr    error
 }
 
 func (f *fakeFetcher) FetchFeed(_ context.Context, rawURL string) (*podcast.Feed, error) {
@@ -47,6 +51,11 @@ func (f *fakeFetcher) Get(_ context.Context, rawURL, rangeHdr string) (*http.Res
 		Header:     http.Header{"Content-Type": {"audio/mpeg"}, "Accept-Ranges": {"bytes"}},
 		Body:       io.NopCloser(strings.NewReader(f.body)),
 	}, nil
+}
+
+func (f *fakeFetcher) SearchDirectory(_ context.Context, term string) ([]podcast.DirectoryResult, error) {
+	f.gotTerm = term
+	return f.dir, f.dirErr
 }
 
 func podcastTestHandler(t *testing.T, f *fakeFetcher) (*Handler, *fakeFetcher) {
@@ -271,5 +280,64 @@ func TestPodcastProgressIsEarnOnly(t *testing.T) {
 	_, _, done := h.loadPodcastProgress(context.Background(), epID)
 	if !done {
 		t.Fatal("re-opening a finished episode revoked its completed flag")
+	}
+}
+
+// TestPodcastExploreMarksAlreadyFollowed: subscribing is idempotent, so a
+// Follow button on a show you already have would appear to do nothing — which
+// reads as broken. The page says "following" instead.
+func TestPodcastExploreMarksAlreadyFollowed(t *testing.T) {
+	h, f := podcastTestHandler(t, &fakeFetcher{feed: sampleFeed()})
+	if _, err := h.subscribeFeed(context.Background(), "https://example.com/have.xml"); err != nil {
+		t.Fatal(err)
+	}
+	f.dir = []podcast.DirectoryResult{
+		{Name: "Have It", FeedURL: "https://example.com/have.xml"},
+		{Name: "New One", FeedURL: "https://example.com/new.xml"},
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/podcasts/explore?q=anything", nil)
+	w := httptest.NewRecorder()
+	h.podcastExplore(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	if f.gotTerm != "anything" {
+		t.Errorf("term not forwarded: %q", f.gotTerm)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "following") {
+		t.Error("an already-followed result was not marked")
+	}
+	if !strings.Contains(body, "https://example.com/new.xml") {
+		t.Error("an unfollowed result should offer its feed URL to subscribe")
+	}
+}
+
+// TestPodcastExploreWithNoQueryDoesNotSearch: landing on the page must not
+// spend a directory request on an empty term.
+func TestPodcastExploreWithNoQueryDoesNotSearch(t *testing.T) {
+	h, f := podcastTestHandler(t, nil)
+	r := httptest.NewRequest(http.MethodGet, "/podcasts/explore", nil)
+	w := httptest.NewRecorder()
+	h.podcastExplore(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	if f.gotTerm != "" {
+		t.Errorf("an empty page load searched for %q", f.gotTerm)
+	}
+}
+
+// TestPodcastExploreShowsDirectoryFailure: a directory that is down should say
+// so on the page rather than render an empty result set that looks like "no
+// such podcast".
+func TestPodcastExploreShowsDirectoryFailure(t *testing.T) {
+	h, _ := podcastTestHandler(t, &fakeFetcher{dirErr: errors.New("upstream returned 503")})
+	r := httptest.NewRequest(http.MethodGet, "/podcasts/explore?q=x", nil)
+	w := httptest.NewRecorder()
+	h.podcastExplore(w, r)
+	if !strings.Contains(w.Body.String(), "503") {
+		t.Error("the directory failure was not surfaced to the page")
 	}
 }

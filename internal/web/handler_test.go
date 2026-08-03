@@ -42,6 +42,7 @@ var stubPages = []string{
 	"photos_home.html", "photo_view.html", "photo_player.html",
 	"books_home.html", "book_view.html", "book_reader.html",
 	"audiobooks_home.html", "audiobook_player.html",
+	"podcasts_home.html", "podcast_show.html", "podcast_player.html",
 	"movies_home.html", "movie_detail.html", "movie_match_review.html", "movie_player.html",
 }
 
@@ -75,6 +76,11 @@ func stubAssetsFS() fs.FS {
 		"templates/tv_match_review.html": `{{define "content"}}` +
 			`{{if .Groups}}{{range .Groups}}<span>{{.GuessedTitle}}</span>{{end}}` +
 			`{{else}}<p>No series need review</p>{{end}}{{end}}`,
+		"templates/podcasts_home.html": `{{define "content"}}` +
+			`{{if .Error}}<p class="err">{{.Error}}</p>{{end}}` +
+			`{{range .Results}}<div>{{.Name}}` +
+			`{{if .Subscribed}}<span>following</span>{{else}}<span>{{.FeedURL}}</span>{{end}}</div>{{end}}` +
+			`{{range .Podcasts}}<span>{{.Title}}</span>{{end}}{{end}}`,
 		"templates/movie_match_review.html": `{{define "content"}}` +
 			`{{if .Groups}}{{range .Groups}}<span>{{.GuessedTitle}}</span>{{end}}` +
 			`{{else}}<p>No movies need review</p>{{end}}{{end}}`,
@@ -165,7 +171,7 @@ func TestNewValidTemplates(t *testing.T) {
 		t.Fatal("New() returned nil handler")
 	}
 	// Verify all page templates are compiled
-	expectedPages := 37
+	expectedPages := 40
 	if len(h.tpls) != expectedPages {
 		t.Fatalf("expected %d templates, got %d", expectedPages, len(h.tpls))
 	}

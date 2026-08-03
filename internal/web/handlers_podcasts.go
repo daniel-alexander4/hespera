@@ -41,6 +41,7 @@ const podcastEpisodeCap = 300
 type podcastFetcher interface {
 	FetchFeed(ctx context.Context, rawURL string) (*podcast.Feed, error)
 	Get(ctx context.Context, rawURL, rangeHdr string) (*http.Response, error)
+	SearchDirectory(ctx context.Context, term string) ([]podcast.DirectoryResult, error)
 }
 
 // podcastClient returns the fetcher, building the real guarded one on first use.
@@ -119,6 +120,75 @@ ORDER BY lower(p.title)`)
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// --- explore ---------------------------------------------------------------
+
+// podcastsHome and podcastExplore share a page; explore just fills the results.
+// A GET with a ?q= rather than a POST, so a search is linkable and survives a
+// reload — it changes nothing on the server.
+func (h *Handler) podcastExplore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	term := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	subs, err := h.loadPodcasts(r.Context())
+	if err != nil {
+		httpError(w, 500, "internal server error", "db query failed", "handler", "podcastExplore", "err", err)
+		return
+	}
+	// Which results are already subscribed, so the page can say so instead of
+	// offering a Subscribe that silently no-ops (subscribing is idempotent, but
+	// a button that appears to do nothing reads as broken).
+	have := map[string]bool{}
+	for _, u := range h.subscribedFeedURLs(r.Context()) {
+		have[u] = true
+	}
+
+	data := map[string]any{
+		"Title":    "Find podcasts",
+		"Podcasts": subs,
+		"Query":    term,
+		"Explore":  true,
+	}
+	if term != "" {
+		res, err := h.podcastClient().SearchDirectory(r.Context(), term)
+		if err != nil {
+			data["Error"] = err.Error()
+		} else {
+			rows := make([]directoryRow, 0, len(res))
+			for _, x := range res {
+				rows = append(rows, directoryRow{DirectoryResult: x, Subscribed: have[x.FeedURL]})
+			}
+			data["Results"] = rows
+			data["NoResults"] = len(rows) == 0
+		}
+	}
+	h.render(w, "podcasts_home.html", data)
+}
+
+// directoryRow is a search result plus whether it is already followed.
+type directoryRow struct {
+	podcast.DirectoryResult
+	Subscribed bool
+}
+
+func (h *Handler) subscribedFeedURLs(ctx context.Context) []string {
+	rows, err := h.db.QueryContext(ctx, "SELECT feed_url FROM podcasts")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err == nil {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // --- subscribe -------------------------------------------------------------
