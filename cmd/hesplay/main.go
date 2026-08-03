@@ -305,6 +305,14 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 		return nil
 	}
 
+	// `noise` is entirely local — it synthesizes sound, it does not stream any.
+	// Handled before the probe below on purpose: the whole point of the feature
+	// it replaces is that the box makes noise overnight whether or not the music
+	// server is up.
+	if args[0] == "noise" {
+		return cmdNoise(ctx, args[1:])
+	}
+
 	// Everything else talks to the server — verify it's really Hespera first.
 	serverVer, err := c.probe()
 	if err != nil {
