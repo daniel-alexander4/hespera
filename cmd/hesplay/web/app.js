@@ -347,12 +347,252 @@
     }
   }
 
+
+  // --- noise -------------------------------------------------------------
+  //
+  // The noise engine runs on this box, so this screen edits a config file that
+  // lives here too — nothing about it depends on the Hespera server being up,
+  // which is the point of a thing that has to make sound at 3am.
+
+  const NOISE_TYPES = ['brownnoise', 'pinknoise', 'whitenoise', 'tpdfnoise'];
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // The tuning knobs, in the order they matter to the ear. `wave` is the swell
+  // rate — the thing that makes it sound like surf rather than a fan — and
+  // `depth` is how far it swells, which is what "amplitude" meant in the script
+  // this replaces.
+  const NOISE_FIELDS = [
+    ['waveSpeed', 'Swell rate (Hz)', 0.001, 0.2, 0.001],
+    ['waveDepth', 'Swell depth (%)', 0, 100, 1],
+    ['centerHz', 'Band centre (Hz)', 20, 20000, 1],
+    ['widthHz', 'Band width (Hz)', 1, 20000, 1],
+    ['reverb', 'Reverb (%)', 0, 100, 1],
+    ['gainDb', 'Gain (dB)', -60, 20, 0.5],
+    ['fadeIn', 'Fade in (s)', 0, 300, 1],
+  ];
+
+  let noiseCfg = null;
+
+  function noiseStart(preset) {
+    api('/api/noise/start', { method: 'POST', body: JSON.stringify({ preset: preset }) })
+      .then(() => { toast(preset + ' noise'); toQueueView(); })
+      .catch((e) => toast(e.message, true));
+  }
+
+  // The home tiles: one tap per preset, no screen change. Rebuilt whenever the
+  // config is (re)read so a renamed preset can't leave a stale button behind.
+  function renderNoiseQuick() {
+    const box = $('noise-quick');
+    box.textContent = '';
+    (noiseCfg.presets || []).forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn tile';
+      b.textContent = p.name;
+      b.addEventListener('click', () => noiseStart(p.name));
+      box.appendChild(b);
+    });
+  }
+
+  function numberField(label, value, min, max, step, onInput) {
+    const wrap = document.createElement('label');
+    wrap.className = 'field';
+    const span = document.createElement('span');
+    span.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = value;
+    input.min = min;
+    input.max = max;
+    input.step = step;
+    input.addEventListener('input', () => onInput(input.value));
+    wrap.appendChild(span);
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  // One preset: a Play button and a disclosure holding its knobs. A <details>
+  // rather than a modal so the whole set stays scannable and nothing traps you.
+  function presetRow(p) {
+    const det = document.createElement('details');
+    det.className = 'preset';
+
+    const sum = document.createElement('summary');
+    const name = document.createElement('b');
+    name.textContent = p.name;
+    sum.appendChild(name);
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = p.type.replace('noise', '');
+    sum.appendChild(sub);
+    det.appendChild(sum);
+
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'btn';
+    play.appendChild(icon('play'));
+    play.append(' Play');
+    play.addEventListener('click', () => noiseStart(p.name));
+    det.appendChild(play);
+
+    const type = document.createElement('label');
+    type.className = 'field';
+    const tspan = document.createElement('span');
+    tspan.textContent = 'Colour';
+    const sel = document.createElement('select');
+    NOISE_TYPES.forEach((t) => {
+      const o = document.createElement('option');
+      o.value = t;
+      o.textContent = t.replace('noise', '');
+      if (t === p.type) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => { p.type = sel.value; sub.textContent = sel.value.replace('noise', ''); });
+    type.appendChild(tspan);
+    type.appendChild(sel);
+    det.appendChild(type);
+
+    NOISE_FIELDS.forEach(([key, label, min, max, step]) => {
+      det.appendChild(numberField(label, p[key], min, max, step, (v) => { p[key] = parseFloat(v); }));
+    });
+    return det;
+  }
+
+  function windowRow(w) {
+    const box = document.createElement('div');
+    box.className = 'win';
+
+    const times = document.createElement('div');
+    times.className = 'row';
+    ['start', 'end'].forEach((k) => {
+      const l = document.createElement('label');
+      l.className = 'field';
+      const s = document.createElement('span');
+      s.textContent = k === 'start' ? 'From' : 'To';
+      const i = document.createElement('input');
+      i.type = 'time';
+      i.value = w[k] || '';
+      i.addEventListener('input', () => { w[k] = i.value; });
+      l.appendChild(s);
+      l.appendChild(i);
+      times.appendChild(l);
+    });
+    box.appendChild(times);
+
+    const pl = document.createElement('label');
+    pl.className = 'field';
+    const ps = document.createElement('span');
+    ps.textContent = 'Preset';
+    const sel = document.createElement('select');
+    (noiseCfg.presets || []).forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.name;
+      o.textContent = p.name;
+      if (p.name === w.preset) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => { w.preset = sel.value; });
+    if (!w.preset && sel.options.length) w.preset = sel.value;
+    pl.appendChild(ps);
+    pl.appendChild(sel);
+    box.appendChild(pl);
+
+    // No days ticked means every day, which is both the common case and what
+    // the server reads an empty list as — so the boxes start clear.
+    const days = document.createElement('div');
+    days.className = 'days';
+    DAY_NAMES.forEach((nm, idx) => {
+      const l = document.createElement('label');
+      l.className = 'day';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = (w.days || []).indexOf(idx) >= 0;
+      cb.addEventListener('change', () => {
+        const set = new Set(w.days || []);
+        if (cb.checked) set.add(idx); else set.delete(idx);
+        w.days = Array.from(set).sort((a, b) => a - b);
+      });
+      l.appendChild(cb);
+      l.append(nm);
+      days.appendChild(l);
+    });
+    box.appendChild(days);
+
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn';
+    rm.textContent = 'Remove';
+    rm.addEventListener('click', () => {
+      noiseCfg.schedule = noiseCfg.schedule.filter((x) => x !== w);
+      renderNoiseScreen();
+    });
+    box.appendChild(rm);
+    return box;
+  }
+
+  function renderNoiseScreen() {
+    const presets = $('noise-presets');
+    presets.textContent = '';
+    (noiseCfg.presets || []).forEach((p) => presets.appendChild(presetRow(p)));
+
+    const wins = $('noise-windows');
+    wins.textContent = '';
+    (noiseCfg.schedule || []).forEach((w) => wins.appendChild(windowRow(w)));
+  }
+
+  // The home tiles need the preset names at boot, without opening the screen.
+  // Failure is quiet: a box with no sox still plays music, and an error toast on
+  // every load would be noise of the wrong kind.
+  async function loadNoiseQuick() {
+    try {
+      noiseCfg = await api('/api/noise');
+      noiseCfg.presets = noiseCfg.presets || [];
+      noiseCfg.schedule = noiseCfg.schedule || [];
+      $('noise-sec').hidden = noiseCfg.available === false;
+      renderNoiseQuick();
+    } catch (_) { /* leave the section as it is */ }
+  }
+
+  // Read the config fresh every time the screen opens. It is also written by the
+  // CLI, so a cached copy could silently overwrite an edit made over ssh.
+  async function openNoise() {
+    try {
+      noiseCfg = await api('/api/noise');
+      noiseCfg.presets = noiseCfg.presets || [];
+      noiseCfg.schedule = noiseCfg.schedule || [];
+      $('noise-unavailable').hidden = noiseCfg.available !== false;
+      renderNoiseQuick();
+      renderNoiseScreen();
+      push('noise', 'Noise');
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
+  async function saveNoise() {
+    $('noise-msg').textContent = '';
+    try {
+      await api('/api/noise', {
+        method: 'PUT',
+        body: JSON.stringify({
+          audioDev: noiseCfg.audioDev || '',
+          default: noiseCfg.default || '',
+          presets: noiseCfg.presets,
+          schedule: noiseCfg.schedule,
+        }),
+      });
+      $('noise-msg').textContent = 'Saved';
+      renderNoiseQuick();
+    } catch (e) {
+      $('noise-msg').textContent = e.message;
+    }
+  }
+
   // --- browse ------------------------------------------------------------
   //
   // A three-deep stack (browse → artist → album) rather than a router: there is
   // no URL to keep in sync, and Back only ever means "the screen I came from".
 
-  const SCREENS = ['home', 'browse', 'artist', 'album'];
+  const SCREENS = ['home', 'browse', 'artist', 'album', 'noise'];
   let stack = ['home'];
   let current = { artistId: 0, artistName: '', albumId: 0, albumTitle: '' };
 
@@ -380,7 +620,7 @@
   function pop() {
     if (stack.length > 1) stack.pop();
     const top = stack[stack.length - 1];
-    const titles = { home: 'hesplay', browse: 'Artists', artist: current.artistName, album: current.albumTitle };
+    const titles = { home: 'hesplay', browse: 'Artists', artist: current.artistName, album: current.albumTitle, noise: 'Noise' };
     showScreen(top, titles[top]);
   }
 
@@ -595,7 +835,15 @@
     $('next').addEventListener('click', () => action('/api/next'));
     $('stop').addEventListener('click', () => action('/api/stop'));
 
+    $('noise-more').addEventListener('click', openNoise);
+    $('noise-save').addEventListener('click', saveNoise);
+    $('noise-add-window').addEventListener('click', () => {
+      noiseCfg.schedule.push({ start: '20:00', end: '10:00', days: [], preset: noiseCfg.default || '' });
+      renderNoiseScreen();
+    });
+
     loadPlaylists();
+    loadNoiseQuick();
     loadLetters();
     refresh();
     setInterval(refresh, POLL_MS);
