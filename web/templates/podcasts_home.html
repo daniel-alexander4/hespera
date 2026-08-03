@@ -1,0 +1,53 @@
+{{define "content"}}
+<h2 class="section-title">Podcasts</h2>
+
+{{/* Subscribe by URL. Deliberately the first thing on the page and always
+     present: it is the only discovery route that works for every feed, and it
+     needs no provider, no key and no network round trip to render. */}}
+<form method="post" action="/podcasts/subscribe" class="form-card podcast-subscribe">
+  <div class="form-group">
+    <label for="feed_url">Add a podcast by feed URL</label>
+    <input type="url" id="feed_url" name="feed_url" class="form-control"
+           placeholder="https://example.com/feed.xml" inputmode="url"
+           autocomplete="off" autocapitalize="off" spellcheck="false" required />
+    <small class="form-help">
+      Paste an RSS feed address. Hespera fetches it once to read the show and its
+      episodes; nothing is downloaded and no audio is stored.
+    </small>
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Subscribe</button>
+    {{if .Error}}<span class="form-error">{{.Error}}</span>{{end}}
+  </div>
+</form>
+
+{{if .Podcasts}}
+<div class="band-albums-grid podcast-grid">
+  {{range .Podcasts}}
+  <a href="/podcasts/show?id={{.ID}}" class="band-album-card band-album-card--poster podcast-card" title="{{.Title}}">
+    <div class="band-album-art">
+      {{/* Hotlinked, never downloaded — the same call the un-owned TMDB posters
+           make, with the same no-referrer so the show's host learns nothing
+           about who is looking. */}}
+      {{if .ImageURL}}
+      <img src="{{.ImageURL}}" alt="{{.Title}}" loading="lazy" referrerpolicy="no-referrer" />
+      {{else}}
+      <div class="album-art-ph">{{template "icon-radio"}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Title}}</div>
+      <div class="artist-card-stats">
+        {{.Author}}{{if and .Author .Episodes}} · {{end}}{{if .Episodes}}{{.Episodes}} episodes{{end}}
+      </div>
+      {{if .LastErr}}<div class="artist-card-stats podcast-stale">last refresh failed</div>{{end}}
+    </div>
+  </a>
+  {{end}}
+</div>
+{{else}}
+<div class="empty-state">
+  <p>No podcasts yet. Paste a feed URL above to subscribe to one.</p>
+</div>
+{{end}}
+{{end}}

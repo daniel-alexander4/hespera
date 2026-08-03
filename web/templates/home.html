@@ -129,6 +129,14 @@
     <h3>{{template "icon-headphones"}}Audiobooks</h3>
     <p>Listen to your audiobooks</p>
   </a>
+  {{if .HasPodcasts}}
+  {{/* Not a library of files you own — it reaches outward. Shown only once
+       something is subscribed; the way in before that is the Podcasts page. */}}
+  <a href="/podcasts" class="card">
+    <h3>{{template "icon-radio"}}Podcasts</h3>
+    <p>Follow shows and listen to episodes</p>
+  </a>
+  {{end}}
   {{if .NoiseRemoteURL}}
   {{/* Not a library, so it is deliberately last. It links OUT to the hesplay
        box that owns the speakers and the schedule — that box makes the sound,

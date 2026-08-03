@@ -2761,3 +2761,69 @@ code {
 .audiobook-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 0.25rem; background: rgba(0,0,0,0.45); }
 .audiobook-progress > span { display: block; height: 100%; background: var(--accent); }
 .audiobook-done { position: absolute; top: 0.35rem; right: 0.35rem; background: var(--accent); color: var(--bg-deep); border-radius: 999px; width: 1.4rem; height: 1.4rem; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+
+/* --- podcasts -------------------------------------------------------------
+   The one vertical whose art is hotlinked rather than served from disk, so
+   these boxes size the image rather than a known-dimension thumbnail. */
+.podcast-subscribe { margin-bottom: 1.5rem; }
+.podcast-header { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.podcast-cover { width: 180px; height: 180px; object-fit: cover; border-radius: 10px; background: var(--surface-1); }
+.podcast-headmeta { flex: 1 1 320px; min-width: 0; }
+.podcast-author { color: var(--text-muted); margin: 0 0 0.5rem; }
+.podcast-desc { color: var(--text-muted); margin: 0 0 0.9rem; max-width: 70ch; }
+.podcast-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.podcast-actions form { margin: 0; }
+.podcast-stale { color: var(--danger, #f38ba8); font-size: 0.85rem; }
+
+.podcast-episodes { list-style: none; margin: 0; padding: 0; }
+.podcast-episode { margin-bottom: 0.5rem; }
+.podcast-episode-open {
+  display: grid; gap: 0.2rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--surface-1); border-radius: 10px;
+  background: var(--surface-0); color: inherit; text-decoration: none;
+}
+.podcast-episode-open:hover, .podcast-episode-open:focus-visible { background: var(--surface-1); }
+.podcast-episode-title { font-weight: 600; overflow-wrap: anywhere; }
+.podcast-episode-sub { font-size: 0.8rem; color: var(--text-muted); }
+/* Show notes are marketing prose and can run for paragraphs; two lines is
+   enough to tell episodes apart without the list becoming a wall. */
+.podcast-episode-desc {
+  font-size: 0.85rem; color: var(--text-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.podcast-episode-progress { height: 3px; border-radius: 2px; background: var(--surface-1); overflow: hidden; margin-top: 0.35rem; }
+.podcast-episode-progress > span { display: block; height: 100%; background: var(--accent); }
+
+/* --- podcasts -------------------------------------------------------------
+   The one vertical whose art is hotlinked rather than served from disk, so
+   these boxes size the image themselves rather than a known-dimension thumb. */
+.podcast-subscribe { margin-bottom: 1.5rem; }
+.podcast-header { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.podcast-cover { width: 180px; height: 180px; object-fit: cover; border-radius: 10px; background: var(--surface-raised); }
+.podcast-headmeta { flex: 1 1 320px; min-width: 0; }
+.podcast-author { color: var(--text-muted); margin: 0 0 0.5rem; }
+.podcast-desc { color: var(--text-muted); margin: 0 0 0.9rem; max-width: 70ch; }
+.podcast-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.podcast-actions form { margin: 0; }
+.podcast-stale { color: var(--danger); font-size: 0.85rem; }
+
+.podcast-episodes { list-style: none; margin: 0; padding: 0; }
+.podcast-episode { margin-bottom: 0.5rem; }
+.podcast-episode-open {
+  display: grid; gap: 0.2rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-default); border-radius: 10px;
+  background: var(--surface-card); color: inherit; text-decoration: none;
+}
+.podcast-episode-open:hover, .podcast-episode-open:focus-visible { background: var(--surface-raised); }
+.podcast-episode-title { font-weight: 600; overflow-wrap: anywhere; }
+.podcast-episode-sub { font-size: 0.8rem; color: var(--text-muted); }
+/* Show notes are marketing prose and can run for paragraphs; two lines is
+   enough to tell episodes apart without the list becoming a wall. */
+.podcast-episode-desc {
+  font-size: 0.85rem; color: var(--text-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.podcast-episode-progress { height: 3px; border-radius: 2px; background: var(--border-default); overflow: hidden; margin-top: 0.35rem; }
+.podcast-episode-progress > span { display: block; height: 100%; background: var(--accent); }

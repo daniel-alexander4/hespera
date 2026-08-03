@@ -95,6 +95,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		// talks to it, the browser does. Empty (or a non-http scheme) hides the
 		// card rather than rendering a dead one.
 		"NoiseRemoteURL": h.effectiveNoiseRemoteURL(ctx),
+		"HasPodcasts":    h.hasPodcasts(ctx),
 	})
 }
 

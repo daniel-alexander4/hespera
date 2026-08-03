@@ -35,6 +35,21 @@ function mediaPlayerConfig(kind) {
       subtitleFetchURL: '/audiobook/subtitles/fetch',
     };
   }
+  if (kind === 'podcast') {
+    // A remote episode. There is no local file, so no probe, no decision layer
+    // and no progressive remux — the source is always a direct proxy stream, so
+    // progressiveRe matches nothing and the ?start= reload path never engages.
+    // Subtitle URLs are defined but unused, the same way the audiobook kind
+    // defines them, so the dialog code never sees undefined.
+    return {
+      sessionURL: '/podcast/playback-session',
+      progressURL: '/podcast/playback-progress',
+      playerURL: '/podcast/player',
+      progressiveRe: /(?!)/,
+      subtitleSearchURL: '/podcast/subtitles/search',
+      subtitleFetchURL: '/podcast/subtitles/fetch',
+    };
+  }
   if (kind === 'movie') {
     return {
       sessionURL: '/movie/playback-session',

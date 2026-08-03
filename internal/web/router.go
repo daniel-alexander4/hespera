@@ -163,6 +163,18 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("/audiobooks", h.audiobooksHome)
 	mux.HandleFunc("/audiobook/player", h.audiobookPlayer)
 	mux.HandleFunc("/audiobook/playback-session", h.audiobookPlaybackSession)
+
+	// Podcasts. No library routes and no scan endpoint — nothing here is a file
+	// on disk, so there is nothing to scan.
+	mux.HandleFunc("/podcasts", h.podcastsHome)
+	mux.HandleFunc("/podcasts/subscribe", h.podcastSubscribe)
+	mux.HandleFunc("/podcasts/unsubscribe", h.podcastUnsubscribe)
+	mux.HandleFunc("/podcasts/refresh", h.podcastRefresh)
+	mux.HandleFunc("/podcasts/show", h.podcastShow)
+	mux.HandleFunc("/podcast/player", h.podcastPlayer)
+	mux.HandleFunc("/podcast/playback-session", h.podcastPlaybackSession)
+	mux.HandleFunc("/podcast/playback-progress", h.podcastPlaybackProgress)
+	mux.HandleFunc("/stream/episode/", h.streamPodcastEpisode)
 	mux.HandleFunc("/audiobook/playback-progress", h.audiobookPlaybackProgress)
 	mux.HandleFunc("/stream/audiobook/", h.streamAudiobookDirect)
 	mux.HandleFunc("/stream/audiobook-remux/", h.streamAudiobookRemux)
