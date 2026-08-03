@@ -141,10 +141,8 @@ func TestEnrichArtistsRecheckTTL(t *testing.T) {
 			t.Fatal(err)
 		}
 		id, _ := res.LastInsertId()
-		// enrichArtists only sees artists that own an album.
-		if _, err := db.Exec(`INSERT INTO music_albums (library_id,artist_id,album_artist_id,title,year) VALUES (?,?,?,?,0)`, libID, id, id, name+" LP"); err != nil {
-			t.Fatal(err)
-		}
+		// No album needed: enrichArtists is library-wide, so a bare artist row is
+		// a candidate. TestEnrichArtistsReachesTrackOnlyArtists pins that directly.
 		return id
 	}
 	seed("Fresh", freshStamp)
