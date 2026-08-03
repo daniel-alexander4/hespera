@@ -1,0 +1,41 @@
+# hesplay phone remote — a systemd TEMPLATE unit: the instance name is the
+# account to run as (`systemctl enable --now hesplay@dan`). Shipped by the .deb
+# but never enabled by default, so installing hesplay opens no port until asked.
+#
+# Same shape as hespera@.service, and for the same reasons: a system template
+# rather than a --user unit, because a user unit on a headless box needs
+# `loginctl enable-linger` to survive logout and every later `systemctl --user`
+# over SSH needs the XDG_RUNTIME_DIR dance.
+#
+# Why a unit at all, when hesplay is a foreground CLI: its transport keys need a
+# terminal, and under systemd there is none, so the keys switch themselves off.
+# That is exactly the case --listen exists for — the phone remote replaces them.
+# It is also what makes the noise SCHEDULE work: the reconciler lives inside the
+# --listen process, so a box with no long-running hesplay has no schedule.
+#
+# The account must be able to open the sound card (usually: in the `audio`
+# group). Config lives in /etc/default/hesplay — deliberately not a per-user
+# ~/.config file, since %h in a system unit expands to root's home rather than
+# User=%i's. The upstream Hespera comes from the saved default the account wrote
+# with `hesplay server <url>`, so the server is configured in one place.
+#
+# HESPLAY_LISTEN defaults to :8090 (the port the README and the .deb's docs
+# use). Override it in /etc/default/hesplay — bind it on a network you would
+# already trust with the speakers, since the remote has no authentication.
+
+[Unit]
+Description=hesplay phone remote (%i)
+Documentation=https://github.com/daniel-alexander4/hespera
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+User=%i
+Environment=HESPLAY_LISTEN=:8090
+EnvironmentFile=-/etc/default/hesplay
+ExecStart=/usr/bin/hesplay --listen ${HESPLAY_LISTEN}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

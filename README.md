@@ -251,6 +251,28 @@ hesplay --listen :8090                     # serve the remote and wait
 hesplay --listen :8090 playlist road trip  # …and start playing right away
 ```
 
+**Leaving it running.** The .deb ships a systemd **template** unit, disabled — so
+installing hesplay opens no port until you ask:
+
+```sh
+sudo systemctl enable --now hesplay@$USER   # serve the remote on :8090, now and at boot
+```
+
+The instance name is the account to run as, and that account needs access to the
+sound card (usually: membership of the `audio` group). Override the port in
+`/etc/default/hesplay` (`HESPLAY_LISTEN=:9000`); the upstream Hespera comes from
+the default that account saved with `hesplay server <url>`.
+
+Enabling it is also what gives the box a **noise schedule** — the reconciler
+lives inside the `--listen` process, so a box with no long-running hesplay has
+presets but no windows.
+
+**A box running Hespera gets hesplay too.** The hespera package *recommends* it,
+which apt installs by default, because hesplay is what plays or generates audio
+on that machine's own speakers — and it is what Hespera's home-screen **Noise**
+card points at. It is only a recommendation: Hespera is a media server and works
+fully without it, and installing it starts nothing.
+
 The music comes out of **that box's** speakers, not the phone's — the phone only
 sends the buttons, so locking it, switching apps, or walking out of range stops
 nothing. The app's one setting is which Hespera to stream from, and saving it

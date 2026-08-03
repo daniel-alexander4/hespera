@@ -28,6 +28,18 @@ depends:
 # desktop, so this is a Recommends, not a Depends.
 recommends:
   - xdotool
+  # hesplay is a separate package (a client box installs it alone), but a box
+  # running Hespera should get one too: it is what plays or generates audio on
+  # THAT machine's own speakers, and it is what the home screen's Noise card
+  # points at. Recommends rather than Depends — Hespera is a media server and
+  # works fully without it — but apt installs Recommends by default, so a normal
+  # install has one. Installing it starts nothing: the unit it ships is inert.
+  #
+  # This also stops a server deploy from REMOVING hesplay. Hespera .debs before
+  # 0.39.4 shipped /usr/bin/hesplay themselves; since it moved to its own package
+  # nothing declared the relationship, so the next `install.sh remote` would have
+  # dropped it from a box that had it.
+  - hesplay
 contents:
   - src: dist/hespera
     dst: /usr/bin/hespera
