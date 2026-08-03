@@ -409,10 +409,19 @@ func (m *Matcher) enrichArtists(ctx context.Context, jobID, libraryID int64, for
 	if force {
 		cutoff = forceCutoff
 	}
+	// The candidate set is every artist in the library, NOT just those owning an
+	// album. This phase is the only writer of music_artists.musicbrainz_id, and
+	// both phases downstream (fetchPopularity, fetchSimilarArtists) select on
+	// `musicbrainz_id != ''` with no album join — so an album-artist join here
+	// silently gated the whole chain, Instant Mix included. Two large groups own
+	// no album row and were unreachable: guest artists credited per-track on a
+	// various-artists compilation, and split-artist spellings whose albums are
+	// owned by a differently-tagged variant (a real library carried "Queensryche"
+	// with 162 tracks and no albums beside "Queensrÿche" with the albums). They
+	// were 369 of 991 artists, and 0 of them had an MBID.
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT DISTINCT ar.id, ar.name, ar.musicbrainz_id, ar.bio, ar.art_path
+		SELECT ar.id, ar.name, ar.musicbrainz_id, ar.bio, ar.art_path
 		FROM music_artists ar
-		JOIN music_albums al ON al.album_artist_id = ar.id
 		WHERE ar.library_id = ?
 		  AND ar.name NOT IN ('Unknown Artist', 'Various Artists')
 		  AND (ar.enrich_checked_at = '' OR ar.enrich_checked_at < ?)
