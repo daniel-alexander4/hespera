@@ -1,5 +1,52 @@
 {{define "content"}}
-<h2 class="section-title">Podcasts</h2>
+<h2 class="section-title">{{if .Explore}}Find podcasts{{else}}Podcasts{{end}}</h2>
+
+{{/* Directory search. A GET, so a search is linkable and survives a reload —
+     it changes nothing here. Apple's index is keyless, which is why it is the
+     one that works on a fresh install with nothing configured. */}}
+<form method="get" action="/podcasts/explore" class="form-card podcast-search">
+  <div class="form-group">
+    <label for="q">Search Apple&rsquo;s podcast directory</label>
+    <input type="search" id="q" name="q" class="form-control" value="{{.Query}}"
+           placeholder="Show name, host, or topic" autocomplete="off" />
+  </div>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Search</button>
+    {{if .Explore}}<a class="btn" href="/podcasts">Back to my podcasts</a>{{end}}
+  </div>
+</form>
+
+{{if .Results}}
+<div class="band-albums-grid podcast-grid">
+  {{range .Results}}
+  <div class="band-album-card band-album-card--poster podcast-card">
+    <div class="band-album-art">
+      {{if .ImageURL}}
+      <img src="{{.ImageURL}}" alt="{{.Name}}" loading="lazy" referrerpolicy="no-referrer" />
+      {{else}}
+      <div class="album-art-ph">{{template "icon-radio"}}</div>
+      {{end}}
+    </div>
+    <div class="band-album-meta">
+      <div class="artist-card-name">{{.Name}}</div>
+      <div class="artist-card-stats">
+        {{.Author}}{{if and .Author .Episodes}} &middot; {{end}}{{if .Episodes}}{{.Episodes}} episodes{{end}}
+      </div>
+      {{if .Subscribed}}
+      <div class="artist-card-stats podcast-have">&#10003; following</div>
+      {{else}}
+      <form method="post" action="/podcasts/subscribe">
+        <input type="hidden" name="feed_url" value="{{.FeedURL}}" />
+        <button type="submit" class="btn btn-primary podcast-follow">Follow</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else if .NoResults}}
+<div class="empty-state"><p>Nothing found for &ldquo;{{.Query}}&rdquo;.</p></div>
+{{end}}
 
 {{/* Subscribe by URL. Deliberately the first thing on the page and always
      present: it is the only discovery route that works for every feed, and it
@@ -21,7 +68,9 @@
   </div>
 </form>
 
+{{if .Explore}}{{else}}
 {{if .Podcasts}}
+<h3 class="section-title">Following</h3>
 <div class="band-albums-grid podcast-grid">
   {{range .Podcasts}}
   <a href="/podcasts/show?id={{.ID}}" class="band-album-card band-album-card--poster podcast-card" title="{{.Title}}">
@@ -47,7 +96,8 @@
 </div>
 {{else}}
 <div class="empty-state">
-  <p>No podcasts yet. Paste a feed URL above to subscribe to one.</p>
+  <p>No podcasts yet. Search above, or paste a feed URL directly.</p>
 </div>
+{{end}}
 {{end}}
 {{end}}

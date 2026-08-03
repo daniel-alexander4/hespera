@@ -167,6 +167,7 @@ func (h *Handler) Router() http.Handler {
 	// Podcasts. No library routes and no scan endpoint — nothing here is a file
 	// on disk, so there is nothing to scan.
 	mux.HandleFunc("/podcasts", h.podcastsHome)
+	mux.HandleFunc("/podcasts/explore", h.podcastExplore)
 	mux.HandleFunc("/podcasts/subscribe", h.podcastSubscribe)
 	mux.HandleFunc("/podcasts/unsubscribe", h.podcastUnsubscribe)
 	mux.HandleFunc("/podcasts/refresh", h.podcastRefresh)

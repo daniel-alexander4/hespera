@@ -2827,3 +2827,6 @@ code {
 }
 .podcast-episode-progress { height: 3px; border-radius: 2px; background: var(--border-default); overflow: hidden; margin-top: 0.35rem; }
 .podcast-episode-progress > span { display: block; height: 100%; background: var(--accent); }
+.podcast-search { margin-bottom: 1rem; }
+.podcast-follow { width: 100%; margin-top: 0.4rem; }
+.podcast-have { color: var(--accent); }
