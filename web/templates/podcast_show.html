@@ -1,0 +1,51 @@
+{{define "content"}}
+<div class="podcast-header">
+  {{if .Podcast.ImageURL}}
+  <img class="podcast-cover" src="{{.Podcast.ImageURL}}" alt="{{.Podcast.Title}}" referrerpolicy="no-referrer" />
+  {{end}}
+  <div class="podcast-headmeta">
+    <h2 class="section-title">{{.Podcast.Title}}</h2>
+    {{if .Podcast.Author}}<p class="podcast-author">{{.Podcast.Author}}</p>{{end}}
+    {{if .Description}}<p class="podcast-desc">{{.Description}}</p>{{end}}
+    <div class="podcast-actions">
+      <form method="post" action="/podcasts/refresh">
+        <input type="hidden" name="id" value="{{.Podcast.ID}}" />
+        <button type="submit" class="btn">Check for new episodes</button>
+      </form>
+      <form method="post" action="/podcasts/unsubscribe"
+            onsubmit="return confirm('Unsubscribe from {{.Podcast.Title}}? Your place in each episode is forgotten too.');">
+        <input type="hidden" name="id" value="{{.Podcast.ID}}" />
+        <button type="submit" class="btn">Unsubscribe</button>
+      </form>
+      {{if .Link}}<a class="btn" href="{{.Link}}" target="_blank" rel="noopener noreferrer">Show website</a>{{end}}
+    </div>
+    {{if .Podcast.LastErr}}
+    <p class="podcast-stale">Last refresh failed: {{.Podcast.LastErr}}</p>
+    {{end}}
+  </div>
+</div>
+
+<h3 class="section-title">Episodes</h3>
+{{if .Episodes}}
+<ol class="podcast-episodes">
+  {{range .Episodes}}
+  <li class="podcast-episode">
+    <a class="podcast-episode-open" href="/podcast/player?file={{.ID}}">
+      <span class="podcast-episode-title">{{.Title}}</span>
+      <span class="podcast-episode-sub">
+        {{if .Published}}{{.Published}}{{end}}
+        {{if .Duration}} · {{.DurationText}}{{end}}
+        {{if .Completed}} · ✓ played{{end}}
+      </span>
+      {{if .Description}}<span class="podcast-episode-desc">{{.Description}}</span>{{end}}
+      {{if and .ProgressPct (not .Completed)}}
+      <span class="podcast-episode-progress"><span style="width: {{.ProgressPct}}%"></span></span>
+      {{end}}
+    </a>
+  </li>
+  {{end}}
+</ol>
+{{else}}
+<div class="empty-state"><p>This feed has no playable episodes.</p></div>
+{{end}}
+{{end}}

@@ -67,6 +67,11 @@ type Handler struct {
 	// lookup.
 	appMode        bool
 	displayClassAt func(ctx context.Context, x, y int) string
+	// podcasts is the outbound fetcher for feeds and episode audio. A field so
+	// tests can stub it: this is the only subsystem that contacts a host the
+	// user supplied, so a test that reached the real one would make a live
+	// request to whatever a fixture named. nil → the real guarded client.
+	podcasts podcastFetcher
 	// powerOff halts the machine (the home screen's power button → POST
 	// /poweroff). A field so tests can stub it — a test that reached the real
 	// systemctl would halt the machine running the suite.

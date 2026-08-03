@@ -382,6 +382,61 @@ CREATE TABLE IF NOT EXISTS audiobook_playback_progress (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Podcasts. Deliberately NOT a library: there is no library_id, no abs_path and
+-- no scanner, because nothing here is a file on disk. A podcast is a remote
+-- feed, and an episode is a URL that feed handed us — which is why feed_url
+-- carries the UNIQUE (subscribing twice to the same feed is idempotent) and why
+-- episodes key on the feed's own guid rather than on anything local.
+CREATE TABLE IF NOT EXISTS podcasts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  feed_url TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  author TEXT NOT NULL DEFAULT '',
+  link TEXT NOT NULL DEFAULT '',
+  -- Hotlinked, never downloaded: the same call the un-owned TMDB posters make.
+  -- No bytes on disk means nothing for thumbgc to reap and no cache to
+  -- invalidate when a show changes its art.
+  image_url TEXT NOT NULL DEFAULT '',
+  last_fetched_at TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS podcast_episodes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  podcast_id INTEGER NOT NULL REFERENCES podcasts(id) ON DELETE CASCADE,
+  -- The feed's identity for this episode. A refresh upserts on it, so a show
+  -- that rewrites its titles or re-hosts its audio does not duplicate itself.
+  guid TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  audio_url TEXT NOT NULL,
+  audio_type TEXT NOT NULL DEFAULT '',
+  audio_bytes INTEGER NOT NULL DEFAULT 0,
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
+  -- Empty when the feed had no parseable date: sorts to the bottom rather than
+  -- posing as the newest episode, which defaulting to now() would do.
+  published_at TEXT NOT NULL DEFAULT '',
+  episode_no INTEGER NOT NULL DEFAULT 0,
+  season_no INTEGER NOT NULL DEFAULT 0,
+  image_url TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(podcast_id, guid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_podcast_episodes_podcast ON podcast_episodes(podcast_id, published_at DESC);
+
+-- Same shape as the other four verticals' progress tables, including the
+-- earn-only completed rule enforced at the upsert.
+CREATE TABLE IF NOT EXISTS podcast_playback_progress (
+  episode_id INTEGER PRIMARY KEY REFERENCES podcast_episodes(id) ON DELETE CASCADE,
+  position_seconds REAL NOT NULL DEFAULT 0,
+  duration_seconds REAL NOT NULL DEFAULT 0,
+  completed INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS scan_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   library_id INTEGER NOT NULL DEFAULT 0,

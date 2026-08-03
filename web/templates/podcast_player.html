@@ -1,0 +1,42 @@
+{{define "content"}}
+{{/* Podcast player — the audiobook player shell with a remote source.
+     media_player.js derives its endpoints from data-media-kind="podcast", so
+     speed control, resume-to-the-second and the transport come from the same
+     controller the other four verticals use. The <video> element renders no
+     frames; the show art sits behind the overlay as the visual.
+
+     No prev/next file: an episode list is not a queue, and |< restarts in
+     place the way it does for a standalone audiobook. */}}
+<div class="tv-player-page">
+  <div class="tv-player-header">
+    <h1><a href="/podcasts/show?id={{.PodcastID}}" class="btn btn-head">{{.Episode}}</a></h1>
+    {{if .Show}}<h2>{{.Show}}</h2>{{end}}
+  </div>
+
+  <div class="tv-player-video-wrap audiobook-wrap" id="tvPlayerWrap">
+    {{if .ImageURL}}
+    {{/* Hotlinked with no referrer: the art is the show's own, and there is no
+         reason for its host to learn which episode is being played. */}}
+    <img class="audiobook-player-cover" src="{{.ImageURL}}" alt="{{.Show}}" referrerpolicy="no-referrer" />
+    {{else}}
+    <div class="audiobook-player-cover album-art-ph">{{template "icon-radio"}}</div>
+    {{end}}
+    <video id="tvVideo" class="tv-video" autoplay
+           data-media-kind="podcast"
+           data-file-id="{{.EpisodeID}}"
+           data-prev-file="0"
+           data-next-file="0">
+      Your browser does not support audio playback.
+    </video>
+    <div class="media-overlay" id="mediaOverlay">
+      {{template "media-seekbar" .}}
+      {{template "media-transport" .}}
+      {{template "media-controls" .}}
+    </div>
+  </div>
+
+</div>
+{{end}}
+
+{{/* Same Turbo cached-preview opt-out as the other players. */}}
+{{define "headmeta"}}<meta name="turbo-cache-control" content="no-preview">{{end}}
