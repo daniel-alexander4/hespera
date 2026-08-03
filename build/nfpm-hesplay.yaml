@@ -12,11 +12,22 @@ maintainer: Dan <daniel@alexander4.org>
 description: |
   hesplay — LAN music player for Hespera. Plays music from a Hespera server on
   this machine's speakers: albums, artists, playlists, and radio mixes, with the
-  server's per-track volume leveling applied. Built for headless boxes.
+  server's per-track volume leveling applied. Also generates ambient noise
+  (brown/pink/white) on a schedule, as a sleep aid. Built for headless boxes.
 # A playback engine is required: mpv (preferred — best headless behavior) or
 # ffplay, which ships inside ffmpeg. apt installs mpv when neither is present.
 depends:
   - mpv | ffmpeg
+# sox provides `play`, which generates the ambient noise. Recommends rather than
+# Depends: without it the package's primary job — playing music — is completely
+# unaffected, and the noise feature degrades honestly (the CLI names the missing
+# package, the phone remote hides the section rather than offering a control
+# that can only fail). apt installs Recommends by default, so a normal install
+# still gets it; only a deliberate --no-install-recommends opts out, and that
+# user gets a clear message rather than a mystery. Same call as xdotool in the
+# hespera package.
+recommends:
+  - sox
 # hespera .debs before 0.39.4 shipped /usr/bin/hesplay themselves; Replaces lets
 # this package take the file over cleanly on a box upgrading from one of those.
 replaces:
