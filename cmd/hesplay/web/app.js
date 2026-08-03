@@ -628,8 +628,11 @@
     showScreen(top, titles[top]);
   }
 
-  // One row: a label that opens the next level, plus play and shuffle for it.
-  function itemRow(label, sub, onOpen, onPlay, onShuffle) {
+  // One row: a label that opens the next level, plus play and shuffle for it,
+  // and optionally a mix. Mix is optional because this row is shared with the
+  // album list, and a mix is seeded from an ARTIST — there is no album mix to
+  // offer, so passing nothing leaves the row at two actions.
+  function itemRow(label, sub, onOpen, onPlay, onShuffle, onMix) {
     const wrap = document.createElement('div');
     wrap.className = 'row-item';
 
@@ -658,6 +661,17 @@
     s.addEventListener('click', onShuffle);
 
     wrap.append(open, p, s);
+
+    if (onMix) {
+      const m = document.createElement('button');
+      m.type = 'button'; m.className = 'btn go'; m.appendChild(icon('radio'));
+      m.setAttribute('aria-label', 'Mix ' + label);
+      m.title = 'This artist plus similar artists';
+      m.addEventListener('click', onMix);
+      wrap.appendChild(m);
+      // Three actions need a fourth column; the CSS default is two.
+      wrap.classList.add('row-item--3');
+    }
     return wrap;
   }
 
@@ -711,6 +725,10 @@
         () => openArtist(a.id, a.name),
         () => play('artist', a.id, false),
         () => play('artist', a.id, true),
+        // Not shuffled: a mix is the server's own weighted draw with the seed
+        // track first, so shuffling it again would throw the seed away — the
+        // same reasoning as the artist screen's Mix button.
+        () => play('mix', a.id, false),
       )));
     } catch (e) {
       $('browse-msg').classList.add('err');

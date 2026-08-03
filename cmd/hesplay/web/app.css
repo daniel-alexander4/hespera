@@ -225,6 +225,9 @@ h2:first-child { margin-top: 0; }
 /* Artist / album rows: name on the left, play + shuffle on the right. */
 .rows { display: flex; flex-direction: column; gap: 0.4rem; }
 .row-item { display: grid; grid-template-columns: 1fr auto auto; gap: 0.4rem; }
+/* Artist rows carry a third action (Mix); album rows keep two. Three 44px
+   targets plus gaps still leave the name the majority of a phone's width. */
+.row-item--3 { grid-template-columns: 1fr auto auto auto; }
 .row-item .open {
   appearance: none;
   display: flex; flex-direction: column; justify-content: center; gap: 0.15rem;
