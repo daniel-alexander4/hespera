@@ -29,11 +29,22 @@ import (
 )
 
 const (
-	// maxRedirects bounds a redirect chain. Podcast audio routinely goes
-	// through two or three tracking prefixes before reaching a CDN, so this
-	// cannot be zero — but every hop is re-validated, so a chain that starts
-	// public and ends at 127.0.0.1 is refused at the hop that turns inward.
-	maxRedirects = 5
+	// maxRedirects bounds a redirect chain. Measured, not guessed: a single
+	// episode of a mainstream show (This American Life, 2026-08-03) goes
+	//
+	//   pfx.vpixl.com → dts.podtrac.com → pdst.fm → prefix.up.audio
+	//     → npr.simplecastaudio.com → a signed CDN URL
+	//
+	// which is SIX hops — analytics prefixes stack, each vendor wrapping the
+	// last, and the host's own signed-URL redirect comes after all of them. The
+	// original value of 5 stopped one hop short of the audio and returned 502
+	// on every episode of that show. 10 matches net/http's own default and
+	// leaves room for a chain longer than any observed.
+	//
+	// Raising it costs nothing in safety: every hop re-enters the guarded
+	// dialer, so a chain that starts public and turns toward 127.0.0.1 is still
+	// refused at the hop that turns.
+	maxRedirects = 10
 
 	// maxFeedBytes bounds a feed body. Real feeds with a decade of episodes
 	// reach a few MB; anything past this is not a feed we can use, and reading
