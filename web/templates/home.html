@@ -129,14 +129,16 @@
     <h3>{{template "icon-headphones"}}Audiobooks</h3>
     <p>Listen to your audiobooks</p>
   </a>
-  {{if .HasPodcasts}}
-  {{/* Not a library of files you own — it reaches outward. Shown only once
-       something is subscribed; the way in before that is the Podcasts page. */}}
+  {{/* Not a library of files you own — it reaches outward, so it sits after
+       the six that are. ALWAYS shown, deliberately: an earlier version hid it
+       until you had a subscription, which is unreachable by construction —
+       subscribing happens on the page the card is the way to. A feature nobody
+       can find is worse than a card that leads somewhere empty, and /podcasts
+       with nothing followed is still a useful page: it is the search. */}}
   <a href="/podcasts" class="card">
     <h3>{{template "icon-radio"}}Podcasts</h3>
     <p>Follow shows and listen to episodes</p>
   </a>
-  {{end}}
   {{if .NoiseRemoteURL}}
   {{/* Not a library, so it is deliberately last. It links OUT to the hesplay
        box that owns the speakers and the schedule — that box makes the sound,

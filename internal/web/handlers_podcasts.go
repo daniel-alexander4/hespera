@@ -14,7 +14,6 @@ package web
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -463,13 +462,4 @@ func (h *Handler) podcastUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/podcasts", http.StatusSeeOther)
-}
-
-// hasPodcasts reports whether any subscription exists, for the home card.
-func (h *Handler) hasPodcasts(ctx context.Context) bool {
-	var n int
-	if err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM podcasts").Scan(&n); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return false
-	}
-	return n > 0
 }
