@@ -2830,3 +2830,8 @@ code {
 .podcast-search { margin-bottom: 1rem; }
 .podcast-follow { width: 100%; margin-top: 0.4rem; }
 .podcast-have { color: var(--accent); }
+/* A card that leads to its own setup rather than to content. Dimmed enough to
+   read as "not ready" without being hard to see — the whole point of showing it
+   is that it can be found. */
+.card--unconfigured { opacity: 0.72; }
+.card--unconfigured:hover, .card--unconfigured:focus-visible { opacity: 1; }
