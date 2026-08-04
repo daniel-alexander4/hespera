@@ -139,13 +139,23 @@
     <h3>{{template "icon-radio"}}Podcasts</h3>
     <p>Follow shows and listen to episodes</p>
   </a>
+  {{/* Not a library, so it is deliberately last. ALWAYS shown, like Podcasts
+       above: gating it on being configured hid the feature from the only people
+       who needed to find it — you cannot know to set an address for a thing you
+       have never seen. Unconfigured, the card says so and leads to the setting.
+
+       Configured, it links OUT to the hesplay box that owns the speakers and
+       the schedule. That box makes the sound, not this one, which is why this
+       is a link rather than an embedded control. */}}
   {{if .NoiseRemoteURL}}
-  {{/* Not a library, so it is deliberately last. It links OUT to the hesplay
-       box that owns the speakers and the schedule — that box makes the sound,
-       not this one, which is why this is a link and not an embedded control. */}}
   <a href="{{.NoiseRemoteURL}}" class="card" rel="noopener">
-    <h3>{{template "icon-audio-lines"}}Noise</h3>
-    <p>Ambient noise on the bedroom speakers</p>
+    <h3>{{template "icon-audio-lines"}}Noise Generator</h3>
+    <p>Ambient noise on the box with the speakers</p>
+  </a>
+  {{else}}
+  <a href="/settings?open=features" class="card card--unconfigured">
+    <h3>{{template "icon-audio-lines"}}Noise Generator</h3>
+    <p>Set up a box to play ambient noise &mdash; not configured yet</p>
   </a>
   {{end}}
 </div>
