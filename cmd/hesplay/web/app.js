@@ -181,12 +181,18 @@
       return;
     }
     const n = st.now;
+    const isNoise = st.kind === 'noise';
     // The footer exists for the screens that have no queue list. On home the
-    // playing row IS the transport, so a second copy below the fold would be
-    // two sets of controls for one song.
-    now.hidden = stack[stack.length - 1] === 'home';
+    // playing row IS the transport for a queue, so a second copy below the fold
+    // would be two sets of controls for one song — but noise has no queue card,
+    // so its footer is the only transport and shows everywhere, home included.
+    now.hidden = stack[stack.length - 1] === 'home' && !isNoise;
+    // Noise is one endless sound: there is nothing to skip to in either direction.
+    $('prev').hidden = isNoise;
+    $('next').hidden = isNoise;
     // canPause is false on an ffplay box, which has no IPC to pause through —
-    // hide the control rather than offer one that can only fail.
+    // hide the control rather than offer one that can only fail. (For noise the
+    // server answers it from the signal seam instead.)
     $('pause').hidden = !st.canPause;
     applyPaused(!!st.paused);
     $('np-title').textContent = n.title;

@@ -94,6 +94,13 @@ type controller struct {
 	// mid-window. Distinct from preemption on purpose: music taking the slot
 	// must not silence the rest of the night.
 	noiseLatchUntil time.Time
+	// noisePause pauses/resumes the running noise player (SIGSTOP/SIGCONT — SoX
+	// has no IPC socket the way mpv does). Installed by startNoise once the
+	// engine process exists; nil otherwise, which is how /api/state knows to
+	// hide the pause control. A closure over the process rather than the
+	// process itself so tests never signal anything real (the powerOff-seam
+	// shape).
+	noisePause func(pause bool) error
 	// gen identifies the current session. A finishing loop clears the session
 	// only if it is still the current one: without that check, a queue that ends
 	// a moment after being replaced would clear its successor's state and the
@@ -188,6 +195,7 @@ func (ct *controller) retire(gen uint64) {
 	}
 	ct.cancel, ct.done, ct.actions = nil, nil, nil
 	ct.kind, ct.noiseScheduled = sessionNone, false
+	ct.noisePause = nil
 	ct.state, ct.tracks, ct.queueTitle = nowPlaying{}, nil, ""
 	ct.paused.Store(false)
 }
@@ -201,6 +209,7 @@ func (ct *controller) stop() {
 	cancel, done := ct.cancel, ct.done
 	ct.cancel, ct.done, ct.actions = nil, nil, nil
 	ct.kind, ct.noiseScheduled = sessionNone, false
+	ct.noisePause = nil
 	ct.mu.Unlock()
 	if cancel == nil {
 		return
@@ -256,11 +265,25 @@ func (ct *controller) startNoise(parent context.Context, pl noisePlayer, p noise
 	}
 	ct.mu.Unlock()
 
+	// The pause seam is installed once the engine process exists, and only if it
+	// is still THIS session's engine — a start that lost a race to a newer queue
+	// must not hand its successor a signal to a dying process.
+	onStart := func(proc *os.Process) {
+		if !noisePauseSupported {
+			return // leave nil: the remote hides a control that can only fail
+		}
+		ct.mu.Lock()
+		if ct.gen == gen {
+			ct.noisePause = func(pause bool) error { return signalNoisePause(proc, pause) }
+		}
+		ct.mu.Unlock()
+	}
+
 	go func() {
 		defer close(done)
 		defer cancel()
 		defer ct.retire(gen)
-		if err := runNoise(ctx, pl, p, audioDev); err != nil && ctx.Err() == nil {
+		if err := runNoise(ctx, pl, p, audioDev, onStart); err != nil && ctx.Err() == nil {
 			fmt.Println("noise ended:", err)
 		}
 	}()
@@ -588,20 +611,31 @@ func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ct.mu.Lock()
-	st, playing, base := ct.state, ct.kind != sessionNone, ct.c.base
+	st, kind, base := ct.state, ct.kind, ct.c.base
+	noisePausable := ct.noisePause != nil
 	ct.mu.Unlock()
+	playing := kind != sessionNone
+	// ffplay has no IPC, so the button hides itself rather than offering
+	// something that can only fail. Noise pauses by signal, not IPC, so its
+	// answer is the seam's presence — installed only where signals work.
+	canPause := stallSocket(ct.eng, 1) != ""
+	if kind == sessionNoise {
+		canPause = noisePausable
+	}
 	// The window rides on the polled state rather than a separate endpoint: it
 	// re-centres itself as the queue advances, so the highlight can never drift
 	// out of step with what is playing.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "playing": playing, "server": base, "now": st,
+		// kind lets the remote render a noise session differently from a queue
+		// (footer on every screen, no next/previous) without inferring it from
+		// an empty track list.
+		"kind":  kind.String(),
 		"queue": ct.windowAround(st.Index),
 		// paused is a state of the playing queue, not a third mode: playing
 		// stays true so the transport and the queue list keep their shape.
-		"paused": playing && ct.paused.Load(),
-		// ffplay has no IPC, so the button hides itself rather than offering
-		// something that can only fail.
-		"canPause": stallSocket(ct.eng, 1) != "",
+		"paused":   playing && ct.paused.Load(),
+		"canPause": canPause,
 		// Fraction 0..1 of the track played, or -1 when unknown (no IPC, or the
 		// engine has not reported a duration yet). The remote shows a bar, not a
 		// clock, so a fraction is all it needs — and music_tracks has no duration
@@ -705,9 +739,10 @@ func (ct *controller) handlePause(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ct.mu.Lock()
-	playing, trackID := ct.kind != sessionNone, ct.state.ID
+	kind, trackID := ct.kind, ct.state.ID
+	pauseNoise := ct.noisePause
 	ct.mu.Unlock()
-	if !playing || trackID == 0 {
+	if kind == sessionNone || (kind == sessionQueue && trackID == 0) {
 		writeErr(w, http.StatusConflict, errors.New("nothing is playing"))
 		return
 	}
@@ -719,6 +754,22 @@ func (ct *controller) handlePause(w http.ResponseWriter, r *http.Request) {
 	want := !ct.paused.Load()
 	if body.Paused != nil {
 		want = *body.Paused
+	}
+	// Noise pauses by signal, not IPC — see noisePause on the controller. The
+	// flag is set only AFTER the signal lands: noise has no stall guard to hold
+	// off, so there is nothing the mpv path's set-first ordering would protect.
+	if kind == sessionNoise {
+		if pauseNoise == nil {
+			writeErr(w, http.StatusConflict, errors.New("the noise engine is not running yet"))
+			return
+		}
+		if err := pauseNoise(want); err != nil {
+			writeErr(w, http.StatusConflict, err)
+			return
+		}
+		ct.paused.Store(want)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paused": want})
+		return
 	}
 	// Set the flag BEFORE the engine call: it is what holds the stall guard off,
 	// and the guard polls on its own schedule.

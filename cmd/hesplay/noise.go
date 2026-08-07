@@ -493,18 +493,29 @@ func noiseEnv(audioDev string) []string {
 // runs out. Cancelling kills the process — that is how a session ends, and why
 // `repeat` is only a backstop rather than the timer.
 //
+// onStart (may be nil) receives the PLAYER process once it is running — the one
+// that owns the audio device — which is what the remote's pause signals. It is
+// a callback rather than a return value because this function blocks for the
+// whole session.
+//
 // There is no stall guard here, unlike the music engine: SoX exposes no IPC
 // socket, so a process that is alive but silent cannot be distinguished from
 // one that is working. A process that EXITS is detectable and the caller
 // restarts it; a wedged one is a known, accepted gap.
-func runNoise(ctx context.Context, pl noisePlayer, p noisePreset, audioDev string) error {
+func runNoise(ctx context.Context, pl noisePlayer, p noisePreset, audioDev string, onStart func(*os.Process)) error {
 	if p.noiseNeedsFFmpeg() {
-		return runNoiseHybrid(ctx, pl, p, audioDev)
+		return runNoiseHybrid(ctx, pl, p, audioDev, onStart)
 	}
 	cmd := exec.CommandContext(ctx, pl.path, p.noiseArgs()...)
 	cmd.Env = noiseEnv(audioDev)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("%s: %w", filepath.Base(pl.path), err)
+	}
+	if onStart != nil {
+		onStart(cmd.Process)
+	}
+	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return nil // cancelled: the intended way to stop
 		}
@@ -522,7 +533,7 @@ func runNoise(ctx context.Context, pl noisePlayer, p noisePreset, audioDev strin
 // ffmpeg would never get EPIPE. Closed, the pair tears itself down — if the
 // player exits first, the generator dies of a broken pipe on its next write
 // instead of lingering as an orphan writing into nothing.
-func runNoiseHybrid(ctx context.Context, pl noisePlayer, p noisePreset, audioDev string) error {
+func runNoiseHybrid(ctx context.Context, pl noisePlayer, p noisePreset, audioDev string, onStart func(*os.Process)) error {
 	ff, err := findNoiseGenerator()
 	if err != nil {
 		return err
@@ -554,6 +565,9 @@ func runNoiseHybrid(ctx context.Context, pl noisePlayer, p noisePreset, audioDev
 	}
 	pr.Close()
 	pw.Close()
+	if onStart != nil {
+		onStart(shape.Process) // the player, not the generator: pause freezes the device owner
+	}
 
 	// Wait on the PLAYER, because it owns the audio device and its exit is what
 	// "the noise stopped" means. Then make sure the generator is gone rather
@@ -654,7 +668,7 @@ func cmdNoise(ctx context.Context, args []string) error {
 	} else {
 		fmt.Printf("%s noise (Ctrl+C to stop)\n", preset.Name)
 	}
-	return runNoise(ctx, pl, preset, cfg.AudioDev)
+	return runNoise(ctx, pl, preset, cfg.AudioDev, nil)
 }
 
 // listNoisePresets prints the configured presets, marking the default. The

@@ -372,7 +372,11 @@ suppresses the rest of that window, so the schedule does not immediately undo
 you; the next window starts normally.
 
 Everything is edited from the phone remote's **Noise** screen: preset tuning,
-the weekly schedule, and one tap per preset to start it now. Setting **Noise
+the weekly schedule, and one tap per preset to start it now. While noise plays,
+the remote shows it in the same bottom now-playing bar a song gets — on every
+screen, home included — with **pause/resume** and **stop**. SoX has no control
+socket, so pause is the kernel's: the player process is frozen with SIGSTOP and
+thawed with SIGCONT, which resumes the sound exactly where it left off. Setting **Noise
 remote** in Hespera's Settings → Features to `http://<that-box>:8090` adds a
 **Noise** card to Hespera's home screen that links there. Hespera never contacts
 that address itself — the card is a plain link your browser follows — so pointing
