@@ -71,6 +71,15 @@ func (p noisePreset) noiseNeedsFFmpeg() bool {
 	return ok
 }
 
+// floorActive reports whether this preset carries the third, floor layer —
+// which switches playback to the mixed multi-process topology (runNoiseFloor).
+func (p noisePreset) floorActive() bool { return p.FloorType != "" }
+
+func (p noisePreset) floorNeedsFFmpeg() bool {
+	_, ok := ffmpegColors[p.FloorType]
+	return ok
+}
+
 const (
 	// noiseChannels matches the original's `-c 2`.
 	noiseChannels = 2
@@ -141,6 +150,22 @@ type noisePreset struct {
 	Wave2Depth float64 `json:"wave2Depth,omitempty"` // slow-swell depth %
 	Wave2Type  string  `json:"wave2Type,omitempty"`  // optional SoX colour carrying the slow swell; "" = same stream
 	Wave2Gain  float64 `json:"wave2Gain,omitempty"`  // level trim on that layer, dB; 0 = none
+
+	// The floor (2026-08-07, tuned by ear with Dan): a third layer far
+	// underneath the sea — its own colour, its own bright band, its own
+	// barely-there swell. It cannot ride the body's effect chain (everything
+	// mixed in mid-chain shares all downstream effects — the body's band would
+	// erase a 4.5 kHz floor entirely), so a floor preset runs as its own SoX
+	// stage mixed with the body by `play -m` at unity; that also lets the
+	// floor be an ffmpeg-only colour like velvet, which no mid-chain `synth`
+	// could make. FloorType empty = no floor, and the whole topology (and
+	// every existing preset's argv) is unchanged.
+	FloorType     string  `json:"floorType,omitempty"`     // any colour; "" = no floor
+	FloorCenterHz float64 `json:"floorCenterHz,omitempty"` // its own band centre (bright)
+	FloorWidthHz  float64 `json:"floorWidthHz,omitempty"`  // its own band width
+	FloorSpeed    float64 `json:"floorSpeed,omitempty"`    // its swell Hz; 0 = perfectly still
+	FloorDepth    float64 `json:"floorDepth,omitempty"`    // its swell depth %
+	FloorGain     float64 `json:"floorGain,omitempty"`     // dB; strongly negative = "underneath"
 }
 
 // noiseConfig is the whole on-disk file. It lives on the BOX that makes the
@@ -220,33 +245,35 @@ func defaultNoiseConfig() noiseConfig {
 			base("blue", "bluenoise", 8.5),
 			base("violet", "violetnoise", 20),
 			base("velvet", "velvetnoise", 0),
-			// The two-swell surf pair (2026-08-07): a 50s deep swell under the
-			// classic 12.5s one — a small wave receding as a larger wave comes
-			// in. "ocean" chains both swells on the one brown stream; "ocean
-			// pink" carries the slow wave on its own pink layer — the nearest
-			// colour to brown, one octave-slope brighter — so the incoming
-			// wave is audibly distinct from the bed. Pink's +7 trim is its
-			// measured level-match to brown (see the preset gains above).
-			ocean("ocean", ""),
-			ocean("ocean pink", "pinknoise"),
+			// The ocean pair, tuned by ear with Dan on danlap (2026-08-07): a
+			// 50s deep swell under the classic 12.5s one — a small wave
+			// receding as a larger wave comes in — over a bright velvet floor
+			// that barely breathes. "ocean brown" chains both swells on the
+			// one brown stream; "ocean pink" swaps the roles — a pink bed of
+			// small waves with the big slow wave a separate BROWN layer over
+			// it (brown layer −7 plus overall +7 keeps the pair level-matched
+			// at brown's reference loudness, mirroring pink's measured +7).
+			oceanFloor(noisePreset{Name: "ocean brown", Type: "brownnoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				Wave2Speed: 0.02, Wave2Depth: 45, Reverb: 19, FadeIn: 3}),
+			oceanFloor(noisePreset{Name: "ocean pink", Type: "pinknoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				Wave2Type: "brownnoise", Wave2Gain: -7, Wave2Speed: 0.02, Wave2Depth: 45,
+				GainDB: 7, Reverb: 19, FadeIn: 3}),
 		},
 	}
 }
 
-// ocean builds the layered-surf default presets: the brown reference plus a
-// slow second swell, optionally carried by its own colour layer.
-func ocean(name, layer string) noisePreset {
-	p := noisePreset{
-		Name: name, Type: "brownnoise",
-		CenterHz: 1786, WidthHz: 499,
-		WaveSpeed: 0.08, WaveDepth: 37,
-		Reverb: 19, FadeIn: 3,
-		Wave2Speed: 0.02, Wave2Depth: 60,
-		Wave2Type: layer,
-	}
-	if layer == "pinknoise" {
-		p.Wave2Gain = 7
-	}
+// oceanFloor adds the velvet floor both ocean presets share — bright (banded
+// at 4.5 kHz), tide-synced but barely moving (depth 18 ≈ a 2 dB breath), far
+// underneath (−30 dB). Every number here was walked in by ear with Dan
+// (2026-08-07: −6 "way too loud" → −18 "still too loud" → −26 → −30 with
+// depth 60 → 18 "barely move, not enough to disappear").
+func oceanFloor(p noisePreset) noisePreset {
+	p.FloorType = "velvetnoise"
+	p.FloorCenterHz, p.FloorWidthHz = 4500, 2000
+	p.FloorSpeed, p.FloorDepth = 0.02, 18
+	p.FloorGain = -30
 	return p
 }
 
@@ -406,6 +433,31 @@ func (p noisePreset) normalize() (noisePreset, error) {
 		}
 	}
 	out.Wave2Gain = math.Max(-60, math.Min(20, out.Wave2Gain))
+
+	// The floor: any known colour (its own process, so ffmpeg colours are fine
+	// here, unlike Wave2Type). Its gain follows the GainDB rule — clamped,
+	// never defaulted — because 0 is meaningful; the shipped presets carry −30.
+	out.FloorType = strings.ToLower(strings.TrimSpace(out.FloorType))
+	if out.FloorType != "" {
+		if !strings.HasSuffix(out.FloorType, "noise") {
+			out.FloorType += "noise"
+		}
+		if !knownNoiseType(out.FloorType) {
+			return noisePreset{}, fmt.Errorf("unknown floor noise type %q (have: %s)", p.FloorType, strings.Join(noiseTypes, ", "))
+		}
+		out.FloorCenterHz = clampFloat(out.FloorCenterHz, 20, 20000, 4500)
+		out.FloorWidthHz = clampFloat(out.FloorWidthHz, 1, 20000, 2000)
+		if out.FloorSpeed > 0 {
+			out.FloorSpeed = math.Max(0.001, math.Min(noiseMaxWaveSpeed, out.FloorSpeed))
+			out.FloorDepth = clampFloat(out.FloorDepth, 0, 100, 18)
+		} else {
+			out.FloorSpeed, out.FloorDepth = 0, 0
+		}
+		out.FloorGain = math.Max(-60, math.Min(20, out.FloorGain))
+	} else {
+		out.FloorCenterHz, out.FloorWidthHz = 0, 0
+		out.FloorSpeed, out.FloorDepth, out.FloorGain = 0, 0, 0
+	}
 	return out, nil
 }
 
@@ -508,27 +560,126 @@ func (p noisePreset) noiseArgs() []string {
 		"-c", strconv.Itoa(noiseChannels),
 		"--null",
 	}
-	if p.Wave2Type != "" {
-		// The slow-wave layer synthesizes FIRST so its gain trim and tremolo
-		// envelope it ALONE; the base colour then mixes in un-swelled
-		// underneath (`synth <type> mix` adds onto the flowing audio — the
-		// construct is pinned by TestNoiseLayeredChainEscapesFirstTremolo).
-		// Everything after the mix — band, the fast swell, reverb — shapes the
-		// sum, so both layers share the timbre tuned by ear for brown.
-		a = append(a, "synth", num(p.bufferSecs()), p.Wave2Type)
-		if p.Wave2Gain != 0 {
-			a = append(a, "gain", num(p.Wave2Gain))
-		}
-		a = append(a, "tremolo", num(p.Wave2Speed), num(p.Wave2Depth))
-		a = append(a, "synth", p.Type, "mix")
-	} else {
-		a = append(a, "synth", num(p.bufferSecs()), p.Type)
-	}
+	a = append(a, p.synthChain()...)
 	a = append(a, p.shapeArgs()...)
 	// repeat sits between the shaping and the level/fade for the same reason the
 	// comment above gives: everything BEFORE it is what gets replayed.
 	a = append(a, "repeat", strconv.Itoa(p.repeatCount()))
 	return append(a, p.finishArgs()...)
+}
+
+// synthChain is the body's generation: one colour, or the two-colour layered
+// form. The slow-wave layer synthesizes FIRST so its gain trim and tremolo
+// envelope it ALONE; the base colour then mixes in un-swelled underneath
+// (`synth <type> mix` adds onto the flowing audio — the construct is pinned by
+// TestNoiseLayeredChainEscapesFirstTremolo). Everything after the mix — band,
+// the fast swell, reverb — shapes the sum, so both layers share the timbre
+// tuned by ear for brown.
+func (p noisePreset) synthChain() []string {
+	if p.Wave2Type == "" {
+		return []string{"synth", num(p.bufferSecs()), p.Type}
+	}
+	a := []string{"synth", num(p.bufferSecs()), p.Wave2Type}
+	if p.Wave2Gain != 0 {
+		a = append(a, "gain", num(p.Wave2Gain))
+	}
+	a = append(a, "tremolo", num(p.Wave2Speed), num(p.Wave2Depth))
+	return append(a, "synth", p.Type, "mix")
+}
+
+// bodySoxArgs renders the body — the preset's one- or two-layer sea — as a
+// generator stage for the floor topology: the same chain noiseArgs plays, but
+// writing sox-format samples to stdout for the mixer, and without the fade
+// (the mixer fades the MIX once). GainDB stays here: it is the body's level,
+// and the floor's own gain is relative to an un-faded, gained body — exactly
+// the balance the audition's independent processes had.
+func (p noisePreset) bodySoxArgs() []string {
+	var a []string
+	if p.noiseNeedsFFmpeg() {
+		a = []string{"--buffer", strconv.Itoa(noiseBuffer), "-t", "wav", "-", "-t", "sox", "-"}
+		a = append(a, p.shapeArgs()...)
+	} else {
+		a = []string{"--buffer", strconv.Itoa(noiseBuffer), "-c", strconv.Itoa(noiseChannels), "--null", "-t", "sox", "-"}
+		a = append(a, p.synthChain()...)
+		a = append(a, p.shapeArgs()...)
+		a = append(a, "repeat", strconv.Itoa(p.repeatCount()))
+	}
+	if p.GainDB != 0 {
+		a = append(a, "gain", num(p.GainDB))
+	}
+	return a
+}
+
+// floorBufferSecs / floorRepeatCount are the floor's own loop-seam math: whole
+// floor-swell periods (a still floor loops raw noise, statistically seamless
+// at any length, so it keeps the plain 60s). Only the SoX-native floor loops —
+// an ffmpeg-generated floor streams continuously and has no seam at all.
+func (p noisePreset) floorBufferSecs() float64 {
+	if p.FloorSpeed <= 0 {
+		return noiseMinBufferSecs
+	}
+	period := 1 / p.FloorSpeed
+	n := math.Ceil(noiseMinBufferSecs / period)
+	if n < 1 {
+		n = 1
+	}
+	return n * period
+}
+
+func (p noisePreset) floorRepeatCount() int {
+	n := int(math.Ceil(noiseSafetyCapSecs/p.floorBufferSecs())) - 1
+	if n < 0 {
+		n = 0
+	}
+	return n
+}
+
+// floorSoxArgs shapes the floor layer, output sox-format for the mixer. The
+// attenuation comes FIRST — the raw generator sits near full scale and the
+// bright band rings, and gain ahead of it removes the clipping the audition
+// chain logged ("band clipped 22 samples"); the chain is linear, so the sound
+// is otherwise identical. The floor shares the preset's reverb, so it sits in
+// the same room as the sea above it.
+func (p noisePreset) floorSoxArgs() []string {
+	var a []string
+	if p.floorNeedsFFmpeg() {
+		a = []string{"--buffer", strconv.Itoa(noiseBuffer), "-t", "wav", "-", "-t", "sox", "-"}
+	} else {
+		a = []string{"--buffer", strconv.Itoa(noiseBuffer), "-c", strconv.Itoa(noiseChannels), "--null", "-t", "sox", "-",
+			"synth", num(p.floorBufferSecs()), p.FloorType}
+	}
+	if p.FloorGain != 0 {
+		a = append(a, "gain", num(p.FloorGain))
+	}
+	a = append(a, "band", "-n", num(p.FloorCenterHz), num(p.FloorWidthHz))
+	if p.FloorSpeed > 0 {
+		a = append(a, "tremolo", num(p.FloorSpeed), num(p.FloorDepth))
+	}
+	a = append(a, "reverb", num(p.Reverb))
+	if !p.floorNeedsFFmpeg() {
+		a = append(a, "repeat", strconv.Itoa(p.floorRepeatCount()))
+	}
+	return a
+}
+
+// mixerArgs mixes body and floor onto the device at unity. Plain `-m` scales
+// each input by 1/n — measured: two identical in-phase sines mixed read the
+// SAME RMS as one — which would quietly halve the whole preset, so `-v 1` per
+// input restores the straight sum the audition's sound server gave. The two
+// /dev/fd paths are wired by the runner via ExtraFiles (first extra file = fd
+// 3); no shell is involved.
+func (p noisePreset) mixerArgs() []string {
+	a := []string{
+		"--buffer", strconv.Itoa(noiseBuffer),
+		"--no-show-progress",
+		"-m",
+		"-v", "1", "-t", "sox", "/dev/fd/3",
+		"-v", "1", "-t", "sox", "/dev/fd/4",
+	}
+	if p.FadeIn > 0 {
+		a = append(a, "fade", "t", num(p.FadeIn))
+	}
+	return a
 }
 
 // shapeArgs is the timbre: band-pass, the slow swell, and reverb. Identical on
@@ -584,10 +735,15 @@ func (p noisePreset) soxPipeArgs() []string {
 // safety ceiling `repeat` gives the native path, for the same reason: a hesplay
 // that dies without reaping its children must not leave the box roaring.
 func (p noisePreset) ffmpegArgs() []string {
+	return ffmpegArgsFor(ffmpegColors[p.Type])
+}
+
+// ffmpegArgsFor generates one anoisesrc colour — the body's or the floor's.
+func ffmpegArgsFor(colour string) []string {
 	return []string{
 		"-hide_banner", "-loglevel", "error",
 		"-f", "lavfi",
-		"-i", fmt.Sprintf("anoisesrc=color=%s:r=%d:d=%d", ffmpegColors[p.Type], noiseSampleRate, noiseSafetyCapSecs),
+		"-i", fmt.Sprintf("anoisesrc=color=%s:r=%d:d=%d", colour, noiseSampleRate, noiseSafetyCapSecs),
 		// anoisesrc is mono; the native path plays two channels, so match it.
 		"-ac", strconv.Itoa(noiseChannels),
 		"-f", "wav", "-",
@@ -601,15 +757,28 @@ func num(f float64) string {
 }
 
 // noisePlayer is the SoX playback binary. `play` is SoX's playback front-end;
-// it is what the original script used and what both target boxes have.
-type noisePlayer struct{ path string }
+// it is what the original script used and what both target boxes have. sox is
+// the same binary in file-to-file dress — the floor topology's generator
+// stages MUST use it, not play: play hardwires its output to the audio device,
+// so a stage exec'd as play ignores the intended `-t sox -` stdout, opens the
+// speakers itself, and the mixer starves (the live failure mode of the first
+// runNoiseFloor: three processes on the device, then instant EOF).
+type noisePlayer struct {
+	path string // play — owns the audio device
+	sox  string // sox — file/pipe stages only
+}
 
 func findNoisePlayer() (noisePlayer, error) {
 	p, err := exec.LookPath("play")
 	if err != nil {
 		return noisePlayer{}, errors.New("no noise engine: install sox (provides `play`)")
 	}
-	return noisePlayer{path: p}, nil
+	s, err := exec.LookPath("sox")
+	if err != nil {
+		// Same package ships both; a play without sox is a broken install.
+		return noisePlayer{}, errors.New("no noise engine: install sox (`play` is present but `sox` is not)")
+	}
+	return noisePlayer{path: p, sox: s}, nil
 }
 
 // noiseGenerator is ffmpeg, needed only by the colours SoX cannot synthesize.
@@ -649,6 +818,9 @@ func noiseEnv(audioDev string) []string {
 // one that is working. A process that EXITS is detectable and the caller
 // restarts it; a wedged one is a known, accepted gap.
 func runNoise(ctx context.Context, pl noisePlayer, p noisePreset, audioDev string, onStart func(*os.Process)) error {
+	if p.floorActive() {
+		return runNoiseFloor(ctx, pl, p, audioDev, onStart)
+	}
 	if p.noiseNeedsFFmpeg() {
 		return runNoiseHybrid(ctx, pl, p, audioDev, onStart)
 	}
@@ -725,6 +897,132 @@ func runNoiseHybrid(ctx context.Context, pl noisePlayer, p noisePreset, audioDev
 	}
 	_ = gen.Wait()
 
+	if werr != nil && ctx.Err() == nil {
+		return fmt.Errorf("%s: %w", filepath.Base(pl.path), werr)
+	}
+	return nil
+}
+
+// runNoiseFloor runs the three-layer topology: the body (the preset's one- or
+// two-layer sea) and the floor each render in their own SoX stage, and a final
+// `play -m` mixes them onto the device at unity. The mixer is what phase-locks
+// the floor's swell to the body's: `play -m` reads its inputs
+// sample-synchronously, blocking until BOTH deliver, so each stream's t=0
+// lines up exactly however long its stage spent starting (the body pre-computes
+// a 100s buffer; the floor streams immediately — irrelevant, the mixer waits).
+// An ffmpeg generator fronts any stage whose colour SoX cannot synthesize.
+//
+// Teardown follows runNoiseHybrid's lesson: wait on the DEVICE OWNER (the
+// mixer), then explicitly kill every upstream process rather than trusting
+// EPIPE, which measured seconds to climb through the 128 KB buffers. Pause
+// (SIGSTOP) also lands on the mixer: its full pipes throttle every stage
+// upstream, exactly like the hybrid pair.
+func runNoiseFloor(ctx context.Context, pl noisePlayer, p noisePreset, audioDev string, onStart func(*os.Process)) error {
+	needsFF := p.noiseNeedsFFmpeg() || p.floorNeedsFFmpeg()
+	var ff noiseGenerator
+	if needsFF {
+		var err error
+		if ff, err = findNoiseGenerator(); err != nil {
+			return err
+		}
+	}
+
+	var started []*exec.Cmd
+	killAll := func() {
+		for _, c := range started {
+			if c.Process != nil {
+				_ = c.Process.Kill()
+			}
+		}
+		for _, c := range started {
+			_ = c.Wait()
+		}
+	}
+
+	// stage wires [optional ffmpeg generator →] one SoX shaping process and
+	// returns the read end of its sox-format output pipe. Parent copies of
+	// every intermediate fd are closed as soon as both holders have started —
+	// the hybrid runner's rule, without which nobody ever sees EOF or EPIPE.
+	// Stages exec `sox`, never `play` — see the noisePlayer comment.
+	stage := func(genColour string, soxArgs []string) (*os.File, error) {
+		outR, outW, err := os.Pipe()
+		if err != nil {
+			return nil, err
+		}
+		shape := exec.CommandContext(ctx, pl.sox, soxArgs...)
+		shape.Stdout, shape.Stderr = outW, os.Stderr
+		if genColour != "" {
+			genR, genW, err := os.Pipe()
+			if err != nil {
+				outR.Close()
+				outW.Close()
+				return nil, err
+			}
+			gen := exec.CommandContext(ctx, ff.path, ffmpegArgsFor(genColour)...)
+			gen.Stdout, gen.Stderr = genW, os.Stderr
+			shape.Stdin = genR
+			if err := gen.Start(); err != nil {
+				outR.Close()
+				outW.Close()
+				genR.Close()
+				genW.Close()
+				return nil, fmt.Errorf("%s: %w", filepath.Base(ff.path), err)
+			}
+			started = append(started, gen)
+			defer genR.Close()
+			defer genW.Close()
+		}
+		if err := shape.Start(); err != nil {
+			outR.Close()
+			outW.Close()
+			return nil, fmt.Errorf("%s: %w", filepath.Base(pl.sox), err)
+		}
+		started = append(started, shape)
+		outW.Close()
+		return outR, nil
+	}
+
+	bodyColour := ""
+	if p.noiseNeedsFFmpeg() {
+		bodyColour = ffmpegColors[p.Type]
+	}
+	floorColour := ""
+	if p.floorNeedsFFmpeg() {
+		floorColour = ffmpegColors[p.FloorType]
+	}
+
+	bodyR, err := stage(bodyColour, p.bodySoxArgs())
+	if err != nil {
+		killAll()
+		return err
+	}
+	floorR, err := stage(floorColour, p.floorSoxArgs())
+	if err != nil {
+		bodyR.Close()
+		killAll()
+		return err
+	}
+
+	mix := exec.CommandContext(ctx, pl.path, p.mixerArgs()...)
+	mix.Env = noiseEnv(audioDev)
+	mix.Stdout, mix.Stderr = os.Stdout, os.Stderr
+	// ExtraFiles entry i becomes the child's fd 3+i — the /dev/fd/3 and
+	// /dev/fd/4 the mixer argv names.
+	mix.ExtraFiles = []*os.File{bodyR, floorR}
+	if err := mix.Start(); err != nil {
+		bodyR.Close()
+		floorR.Close()
+		killAll()
+		return fmt.Errorf("%s: %w", filepath.Base(pl.path), err)
+	}
+	bodyR.Close()
+	floorR.Close()
+	if onStart != nil {
+		onStart(mix.Process) // the device owner: pause freezes it, pipes throttle the rest
+	}
+
+	werr := mix.Wait()
+	killAll()
 	if werr != nil && ctx.Err() == nil {
 		return fmt.Errorf("%s: %w", filepath.Base(pl.path), werr)
 	}
@@ -843,6 +1141,50 @@ func listNoisePresets(cfg noiseConfig) error {
 // here is ever parsed by a shell.
 func noiseCommandLine(pl noisePlayer, p noisePreset, audioDev string) string {
 	var b strings.Builder
+	// A floor preset renders as the mixer line with each stage as a process
+	// substitution — bash's <( ) is /dev/fd plumbing, the same mechanism the
+	// runner builds with ExtraFiles — so the printed line is paste-able and
+	// reproduces exactly what plays.
+	if p.floorActive() {
+		gen := "ffmpeg"
+		if g, err := findNoiseGenerator(); err == nil {
+			gen = filepath.Base(g.path)
+		}
+		sub := func(colour string, soxArgs []string) string {
+			var s strings.Builder
+			s.WriteString("<(")
+			if colour != "" {
+				writeCmd(&s, gen, ffmpegArgsFor(colour))
+				s.WriteString(" | ")
+			}
+			writeCmd(&s, "sox", soxArgs)
+			s.WriteString(")")
+			return s.String()
+		}
+		bodyColour, floorColour := "", ""
+		if p.noiseNeedsFFmpeg() {
+			bodyColour = ffmpegColors[p.Type]
+		}
+		if p.floorNeedsFFmpeg() {
+			floorColour = ffmpegColors[p.FloorType]
+		}
+		if d := strings.TrimSpace(audioDev); d != "" {
+			b.WriteString("AUDIODRIVER=alsa AUDIODEV=" + d + " ")
+		}
+		b.WriteString(filepath.Base(pl.path))
+		for _, a := range p.mixerArgs() {
+			b.WriteString(" ")
+			switch a {
+			case "/dev/fd/3":
+				b.WriteString(sub(bodyColour, p.bodySoxArgs()))
+			case "/dev/fd/4":
+				b.WriteString(sub(floorColour, p.floorSoxArgs()))
+			default:
+				b.WriteString(a)
+			}
+		}
+		return b.String()
+	}
 	// The hybrid colours render as the pipeline they actually are, so what is
 	// printed can be pasted into a shell and reproduce exactly what plays.
 	if p.noiseNeedsFFmpeg() {

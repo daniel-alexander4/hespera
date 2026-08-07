@@ -528,7 +528,9 @@ func TestDefaultPresetLevelsAreMatched(t *testing.T) {
 // a whole number of BOTH periods (8 × 12.5s and 2 × 50s), so the loop stays
 // seamless for both envelopes.
 func TestOceanChainedArgs(t *testing.T) {
-	p, err := mustFindDefault(t, "ocean").normalize()
+	p, err := (noisePreset{Type: "brownnoise", CenterHz: 1786, WidthHz: 499,
+		WaveSpeed: 0.08, WaveDepth: 37, Wave2Speed: 0.02, Wave2Depth: 60,
+		Reverb: 19, FadeIn: 3}).normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -554,7 +556,10 @@ func TestOceanChainedArgs(t *testing.T) {
 // after the mix would swell both layers together and the bed would vanish at
 // every trough.
 func TestOceanPinkLayeredArgs(t *testing.T) {
-	p, err := mustFindDefault(t, "ocean pink").normalize()
+	p, err := (noisePreset{Type: "brownnoise", CenterHz: 1786, WidthHz: 499,
+		WaveSpeed: 0.08, WaveDepth: 37,
+		Wave2Type: "pinknoise", Wave2Gain: 7, Wave2Speed: 0.02, Wave2Depth: 60,
+		Reverb: 19, FadeIn: 3}).normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -636,5 +641,86 @@ func TestNormalizeWave2(t *testing.T) {
 	}
 	if p.Wave2Speed != 0 || p.Wave2Depth != 0 {
 		t.Errorf("a negative second swell should switch off, got %g/%g", p.Wave2Speed, p.Wave2Depth)
+	}
+}
+
+// TestOceanBrownStages pins the shipped three-layer preset's process topology:
+// the body stage (the two-swell brown sea, sox-format to stdout, no fade), the
+// velvet floor stage (ffmpeg-fed, attenuation FIRST so the bright band cannot
+// clip, its barely-there tide-synced swell, the shared reverb), and the unity
+// mixer (-v 1 per input — plain -m scales by 1/n and would halve the preset).
+func TestOceanBrownStages(t *testing.T) {
+	p, err := mustFindDefault(t, "ocean brown").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if !p.floorActive() {
+		t.Fatal("ocean brown should carry the velvet floor")
+	}
+	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 100 brownnoise band -n 1786 499 tremolo 0.08 37 tremolo 0.02 45 reverb 19 repeat 863"
+	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
+		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
+	}
+	wantFloor := "--buffer 131072 -t wav - -t sox - gain -30 band -n 4500 2000 tremolo 0.02 18 reverb 19"
+	if got := strings.Join(p.floorSoxArgs(), " "); got != wantFloor {
+		t.Errorf("floor stage:\n got %q\nwant %q", got, wantFloor)
+	}
+	wantMix := "--buffer 131072 --no-show-progress -m -v 1 -t sox /dev/fd/3 -v 1 -t sox /dev/fd/4 fade t 3"
+	if got := strings.Join(p.mixerArgs(), " "); got != wantMix {
+		t.Errorf("mixer:\n got %q\nwant %q", got, wantMix)
+	}
+}
+
+// TestOceanPinkBodyStage pins the swapped-roles preset: pink bed, the big slow
+// wave a separate brown layer trimmed −7, overall +7 restoring brown's
+// reference level — Dan's "make the brown the bigger wave and the pink the
+// smaller", exactly as auditioned.
+func TestOceanPinkBodyStage(t *testing.T) {
+	p, err := mustFindDefault(t, "ocean pink").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 100 brownnoise gain -7 tremolo 0.02 45 synth pinknoise mix band -n 1786 499 tremolo 0.08 37 reverb 19 repeat 863 gain 7"
+	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
+		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
+	}
+	if got := strings.Join(p.floorSoxArgs(), " "); !strings.Contains(got, "gain -30") || !strings.Contains(got, "tremolo 0.02 18") {
+		t.Errorf("ocean pink should share the velvet floor tuning, got %q", got)
+	}
+}
+
+// TestNormalizeFloor pins the floor validation: unknown colours rejected,
+// bright-band defaults filled, a swell-less floor stays perfectly still, and
+// clearing the type clears every floor field.
+func TestNormalizeFloor(t *testing.T) {
+	if _, err := (noisePreset{Type: "brown", FloorType: "mauve"}).normalize(); err == nil {
+		t.Error("an unknown floor colour must be rejected")
+	}
+	p, err := (noisePreset{Type: "brown", FloorType: "velvet", FloorSpeed: 0.02}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.FloorType != "velvetnoise" {
+		t.Errorf("bare floor colour not suffixed: %q", p.FloorType)
+	}
+	if p.FloorCenterHz != 4500 || p.FloorWidthHz != 2000 || p.FloorDepth != 18 {
+		t.Errorf("floor defaults not filled: %g/%g depth %g", p.FloorCenterHz, p.FloorWidthHz, p.FloorDepth)
+	}
+	p, err = (noisePreset{Type: "brown", FloorType: "white"}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.FloorSpeed != 0 || p.FloorDepth != 0 {
+		t.Errorf("a swell-less floor should stay still, got %g/%g", p.FloorSpeed, p.FloorDepth)
+	}
+	if got := strings.Join(p.floorSoxArgs(), " "); strings.Contains(got, "tremolo") || !strings.Contains(got, "synth 60 whitenoise") {
+		t.Errorf("still native floor stage wrong: %q", got)
+	}
+	p, err = (noisePreset{Type: "brown", FloorCenterHz: 9999}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.FloorCenterHz != 0 {
+		t.Error("floor fields should clear when no floor colour is set")
 	}
 }
