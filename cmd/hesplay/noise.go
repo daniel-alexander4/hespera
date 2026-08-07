@@ -95,6 +95,13 @@ const (
 	// noiseMaxWaveSpeed is the original's own advice, verbatim: "increase for
 	// more volume oscillation, but suggest no higher than 0.20".
 	noiseMaxWaveSpeed = 0.20
+
+	// noiseMaxBufferSecs caps the two-swell buffer derivation. `repeat` buffers
+	// its whole input in memory, so an incommensurate pair of swell rates must
+	// not be allowed to demand an hour-long buffer hunting for a common period —
+	// past this cap the derivation settles for seaming the faster swell instead
+	// (see commensurateBufferSecs). 300s ≈ 115 MB at 48k stereo 32-bit.
+	noiseMaxBufferSecs = 300.0
 )
 
 // noisePreset is one named noise configuration. Field names avoid the word
@@ -113,6 +120,27 @@ type noisePreset struct {
 	Reverb float64 `json:"reverb"` // SoX reverberance %
 	GainDB float64 `json:"gainDb"` // output level; 0 = leave the level alone
 	FadeIn float64 `json:"fadeIn"` // seconds; 0 = start at full level
+
+	// A second, much slower swell layered under the first — "a small wave
+	// receding as a larger wave comes in" (Dan, 2026-08-07): the single
+	// seamless-looping tremolo the port perfected turned out to be TOO perfect,
+	// a metronomic 12.5s swell forever (the original's 60s buffer held 4.8
+	// swells, so its envelope jumped phase every minute — accidental
+	// irregularity the seam fix deleted). Wave2Speed 0 = off, and every
+	// existing preset stays byte-identical in argv.
+	//
+	// Two flavours. Wave2Type empty: the second swell is a second tremolo on
+	// the SAME stream — chained tremolos multiply their envelopes, so the slow
+	// one is the tide the fast waves ride. Wave2Type set to a SoX-native
+	// colour: the slow swell is carried by ITS OWN noise layer, synthesized
+	// first, enveloped alone, then the base colour mixes in un-swelled
+	// underneath — verified numerically (windowed RMS held −11 dB through a
+	// 100%-depth trough that took a single stream to −65 dB), so the bed
+	// genuinely persists while the big wave comes and goes.
+	Wave2Speed float64 `json:"wave2Speed,omitempty"` // slow-swell tremolo Hz; 0 = single swell
+	Wave2Depth float64 `json:"wave2Depth,omitempty"` // slow-swell depth %
+	Wave2Type  string  `json:"wave2Type,omitempty"`  // optional SoX colour carrying the slow swell; "" = same stream
+	Wave2Gain  float64 `json:"wave2Gain,omitempty"`  // level trim on that layer, dB; 0 = none
 }
 
 // noiseConfig is the whole on-disk file. It lives on the BOX that makes the
@@ -192,8 +220,34 @@ func defaultNoiseConfig() noiseConfig {
 			base("blue", "bluenoise", 8.5),
 			base("violet", "violetnoise", 20),
 			base("velvet", "velvetnoise", 0),
+			// The two-swell surf pair (2026-08-07): a 50s deep swell under the
+			// classic 12.5s one — a small wave receding as a larger wave comes
+			// in. "ocean" chains both swells on the one brown stream; "ocean
+			// pink" carries the slow wave on its own pink layer — the nearest
+			// colour to brown, one octave-slope brighter — so the incoming
+			// wave is audibly distinct from the bed. Pink's +7 trim is its
+			// measured level-match to brown (see the preset gains above).
+			ocean("ocean", ""),
+			ocean("ocean pink", "pinknoise"),
 		},
 	}
+}
+
+// ocean builds the layered-surf default presets: the brown reference plus a
+// slow second swell, optionally carried by its own colour layer.
+func ocean(name, layer string) noisePreset {
+	p := noisePreset{
+		Name: name, Type: "brownnoise",
+		CenterHz: 1786, WidthHz: 499,
+		WaveSpeed: 0.08, WaveDepth: 37,
+		Reverb: 19, FadeIn: 3,
+		Wave2Speed: 0.02, Wave2Depth: 60,
+		Wave2Type: layer,
+	}
+	if layer == "pinknoise" {
+		p.Wave2Gain = 7
+	}
+	return p
 }
 
 // noiseConfigPath sits beside the saved server file, under the same per-user
@@ -318,6 +372,40 @@ func (p noisePreset) normalize() (noisePreset, error) {
 	// Gain's zero value is meaningful (leave the level alone), so it is clamped
 	// but never defaulted.
 	out.GainDB = math.Max(-60, math.Min(20, out.GainDB))
+
+	// The second swell: zero (and any negative) means OFF, so clampFloat's
+	// default-substitution must not apply — a silly value switches the feature
+	// off rather than on.
+	if out.Wave2Speed > 0 {
+		out.Wave2Speed = math.Max(0.001, math.Min(noiseMaxWaveSpeed, out.Wave2Speed))
+		out.Wave2Depth = clampFloat(out.Wave2Depth, 0, 100, 60)
+	} else {
+		out.Wave2Speed, out.Wave2Depth = 0, 0
+	}
+	out.Wave2Type = strings.ToLower(strings.TrimSpace(out.Wave2Type))
+	if out.Wave2Type != "" {
+		if !strings.HasSuffix(out.Wave2Type, "noise") {
+			out.Wave2Type += "noise"
+		}
+		if !knownNoiseType(out.Wave2Type) {
+			return noisePreset{}, fmt.Errorf("unknown second-layer noise type %q (have: %s)", p.Wave2Type, strings.Join(noiseTypes, ", "))
+		}
+		// Both layer constraints are structural, not taste. The layer chain
+		// envelopes the FIRST synth alone, so the second layer must be a colour
+		// SoX can synthesize mid-chain; and an ffmpeg-generated base arrives by
+		// pipe, leaving no seat in the chain for a separately-enveloped layer.
+		if _, ffm := ffmpegColors[out.Wave2Type]; ffm {
+			return noisePreset{}, fmt.Errorf("second-layer colour %q needs ffmpeg; the layer must be one SoX can synthesize (white, pink, brown, tpdf)", p.Wave2Type)
+		}
+		if _, ffm := ffmpegColors[out.Type]; ffm {
+			return noisePreset{}, fmt.Errorf("a layered preset's base colour must be one SoX can synthesize (white, pink, brown, tpdf), not %q", p.Type)
+		}
+		// A layer with no swell is not the feature — fill the usable default.
+		if out.Wave2Speed == 0 {
+			out.Wave2Speed, out.Wave2Depth = 0.02, 60
+		}
+	}
+	out.Wave2Gain = math.Max(-60, math.Min(20, out.Wave2Gain))
 	return out, nil
 }
 
@@ -349,11 +437,48 @@ func clampFloat(v, lo, hi, def float64) float64 {
 // set to a value that seams.
 func (p noisePreset) bufferSecs() float64 {
 	period := 1 / p.WaveSpeed
+	if p.Wave2Speed > 0 {
+		return commensurateBufferSecs(period, 1/p.Wave2Speed)
+	}
 	n := math.Ceil(noiseMinBufferSecs / period)
 	if n < 1 {
 		n = 1
 	}
 	return n * period
+}
+
+// commensurateBufferSecs extends the whole-number-of-swells rule to two swells:
+// the shortest buffer ≥ the floor that holds a WHOLE number of BOTH periods, so
+// the loop stays seamless for both envelopes (the default 12.5s + 50s pair
+// lands on 100s — 8 fast swells, 2 slow). Scanning multiples of the longer
+// period keeps the search tiny.
+//
+// An incommensurate pair that fits nothing under noiseMaxBufferSecs settles for
+// whole LONG periods only: the slow envelope — the one whose mid-swell jump
+// would read as the sea skipping — stays seamless, and the fast swell seams at
+// worst once per buffer, the original script's every-60s jump but rarer. A slow
+// period longer than the cap itself inverts that: whole fast periods, and the
+// slow envelope seams (the user asked for a swell longer than the memory the
+// buffer may spend).
+func commensurateBufferSecs(p1, p2 float64) float64 {
+	long, short := math.Max(p1, p2), math.Min(p1, p2)
+	if long > noiseMaxBufferSecs {
+		return math.Max(1, math.Ceil(noiseMinBufferSecs/short)) * short
+	}
+	fallback := 0.0
+	for t := long; t <= noiseMaxBufferSecs+1e-9; t += long {
+		if t < noiseMinBufferSecs {
+			continue
+		}
+		if fallback == 0 {
+			fallback = t
+		}
+		n := t / short
+		if math.Abs(n-math.Round(n)) < 1e-6 {
+			return t
+		}
+	}
+	return fallback
 }
 
 // repeatCount is the `repeat` argument: how many EXTRA times the buffer plays
@@ -382,7 +507,22 @@ func (p noisePreset) noiseArgs() []string {
 		"--no-show-progress",
 		"-c", strconv.Itoa(noiseChannels),
 		"--null",
-		"synth", num(p.bufferSecs()), p.Type,
+	}
+	if p.Wave2Type != "" {
+		// The slow-wave layer synthesizes FIRST so its gain trim and tremolo
+		// envelope it ALONE; the base colour then mixes in un-swelled
+		// underneath (`synth <type> mix` adds onto the flowing audio — the
+		// construct is pinned by TestNoiseLayeredChainEscapesFirstTremolo).
+		// Everything after the mix — band, the fast swell, reverb — shapes the
+		// sum, so both layers share the timbre tuned by ear for brown.
+		a = append(a, "synth", num(p.bufferSecs()), p.Wave2Type)
+		if p.Wave2Gain != 0 {
+			a = append(a, "gain", num(p.Wave2Gain))
+		}
+		a = append(a, "tremolo", num(p.Wave2Speed), num(p.Wave2Depth))
+		a = append(a, "synth", p.Type, "mix")
+	} else {
+		a = append(a, "synth", num(p.bufferSecs()), p.Type)
 	}
 	a = append(a, p.shapeArgs()...)
 	// repeat sits between the shaping and the level/fade for the same reason the
@@ -395,11 +535,17 @@ func (p noisePreset) noiseArgs() []string {
 // both paths, so a hybrid colour is shaped by exactly the chain that was tuned
 // by ear for brown.
 func (p noisePreset) shapeArgs() []string {
-	return []string{
+	a := []string{
 		"band", "-n", num(p.CenterHz), num(p.WidthHz),
 		"tremolo", num(p.WaveSpeed), num(p.WaveDepth),
-		"reverb", num(p.Reverb),
 	}
+	if p.Wave2Speed > 0 && p.Wave2Type == "" {
+		// Chained tremolos multiply their envelopes: the slow one is the tide,
+		// the fast one rides it. (With Wave2Type set the slow swell already
+		// lives on its own layer, before this chain.)
+		a = append(a, "tremolo", num(p.Wave2Speed), num(p.Wave2Depth))
+	}
+	return append(a, "reverb", num(p.Reverb))
 }
 
 // finishArgs is level then fade — always last, and on the native path always

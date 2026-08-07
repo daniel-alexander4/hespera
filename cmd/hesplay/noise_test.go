@@ -521,3 +521,120 @@ func TestDefaultPresetLevelsAreMatched(t *testing.T) {
 		}
 	}
 }
+
+// TestOceanChainedArgs pins the two-swell single-stream flavour: the slow
+// tremolo chains directly after the fast one (envelopes multiply — the tide
+// under the waves), and the buffer grows to 100s — the shortest length holding
+// a whole number of BOTH periods (8 × 12.5s and 2 × 50s), so the loop stays
+// seamless for both envelopes.
+func TestOceanChainedArgs(t *testing.T) {
+	p, err := mustFindDefault(t, "ocean").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	want := []string{
+		"--buffer", "131072", "--no-show-progress", "-c", "2", "--null",
+		"synth", "100", "brownnoise",
+		"band", "-n", "1786", "499",
+		"tremolo", "0.08", "37",
+		"tremolo", "0.02", "60",
+		"reverb", "19",
+		"repeat", "863",
+		"fade", "t", "3",
+	}
+	if got := p.noiseArgs(); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("ocean argv:\n got %q\nwant %q", strings.Join(got, " "), strings.Join(want, " "))
+	}
+}
+
+// TestOceanPinkLayeredArgs pins the two-colour flavour: the pink layer
+// synthesizes FIRST so its gain trim and slow tremolo envelope it alone, the
+// brown bed mixes in un-swelled, and the shared shaping (band, fast tremolo,
+// reverb) applies to the sum. The order is load-bearing — a tremolo placed
+// after the mix would swell both layers together and the bed would vanish at
+// every trough.
+func TestOceanPinkLayeredArgs(t *testing.T) {
+	p, err := mustFindDefault(t, "ocean pink").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	want := []string{
+		"--buffer", "131072", "--no-show-progress", "-c", "2", "--null",
+		"synth", "100", "pinknoise",
+		"gain", "7",
+		"tremolo", "0.02", "60",
+		"synth", "brownnoise", "mix",
+		"band", "-n", "1786", "499",
+		"tremolo", "0.08", "37",
+		"reverb", "19",
+		"repeat", "863",
+		"fade", "t", "3",
+	}
+	if got := p.noiseArgs(); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("ocean pink argv:\n got %q\nwant %q", strings.Join(got, " "), strings.Join(want, " "))
+	}
+}
+
+func mustFindDefault(t *testing.T, name string) noisePreset {
+	t.Helper()
+	p, err := defaultNoiseConfig().findPreset(name)
+	if err != nil {
+		t.Fatalf("default preset %q: %v", name, err)
+	}
+	return p
+}
+
+// TestCommensurateBufferSecs covers the two-period derivation: exact common
+// periods where they exist under the cap, the seam-the-fast-swell fallback
+// where they don't, and the whole-fast-periods inversion when the slow period
+// alone exceeds the cap.
+func TestCommensurateBufferSecs(t *testing.T) {
+	cases := []struct {
+		p1, p2, want float64
+	}{
+		{12.5, 50, 100},                  // the ocean defaults: 8 and 2 whole swells
+		{12.5, 100, 100},                 // slow period ≥ floor and already commensurate
+		{10, 1.0 / 0.03, 100},            // 3 × 33.33s ≈ 10 × 10s
+		{12.5, 1.0 / 0.007, 1.0 / 0.007}, // incommensurate → whole slow periods only
+		{12.5, 500, 62.5},                // slow period past the cap → whole fast periods
+	}
+	for _, c := range cases {
+		got := commensurateBufferSecs(c.p1, c.p2)
+		if math.Abs(got-c.want) > 1e-6 {
+			t.Errorf("commensurateBufferSecs(%g, %g) = %g, want %g", c.p1, c.p2, got, c.want)
+		}
+		if got > noiseMaxBufferSecs+1e-9 {
+			t.Errorf("commensurateBufferSecs(%g, %g) = %g exceeds the %g cap", c.p1, c.p2, got, noiseMaxBufferSecs)
+		}
+	}
+}
+
+// TestNormalizeWave2 pins the second-swell validation: bare colour names get
+// the noise suffix, ffmpeg-only colours are structurally impossible on either
+// side of a layered chain, a layer defaults its swell on, and a negative rate
+// switches the feature off rather than clamping it on.
+func TestNormalizeWave2(t *testing.T) {
+	if _, err := (noisePreset{Type: "brown", Wave2Type: "blue"}).normalize(); err == nil {
+		t.Error("an ffmpeg-only second-layer colour must be rejected")
+	}
+	if _, err := (noisePreset{Type: "violet", Wave2Type: "pink"}).normalize(); err == nil {
+		t.Error("a layered preset with an ffmpeg-only base colour must be rejected")
+	}
+	p, err := (noisePreset{Type: "brown", Wave2Type: "pink"}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.Wave2Type != "pinknoise" {
+		t.Errorf("bare layer colour not suffixed: %q", p.Wave2Type)
+	}
+	if p.Wave2Speed != 0.02 || p.Wave2Depth != 60 {
+		t.Errorf("a layer without a swell should default one: got %g/%g", p.Wave2Speed, p.Wave2Depth)
+	}
+	p, err = (noisePreset{Type: "brown", WaveSpeed: 0.08, Wave2Speed: -1, Wave2Depth: 40}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.Wave2Speed != 0 || p.Wave2Depth != 0 {
+		t.Errorf("a negative second swell should switch off, got %g/%g", p.Wave2Speed, p.Wave2Depth)
+	}
+}

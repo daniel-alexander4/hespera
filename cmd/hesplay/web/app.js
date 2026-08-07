@@ -373,6 +373,11 @@
   const NOISE_FIELDS = [
     ['waveSpeed', 'Swell rate (Hz)', 0.001, 0.2, 0.001],
     ['waveDepth', 'Swell depth (%)', 0, 100, 1],
+    // The second, slower swell — the incoming larger wave. 0 = off. Its colour
+    // (same stream vs its own layer) is the select above the fields.
+    ['wave2Speed', '2nd swell rate (Hz, 0=off)', 0, 0.2, 0.001],
+    ['wave2Depth', '2nd swell depth (%)', 0, 100, 1],
+    ['wave2Gain', '2nd layer gain (dB)', -60, 20, 0.5],
     ['centerHz', 'Band centre (Hz)', 20, 20000, 1],
     ['widthHz', 'Band width (Hz)', 1, 20000, 1],
     ['reverb', 'Reverb (%)', 0, 100, 1],
@@ -460,6 +465,27 @@
     type.appendChild(tspan);
     type.appendChild(sel);
     det.appendChild(type);
+
+    // The 2nd swell's colour: 'same' keeps the slow swell on the one stream
+    // (chained tremolo); a colour gives the incoming wave its own noise layer,
+    // enveloped alone over the base bed. SoX-native colours only — the server
+    // rejects the ffmpeg-generated ones for the layer, so they are not offered.
+    const l2 = document.createElement('label');
+    l2.className = 'field';
+    const lspan = document.createElement('span');
+    lspan.textContent = '2nd swell colour';
+    const lsel = document.createElement('select');
+    ['', 'brownnoise', 'pinknoise', 'whitenoise', 'tpdfnoise'].forEach((t) => {
+      const o = document.createElement('option');
+      o.value = t;
+      o.textContent = t ? t.replace('noise', '') : 'same stream';
+      if (t === (p.wave2Type || '')) o.selected = true;
+      lsel.appendChild(o);
+    });
+    lsel.addEventListener('change', () => { p.wave2Type = lsel.value; });
+    l2.appendChild(lspan);
+    l2.appendChild(lsel);
+    det.appendChild(l2);
 
     NOISE_FIELDS.forEach(([key, label, min, max, step]) => {
       det.appendChild(numberField(label, p[key], min, max, step, (v) => { p[key] = parseFloat(v); }));
