@@ -339,15 +339,29 @@ swells and never jumps mid-swell.
 
 **A second, slower swell — real surf.** A single seamless swell is metronomic;
 a preset can layer a much slower, deeper one under it — a small wave receding as
-a larger wave comes in. The **ocean** preset chains both swells on the one brown
-stream (the envelopes multiply, so the slow one is the tide the fast waves
-ride); **ocean pink** carries the slow wave on its own pink layer — the nearest
-colour to brown — enveloped alone and mixed over the steady brown bed, so the
-incoming wave is audibly distinct. The editor's "2nd swell" fields tune rate,
-depth, layer colour and layer gain; the buffer derivation extends to a whole
-number of *both* periods, so the loop still never jumps mid-swell. The layer
-colour must be one SoX synthesizes itself (brown, pink, white, tpdf) — the
-ffmpeg-generated colours arrive by pipe and cannot be a mid-chain layer.
+a larger wave comes in. The **ocean brown** preset chains both swells on the one
+brown stream (the envelopes multiply, so the slow one is the tide the fast waves
+ride); **ocean pink** swaps the roles — a pink bed of small waves with the big
+slow wave a separate brown layer over it, so the incoming wave is audibly
+distinct. The slow swell's depth is deliberately capped short of silence: the
+big wave recedes most of the way but never completely away. The editor's "2nd
+swell" fields tune rate, depth, layer colour and layer gain; the buffer
+derivation extends to a whole number of *both* periods, so the loop still never
+jumps mid-swell. The layer colour must be one SoX synthesizes itself (brown,
+pink, white, tpdf) — the ffmpeg-generated colours arrive by pipe and cannot be a
+mid-chain layer.
+
+**The floor — a third layer far underneath.** Both ocean presets carry a
+barely-audible velvet floor: banded bright at 4.5 kHz, −30 dB under the sea,
+swelling with the tide but only just (a ~2 dB breath). A floor cannot ride the
+body's effect chain — everything mixed mid-chain shares all downstream effects,
+so the body's band-pass would erase it — so a floor preset runs as its own SoX
+stage and a final `play -m` mixes body and floor onto the device at unity
+(`hesplay noise --print "ocean brown"` shows the paste-able pipeline). The
+mixer reads its inputs sample-synchronously, which is what phase-locks the
+floor's tide to the body's. Any colour works as a floor, including the
+ffmpeg-generated ones; the editor's "Floor" fields tune its colour, band, swell
+and level.
 
 **Where the colours come from.** SoX synthesizes brown, pink, white and tpdf
 itself. Blue, violet and velvet do not exist in SoX at any version, so those are
