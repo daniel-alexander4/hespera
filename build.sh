@@ -118,22 +118,22 @@ if [ "$PUBLISH" = 1 ]; then
     "$DIST"/*
   echo "published — https://github.com/daniel-alexander4/hespera/releases/tag/v$VERSION"
 
-  # Point the Vigo hesplay crate at the release we just cut, so the fleet
-  # converges onto it instead of sitting on whatever it was pinned to.
+  # Point the Vigo hesplay crate's hesplay_version var at the release we just
+  # cut. Since 2026-08-07 the crate carries NO `version:` pin (Dan's call:
+  # the latest deployed build wins — the old pin downgraded a hand-installed
+  # build 21s after the deploy, and the stale running binary then had
+  # needrestart kill the playing brownnoise after the next apt run). The var
+  # only feeds the crate's fresh-install URL now: existing boxes are upgraded
+  # per box with ./install.sh client <host>, and Vigo never up/downgrades an
+  # installed hesplay.
   #
   # ORDER IS LOAD-BEARING: this runs AFTER the release exists. Bumping the var
-  # first would send every box fetching a URL that 404s until the upload
-  # finished — and the executor retries on the next check-in, so the whole fleet
-  # would churn against a missing asset.
+  # first would point a fresh box's install at a URL that 404s until the
+  # upload finished.
   #
-  # Why a version bump rather than `state: latest`: with `state: latest` the
-  # executor re-downloads the full .deb on EVERY convergence run (no
-  # conditional-GET, no checksum short-circuit) — on a Pi converging roughly
-  # every 48s that is ~200 MB/hour, forever, to learn nothing. Pinning the
-  # version means it compares two strings and downloads only on a real change.
-  # `state: present` with NO version is the other trap: the executor treats an
-  # already-installed package as a no-op, so a fresh box would install once and
-  # then never update again.
+  # The sed edits stacks/ only — the change reaches envoys after a
+  # `sudo vigocli config publish` on the controller (there is no auto-publish
+  # watcher; verified 2026-08-07).
   #
   # Only ever runs on the Vigo controller (the crate tree is local to it);
   # anywhere else this is a no-op with a note.
@@ -141,8 +141,8 @@ if [ "$PUBLISH" = 1 ]; then
   if [ -f "$CRATE" ]; then
     if sudo sed -i -E "s/^([[:space:]]*hesplay_version:[[:space:]]*).*/\1$VERSION/" "$CRATE" &&
       grep -qE "^[[:space:]]*hesplay_version:[[:space:]]*$VERSION\$" "$CRATE"; then
-      echo "vigo crate pinned to $VERSION — $CRATE"
-      echo "  the fleet converges within a check-in; nothing to do on the boxes"
+      echo "vigo crate fresh-install version set to $VERSION — $CRATE"
+      echo "  run: sudo vigocli config publish   (fresh boxes only; existing boxes upgrade via ./install.sh client <host>)"
     else
       echo "warn: could not update $CRATE — bump hesplay_version to $VERSION by hand" >&2
     fi
