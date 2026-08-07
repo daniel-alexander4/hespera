@@ -37,6 +37,19 @@ const (
 	sessionNoise
 )
 
+// String is the wire form /api/state reports, so the remote can render a noise
+// session differently from a queue. Idle is the empty string, matching the
+// "zero value means idle" convention nowPlaying already follows.
+func (k sessionKind) String() string {
+	switch k {
+	case sessionQueue:
+		return "queue"
+	case sessionNoise:
+		return "noise"
+	}
+	return ""
+}
+
 // noiseRuntime is the reconciler's view of the world — everything decideNoise
 // needs, and nothing that would drag a controller into a unit test.
 type noiseRuntime struct {

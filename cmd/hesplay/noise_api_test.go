@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -205,6 +206,84 @@ func TestNoiseSessionReportsAsPlaying(t *testing.T) {
 	}
 	if body["playing"] != true {
 		t.Fatalf("playing: got %v, want true", body["playing"])
+	}
+}
+
+// TestNoiseStateReportsKindAndPausability: the remote renders a noise session
+// differently from a queue (footer on every screen, no next/previous), and it
+// learns which from the state's kind. canPause must follow the signal seam,
+// not the music engine's IPC — mpv's socket says nothing about SoX.
+func TestNoiseStateReportsKindAndPausability(t *testing.T) {
+	ct := noiseTestController(t)
+	ct.mu.Lock()
+	ct.kind = sessionNoise
+	ct.state = nowPlaying{Queue: "Noise", Title: "brown noise", Index: 1, Total: 1}
+	ct.mu.Unlock()
+
+	// Before the engine process exists there is nothing to signal.
+	_, body := doJSON(t, http.HandlerFunc(ct.handleState), http.MethodGet, "/api/state", "")
+	if body["kind"] != "noise" {
+		t.Fatalf("kind: got %v, want noise", body["kind"])
+	}
+	if body["canPause"] != false {
+		t.Errorf("canPause with no engine yet: got %v, want false", body["canPause"])
+	}
+
+	ct.mu.Lock()
+	ct.noisePause = func(bool) error { return nil }
+	ct.mu.Unlock()
+	_, body = doJSON(t, http.HandlerFunc(ct.handleState), http.MethodGet, "/api/state", "")
+	if body["canPause"] != true {
+		t.Errorf("canPause with the seam installed: got %v, want true", body["canPause"])
+	}
+}
+
+// TestPauseRoutesNoiseThroughTheSignalSeam: a noise session has no track id and
+// no IPC socket, so /api/pause must take the signal path — before this, the
+// trackID guard 409'd every noise pause as "nothing is playing".
+func TestPauseRoutesNoiseThroughTheSignalSeam(t *testing.T) {
+	ct := noiseTestController(t)
+	var got []bool
+	ct.mu.Lock()
+	ct.kind = sessionNoise
+	ct.state = nowPlaying{Queue: "Noise", Title: "brown noise", Index: 1, Total: 1}
+	ct.noisePause = func(pause bool) error { got = append(got, pause); return nil }
+	ct.mu.Unlock()
+
+	h := http.HandlerFunc(ct.handlePause)
+	w, body := doJSON(t, h, http.MethodPost, "/api/pause", `{"paused":true}`)
+	if w.Code != http.StatusOK || body["paused"] != true {
+		t.Fatalf("pause: %d %s", w.Code, w.Body)
+	}
+	if !ct.paused.Load() {
+		t.Error("the paused flag did not follow a successful signal")
+	}
+	w, body = doJSON(t, h, http.MethodPost, "/api/pause", `{"paused":false}`)
+	if w.Code != http.StatusOK || body["paused"] != false {
+		t.Fatalf("resume: %d %s", w.Code, w.Body)
+	}
+	if len(got) != 2 || got[0] != true || got[1] != false {
+		t.Fatalf("signals sent: %v, want [true false]", got)
+	}
+}
+
+// TestPauseNoiseFailureClaimsNothing: a failed signal must leave the paused
+// flag alone — the remote's glyph follows that flag, and a lying flag would
+// show a paused bar over a box still making noise.
+func TestPauseNoiseFailureClaimsNothing(t *testing.T) {
+	ct := noiseTestController(t)
+	ct.mu.Lock()
+	ct.kind = sessionNoise
+	ct.state = nowPlaying{Queue: "Noise", Title: "brown noise", Index: 1, Total: 1}
+	ct.noisePause = func(bool) error { return errors.New("no such process") }
+	ct.mu.Unlock()
+
+	w, _ := doJSON(t, http.HandlerFunc(ct.handlePause), http.MethodPost, "/api/pause", `{"paused":true}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("got %d, want 409", w.Code)
+	}
+	if ct.paused.Load() {
+		t.Error("a failed signal set the paused flag anyway")
 	}
 }
 
