@@ -75,24 +75,22 @@
   <p id="pl-empty" class="msg" hidden>No playlists yet.</p>
   <div class="grid" id="playlists"></div>
 
-  <!-- Noise. Tiles start a preset straight away; the presets and the schedule
-       are edited a screen deeper, because at bedtime you want one tap. -->
+  <!-- Noise. Each saved preset is a collapsed card: Play is one tap on the
+       summary (the bedtime path), expanding the card opens its full editor
+       with its own Save. Only the schedule lives a screen deeper. -->
   <section id="noise-sec">
     <h2>Noise</h2>
-    <div class="grid" id="noise-quick"></div>
-    <button class="btn" id="noise-more">Presets &amp; schedule…</button>
+    <div class="rows" id="noise-quick"></div>
+    <button class="btn" id="noise-more">Schedule…</button>
   </section>
 </main>
 
-<!-- Noise settings: the presets, and the windows they play in. -->
+<!-- Noise schedule: the windows the presets play in. -->
 <main id="screen-noise" hidden>
   <p id="noise-unavailable" class="msg" hidden>
     SoX is not installed on this box, so no noise can be generated here.
     Install the <code>sox</code> package.
   </p>
-
-  <h2>Presets</h2>
-  <div id="noise-presets" class="rows"></div>
 
   <h2>Schedule</h2>
   <p class="msg">

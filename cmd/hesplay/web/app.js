@@ -402,19 +402,14 @@
       .catch((e) => toast(e.message, true));
   }
 
-  // The home tiles: one tap per preset, no screen change. Rebuilt whenever the
-  // config is (re)read so a renamed preset can't leave a stale button behind.
+  // The home preset cards: collapsed, Play one tap away in the summary, the
+  // full editor a tap-to-expand away (Dan, 2026-08-07 — the tiles used to be
+  // bare play buttons with the editor a screen deeper). Rebuilt whenever the
+  // config is (re)read so a renamed preset can't leave a stale card behind.
   function renderNoiseQuick() {
     const box = $('noise-quick');
     box.textContent = '';
-    (noiseCfg.presets || []).forEach((p) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'btn tile';
-      b.textContent = p.name;
-      b.addEventListener('click', () => noiseStart(p.name));
-      box.appendChild(b);
-    });
+    (noiseCfg.presets || []).forEach((p) => box.appendChild(presetRow(p)));
   }
 
   function numberField(label, value, min, max, step, onInput) {
@@ -448,15 +443,22 @@
     sub.className = 'sub';
     sub.textContent = p.type.replace('noise', '');
     sum.appendChild(sub);
-    det.appendChild(sum);
-
+    // Play lives IN the summary so a collapsed card is still one tap at
+    // bedtime — the card replaced the old quick tile, and the tile's whole
+    // point was one press. preventDefault keeps the tap from also toggling
+    // the details open.
     const play = document.createElement('button');
     play.type = 'button';
-    play.className = 'btn';
+    play.className = 'btn go';
     play.appendChild(icon('play'));
-    play.append(' Play');
-    play.addEventListener('click', () => noiseStart(p.name));
-    det.appendChild(play);
+    play.setAttribute('aria-label', 'Play ' + p.name);
+    play.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      noiseStart(p.name);
+    });
+    sum.appendChild(play);
+    det.appendChild(sum);
 
     const type = document.createElement('label');
     type.className = 'field';
@@ -518,6 +520,20 @@
     NOISE_FIELDS.forEach(([key, label, min, max, step]) => {
       det.appendChild(numberField(label, p[key], min, max, step, (v) => { p[key] = parseFloat(v); }));
     });
+
+    // Each card saves itself — on the front page there is no screen-level Save
+    // button underneath it. The PUT writes the whole config (the API's shape),
+    // so edits made in several cards before one Save all land together.
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn';
+    save.textContent = 'Save';
+    save.addEventListener('click', () => {
+      putNoise()
+        .then(() => toast('Saved'))
+        .catch((e) => toast(e.message, true));
+    });
+    det.appendChild(save);
     return det;
   }
 
@@ -593,14 +609,27 @@
     return box;
   }
 
+  // The schedule screen. Presets are NOT rendered here any more — their cards
+  // live on the front page (renderNoiseQuick); the windows' preset selects
+  // still read the same shared noiseCfg, so a rename shows up on both screens.
   function renderNoiseScreen() {
-    const presets = $('noise-presets');
-    presets.textContent = '';
-    (noiseCfg.presets || []).forEach((p) => presets.appendChild(presetRow(p)));
-
     const wins = $('noise-windows');
     wins.textContent = '';
     (noiseCfg.schedule || []).forEach((w) => wins.appendChild(windowRow(w)));
+  }
+
+  // putNoise writes the whole config back — the shared PUT behind both the
+  // schedule screen's Save and every preset card's own Save.
+  function putNoise() {
+    return api('/api/noise', {
+      method: 'PUT',
+      body: JSON.stringify({
+        audioDev: noiseCfg.audioDev || '',
+        default: noiseCfg.default || '',
+        presets: noiseCfg.presets,
+        schedule: noiseCfg.schedule,
+      }),
+    });
   }
 
   // The home tiles need the preset names at boot, without opening the screen.
@@ -635,15 +664,7 @@
   async function saveNoise() {
     $('noise-msg').textContent = '';
     try {
-      await api('/api/noise', {
-        method: 'PUT',
-        body: JSON.stringify({
-          audioDev: noiseCfg.audioDev || '',
-          default: noiseCfg.default || '',
-          presets: noiseCfg.presets,
-          schedule: noiseCfg.schedule,
-        }),
-      });
+      await putNoise();
       $('noise-msg').textContent = 'Saved';
       renderNoiseQuick();
     } catch (e) {
