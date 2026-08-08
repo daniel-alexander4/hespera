@@ -68,8 +68,12 @@
     <button class="btn tile" data-source="all" data-shuffle="1">Everything</button>
   </div>
 
-  <h2 id="artists-h">Artists</h2>
-  <div id="letters" class="letters"></div>
+  <!-- Collapsed like the noise preset cards (Dan, 2026-08-07): the A–Z matrix
+       is a browse tool, not a glance target, so it folds out of the way. -->
+  <details class="preset" id="artists-card">
+    <summary><b id="artists-h">Artists</b></summary>
+    <div id="letters" class="letters"></div>
+  </details>
 
   <h2>Playlists</h2>
   <p id="pl-empty" class="msg" hidden>No playlists yet.</p>
