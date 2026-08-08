@@ -358,10 +358,20 @@ body's effect chain — everything mixed mid-chain shares all downstream effects
 so the body's band-pass would erase it — so a floor preset runs as its own SoX
 stage and a final `play -m` mixes body and floor onto the device at unity
 (`hesplay noise --print "ocean brown"` shows the paste-able pipeline). The
-mixer reads its inputs sample-synchronously, which is what phase-locks the
-floor's tide to the body's. Any colour works as a floor, including the
-ffmpeg-generated ones; the editor's "Floor" fields tune its colour, band, swell
-and level.
+mixer reads its inputs sample-synchronously, which keeps the layers in exact
+sample lockstep. Any colour works as a floor, including the ffmpeg-generated
+ones; the editor's "Floor" fields tune its colour, band, swell and level.
+
+**The swells are deliberately out of step.** With every envelope starting at
+its peak, the tide crest always lands on a wave crest and the floor breathes in
+unison with the sea. Each preset can offset its rhythms: the "2nd swell offset"
+shifts the fast waves against the tide, and the "Floor swell offset" shifts the
+floor's breath against both (the ocean presets ship with half a wave period and
+a quarter of the floor's cycle respectively). SoX's tremolo has no phase
+argument, so the offset is a `trim` placed between envelopes — it discards the
+stream's head, shifting everything upstream of it relative to everything
+downstream, and the synth runs offset-seconds long so the loop is still cut
+from a whole-period remainder and never seams.
 
 **Where the colours come from.** SoX synthesizes brown, pink, white and tpdf
 itself. Blue, violet and velvet do not exist in SoX at any version, so those are

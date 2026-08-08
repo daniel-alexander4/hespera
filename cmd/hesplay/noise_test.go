@@ -657,11 +657,11 @@ func TestOceanBrownStages(t *testing.T) {
 	if !p.floorActive() {
 		t.Fatal("ocean brown should carry the velvet floor")
 	}
-	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 100 brownnoise band -n 1786 499 tremolo 0.08 37 tremolo 0.02 45 reverb 19 repeat 863"
+	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 106.25 brownnoise band -n 1786 499 tremolo 0.08 37 trim 6.25 tremolo 0.02 45 reverb 19 repeat 863"
 	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
 		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
 	}
-	wantFloor := "--buffer 131072 -t wav - -t sox - gain -30 band -n 4500 2000 tremolo 0.02 18 reverb 19"
+	wantFloor := "--buffer 131072 -t wav - -t sox - gain -30 band -n 4500 2000 tremolo 0.02 18 trim 12.5 reverb 19"
 	if got := strings.Join(p.floorSoxArgs(), " "); got != wantFloor {
 		t.Errorf("floor stage:\n got %q\nwant %q", got, wantFloor)
 	}
@@ -680,7 +680,7 @@ func TestOceanPinkBodyStage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 100 brownnoise gain -7 tremolo 0.02 45 synth pinknoise mix band -n 1786 499 tremolo 0.08 37 reverb 19 repeat 863 gain 7"
+	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 106.25 brownnoise gain -7 tremolo 0.02 45 trim 6.25 synth pinknoise mix band -n 1786 499 tremolo 0.08 37 reverb 19 repeat 863 gain 7"
 	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
 		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
 	}
@@ -722,5 +722,37 @@ func TestNormalizeFloor(t *testing.T) {
 	}
 	if p.FloorCenterHz != 0 {
 		t.Error("floor fields should clear when no floor colour is set")
+	}
+}
+
+// TestSwellOffsets pins the phase-offset trims: the synth runs OFFSET seconds
+// long and the trim discards that head after the envelope it shifts — chained
+// between the two tremolos, layered after the slow layer's tremolo, floor
+// after its own — so the post-trim loop is still a whole number of every
+// period and the seam stays phase-continuous (measured: a 2.5s trim moved the
+// trough by exactly 2.5s across a repeat boundary). An offset without its
+// swell normalizes away.
+func TestSwellOffsets(t *testing.T) {
+	p, err := (noisePreset{Type: "brown", WaveSpeed: 0.08, Wave2Speed: 0.02, Wave2Depth: 45, Wave2Offset: 6.25}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	got := strings.Join(p.noiseArgs(), " ")
+	if !strings.Contains(got, "synth 106.25 brownnoise") || !strings.Contains(got, "tremolo 0.08 37 trim 6.25 tremolo 0.02 45") {
+		t.Errorf("chained offset argv wrong: %q", got)
+	}
+	if p, _ := (noisePreset{Type: "brown", Wave2Offset: 9}).normalize(); p.Wave2Offset != 0 {
+		t.Errorf("offset without a second swell should clear, got %g", p.Wave2Offset)
+	}
+	if p, _ := (noisePreset{Type: "brown", FloorType: "white", FloorOffset: 9}).normalize(); p.FloorOffset != 0 {
+		t.Errorf("floor offset without a floor swell should clear, got %g", p.FloorOffset)
+	}
+	p, err = (noisePreset{Type: "brown", FloorType: "white", FloorSpeed: 0.02, FloorOffset: 12.5}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	fgot := strings.Join(p.floorSoxArgs(), " ")
+	if !strings.Contains(fgot, "synth 112.5 whitenoise") || !strings.Contains(fgot, "tremolo 0.02 18 trim 12.5") {
+		t.Errorf("floor offset argv wrong: %q", fgot)
 	}
 }

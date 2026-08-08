@@ -150,6 +150,17 @@ type noisePreset struct {
 	Wave2Depth float64 `json:"wave2Depth,omitempty"` // slow-swell depth %
 	Wave2Type  string  `json:"wave2Type,omitempty"`  // optional SoX colour carrying the slow swell; "" = same stream
 	Wave2Gain  float64 `json:"wave2Gain,omitempty"`  // level trim on that layer, dB; 0 = none
+	// Wave2Offset de-synchronizes the two swells (Dan: "all the noises
+	// slightly offset from one another") — with both tremolos starting at
+	// their peak, the tide crest always lands ON a wave crest. SoX's tremolo
+	// has no phase argument, so the offset is a `trim` placed AFTER one
+	// envelope and before the other: trim discards the head of the stream,
+	// which shifts every effect upstream of it by that many seconds relative
+	// to everything downstream (verified: a 2.5s trim moved the measured
+	// trough by exactly 2.5s, and the loop seam stays phase-continuous
+	// because the synth runs OFFSET seconds long and repeat loops the
+	// post-trim whole-period remainder).
+	Wave2Offset float64 `json:"wave2Offset,omitempty"` // seconds; shifts the fast swell against the slow one
 
 	// The floor (2026-08-07, tuned by ear with Dan): a third layer far
 	// underneath the sea — its own colour, its own bright band, its own
@@ -166,6 +177,7 @@ type noisePreset struct {
 	FloorSpeed    float64 `json:"floorSpeed,omitempty"`    // its swell Hz; 0 = perfectly still
 	FloorDepth    float64 `json:"floorDepth,omitempty"`    // its swell depth %
 	FloorGain     float64 `json:"floorGain,omitempty"`     // dB; strongly negative = "underneath"
+	FloorOffset   float64 `json:"floorOffset,omitempty"`   // seconds; shifts the floor's breath against the body's tide
 }
 
 // noiseConfig is the whole on-disk file. It lives on the BOX that makes the
@@ -255,10 +267,10 @@ func defaultNoiseConfig() noiseConfig {
 			// at brown's reference loudness, mirroring pink's measured +7).
 			oceanFloor(noisePreset{Name: "ocean brown", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				Wave2Speed: 0.02, Wave2Depth: 45, Reverb: 19, FadeIn: 3}),
+				Wave2Speed: 0.02, Wave2Depth: 45, Wave2Offset: 6.25, Reverb: 19, FadeIn: 3}),
 			oceanFloor(noisePreset{Name: "ocean pink", Type: "pinknoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				Wave2Type: "brownnoise", Wave2Gain: -7, Wave2Speed: 0.02, Wave2Depth: 45,
+				Wave2Type: "brownnoise", Wave2Gain: -7, Wave2Speed: 0.02, Wave2Depth: 45, Wave2Offset: 6.25,
 				GainDB: 7, Reverb: 19, FadeIn: 3}),
 		},
 	}
@@ -274,6 +286,7 @@ func oceanFloor(p noisePreset) noisePreset {
 	p.FloorCenterHz, p.FloorWidthHz = 4500, 2000
 	p.FloorSpeed, p.FloorDepth = 0.02, 18
 	p.FloorGain = -30
+	p.FloorOffset = 12.5
 	return p
 }
 
@@ -433,6 +446,11 @@ func (p noisePreset) normalize() (noisePreset, error) {
 		}
 	}
 	out.Wave2Gain = math.Max(-60, math.Min(20, out.Wave2Gain))
+	if out.Wave2Speed > 0 {
+		out.Wave2Offset = math.Max(0, math.Min(noiseMaxBufferSecs, out.Wave2Offset))
+	} else {
+		out.Wave2Offset = 0
+	}
 
 	// The floor: any known colour (its own process, so ffmpeg colours are fine
 	// here, unlike Wave2Type). Its gain follows the GainDB rule — clamped,
@@ -454,9 +472,14 @@ func (p noisePreset) normalize() (noisePreset, error) {
 			out.FloorSpeed, out.FloorDepth = 0, 0
 		}
 		out.FloorGain = math.Max(-60, math.Min(20, out.FloorGain))
+		if out.FloorSpeed > 0 {
+			out.FloorOffset = math.Max(0, math.Min(noiseMaxBufferSecs, out.FloorOffset))
+		} else {
+			out.FloorOffset = 0
+		}
 	} else {
 		out.FloorCenterHz, out.FloorWidthHz = 0, 0
-		out.FloorSpeed, out.FloorDepth, out.FloorGain = 0, 0, 0
+		out.FloorSpeed, out.FloorDepth, out.FloorGain, out.FloorOffset = 0, 0, 0, 0
 	}
 	return out, nil
 }
@@ -577,14 +600,26 @@ func (p noisePreset) noiseArgs() []string {
 // tuned by ear for brown.
 func (p noisePreset) synthChain() []string {
 	if p.Wave2Type == "" {
-		return []string{"synth", num(p.bufferSecs()), p.Type}
+		return []string{"synth", num(p.synthSecs()), p.Type}
 	}
-	a := []string{"synth", num(p.bufferSecs()), p.Wave2Type}
+	a := []string{"synth", num(p.synthSecs()), p.Wave2Type}
 	if p.Wave2Gain != 0 {
 		a = append(a, "gain", num(p.Wave2Gain))
 	}
 	a = append(a, "tremolo", num(p.Wave2Speed), num(p.Wave2Depth))
+	if p.Wave2Offset > 0 {
+		// The offset trim: shifts the slow layer's envelope against the
+		// post-mix fast swell. The synth ran Wave2Offset seconds long, so the
+		// post-trim remainder is still a whole number of both periods.
+		a = append(a, "trim", num(p.Wave2Offset))
+	}
 	return append(a, "synth", p.Type, "mix")
+}
+
+// synthSecs is the synth length: the loop length plus the offset trim's head,
+// which the trim discards before the loop is cut.
+func (p noisePreset) synthSecs() float64 {
+	return p.bufferSecs() + p.Wave2Offset
 }
 
 // bodySoxArgs renders the body — the preset's one- or two-layer sea — as a
@@ -646,7 +681,7 @@ func (p noisePreset) floorSoxArgs() []string {
 		a = []string{"--buffer", strconv.Itoa(noiseBuffer), "-t", "wav", "-", "-t", "sox", "-"}
 	} else {
 		a = []string{"--buffer", strconv.Itoa(noiseBuffer), "-c", strconv.Itoa(noiseChannels), "--null", "-t", "sox", "-",
-			"synth", num(p.floorBufferSecs()), p.FloorType}
+			"synth", num(p.floorBufferSecs() + p.FloorOffset), p.FloorType}
 	}
 	if p.FloorGain != 0 {
 		a = append(a, "gain", num(p.FloorGain))
@@ -654,6 +689,12 @@ func (p noisePreset) floorSoxArgs() []string {
 	a = append(a, "band", "-n", num(p.FloorCenterHz), num(p.FloorWidthHz))
 	if p.FloorSpeed > 0 {
 		a = append(a, "tremolo", num(p.FloorSpeed), num(p.FloorDepth))
+		if p.FloorOffset > 0 {
+			// Shifts the floor's breath against the body's tide — the mixer
+			// syncs both streams' sample 0, so a trimmed head is a pure
+			// phase offset between the layers.
+			a = append(a, "trim", num(p.FloorOffset))
+		}
 	}
 	a = append(a, "reverb", num(p.Reverb))
 	if !p.floorNeedsFFmpeg() {
@@ -693,7 +734,12 @@ func (p noisePreset) shapeArgs() []string {
 	if p.Wave2Speed > 0 && p.Wave2Type == "" {
 		// Chained tremolos multiply their envelopes: the slow one is the tide,
 		// the fast one rides it. (With Wave2Type set the slow swell already
-		// lives on its own layer, before this chain.)
+		// lives on its own layer, before this chain.) The offset trim between
+		// them shifts the fast envelope against the slow so the tide crest
+		// lands between wave crests instead of always on one.
+		if p.Wave2Offset > 0 {
+			a = append(a, "trim", num(p.Wave2Offset))
+		}
 		a = append(a, "tremolo", num(p.Wave2Speed), num(p.Wave2Depth))
 	}
 	return append(a, "reverb", num(p.Reverb))
