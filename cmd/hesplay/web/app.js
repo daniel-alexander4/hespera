@@ -378,6 +378,7 @@
     ['wave2Speed', '2nd swell rate (Hz, 0=off)', 0, 0.2, 0.001],
     ['wave2Depth', '2nd swell depth (%)', 0, 100, 1],
     ['wave2Gain', '2nd layer gain (dB)', -60, 20, 0.5],
+    ['wave2Offset', '2nd swell offset (s)', 0, 300, 0.25],
     // The floor — a third layer far underneath, with its own band and swell;
     // its colour select sits above the fields ('' = no floor).
     ['floorCenterHz', 'Floor band centre (Hz)', 20, 20000, 1],
@@ -385,6 +386,7 @@
     ['floorSpeed', 'Floor swell rate (Hz, 0=still)', 0, 0.2, 0.001],
     ['floorDepth', 'Floor swell depth (%)', 0, 100, 1],
     ['floorGain', 'Floor gain (dB)', -60, 20, 0.5],
+    ['floorOffset', 'Floor swell offset (s)', 0, 300, 0.25],
     ['centerHz', 'Band centre (Hz)', 20, 20000, 1],
     ['widthHz', 'Band width (Hz)', 1, 20000, 1],
     ['reverb', 'Reverb (%)', 0, 100, 1],
