@@ -320,6 +320,24 @@ h2:first-child { margin-top: 0; }
 }
 .preset > summary b { font-weight: 600; }
 .preset > summary .sub { font-size: 0.78rem; color: var(--subtext); }
+/* Every collapsible card wears a chevron: points right closed, down open —
+   the visual promise that the row expands. Drawn in CSS (the icon sprite
+   can't reach a pseudo-element); sits at the right edge, or just after the
+   summary's Play button when the card has one. */
+.preset > summary::after {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  border-right: 2px solid var(--subtext);
+  border-bottom: 2px solid var(--subtext);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.preset > summary:has(.go)::after { margin-left: 0.6rem; }
+details.preset[open] > summary::after { transform: rotate(45deg); }
 /* The summary's Play button: pushed to the right edge, vertically centred
    against the baseline-aligned text, sized as a real touch target. */
 .preset > summary .go {
