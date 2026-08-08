@@ -320,6 +320,17 @@ h2:first-child { margin-top: 0; }
 }
 .preset > summary b { font-weight: 600; }
 .preset > summary .sub { font-size: 0.78rem; color: var(--subtext); }
+/* The summary's Play button: pushed to the right edge, vertically centred
+   against the baseline-aligned text, sized as a real touch target. */
+.preset > summary .go {
+  margin-left: auto;
+  align-self: center;
+  min-width: 44px;
+  padding: 0.5rem 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .preset > .btn { margin: 0.2rem 0 0.6rem; }
 
 .field { display: grid; gap: 0.25rem; margin-bottom: 0.55rem; }
