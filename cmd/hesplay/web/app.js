@@ -412,6 +412,41 @@
     (noiseCfg.presets || []).forEach((p) => box.appendChild(presetRow(p)));
   }
 
+  // The front page's schedule card: a readable view of the saved windows —
+  // days, times, preset — with editing a screen deeper behind the card's
+  // button. The summary carries the window count so the collapsed card says
+  // whether a schedule exists at all.
+  function renderScheduleCard() {
+    const box = $('schedule-view');
+    if (!box) return;
+    box.textContent = '';
+    const wins = noiseCfg.schedule || [];
+    $('schedule-h').textContent = wins.length
+      ? 'Noise schedule \u00b7 ' + wins.length
+      : 'Noise schedule';
+    if (!wins.length) {
+      const pmsg = document.createElement('p');
+      pmsg.className = 'msg';
+      pmsg.textContent = 'No windows yet.';
+      box.appendChild(pmsg);
+      return;
+    }
+    wins.forEach((w) => {
+      const row = document.createElement('div');
+      row.className = 'win';
+      const days = (w.days && w.days.length)
+        ? w.days.map((d) => DAY_NAMES[d] || '?').join(' ')
+        : 'Every day';
+      const b = document.createElement('b');
+      b.textContent = (w.start || '?') + ' \u2013 ' + (w.end || '?');
+      const sub = document.createElement('span');
+      sub.className = 'sub';
+      sub.textContent = ' ' + days + ' \u00b7 ' + (w.preset || 'default preset');
+      row.append(b, sub);
+      box.appendChild(row);
+    });
+  }
+
   function numberField(label, value, min, max, step, onInput) {
     const wrap = document.createElement('label');
     wrap.className = 'field';
@@ -642,6 +677,7 @@
       noiseCfg.schedule = noiseCfg.schedule || [];
       $('noise-sec').hidden = noiseCfg.available === false;
       renderNoiseQuick();
+      renderScheduleCard();
     } catch (_) { /* leave the section as it is */ }
   }
 
@@ -654,6 +690,7 @@
       noiseCfg.schedule = noiseCfg.schedule || [];
       $('noise-unavailable').hidden = noiseCfg.available !== false;
       renderNoiseQuick();
+      renderScheduleCard();
       renderNoiseScreen();
       push('noise', 'Noise');
     } catch (e) {
@@ -667,6 +704,7 @@
       await putNoise();
       $('noise-msg').textContent = 'Saved';
       renderNoiseQuick();
+      renderScheduleCard();
     } catch (e) {
       $('noise-msg').textContent = e.message;
     }

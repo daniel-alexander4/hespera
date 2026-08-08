@@ -79,13 +79,21 @@
   <p id="pl-empty" class="msg" hidden>No playlists yet.</p>
   <div class="grid" id="playlists"></div>
 
-  <!-- Noise. Each saved preset is a collapsed card: Play is one tap on the
-       summary (the bedtime path), expanding the card opens its full editor
-       with its own Save. Only the schedule lives a screen deeper. -->
+  <!-- Noise (Dan, 2026-08-07): the saved schedule shows as its own collapsed
+       card, and the preset cards live INSIDE a collapsed Noise card — the
+       front page is a stack of collapsibles. Each preset card keeps Play in
+       its summary (the bedtime path) and its full editor when expanded; the
+       schedule is edited a screen deeper via the card's button. -->
   <section id="noise-sec">
-    <h2>Noise</h2>
-    <div class="rows" id="noise-quick"></div>
-    <button class="btn" id="noise-more">Schedule…</button>
+    <details class="preset" id="schedule-card">
+      <summary><b id="schedule-h">Noise schedule</b></summary>
+      <div id="schedule-view" class="rows"></div>
+      <button class="btn" id="noise-more">Edit schedule…</button>
+    </details>
+    <details class="preset" id="noise-card">
+      <summary><b>Noise</b></summary>
+      <div class="rows" id="noise-quick"></div>
+    </details>
   </section>
 </main>
 
