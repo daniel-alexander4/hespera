@@ -412,11 +412,19 @@
     ['centerHz', 'Band centre (Hz, 0=same)', 0, 20000, 1],
     ['widthHz', 'Band width (Hz, 0=same)', 0, 20000, 1],
   ];
+  // `swell` turns `speed` from a surf swell into a fast SWING riding a slow
+  // envelope, and the server clamps it to 0.5-40 Hz on that basis — so the rate
+  // field has to reach 40, not 0.2, or the editor could not express a pulse
+  // layer it is perfectly happy to play. Both swell fields are listed even
+  // though most layers leave them at 0: a field on screen at 0 is a knob, a
+  // field absent while the value is set is a mystery.
   const LAYER_FIELDS = [
-    ['speed', 'Swell rate (Hz, 0=still)', 0, 0.2, 0.001],
-    ['depth', 'Swell depth (%)', 0, 100, 1],
+    ['speed', 'Rate (Hz, 0=still)', 0, 40, 0.001],
+    ['depth', 'Depth (%)', 0, 100, 1],
+    ['swell', 'Rides a slow swell (Hz, 0=none)', 0, 0.2, 0.001],
+    ['swellDepth', 'Slow swell depth (%)', 0, 100, 1],
     ['gain', 'Gain (dB)', -60, 20, 0.5],
-    ['offset', 'Swell offset (s)', 0, 300, 0.25],
+    ['offset', 'Phase offset (s)', 0, 300, 0.0833],
     ['centerHz', 'Band centre (Hz, 0=same)', 0, 20000, 1],
     ['widthHz', 'Band width (Hz, 0=same)', 0, 20000, 1],
   ];
@@ -705,8 +713,17 @@
       } else if ((l.eventsPerSec || 0) > 0) {
         sub2.textContent = 'events · ' + l.eventsPerSec + '/s · ' + (l.decayMs || 12) + 'ms';
       } else {
-        sub2.textContent = (l.type || '').replace('noise', '')
-          + (l.speed > 0 ? ' · ' + Math.round(1 / l.speed) + 's wave' : ' · still');
+        // A pulse layer swings faster than once a second, where "Ns wave" rounds
+        // to "0s wave" and says nothing. Read it out in Hz instead, and name the
+        // slow envelope it rides so the two rates are never confused.
+        let motion = ' · still';
+        if (l.speed > 0) {
+          motion = l.speed >= 1
+            ? ' · ' + l.speed + ' Hz pulse'
+            : ' · ' + Math.round(1 / l.speed) + 's wave';
+          if (l.swell > 0) motion += ' on a ' + Math.round(1 / l.swell) + 's swell';
+        }
+        sub2.textContent = (l.type || '').replace('noise', '') + motion;
       }
       sum.append(b, sub2);
       box.appendChild(sum);
@@ -754,6 +771,20 @@
         mi.addEventListener('change', () => { l.monaural = mi.checked; renderNoiseQuick(); });
         ml.append(ms, mi);
         box.appendChild(ml);
+      } else {
+        // A tone layer never sees the reverb at all, so this belongs to the
+        // other two kinds. It matters for a fast layer: a 6 Hz period is 167 ms,
+        // well inside a reverb tail, and the room smears the swing away.
+        const dl = document.createElement('label');
+        dl.className = 'field';
+        const ds = document.createElement('span');
+        ds.textContent = 'Dry (skip the room — keeps a fast swing sharp)';
+        const di = document.createElement('input');
+        di.type = 'checkbox';
+        di.checked = !!l.dry;
+        di.addEventListener('change', () => { l.dry = di.checked; });
+        dl.append(ds, di);
+        box.appendChild(dl);
       }
 
       const rm = document.createElement('button');

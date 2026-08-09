@@ -28,8 +28,9 @@ Thumbs.db
 thumbs/
 
 # Project memory / instructions stay local (Dan's convention, 2026-07-09)
+# Subsystem CLAUDE.md files (cmd/hesplay, internal/match, web/static) stay local too.
 MEMORY.md
-/CLAUDE.md
+**/CLAUDE.md
 
 # Troubleshooting investigation logs + scratch assets stay local
 tshoot/

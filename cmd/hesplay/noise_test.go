@@ -1337,8 +1337,11 @@ func TestPresetCategories(t *testing.T) {
 	want := map[string][]string{
 		"nature": {"ocean brown brown brown", "rain", "wind", "stream", "campfire",
 			"distant storm", "cave", "waterfall", "downpour", "ocean brown", "ocean pink"},
-		"noise":    {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
-		"pulse":    {"drowsy (6 Hz)", "sharp focus (40 Hz)"},
+		"noise": {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
+		// The timbral twin sits beside its AM sibling: same state, same rate,
+		// different delivery — and it must NAME its card, since it carries layers
+		// and deriveCategory would otherwise file it under nature.
+		"pulse":    {"drowsy (6 Hz)", "drowsy (6 Hz, timbral)", "sharp focus (40 Hz)"},
 		"binaural": {"body asleep, mind awake (4+10 Hz)", "sleep onset (10→4 Hz)", "deep hypnagogia (3.5+10 Hz)", "deep sleep (2 Hz)"},
 		"monaural": {"body asleep, mind awake (4+10 Hz, monaural)", "deep hypnagogia (3.5+10 Hz, monaural)", "relaxed alert (10 Hz)"},
 	}

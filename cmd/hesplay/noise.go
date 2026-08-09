@@ -357,6 +357,32 @@ type noiseLayer struct {
 	// there is no buffer and no seam.
 	EventsPerSec float64 `json:"eventsPerSec,omitempty"` // Poisson mean; 0 = not an event layer
 	DecayMs      float64 `json:"decayMs,omitempty"`      // one time constant of each transient
+
+	// A SECOND, slower envelope chained after this layer's own, exactly as the
+	// body chains wave2 on itself: the two tremolos multiply, so the layer's
+	// fast swing rides the slow one instead of sitting at a fixed level.
+	//
+	// This exists for the timbral pulse, where a fixed-level layer is wrong in
+	// BOTH directions: at the body's crest the body masks it (inaudible), and at
+	// the body's trough nothing masks it (far too loud). Measured on the shipped
+	// pair, the 6 Hz strength at the trough against the crest ran 5.25x with no
+	// swell and 0.92x with it.
+	//
+	// ⚠️ SwellDepth is deliberately DEEPER than the body's WaveDepth, not equal
+	// to it. Matching the body exactly still read as too loud at the bottom,
+	// because masking is not linear: it vanishes as the body recedes, so a
+	// constant ratio grows more exposed the quieter the body gets. The layer has
+	// to over-recede to stay even. The usable window is narrow — the body's 85
+	// (15.0% trough amplitude) was too loud and 92 (8.0%) vanished, and 86
+	// (14.0%) is what was chosen by ear.
+	Swell      float64 `json:"swell,omitempty"`      // Hz of the slow envelope; 0 = none
+	SwellDepth float64 `json:"swellDepth,omitempty"` // % depth of it
+
+	// Dry skips the preset's shared reverb for THIS layer. Reverb smears a fast
+	// swing: a 6 Hz period is 167 ms, well inside a reverb-19 tail, and the
+	// measured 6 Hz modulation of the pulse pair fell from 39.2x dry to 19.5x
+	// wet. The body still wants its room, so the two cannot share one setting.
+	Dry bool `json:"dry,omitempty"`
 }
 
 // binaural reports whether this layer is a carrier pair rather than a noise bed.
@@ -475,6 +501,48 @@ func defaultNoiseConfig() noiseConfig {
 				Layers: []noiseLayer{
 					{Type: "brownnoise", CenterHz: 1000, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -17.7, Offset: 10},
 					{Type: "brownnoise", CenterHz: 1400, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -18.4, Offset: 6.25},
+				}},
+			// The TIMBRAL delivery of the same 6 Hz state — the twin naming the
+			// monaural pair already established (state, rate, delivery). Where
+			// `drowsy (6 Hz)` modulates LOUDNESS of the whole mix, this modulates
+			// BRIGHTNESS and leaves loudness alone: two brown bands, one low and
+			// one high, each fully tremolo'd at 6 Hz but a half-period apart, so
+			// as one fades the other rises.
+			//
+			// Level-matching the two bands is the whole trick. Unmatched they
+			// swing together and it is just an amplitude pulse wearing a costume:
+			// measured 9.9x at 6 Hz in the level. Matched, their powers sum to a
+			// constant and the level component falls to 0.6x — nothing — while
+			// the spectral centroid still swings 22x. What remains is a rhythm
+			// with no beat in it, which is the point: `drowsy (6 Hz)` is capped
+			// at PulseDepth 10 because 20 was countable as "a train chugging
+			// along", and a timbral pulse has no such ceiling to hit.
+			//
+			// ⚠️ CALL IT THETA-RATE, NOT ENTRAINMENT. The ASSR evidence base is
+			// for AMPLITUDE modulation, and this deliberately has none broadband.
+			// Per critical band there IS 6 Hz AM by construction (each layer is
+			// tremolo 100), and the ear is a filterbank, so the channels do see
+			// it — but the high layer sits inside the body's own 1751-2749 Hz
+			// band, whose steady energy dilutes it there. Treat this as texture;
+			// the binaural/monaural layers and `sharp focus (40 Hz)` are where
+			// the evidence is.
+			//
+			// Gains are the audition's, walked in by ear on danlap: the pulse
+			// pair is level-matched to itself (the 700 Hz band reads 9.37 dB
+			// hotter than the 2400 Hz one through this chain, hence the gap
+			// between the two numbers) and then set as a unit against the body.
+			// All three gains carry a −1.38 dB trim against the audition, applied
+			// IN STEP so the balance walked in by ear is untouched: the audition
+			// measured −39.62 dBFS at the sink against the AM twin's −41.00, and
+			// switching delivery of one state must not be a volume change.
+			{Name: "drowsy (6 Hz, timbral)", Category: "pulse", Type: "brownnoise",
+				CenterHz: 2250, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 85,
+				GainDB: -7.4, Reverb: 19, FadeIn: 3,
+				Layers: []noiseLayer{
+					{Type: "brownnoise", CenterHz: 700, WidthHz: 499, Speed: 6, Depth: 100,
+						Swell: 0.0625, SwellDepth: 86, Dry: true, Gain: -33.01},
+					{Type: "brownnoise", CenterHz: 2400, WidthHz: 499, Speed: 6, Depth: 100,
+						Swell: 0.0625, SwellDepth: 86, Dry: true, Offset: 0.0833, Gain: -23.64},
 				}},
 			// The all-brown sibling (Dan, 2026-08-08): ocean pink with its small
 			// wave swapped from pink to brown, so the three sizes differ only in
@@ -1231,11 +1299,22 @@ func (p noisePreset) normalize() (noisePreset, error) {
 		// A layer with no band of its own belongs to the same sea as the body.
 		l.CenterHz = clampFloat(l.CenterHz, 20, 20000, out.CenterHz)
 		l.WidthHz = clampFloat(l.WidthHz, 1, 20000, out.WidthHz)
+		// Swell marks this layer's Speed as a fast SWING riding a slow envelope
+		// rather than a surf swell, so it clamps to the entrainment range the
+		// mixer pulse uses (0.5-40 Hz) instead of noiseMaxWaveSpeed. Without the
+		// discriminator a 6 Hz pulse layer silently became a 0.2 Hz swell —
+		// caught by `--print`, which is exactly what it is for.
 		if l.Speed > 0 {
-			l.Speed = math.Max(0.001, math.Min(noiseMaxWaveSpeed, l.Speed))
+			if l.Swell > 0 {
+				l.Speed = math.Max(0.5, math.Min(40, l.Speed))
+				l.Swell = math.Max(0.001, math.Min(noiseMaxWaveSpeed, l.Swell))
+				l.SwellDepth = clampFloat(l.SwellDepth, 0, 100, out.WaveDepth)
+			} else {
+				l.Speed = math.Max(0.001, math.Min(noiseMaxWaveSpeed, l.Speed))
+			}
 			l.Depth = clampFloat(l.Depth, 0, 100, out.WaveDepth)
 		} else {
-			l.Speed, l.Depth = 0, 0
+			l.Speed, l.Depth, l.Swell, l.SwellDepth = 0, 0, 0, 0
 		}
 		l.Gain = math.Max(-60, math.Min(20, l.Gain))
 		if l.Speed > 0 {
@@ -1487,6 +1566,11 @@ func layerBufferSecs(l noiseLayer) float64 {
 	if l.Speed <= 0 {
 		return noiseMinBufferSecs
 	}
+	if l.Swell > 0 {
+		// Two chained envelopes, so the loop must be a whole number of BOTH
+		// periods or the seam lands mid-swing on one of them.
+		return commensurateBufferSecs(1/l.Speed, 1/l.Swell)
+	}
 	period := 1 / l.Speed
 	n := math.Ceil(noiseMinBufferSecs / period)
 	if n < 1 {
@@ -1547,6 +1631,9 @@ func (p noisePreset) layerSoxArgs(l noiseLayer) []string {
 			a = append(a, "gain", num(l.Gain))
 		}
 		a = append(a, "band", "-n", num(l.CenterHz), num(l.WidthHz))
+		if l.Dry {
+			return a
+		}
 		return append(a, "reverb", num(p.Reverb))
 	}
 	return p.noiseLayerSoxArgs(l)
@@ -1597,6 +1684,12 @@ func (p noisePreset) noiseLayerSoxArgs(l noiseLayer) []string {
 	a = append(a, "band", "-n", num(l.CenterHz), num(l.WidthHz))
 	if l.Speed > 0 {
 		a = append(a, "tremolo", num(l.Speed), num(l.Depth))
+		if l.Swell > 0 {
+			// Chained, so the envelopes multiply — the fast swing rides the slow
+			// one. Ahead of the trim, so an Offset shifts BOTH (which is what a
+			// phase offset against the body has to mean).
+			a = append(a, "tremolo", num(l.Swell), num(l.SwellDepth))
+		}
 		if l.Offset > 0 {
 			// Shifts this wave's arrival against the body's — the mixer syncs
 			// every stream's sample 0, so a trimmed head is a pure phase
@@ -1605,7 +1698,9 @@ func (p noisePreset) noiseLayerSoxArgs(l noiseLayer) []string {
 			a = append(a, "trim", num(l.Offset))
 		}
 	}
-	a = append(a, "reverb", num(p.Reverb))
+	if !l.Dry {
+		a = append(a, "reverb", num(p.Reverb))
+	}
 	if !ff {
 		// repeat before gain for the body's reason: repeat replays everything
 		// ahead of it, so the level belongs after (harmless for a constant gain,
