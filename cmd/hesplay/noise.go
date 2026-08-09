@@ -217,6 +217,22 @@ type noisePreset struct {
 	// startling stimulus is the opposite of what a body-asleep state needs.
 	PulseHz    float64 `json:"pulseHz,omitempty"`    // entrainment AM rate; 0 = off
 	PulseDepth float64 `json:"pulseDepth,omitempty"` // its depth %; shallow is the point
+	// PulseShape picks the modulator: "sine" (default) is SoX's tremolo, a smooth
+	// swell; "square" is ISOCHRONIC — a hard on/off gate, which entrains more
+	// strongly and is unmistakably a pulse rather than a texture. SoX has no
+	// square tremolo, so the gate is `synth square amod`, whose offset argument is
+	// the depth control (verified: offset 0/25/50/75/90 delivers 124/79/43/18/7%
+	// modulation, so PulseDepth maps to 100−offset and is monotonic but NOT
+	// linear in the delivered depth).
+	PulseShape string `json:"pulseShape,omitempty"`
+
+	// Phases turn the preset into a PROGRAM: a sequence of stretches that differ
+	// in rate, which is how every established sleep-onset track works — walking a
+	// listener down from alpha to theta rather than asking them to jump. SoX
+	// cannot ramp a tremolo or a beat mid-chain, so a program is played as
+	// successive runs (runNoiseProgram), and the LAST phase holds indefinitely so
+	// falling asleep in it doesn't end in silence.
+	Phases []noisePhase `json:"phases,omitempty"`
 
 	// Extra layers, each an independently-enveloped wave in its OWN SoX process,
 	// summed with the body by one `play -m` at unity.
@@ -247,6 +263,15 @@ type noisePreset struct {
 	FloorDepth    float64 `json:"floorDepth,omitempty"`
 	FloorGain     float64 `json:"floorGain,omitempty"`
 	FloorOffset   float64 `json:"floorOffset,omitempty"`
+}
+
+// noisePhase is one stretch of a program: how long, and the rates that differ
+// from the preset's own. A zero rate means "keep what the preset has", so a phase
+// that only moves the binaural beat says exactly that and nothing else.
+type noisePhase struct {
+	Minutes float64   `json:"minutes"`           // how long this stretch runs
+	PulseHz float64   `json:"pulseHz,omitempty"` // 0 = keep the preset's pulse
+	Beats   []float64 `json:"beats,omitempty"`   // per binaural layer, in order; 0 = keep
 }
 
 // noiseLayer is one wave with an envelope of its own: its own colour, band,
@@ -283,6 +308,13 @@ type noiseLayer struct {
 	// destroying the very phase difference the effect is made of.
 	CarrierHz float64 `json:"carrierHz,omitempty"` // the tone in the left ear; right gets +BeatHz
 	BeatHz    float64 `json:"beatHz,omitempty"`    // the difference the brain hears; 0 = a noise layer
+	// Monaural puts BOTH tones in BOTH ears instead of one each. The beat is then
+	// acoustic — the two tones interfere before they reach the listener — so it
+	// **works on speakers**, which binaural never can. Measured: 65% envelope
+	// modulation in a single channel, against 0.71% for the binaural form, which
+	// is the whole difference stated in one number. Tonal entrainment for a room,
+	// where the pulse is textural and binaural needs headphones.
+	Monaural bool `json:"monaural,omitempty"`
 }
 
 // binaural reports whether this layer is a carrier pair rather than a noise bed.
@@ -487,6 +519,75 @@ func defaultNoiseConfig() noiseConfig {
 					{CarrierHz: 100, BeatHz: 4, Gain: -30},
 					{CarrierHz: 250, BeatHz: 10, Gain: -33},
 				}},
+			// --- the rest of the entrainment card (Dan, 2026-08-09: add all four,
+			// plus monaural, isochronic and the descending program) ---
+			//
+			// One preset per USE, not per frequency: the rate is a single field on
+			// the phone, so a row per rate would be clutter pretending to be
+			// capability. Every bed level below is measured at gain 0 through its
+			// own chain (brown 1200 → −23.56, pink 1786 → −34.49, brown 700 →
+			// −21.25) and every gain is set from that, not chosen.
+
+			// "descend" is the program, and the one addition worth more than the
+			// rest combined: 10 → 4 Hz over 12 minutes, then holding. Every
+			// established sleep-onset track walks a listener down like this
+			// instead of asking the brain to jump to a state. Binaural, because
+			// it is the stronger stimulus and this is a headphones-on practice;
+			// the bed is pink at +2 (→ ~−32.5, evening level).
+			{Name: "descend", Type: "pinknoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				GainDB: 2, Reverb: 19, FadeIn: 20,
+				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -35.5}},
+				Phases: []noisePhase{
+					{Minutes: 3, Beats: []float64{10}}, // alpha: eyes closed, still awake
+					{Minutes: 3, Beats: []float64{8}},  // the edge of theta
+					{Minutes: 3, Beats: []float64{6.5}},
+					{Minutes: 3, Beats: []float64{5}},
+					{Minutes: 3, Beats: []float64{4}}, // holds here, indefinitely
+				}},
+
+			// "focus 10 deep" is the A/B against focus 10 — deeper theta, where
+			// most out-of-body accounts point, with the 10 Hz mind component
+			// unchanged so the comparison is one variable.
+			{Name: "focus 10 deep", Type: "brownnoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				Reverb: 19, FadeIn: 3,
+				Layers: []noiseLayer{
+					{CarrierHz: 100, BeatHz: 3.5, Gain: -30},
+					{CarrierHz: 250, BeatHz: 10, Gain: -33},
+				}},
+
+			// "alpha surface" is MONAURAL on purpose: relaxed-alert for a room,
+			// with no headphones, and the preset to come back up on after a
+			// session. Its tones carry ~3 dB more gain than a binaural pair would
+			// because SoX's `mix` halves what it combines.
+			{Name: "alpha surface", Type: "pinknoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				GainDB: 3, Reverb: 19, FadeIn: 8,
+				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -32.5, Monaural: true}}},
+
+			// "delta sink" is the honest tool for simply going under — 2 Hz, the
+			// slowest thing here, over a duller and slower bed (1200 Hz, a 20 s
+			// swell) at sleep level, with a 30 s fade because it starts on someone
+			// already lying down. Not an out-of-body preset: this one is for
+			// nights when the answer is sleep.
+			{Name: "delta sink", Type: "brownnoise",
+				CenterHz: 1200, WidthHz: 499, WaveSpeed: 0.05, WaveDepth: 30,
+				GainDB: -10.4, Reverb: 19, FadeIn: 30,
+				Layers: []noiseLayer{{CarrierHz: 100, BeatHz: 2, Gain: -36}}},
+
+			// "gamma sharpen" is the daytime one, and the only rate here with
+			// strong replicated evidence (the 40 Hz auditory steady-state
+			// response). ISOCHRONIC — a hard gate, the stronger stimulus, which is
+			// tolerable at 40 Hz where it reads as texture rather than as a beep.
+			// ⚠️ The bed is banded LOW (700 Hz) deliberately: a 40 Hz gate over
+			// the usual 1786 Hz band is a buzz, which is the same mistake as the
+			// 6 Hz "train" only faster.
+			{Name: "gamma sharpen", Type: "brownnoise",
+				CenterHz: 700, WidthHz: 400, WaveSpeed: 0.0625, WaveDepth: 30,
+				GainDB: -8.8, Reverb: 19, FadeIn: 5,
+				PulseHz: 40, PulseDepth: 12, PulseShape: "square"},
+
 			base("brown", "brownnoise", 0), // the reference: unchanged from the original
 			base("pink", "pinknoise", 7),
 			base("white", "whitenoise", 3.5),
@@ -753,6 +854,41 @@ func (p noisePreset) normalize() (noisePreset, error) {
 	} else {
 		out.PulseHz, out.PulseDepth = 0, 0
 	}
+	// An unknown shape falls back to the smooth one rather than refusing: a typo
+	// should cost you the harder stimulus, not the preset.
+	out.PulseShape = strings.ToLower(strings.TrimSpace(out.PulseShape))
+	if out.PulseHz <= 0 || out.PulseShape != "square" {
+		out.PulseShape = ""
+	}
+
+	// The program. A phase with no length is meaningless, so it is dropped rather
+	// than defaulted — guessing a duration for someone's sleep program is worse
+	// than ignoring a malformed entry. Rates are clamped to the same entrainment
+	// span as the fields they override.
+	var phases []noisePhase
+	for _, ph := range out.Phases {
+		if ph.Minutes <= 0 {
+			continue
+		}
+		ph.Minutes = math.Min(240, ph.Minutes)
+		if ph.PulseHz > 0 {
+			ph.PulseHz = math.Max(0.5, math.Min(40, ph.PulseHz))
+		} else {
+			ph.PulseHz = 0
+		}
+		var beats []float64
+		for _, b := range ph.Beats {
+			if b > 0 {
+				b = math.Max(0.5, math.Min(40, b))
+			} else {
+				b = 0
+			}
+			beats = append(beats, b)
+		}
+		ph.Beats = beats
+		phases = append(phases, ph)
+	}
+	out.Phases = phases
 
 	// The extra layers. A legacy floor folds in first, so from here there is
 	// exactly one representation of "a wave with its own envelope". Any known
@@ -774,12 +910,15 @@ func (p noisePreset) normalize() (noisePreset, error) {
 		if l.binaural() {
 			l.Type = ""
 			l.BeatHz = math.Max(0.5, math.Min(40, l.BeatHz))
+			// Monaural is a property of a carrier pair; on a noise layer it is
+			// meaningless and cleared below with the rest of the noise fields.
 			l.CarrierHz = clampFloat(l.CarrierHz, 40, 1000, 100)
 			l.Gain = math.Max(-60, math.Min(20, l.Gain))
 			l.CenterHz, l.WidthHz, l.Speed, l.Depth, l.Offset = 0, 0, 0, 0, 0
 			layers = append(layers, l)
 			continue
 		}
+		l.Monaural = false // only a carrier pair can be monaural
 		if l.Type == "" {
 			// A colourless layer is how the editor says "this one is gone",
 			// and how a hand-edited file's leftover object degrades. Dropping
@@ -854,6 +993,9 @@ func knownCategory(c string) bool {
 // to: a binaural preset REQUIRES headphones (each ear needs its own carrier) while
 // a pulse preset is speaker-valid. presetRow marks the binaural ones per preset.
 func (p noisePreset) deriveCategory() string {
+	if len(p.Phases) > 0 {
+		return "entrainment" // a program exists to walk a rate; nothing else does
+	}
 	if p.PulseHz > 0 {
 		return "entrainment"
 	}
@@ -872,7 +1014,9 @@ func (p noisePreset) deriveCategory() string {
 // whether the effect exists at all over speakers. The UI marks these.
 func (p noisePreset) needsHeadphones() bool {
 	for _, l := range p.Layers {
-		if l.binaural() {
+		// A monaural pair beats in the air, so speakers are fine; only the
+		// one-carrier-per-ear form is void without headphones.
+		if l.binaural() && !l.Monaural {
 			return true
 		}
 	}
@@ -1096,8 +1240,18 @@ func (p noisePreset) layerSoxArgs(l noiseLayer) []string {
 		// tones and for the beat between them, so `repeat` cannot click.
 		a := []string{"--buffer", strconv.Itoa(noiseBuffer),
 			"-c", strconv.Itoa(noiseChannels), "--null", "-t", "sox", "-",
-			"synth", num(layerBufferSecs(l)),
-			"sine", num(l.CarrierHz), "sine", num(l.CarrierHz + l.BeatHz)}
+			"synth", num(layerBufferSecs(l))}
+		if l.Monaural {
+			// Both tones into both channels: one synth, then the second mixed in
+			// mid-chain. `mix` HALVES what it combines (measured: this pair reads
+			// −6.02 dB where the binaural pair reads −3.01), so a monaural layer
+			// wants ~3 dB more gain than a binaural one at the same tone level.
+			a = append(a, "sine", num(l.CarrierHz),
+				"synth", "sine", "mix", num(l.CarrierHz+l.BeatHz))
+		} else {
+			// One per channel: left the carrier, right the carrier plus the beat.
+			a = append(a, "sine", num(l.CarrierHz), "sine", num(l.CarrierHz+l.BeatHz))
+		}
 		if l.Gain != 0 {
 			a = append(a, "gain", num(l.Gain))
 		}
@@ -1211,6 +1365,14 @@ func (p noisePreset) shapeArgs() []string {
 func (p noisePreset) pulseArgs() []string {
 	if p.PulseHz <= 0 {
 		return nil
+	}
+	if p.PulseShape == "square" {
+		// SoX has no square tremolo, so the gate is a square-wave amplitude
+		// modulation. Its offset argument is what controls depth, inverted:
+		// offset 0 gates fully on/off, offset 100 does nothing at all. Verified
+		// working in both positions the pulse can occupy — after `repeat` on the
+		// native path, and after the mixer's inputs.
+		return []string{"synth", "square", "amod", num(p.PulseHz), num(100 - p.PulseDepth)}
 	}
 	return []string{"tremolo", num(p.PulseHz), num(p.PulseDepth)}
 }
@@ -1338,6 +1500,9 @@ func runNoise(ctx context.Context, pl noisePlayer, p noisePreset, audioDev strin
 	// reached here with only the legacy floor fields set would otherwise lose a
 	// whole layer SILENTLY — it would play, just not what was asked for.
 	p = p.foldLegacyFloor()
+	if len(p.Phases) > 0 {
+		return runNoiseProgram(ctx, pl, p, audioDev, onStart)
+	}
 	if p.layered() {
 		return runNoiseLayers(ctx, pl, p, audioDev, onStart)
 	}
@@ -1558,6 +1723,92 @@ func runNoiseLayers(ctx context.Context, pl noisePlayer, p noisePreset, audioDev
 	return nil
 }
 
+// withPhase applies one phase's rates and returns a preset that plays as a plain
+// preset — Phases cleared, so runNoise dispatches on topology rather than
+// recursing into the program runner.
+//
+// `first` keeps the preset's fade-in; every later phase starts at full level. A
+// fade per phase would dip to silence at each boundary, which on a sleep program
+// is a hole punched in the thing every few minutes; between two noise streams at
+// matched level a hard cut is very nearly inaudible, because it is the ENVELOPE
+// that the ear tracks and both sides of the cut have the same one.
+func (p noisePreset) withPhase(ph noisePhase, first bool) noisePreset {
+	out := p
+	out.Phases = nil
+	if !first {
+		out.FadeIn = 0
+	}
+	if ph.PulseHz > 0 {
+		out.PulseHz = ph.PulseHz
+	}
+	if len(ph.Beats) > 0 {
+		layers := make([]noiseLayer, len(p.Layers))
+		copy(layers, p.Layers)
+		bi := 0
+		for i, l := range layers {
+			if !l.binaural() {
+				continue
+			}
+			if bi < len(ph.Beats) && ph.Beats[bi] > 0 {
+				layers[i].BeatHz = ph.Beats[bi]
+			}
+			bi++
+		}
+		out.Layers = layers
+	}
+	return out
+}
+
+// programPhases is the phase list with its total, for display.
+func (p noisePreset) programMinutes() float64 {
+	t := 0.0
+	for _, ph := range p.Phases {
+		t += ph.Minutes
+	}
+	return t
+}
+
+// runNoiseProgram plays a preset whose rate changes over time: each phase is a
+// separate run of the ordinary machinery, because SoX cannot ramp a tremolo or a
+// beat frequency inside one invocation.
+//
+// The LAST phase runs without a timeout and holds until the caller cancels. That
+// is deliberate: a program exists to get someone to sleep, and a program that
+// stops when its schedule runs out would end the night in silence at exactly the
+// moment it worked.
+//
+// Cost, stated because it is audible: each boundary tears down one player and
+// starts another, so there is a sub-second gap where the noise stops. Overlapping
+// the two would remove it but put two processes on the audio device at once, which
+// is the failure this engine already learned about the hard way.
+func runNoiseProgram(ctx context.Context, pl noisePlayer, p noisePreset, audioDev string, onStart func(*os.Process)) error {
+	for i, ph := range p.Phases {
+		if ctx.Err() != nil {
+			return nil
+		}
+		phase := p.withPhase(ph, i == 0)
+		last := i == len(p.Phases)-1
+		run := ctx
+		var cancel context.CancelFunc
+		if !last {
+			run, cancel = context.WithTimeout(ctx, time.Duration(ph.Minutes*float64(time.Minute)))
+		}
+		err := runNoise(run, pl, phase, audioDev, onStart)
+		if cancel != nil {
+			cancel()
+		}
+		// The outer context ending is how a session stops; a phase's own timeout
+		// ending is how it advances. Only the former is a reason to return.
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // cmdNoise is the `noise` verb: play a preset, list them, or print the exact
 // SoX invocation without running it.
 //
@@ -1671,6 +1922,22 @@ func listNoisePresets(cfg noiseConfig) error {
 func noiseCommandLine(pl noisePlayer, p noisePreset, audioDev string) string {
 	var b strings.Builder
 	p = p.foldLegacyFloor() // as the runner does: print what would actually play
+	// A program is not one command, so printing one would be a lie. Print the
+	// sequence, each phase as the command that actually runs for it.
+	if len(p.Phases) > 0 {
+		for i, ph := range p.Phases {
+			hold := ""
+			if i == len(p.Phases)-1 {
+				hold = " then holds"
+			}
+			fmt.Fprintf(&b, "# phase %d/%d — %g min%s\n", i+1, len(p.Phases), ph.Minutes, hold)
+			b.WriteString(noiseCommandLine(pl, p.withPhase(ph, i == 0), audioDev))
+			if i < len(p.Phases)-1 {
+				b.WriteString("\n")
+			}
+		}
+		return b.String()
+	}
 	// A layered preset renders as the mixer line with each stage as a process
 	// substitution — bash's <( ) is /dev/fd plumbing, the same mechanism the
 	// runner builds with ExtraFiles — so the printed line is paste-able and

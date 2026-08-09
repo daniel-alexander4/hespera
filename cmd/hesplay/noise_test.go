@@ -851,6 +851,186 @@ func TestThetaSurf(t *testing.T) {
 	}
 }
 
+// TestMonauralLayer pins the speaker-valid form of a carrier pair: both tones in
+// BOTH channels, so the beat happens acoustically instead of neurally. The
+// headphones flag is the property that must follow it — a monaural preset marked
+// "headphones" would send someone hunting for a cable it doesn't need.
+func TestMonauralLayer(t *testing.T) {
+	p, err := (noisePreset{Type: "brown", WaveSpeed: 0.08,
+		Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -32.5, Monaural: true}}}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	got := strings.Join(p.layerSoxArgs(p.Layers[0]), " ")
+	want := "--buffer 131072 -c 2 --null -t sox - synth 60 sine 200 synth sine mix 210 gain -32.5 repeat 1439"
+	if got != want {
+		t.Errorf("monaural stage:\n got %q\nwant %q", got, want)
+	}
+	if p.needsHeadphones() {
+		t.Error("a monaural pair beats in the air — it must NOT be marked headphones")
+	}
+	// The binaural form of the same layer does need them.
+	q, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10}}}).normalize()
+	if !q.needsHeadphones() {
+		t.Error("one carrier per ear requires headphones")
+	}
+	// Monaural is a property of a carrier pair only; on a noise layer it clears.
+	r, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{{Type: "pink", Speed: 0.02, Monaural: true}}}).normalize()
+	if r.Layers[0].Monaural {
+		t.Error("a noise layer cannot be monaural")
+	}
+}
+
+// TestIsochronicPulse pins the hard-gate shape. The depth inversion is the part
+// worth guarding: SoX's square amod takes an OFFSET, where 0 gates fully on/off
+// and 100 does nothing, so depth maps to 100−offset.
+func TestIsochronicPulse(t *testing.T) {
+	p, err := (noisePreset{Type: "brown", WaveSpeed: 0.08, PulseHz: 40, PulseDepth: 12, PulseShape: "square"}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if got := strings.Join(p.pulseArgs(), " "); got != "synth square amod 40 88" {
+		t.Errorf("isochronic gate: got %q", got)
+	}
+	// It sits in the same place the sine pulse does — past `repeat`, on the
+	// endless stream, so the gate has no loop seam to click at.
+	if got := strings.Join(p.noiseArgs(), " "); !strings.Contains(got, "repeat 1382 synth square amod 40 88") {
+		t.Errorf("gate misplaced: %q", got)
+	}
+	// A sine pulse is unchanged, and an unknown shape falls back to it rather
+	// than refusing to play.
+	if q, _ := (noisePreset{Type: "brown", PulseHz: 6, PulseDepth: 10}).normalize(); strings.Join(q.pulseArgs(), " ") != "tremolo 6 10" {
+		t.Errorf("sine pulse changed: %v", q.pulseArgs())
+	}
+	if q, _ := (noisePreset{Type: "brown", PulseHz: 6, PulseShape: "sawtooth"}).normalize(); q.PulseShape != "" {
+		t.Errorf("an unknown shape should fall back to sine, got %q", q.PulseShape)
+	}
+	// Shape without a pulse is meaningless and clears.
+	if q, _ := (noisePreset{Type: "brown", PulseShape: "square"}).normalize(); q.PulseShape != "" {
+		t.Errorf("shape should clear with no pulse, got %q", q.PulseShape)
+	}
+}
+
+// TestProgramPhases pins the descending program: what each phase substitutes,
+// which phase keeps the fade, and that a phase preset can never recurse into the
+// program runner (Phases must be cleared, or runNoise would loop forever).
+func TestProgramPhases(t *testing.T) {
+	p, err := mustFindDefault(t, "descend").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if len(p.Phases) != 5 {
+		t.Fatalf("want 5 phases, got %d", len(p.Phases))
+	}
+	if p.Category != "entrainment" {
+		t.Errorf("a program is entrainment by construction, got %q", p.Category)
+	}
+	// The rates walk down, which is the entire point.
+	var rates []float64
+	for i, ph := range p.Phases {
+		got := p.withPhase(ph, i == 0)
+		if len(got.Phases) != 0 {
+			t.Fatal("withPhase must clear Phases or runNoise recurses into the program")
+		}
+		rates = append(rates, got.Layers[0].BeatHz)
+	}
+	for i := 1; i < len(rates); i++ {
+		if rates[i] >= rates[i-1] {
+			t.Errorf("phase %d does not descend: %v", i+1, rates)
+		}
+	}
+	if rates[0] != 10 || rates[len(rates)-1] != 4 {
+		t.Errorf("want a 10 Hz -> 4 Hz walk, got %v", rates)
+	}
+	// Only the first phase fades in; a fade per phase would dip to silence at
+	// every boundary, which is a hole punched in a sleep program.
+	if p.withPhase(p.Phases[0], true).FadeIn != p.FadeIn {
+		t.Error("the first phase should keep the preset's fade")
+	}
+	if p.withPhase(p.Phases[1], false).FadeIn != 0 {
+		t.Error("later phases must not fade in")
+	}
+	// A phase can move the pulse too, and a zero rate means "keep".
+	q, _ := (noisePreset{Type: "brown", PulseHz: 6, WaveSpeed: 0.08,
+		Phases: []noisePhase{{Minutes: 2, PulseHz: 10}, {Minutes: 2}}}).normalize()
+	if got := q.withPhase(q.Phases[0], true).PulseHz; got != 10 {
+		t.Errorf("phase should override the pulse, got %g", got)
+	}
+	if got := q.withPhase(q.Phases[1], false).PulseHz; got != 6 {
+		t.Errorf("a zero rate should keep the preset's, got %g", got)
+	}
+	// A phase with no duration is dropped rather than given a guessed one.
+	if r, _ := (noisePreset{Type: "brown", Phases: []noisePhase{{Minutes: 0, PulseHz: 5}}}).normalize(); len(r.Phases) != 0 {
+		t.Errorf("a lengthless phase should be dropped, got %+v", r.Phases)
+	}
+	if p.programMinutes() != 15 {
+		t.Errorf("descend should total 15 minutes, got %g", p.programMinutes())
+	}
+}
+
+// TestNewEntrainmentPresets pins the five additions as a set: each lands in the
+// entrainment card, each carries the mechanism it claims, and the headphones mark
+// follows the mechanism rather than the card.
+func TestNewEntrainmentPresets(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		headphones bool
+		check      func(p noisePreset) string
+	}{
+		{"descend", true, func(p noisePreset) string {
+			if len(p.Phases) == 0 {
+				return "no program"
+			}
+			return ""
+		}},
+		{"focus 10 deep", true, func(p noisePreset) string {
+			if p.Layers[0].BeatHz != 3.5 {
+				return "not the deeper theta"
+			}
+			return ""
+		}},
+		{"alpha surface", false, func(p noisePreset) string {
+			if !p.Layers[0].Monaural {
+				return "should be monaural, so it works on speakers"
+			}
+			return ""
+		}},
+		{"delta sink", true, func(p noisePreset) string {
+			if p.Layers[0].BeatHz != 2 {
+				return "not 2 Hz"
+			}
+			if p.FadeIn < 20 {
+				return "wants a long fade: it starts on someone lying down"
+			}
+			return ""
+		}},
+		{"gamma sharpen", false, func(p noisePreset) string {
+			if p.PulseShape != "square" || p.PulseHz != 40 {
+				return "should be a 40 Hz isochronic gate"
+			}
+			if p.CenterHz > 1000 {
+				return "the bed must be banded low, or a 40 Hz gate is a buzz"
+			}
+			return ""
+		}},
+	} {
+		p, err := mustFindDefault(t, tc.name).normalize()
+		if err != nil {
+			t.Errorf("%s: normalize: %v", tc.name, err)
+			continue
+		}
+		if p.Category != "entrainment" {
+			t.Errorf("%s: filed under %q", tc.name, p.Category)
+		}
+		if p.needsHeadphones() != tc.headphones {
+			t.Errorf("%s: needsHeadphones=%v, want %v", tc.name, p.needsHeadphones(), tc.headphones)
+		}
+		if msg := tc.check(p); msg != "" {
+			t.Errorf("%s: %s", tc.name, msg)
+		}
+	}
+}
+
 // TestPresetCategories pins the three cards. The derivation is what matters more
 // than the field: every config already on a box predates it, so a preset that
 // names no card must still land in the right one.
@@ -872,7 +1052,7 @@ func TestPresetCategories(t *testing.T) {
 	want := map[string][]string{
 		"nature":      {"ocean brown brown brown", "ocean brown", "ocean pink"},
 		"noise":       {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
-		"entrainment": {"theta surf", "focus 10"},
+		"entrainment": {"theta surf", "focus 10", "descend", "focus 10 deep", "alpha surface", "delta sink", "gamma sharpen"},
 	}
 	for card, names := range want {
 		if strings.Join(got[card], ", ") != strings.Join(names, ", ") {

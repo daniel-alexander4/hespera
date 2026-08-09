@@ -395,6 +395,13 @@
   // its own everything. Size is the SWELL: a 0.02 Hz swell is one wave every 50
   // seconds (large), 0.08 Hz one every 12.5 (small). Band left at 0 means "the
   // same sea as the body", which the server fills in.
+  // A carrier pair's knobs. Shown instead of the noise fields, because band and
+  // swell do nothing on a pure tone — the stage skips them.
+  const TONE_FIELDS = [
+    ['carrierHz', 'Carrier (Hz, left ear)', 40, 1000, 1],
+    ['beatHz', 'Beat (Hz)', 0.5, 40, 0.5],
+    ['gain', 'Gain (dB)', -60, 20, 0.5],
+  ];
   const LAYER_FIELDS = [
     ['speed', 'Swell rate (Hz, 0=still)', 0, 0.2, 0.001],
     ['depth', 'Swell depth (%)', 0, 100, 1],
@@ -424,10 +431,13 @@
     return 'noise';
   }
 
-  // Only a binaural preset actually requires headphones; a pulse one does not.
-  // Mirrors needsHeadphones in noise.go.
+  // Only a binaural preset actually requires headphones; a pulse one does not,
+  // and neither does a MONAURAL pair — both its tones go to both ears and the
+  // beat happens in the air. Mirrors needsHeadphones in noise.go, and the
+  // monaural clause is why this pair has to be kept in step: without it the phone
+  // told you to fetch headphones for the one preset built for speakers.
   function needsHeadphones(p) {
-    return (p.layers || []).some((l) => (l.beatHz || 0) > 0);
+    return (p.layers || []).some((l) => (l.beatHz || 0) > 0 && !l.monaural);
   }
 
   // Mirrors noiseMaxLayers in noise.go: each layer is a process and a buffered
@@ -592,6 +602,38 @@
     l2.appendChild(lsel);
     det.appendChild(l2);
 
+    // Sine or isochronic. Shown always rather than appearing and vanishing as the
+    // pulse rate crosses zero.
+    const ps = document.createElement('label');
+    ps.className = 'field';
+    const pspan = document.createElement('span');
+    pspan.textContent = 'Pulse shape';
+    const psel = document.createElement('select');
+    [['', 'smooth (sine)'], ['square', 'isochronic (hard gate)']].forEach(([v, t]) => {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = t;
+      if (v === (p.pulseShape || '')) o.selected = true;
+      psel.appendChild(o);
+    });
+    psel.addEventListener('change', () => { p.pulseShape = psel.value; });
+    ps.append(pspan, psel);
+    det.appendChild(ps);
+
+    // A program's phases are deliberately not editable here — a phase list is a
+    // table, and a table on a phone is worse than a text editor. Saying so beats
+    // leaving someone hunting for a control that isn't there.
+    if ((p.phases || []).length) {
+      const prog = document.createElement('p');
+      prog.className = 'msg';
+      const mins = p.phases.reduce((t, ph) => t + (ph.minutes || 0), 0);
+      prog.textContent = 'Program: ' + p.phases.length + ' phases over ' + mins
+        + ' min, then holds. Rates walk '
+        + p.phases.map((ph) => (ph.beats && ph.beats[0]) || ph.pulseHz || '?').join(' \u2192 ')
+        + ' Hz. Edit phases in hesplay.json.';
+      det.appendChild(prog);
+    }
+
     NOISE_FIELDS.forEach(([key, label, min, max, step]) => {
       det.appendChild(numberField(label, p[key], min, max, step, (v) => { p[key] = parseFloat(v); }));
     });
@@ -645,13 +687,21 @@
       const sub2 = document.createElement('span');
       sub2.className = 'sub';
       // The period is what the ear hears as size, so show it rather than the Hz.
-      sub2.textContent = (l.type || '').replace('noise', '')
-        + (l.speed > 0 ? ' · ' + Math.round(1 / l.speed) + 's wave' : ' · still');
+      if ((l.beatHz || 0) > 0) {
+        sub2.textContent = (l.monaural ? 'monaural' : 'binaural')
+          + ' · ' + l.beatHz + ' Hz on ' + (l.carrierHz || 100);
+      } else {
+        sub2.textContent = (l.type || '').replace('noise', '')
+          + (l.speed > 0 ? ' · ' + Math.round(1 / l.speed) + 's wave' : ' · still');
+      }
       sum.append(b, sub2);
       box.appendChild(sum);
 
       const tl = document.createElement('label');
       tl.className = 'field';
+      // A carrier pair has no colour — the stage synthesizes sines and ignores
+      // Type — so the picker would be a control that does nothing.
+      tl.hidden = (l.beatHz || 0) > 0;
       const ts = document.createElement('span');
       ts.textContent = 'Colour';
       const tsel = document.createElement('select');
@@ -666,11 +716,27 @@
       tl.append(ts, tsel);
       box.appendChild(tl);
 
-      LAYER_FIELDS.forEach(([key, label, min, max, step]) => {
+      // Two kinds of layer, two field sets: a carrier pair is tones, not noise.
+      const isTone = (l.beatHz || 0) > 0;
+      (isTone ? TONE_FIELDS : LAYER_FIELDS).forEach(([key, label, min, max, step]) => {
         box.appendChild(numberField(label, l[key] || 0, min, max, step, (v) => {
           l[key] = parseFloat(v) || 0;
         }));
       });
+      if (isTone) {
+        // Monaural is the difference between "needs headphones" and "works on the
+        // speakers in the room", so it is a control, not a config-file detail.
+        const ml = document.createElement('label');
+        ml.className = 'field';
+        const ms = document.createElement('span');
+        ms.textContent = 'Both tones in both ears (monaural \u2014 no headphones)';
+        const mi = document.createElement('input');
+        mi.type = 'checkbox';
+        mi.checked = !!l.monaural;
+        mi.addEventListener('change', () => { l.monaural = mi.checked; renderNoiseQuick(); });
+        ml.append(ms, mi);
+        box.appendChild(ml);
+      }
 
       const rm = document.createElement('button');
       rm.type = 'button';
