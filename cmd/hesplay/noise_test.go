@@ -644,22 +644,36 @@ func TestNormalizeWave2(t *testing.T) {
 	}
 }
 
-// TestOceanBrownStages pins the shipped three-layer preset's process topology:
-// the body stage (the two-swell brown sea, sox-format to stdout, no fade), the
-// velvet floor stage (ffmpeg-fed, attenuation FIRST so the bright band cannot
-// clip, its barely-there tide-synced swell, the shared reverb), and the unity
-// mixer (-v 1 per input — plain -m scales by 1/n and would halve the preset).
-func TestOceanBrownStages(t *testing.T) {
+// TestOceanBrownArgs pins the shipped two-swell sea as ONE plain SoX stage:
+// chained tremolos with the offset trim between them, and no floor at all (Dan
+// took the velvet layer off it 2026-08-08) — so it plays through the single-
+// process path, not the body/floor/mixer topology.
+func TestOceanBrownArgs(t *testing.T) {
 	p, err := mustFindDefault(t, "ocean brown").normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	if !p.floorActive() {
-		t.Fatal("ocean brown should carry the velvet floor")
+	if p.floorActive() {
+		t.Fatal("ocean brown should carry no floor layer")
 	}
-	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 106.25 brownnoise band -n 1786 499 tremolo 0.08 37 trim 6.25 tremolo 0.02 45 reverb 19 repeat 863"
-	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
-		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
+	want := "--buffer 131072 --no-show-progress -c 2 --null synth 106.25 brownnoise band -n 1786 499 tremolo 0.08 37 trim 6.25 tremolo 0.02 45 reverb 19 repeat 863 fade t 3"
+	if got := strings.Join(p.noiseArgs(), " "); got != want {
+		t.Errorf("noise args:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestOceanPinkStages pins the remaining three-layer preset's process topology:
+// the body stage (the layered sea, sox-format to stdout, no fade), the velvet
+// floor stage (ffmpeg-fed, attenuation FIRST so the bright band cannot clip,
+// its barely-there tide-synced swell, the shared reverb), and the unity mixer
+// (-v 1 per input — plain -m scales by 1/n and would halve the preset).
+func TestOceanPinkStages(t *testing.T) {
+	p, err := mustFindDefault(t, "ocean pink").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if !p.floorActive() {
+		t.Fatal("ocean pink should carry the velvet floor")
 	}
 	wantFloor := "--buffer 131072 -t wav - -t sox - gain -30 band -n 4500 2000 tremolo 0.02 18 trim 12.5 reverb 19"
 	if got := strings.Join(p.floorSoxArgs(), " "); got != wantFloor {
@@ -683,9 +697,6 @@ func TestOceanPinkBodyStage(t *testing.T) {
 	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 106.25 brownnoise gain -7 tremolo 0.02 45 trim 6.25 synth pinknoise mix band -n 1786 499 tremolo 0.08 37 reverb 19 repeat 863 gain 7"
 	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
 		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
-	}
-	if got := strings.Join(p.floorSoxArgs(), " "); !strings.Contains(got, "gain -30") || !strings.Contains(got, "tremolo 0.02 18") {
-		t.Errorf("ocean pink should share the velvet floor tuning, got %q", got)
 	}
 }
 

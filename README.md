@@ -351,13 +351,13 @@ jumps mid-swell. The layer colour must be one SoX synthesizes itself (brown,
 pink, white, tpdf) — the ffmpeg-generated colours arrive by pipe and cannot be a
 mid-chain layer.
 
-**The floor — a third layer far underneath.** Both ocean presets carry a
+**The floor — a third layer far underneath.** **ocean pink** carries a
 barely-audible velvet floor: banded bright at 4.5 kHz, −30 dB under the sea,
 swelling with the tide but only just (a ~2 dB breath). A floor cannot ride the
 body's effect chain — everything mixed mid-chain shares all downstream effects,
 so the body's band-pass would erase it — so a floor preset runs as its own SoX
 stage and a final `play -m` mixes body and floor onto the device at unity
-(`hesplay noise --print "ocean brown"` shows the paste-able pipeline). The
+(`hesplay noise --print "ocean pink"` shows the paste-able pipeline). The
 mixer reads its inputs sample-synchronously, which keeps the layers in exact
 sample lockstep. Any colour works as a floor, including the ffmpeg-generated
 ones; the editor's "Floor" fields tune its colour, band, swell and level.
@@ -366,9 +366,9 @@ ones; the editor's "Floor" fields tune its colour, band, swell and level.
 its peak, the tide crest always lands on a wave crest and the floor breathes in
 unison with the sea. Each preset can offset its rhythms: the "2nd swell offset"
 shifts the fast waves against the tide, and the "Floor swell offset" shifts the
-floor's breath against both (the ocean presets ship with half a wave period and
-a quarter of the floor's cycle respectively). SoX's tremolo has no phase
-argument, so the offset is a `trim` placed between envelopes — it discards the
+floor's breath against both (both ocean presets ship half a wave period of the
+former; ocean pink's floor ships a quarter of its own cycle). SoX's tremolo has
+no phase argument, so the offset is a `trim` placed between envelopes — it discards the
 stream's head, shifting everything upstream of it relative to everything
 downstream, and the synth runs offset-seconds long so the loop is still cut
 from a whole-period remainder and never seams.

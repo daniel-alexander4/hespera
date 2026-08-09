@@ -259,15 +259,16 @@ func defaultNoiseConfig() noiseConfig {
 			base("velvet", "velvetnoise", 0),
 			// The ocean pair, tuned by ear with Dan on danlap (2026-08-07): a
 			// 50s deep swell under the classic 12.5s one — a small wave
-			// receding as a larger wave comes in — over a bright velvet floor
-			// that barely breathes. "ocean brown" chains both swells on the
-			// one brown stream; "ocean pink" swaps the roles — a pink bed of
-			// small waves with the big slow wave a separate BROWN layer over
-			// it (brown layer −7 plus overall +7 keeps the pair level-matched
-			// at brown's reference loudness, mirroring pink's measured +7).
-			oceanFloor(noisePreset{Name: "ocean brown", Type: "brownnoise",
+			// receding as a larger wave comes in. "ocean brown" chains both
+			// swells on the one brown stream and is JUST the sea (Dan,
+			// 2026-08-08: the velvet floor came back off it); "ocean pink"
+			// swaps the roles — a pink bed of small waves with the big slow
+			// wave a separate BROWN layer over it (brown layer −7 plus overall
+			// +7 keeps the pair level-matched at brown's reference loudness,
+			// mirroring pink's measured +7) — and keeps the velvet floor.
+			{Name: "ocean brown", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				Wave2Speed: 0.02, Wave2Depth: 45, Wave2Offset: 6.25, Reverb: 19, FadeIn: 3}),
+				Wave2Speed: 0.02, Wave2Depth: 45, Wave2Offset: 6.25, Reverb: 19, FadeIn: 3},
 			oceanFloor(noisePreset{Name: "ocean pink", Type: "pinknoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
 				Wave2Type: "brownnoise", Wave2Gain: -7, Wave2Speed: 0.02, Wave2Depth: 45, Wave2Offset: 6.25,
@@ -276,11 +277,13 @@ func defaultNoiseConfig() noiseConfig {
 	}
 }
 
-// oceanFloor adds the velvet floor both ocean presets share — bright (banded
-// at 4.5 kHz), tide-synced but barely moving (depth 18 ≈ a 2 dB breath), far
+// oceanFloor adds the velvet floor "ocean pink" carries — bright (banded at
+// 4.5 kHz), tide-synced but barely moving (depth 18 ≈ a 2 dB breath), far
 // underneath (−30 dB). Every number here was walked in by ear with Dan
 // (2026-08-07: −6 "way too loud" → −18 "still too loud" → −26 → −30 with
-// depth 60 → 18 "barely move, not enough to disappear").
+// depth 60 → 18 "barely move, not enough to disappear"). "ocean brown" shipped
+// with it too until 2026-08-08, when Dan took it back off — the plain
+// two-swell sea was what he wanted there.
 func oceanFloor(p noisePreset) noisePreset {
 	p.FloorType = "velvetnoise"
 	p.FloorCenterHz, p.FloorWidthHz = 4500, 2000
