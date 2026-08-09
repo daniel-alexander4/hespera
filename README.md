@@ -341,37 +341,45 @@ swells and never jumps mid-swell.
 a preset can layer a much slower, deeper one under it — a small wave receding as
 a larger wave comes in. The **ocean brown** preset chains both swells on the one
 brown stream (the envelopes multiply, so the slow one is the tide the fast waves
-ride); **ocean pink** swaps the roles — a pink bed of small waves with the big
-slow wave a separate brown layer over it, so the incoming wave is audibly
-distinct. The slow swell's depth is deliberately capped short of silence: the
-big wave recedes most of the way but never completely away. The editor's "2nd
-swell" fields tune rate, depth, layer colour and layer gain; the buffer
-derivation extends to a whole number of *both* periods, so the loop still never
-jumps mid-swell. The layer colour must be one SoX synthesizes itself (brown,
-pink, white, tpdf) — the ffmpeg-generated colours arrive by pipe and cannot be a
+ride). The slow swell's depth is deliberately capped short of silence: the big
+wave recedes most of the way but never completely away. The editor's "2nd swell"
+fields tune rate, depth, layer colour and layer gain; the buffer derivation
+extends to a whole number of *both* periods, so the loop still never jumps
+mid-swell. The layer colour must be one SoX synthesizes itself (brown, pink,
+white, tpdf) — the ffmpeg-generated colours arrive by pipe and cannot be a
 mid-chain layer.
 
-**The floor — a third layer far underneath.** **ocean pink** carries a
-barely-audible velvet floor: banded bright at 4.5 kHz, −30 dB under the sea,
-swelling with the tide but only just (a ~2 dB breath). A floor cannot ride the
-body's effect chain — everything mixed mid-chain shares all downstream effects,
-so the body's band-pass would erase it — so a floor preset runs as its own SoX
-stage and a final `play -m` mixes body and floor onto the device at unity
-(`hesplay noise --print "ocean pink"` shows the paste-able pipeline). The
-mixer reads its inputs sample-synchronously, which keeps the layers in exact
-sample lockstep. Any colour works as a floor, including the ffmpeg-generated
-ones; the editor's "Floor" fields tune its colour, band, swell and level.
+**Layers — waves that keep their own rhythm.** A preset can also carry extra
+*layers*, each a wave of its own: its own colour, band, swell, level and phase
+offset, rendered by its own SoX process, with one final `play -m` summing them
+onto the device at unity. That process boundary is what buys the independence —
+anything mixed mid-chain shares every effect after the mix, so a mid-chain layer
+can have neither its own band-pass nor an envelope the body's swell doesn't
+modulate. The mixer reads its inputs sample-synchronously, which keeps the waves
+in exact sample lockstep. Any colour works in a layer, including the
+ffmpeg-generated ones (a layer with its own process can have its own generator),
+and layers are capped at four so a config cannot ask for a process fleet.
+
+**ocean pink** is the shipped example: three waves of different sizes — a large
+brown one every 50 seconds, a medium brown every 25, and the small pink bed every
+12.5, at swell depths 45/40/37 shrinking with the wave. `hesplay noise --print
+"ocean pink"` shows the whole paste-able pipeline. The earlier *floor* — a
+barely-audible velvet bed banded bright at 4.5 kHz, 30 dB under the sea — is just
+a layer with a bright band and a big negative gain; a config written before
+layers existed is migrated on read, so a saved floor keeps playing exactly as it
+did.
 
 **The swells are deliberately out of step.** With every envelope starting at
-its peak, the tide crest always lands on a wave crest and the floor breathes in
+its peak, the tide crest always lands on a wave crest and every layer breathes in
 unison with the sea. Each preset can offset its rhythms: the "2nd swell offset"
-shifts the fast waves against the tide, and the "Floor swell offset" shifts the
-floor's breath against both (both ocean presets ship half a wave period of the
-former; ocean pink's floor ships a quarter of its own cycle). SoX's tremolo has
-no phase argument, so the offset is a `trim` placed between envelopes — it discards the
-stream's head, shifting everything upstream of it relative to everything
-downstream, and the synth runs offset-seconds long so the loop is still cut
-from a whole-period remainder and never seams.
+shifts the fast waves against the tide, and a layer's "Swell offset" shifts that
+wave against the body (ocean brown ships half a wave period of the former; ocean
+pink's two brown waves each ship a quarter of their own period, so no two crests
+land together). SoX's tremolo has no phase argument, so the offset is a `trim`
+placed between envelopes — it discards the stream's head, shifting everything
+upstream of it relative to everything downstream, and the synth runs
+offset-seconds long so the loop is still cut from a whole-period remainder and
+never seams.
 
 **Where the colours come from.** SoX synthesizes brown, pink, white and tpdf
 itself. Blue, violet and velvet do not exist in SoX at any version, so those are
@@ -390,6 +398,14 @@ measured level, with brown itself at unity so it stays exactly the original
 command. Note that equal RMS is not equal *loudness*: the ear is most sensitive
 around 2–4 kHz, so blue and violet still read as somewhat louder than brown
 despite matching on paper. Trim by ear with the gain knob.
+
+One consequence worth knowing if you hand-edit a config: SoX's band-pass carries
+about 11 dB of power gain and saturates when fed full-scale noise, so a level set
+*before* the band is not the same level set *after* it — measured 15 dB apart on
+the same brown wave. A layer therefore applies its gain last, exactly where the
+body does, so a number means the same thing everywhere; the one exception is an
+ffmpeg-fed layer, which pre-attenuates because its near-full-scale input makes the
+band clip, and which measurement shows costs nothing in level.
 
 **A schedule, reconciled rather than triggered.** Windows live in the same
 config and are checked every 30 seconds — "should noise be playing right now?" —

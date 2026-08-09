@@ -653,8 +653,8 @@ func TestOceanBrownArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	if p.floorActive() {
-		t.Fatal("ocean brown should carry no floor layer")
+	if p.layered() {
+		t.Fatal("ocean brown should carry no extra layer")
 	}
 	want := "--buffer 131072 --no-show-progress -c 2 --null synth 106.25 brownnoise band -n 1786 499 tremolo 0.08 37 trim 6.25 tremolo 0.02 45 reverb 19 repeat 863 fade t 3"
 	if got := strings.Join(p.noiseArgs(), " "); got != want {
@@ -662,77 +662,153 @@ func TestOceanBrownArgs(t *testing.T) {
 	}
 }
 
-// TestOceanPinkStages pins the remaining three-layer preset's process topology:
-// the body stage (the layered sea, sox-format to stdout, no fade), the velvet
-// floor stage (ffmpeg-fed, attenuation FIRST so the bright band cannot clip,
-// its barely-there tide-synced swell, the shared reverb), and the unity mixer
-// (-v 1 per input — plain -m scales by 1/n and would halve the preset).
+// TestOceanPinkStages pins the three-wave preset's process topology (Dan,
+// 2026-08-08: "large brown, medium brown and then a small pink"). Each wave is
+// its OWN stage, which is the point — one stream could only nest the envelopes.
+// Stage order is fd order, and each stage's synth runs its offset longer than
+// its own whole-period loop. The mixer takes one unity input per stage (-v 1;
+// plain -m scales by 1/n and would quietly shrink the preset) and owns the fade.
 func TestOceanPinkStages(t *testing.T) {
 	p, err := mustFindDefault(t, "ocean pink").normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	if !p.floorActive() {
-		t.Fatal("ocean pink should carry the velvet floor")
+	if len(p.Layers) != 2 {
+		t.Fatalf("ocean pink should carry two extra waves, got %d", len(p.Layers))
 	}
-	wantFloor := "--buffer 131072 -t wav - -t sox - gain -30 band -n 4500 2000 tremolo 0.02 18 trim 12.5 reverb 19"
-	if got := strings.Join(p.floorSoxArgs(), " "); got != wantFloor {
-		t.Errorf("floor stage:\n got %q\nwant %q", got, wantFloor)
+	// The body is the SMALL pink — the phase reference, hence no trim — and
+	// carries the preset's output gain.
+	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 62.5 pinknoise band -n 1786 499 tremolo 0.08 37 reverb 19 repeat 1382 gain -0.5"
+	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
+		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
 	}
-	wantMix := "--buffer 131072 --no-show-progress -m -v 1 -t sox /dev/fd/3 -v 1 -t sox /dev/fd/4 fade t 3"
+	// The large (50s) and medium (25s) brown waves: the preset's own band
+	// inherited, each one's own swell, its offset trim, the shared reverb — and
+	// the gain LAST, where the body puts it, because `band -n` saturates and a
+	// gain ahead of it lands ~15 dB off what the same number means on the body.
+	wantLayers := []string{
+		"--buffer 131072 -c 2 --null -t sox - synth 112.5 brownnoise band -n 1786 499 tremolo 0.02 45 trim 12.5 reverb 19 repeat 863 gain -6.5",
+		"--buffer 131072 -c 2 --null -t sox - synth 81.25 brownnoise band -n 1786 499 tremolo 0.04 40 trim 6.25 reverb 19 repeat 1151 gain -9.5",
+	}
+	for i, want := range wantLayers {
+		if got := strings.Join(p.layerSoxArgs(p.Layers[i]), " "); got != want {
+			t.Errorf("layer %d stage:\n got %q\nwant %q", i+1, got, want)
+		}
+	}
+	wantMix := "--buffer 131072 --no-show-progress -m -v 1 -t sox /dev/fd/3 -v 1 -t sox /dev/fd/4 -v 1 -t sox /dev/fd/5 fade t 3"
 	if got := strings.Join(p.mixerArgs(), " "); got != wantMix {
 		t.Errorf("mixer:\n got %q\nwant %q", got, wantMix)
 	}
 }
 
-// TestOceanPinkBodyStage pins the swapped-roles preset: pink bed, the big slow
-// wave a separate brown layer trimmed −7, overall +7 restoring brown's
-// reference level — Dan's "make the brown the bigger wave and the pink the
-// smaller", exactly as auditioned.
-func TestOceanPinkBodyStage(t *testing.T) {
-	p, err := mustFindDefault(t, "ocean pink").normalize()
+// TestNormalizeLayers pins layer validation: unknown colours rejected, a
+// colourless entry dropped rather than fatal, the preset's own band inherited
+// when a layer names none, a swell-less layer left perfectly still, and the
+// process-count cap enforced.
+func TestNormalizeLayers(t *testing.T) {
+	if _, err := (noisePreset{Type: "brown", Layers: []noiseLayer{{Type: "mauve"}}}).normalize(); err == nil {
+		t.Error("an unknown layer colour must be rejected")
+	}
+	// An ffmpeg-only colour IS allowed here, unlike a mid-chain Wave2Type: a
+	// layer is its own process, so it can be fed by its own generator.
+	p, err := (noisePreset{Type: "brown", CenterHz: 900, WidthHz: 200,
+		Layers: []noiseLayer{{Type: "velvet", Speed: 0.02}, {Type: ""}}}).normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 106.25 brownnoise gain -7 tremolo 0.02 45 trim 6.25 synth pinknoise mix band -n 1786 499 tremolo 0.08 37 reverb 19 repeat 863 gain 7"
-	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
-		t.Errorf("body stage:\n got %q\nwant %q", got, wantBody)
+	if len(p.Layers) != 1 {
+		t.Fatalf("a colourless layer should be dropped, got %d layers", len(p.Layers))
+	}
+	l := p.Layers[0]
+	if l.Type != "velvetnoise" {
+		t.Errorf("bare layer colour not suffixed: %q", l.Type)
+	}
+	if l.CenterHz != 900 || l.WidthHz != 200 {
+		t.Errorf("a bandless layer should inherit the preset's band, got %g/%g", l.CenterHz, l.WidthHz)
+	}
+	if l.Depth != 37 {
+		t.Errorf("a depthless swell should inherit the preset's depth, got %g", l.Depth)
+	}
+	// An ffmpeg-fed layer streams forever: no synth to loop, so no repeat.
+	if got := strings.Join(p.layerSoxArgs(l), " "); !strings.HasPrefix(got, "--buffer 131072 -t wav - -t sox -") || strings.Contains(got, "repeat") {
+		t.Errorf("ffmpeg-fed layer stage wrong: %q", got)
+	}
+	// Where the gain sits is measured, not stylistic (see layerSoxArgs): before
+	// the band on the ffmpeg path, where it stops the bright band clipping at no
+	// cost in level; after it on the native path, where `band -n`'s saturation
+	// otherwise makes the same number ~15 dB hotter than it means on the body.
+	ffGain := strings.Join(p.layerSoxArgs(noiseLayer{Type: "velvetnoise", CenterHz: 4500, WidthHz: 2000, Gain: -30}), " ")
+	if !strings.Contains(ffGain, "gain -30 band") {
+		t.Errorf("an ffmpeg-fed layer must attenuate BEFORE the band: %q", ffGain)
+	}
+	natGain := strings.Join(p.layerSoxArgs(noiseLayer{Type: "brownnoise", CenterHz: 1786, WidthHz: 499, Gain: -6.5}), " ")
+	if !strings.HasSuffix(natGain, "gain -6.5") || strings.Contains(natGain, "gain -6.5 band") {
+		t.Errorf("a SoX-native layer must apply its gain LAST: %q", natGain)
+	}
+	p, err = (noisePreset{Type: "brown", Layers: []noiseLayer{{Type: "white"}}}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.Layers[0].Speed != 0 || p.Layers[0].Depth != 0 {
+		t.Errorf("a swell-less layer should stay still, got %g/%g", p.Layers[0].Speed, p.Layers[0].Depth)
+	}
+	if got := strings.Join(p.layerSoxArgs(p.Layers[0]), " "); strings.Contains(got, "tremolo") || !strings.Contains(got, "synth 60 whitenoise") {
+		t.Errorf("still native layer stage wrong: %q", got)
+	}
+	// Every layer is a process AND a buffered loop, so the count is capped.
+	many := make([]noiseLayer, noiseMaxLayers+3)
+	for i := range many {
+		many[i] = noiseLayer{Type: "white"}
+	}
+	p, err = (noisePreset{Type: "brown", Layers: many}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if len(p.Layers) != noiseMaxLayers {
+		t.Errorf("layer count should cap at %d, got %d", noiseMaxLayers, len(p.Layers))
 	}
 }
 
-// TestNormalizeFloor pins the floor validation: unknown colours rejected,
-// bright-band defaults filled, a swell-less floor stays perfectly still, and
-// clearing the type clears every floor field.
-func TestNormalizeFloor(t *testing.T) {
-	if _, err := (noisePreset{Type: "brown", FloorType: "mauve"}).normalize(); err == nil {
-		t.Error("an unknown floor colour must be rejected")
-	}
-	p, err := (noisePreset{Type: "brown", FloorType: "velvet", FloorSpeed: 0.02}).normalize()
+// TestFoldLegacyFloor pins the migration of the pre-`layers` floor fields: they
+// become the layer they always described, keeping the FLOOR's own defaults
+// (bright 4.5 kHz band, an 18% breath) rather than the generic layer ones, so a
+// config written before the generalization keeps sounding the same. The fold is
+// idempotent and clears the old fields, so no second representation survives.
+func TestFoldLegacyFloor(t *testing.T) {
+	p, err := (noisePreset{Type: "brown", FloorType: "velvet", FloorSpeed: 0.02, FloorGain: -30, FloorOffset: 12.5}).normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	if p.FloorType != "velvetnoise" {
-		t.Errorf("bare floor colour not suffixed: %q", p.FloorType)
+	if p.FloorType != "" || p.FloorSpeed != 0 || p.FloorGain != 0 || p.FloorOffset != 0 {
+		t.Errorf("legacy floor fields should be cleared by the fold: %+v", p)
 	}
-	if p.FloorCenterHz != 4500 || p.FloorWidthHz != 2000 || p.FloorDepth != 18 {
-		t.Errorf("floor defaults not filled: %g/%g depth %g", p.FloorCenterHz, p.FloorWidthHz, p.FloorDepth)
+	if len(p.Layers) != 1 {
+		t.Fatalf("the floor should have become one layer, got %d", len(p.Layers))
 	}
-	p, err = (noisePreset{Type: "brown", FloorType: "white"}).normalize()
-	if err != nil {
-		t.Fatalf("normalize: %v", err)
+	l := p.Layers[0]
+	if l.Type != "velvetnoise" || l.CenterHz != 4500 || l.WidthHz != 2000 || l.Depth != 18 {
+		t.Errorf("floor defaults not carried into the layer: %+v", l)
 	}
-	if p.FloorSpeed != 0 || p.FloorDepth != 0 {
-		t.Errorf("a swell-less floor should stay still, got %g/%g", p.FloorSpeed, p.FloorDepth)
+	if l.Gain != -30 || l.Offset != 12.5 {
+		t.Errorf("floor level/offset lost in the fold: %+v", l)
 	}
-	if got := strings.Join(p.floorSoxArgs(), " "); strings.Contains(got, "tremolo") || !strings.Contains(got, "synth 60 whitenoise") {
-		t.Errorf("still native floor stage wrong: %q", got)
+	// Folding twice must not double the layer.
+	if again := p.foldLegacyFloor(); len(again.Layers) != 1 {
+		t.Errorf("fold is not idempotent: %d layers", len(again.Layers))
 	}
+	// And the folded floor's stage must still be the argv that was auditioned —
+	// velvet is ffmpeg-fed, so the attenuation stays ahead of the band.
+	wantFloor := "--buffer 131072 -t wav - -t sox - gain -30 band -n 4500 2000 tremolo 0.02 18 trim 12.5 reverb 19"
+	if got := strings.Join(p.layerSoxArgs(l), " "); got != wantFloor {
+		t.Errorf("migrated floor stage changed:\n got %q\nwant %q", got, wantFloor)
+	}
+	// A floor field with no floor colour is inert, not a layer.
 	p, err = (noisePreset{Type: "brown", FloorCenterHz: 9999}).normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	if p.FloorCenterHz != 0 {
-		t.Error("floor fields should clear when no floor colour is set")
+	if len(p.Layers) != 0 || p.FloorCenterHz != 0 {
+		t.Error("floor fields with no floor colour should clear, not make a layer")
 	}
 }
 
@@ -755,15 +831,15 @@ func TestSwellOffsets(t *testing.T) {
 	if p, _ := (noisePreset{Type: "brown", Wave2Offset: 9}).normalize(); p.Wave2Offset != 0 {
 		t.Errorf("offset without a second swell should clear, got %g", p.Wave2Offset)
 	}
-	if p, _ := (noisePreset{Type: "brown", FloorType: "white", FloorOffset: 9}).normalize(); p.FloorOffset != 0 {
-		t.Errorf("floor offset without a floor swell should clear, got %g", p.FloorOffset)
+	if p, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{{Type: "white", Offset: 9}}}).normalize(); p.Layers[0].Offset != 0 {
+		t.Errorf("layer offset without a layer swell should clear, got %g", p.Layers[0].Offset)
 	}
-	p, err = (noisePreset{Type: "brown", FloorType: "white", FloorSpeed: 0.02, FloorOffset: 12.5}).normalize()
+	p, err = (noisePreset{Type: "brown", Layers: []noiseLayer{{Type: "white", Speed: 0.02, Depth: 18, Offset: 12.5}}}).normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	fgot := strings.Join(p.floorSoxArgs(), " ")
-	if !strings.Contains(fgot, "synth 112.5 whitenoise") || !strings.Contains(fgot, "tremolo 0.02 18 trim 12.5") {
-		t.Errorf("floor offset argv wrong: %q", fgot)
+	lgot := strings.Join(p.layerSoxArgs(p.Layers[0]), " ")
+	if !strings.Contains(lgot, "synth 112.5 whitenoise") || !strings.Contains(lgot, "tremolo 0.02 18 trim 12.5") {
+		t.Errorf("layer offset argv wrong: %q", lgot)
 	}
 }

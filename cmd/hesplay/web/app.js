@@ -379,20 +379,27 @@
     ['wave2Depth', '2nd swell depth (%)', 0, 100, 1],
     ['wave2Gain', '2nd layer gain (dB)', -60, 20, 0.5],
     ['wave2Offset', '2nd swell offset (s)', 0, 300, 0.25],
-    // The floor — a third layer far underneath, with its own band and swell;
-    // its colour select sits above the fields ('' = no floor).
-    ['floorCenterHz', 'Floor band centre (Hz)', 20, 20000, 1],
-    ['floorWidthHz', 'Floor band width (Hz)', 1, 20000, 1],
-    ['floorSpeed', 'Floor swell rate (Hz, 0=still)', 0, 0.2, 0.001],
-    ['floorDepth', 'Floor swell depth (%)', 0, 100, 1],
-    ['floorGain', 'Floor gain (dB)', -60, 20, 0.5],
-    ['floorOffset', 'Floor swell offset (s)', 0, 300, 0.25],
     ['centerHz', 'Band centre (Hz)', 20, 20000, 1],
     ['widthHz', 'Band width (Hz)', 1, 20000, 1],
     ['reverb', 'Reverb (%)', 0, 100, 1],
     ['gainDb', 'Gain (dB)', -60, 20, 0.5],
     ['fadeIn', 'Fade in (s)', 0, 300, 1],
   ];
+  // An extra layer's knobs — a wave of its own, in its own process, so it has
+  // its own everything. Size is the SWELL: a 0.02 Hz swell is one wave every 50
+  // seconds (large), 0.08 Hz one every 12.5 (small). Band left at 0 means "the
+  // same sea as the body", which the server fills in.
+  const LAYER_FIELDS = [
+    ['speed', 'Swell rate (Hz, 0=still)', 0, 0.2, 0.001],
+    ['depth', 'Swell depth (%)', 0, 100, 1],
+    ['gain', 'Gain (dB)', -60, 20, 0.5],
+    ['offset', 'Swell offset (s)', 0, 300, 0.25],
+    ['centerHz', 'Band centre (Hz, 0=same)', 0, 20000, 1],
+    ['widthHz', 'Band width (Hz, 0=same)', 0, 20000, 1],
+  ];
+  // Mirrors noiseMaxLayers in noise.go: each layer is a process and a buffered
+  // loop, so the Add button stops rather than letting a phone tap build a fleet.
+  const MAX_LAYERS = 4;
 
   let noiseCfg = null;
 
@@ -533,28 +540,89 @@
     l2.appendChild(lsel);
     det.appendChild(l2);
 
-    // The floor colour: any colour works here (it runs as its own process, so
-    // the ffmpeg-generated ones are fine, unlike the 2nd-swell layer).
-    const fl = document.createElement('label');
-    fl.className = 'field';
-    const fspan = document.createElement('span');
-    fspan.textContent = 'Floor colour';
-    const fsel = document.createElement('select');
-    [''].concat(NOISE_TYPES).forEach((t) => {
-      const o = document.createElement('option');
-      o.value = t;
-      o.textContent = t ? t.replace('noise', '') : 'no floor';
-      if (t === (p.floorType || '')) o.selected = true;
-      fsel.appendChild(o);
-    });
-    fsel.addEventListener('change', () => { p.floorType = fsel.value; });
-    fl.appendChild(fspan);
-    fl.appendChild(fsel);
-    det.appendChild(fl);
-
     NOISE_FIELDS.forEach(([key, label, min, max, step]) => {
       det.appendChild(numberField(label, p[key], min, max, step, (v) => { p[key] = parseFloat(v); }));
     });
+
+    // The extra layers: waves of their own, each rendered by its own process and
+    // summed with the body, which is why every one of them can have its own
+    // colour (including the ffmpeg-generated ones, unlike the 2nd-swell layer),
+    // its own band and its own swell. Adding or removing one rebuilds just this
+    // box, so the rest of the card's edits stay put.
+    const layersBox = document.createElement('div');
+    det.appendChild(layersBox);
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn';
+
+    function renderLayers() {
+      layersBox.textContent = '';
+      const layers = p.layers || [];
+      layers.forEach((l, i) => layersBox.appendChild(layerBox(l, i)));
+      addBtn.disabled = layers.length >= MAX_LAYERS;
+      addBtn.textContent = layers.length >= MAX_LAYERS
+        ? 'Layer limit reached'
+        : 'Add layer';
+    }
+
+    function layerBox(l, i) {
+      const box = document.createElement('details');
+      box.className = 'preset';
+      const sum = document.createElement('summary');
+      const b = document.createElement('b');
+      b.textContent = 'Layer ' + (i + 1);
+      const sub2 = document.createElement('span');
+      sub2.className = 'sub';
+      // The period is what the ear hears as size, so show it rather than the Hz.
+      sub2.textContent = (l.type || '').replace('noise', '')
+        + (l.speed > 0 ? ' · ' + Math.round(1 / l.speed) + 's wave' : ' · still');
+      sum.append(b, sub2);
+      box.appendChild(sum);
+
+      const tl = document.createElement('label');
+      tl.className = 'field';
+      const ts = document.createElement('span');
+      ts.textContent = 'Colour';
+      const tsel = document.createElement('select');
+      NOISE_TYPES.forEach((t) => {
+        const o = document.createElement('option');
+        o.value = t;
+        o.textContent = t.replace('noise', '');
+        if (t === l.type) o.selected = true;
+        tsel.appendChild(o);
+      });
+      tsel.addEventListener('change', () => { l.type = tsel.value; renderLayers(); });
+      tl.append(ts, tsel);
+      box.appendChild(tl);
+
+      LAYER_FIELDS.forEach(([key, label, min, max, step]) => {
+        box.appendChild(numberField(label, l[key] || 0, min, max, step, (v) => {
+          l[key] = parseFloat(v) || 0;
+        }));
+      });
+
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'btn';
+      rm.textContent = 'Remove layer';
+      rm.addEventListener('click', () => {
+        p.layers.splice(i, 1);
+        renderLayers();
+      });
+      box.appendChild(rm);
+      return box;
+    }
+
+    addBtn.addEventListener('click', () => {
+      if (!p.layers) p.layers = [];
+      if (p.layers.length >= MAX_LAYERS) return;
+      // A new layer starts as a slow, quiet brown wave — the shape of the thing
+      // people add a layer FOR — rather than an empty object the server drops.
+      p.layers.push({ type: 'brownnoise', speed: 0.02, depth: 45, gain: -6, offset: 0 });
+      renderLayers();
+    });
+    renderLayers();
+    det.appendChild(addBtn);
 
     // Each card saves itself — on the front page there is no screen-level Save
     // button underneath it. The PUT writes the whole config (the API's shape),
