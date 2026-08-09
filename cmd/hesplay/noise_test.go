@@ -851,6 +851,91 @@ func TestThetaSurf(t *testing.T) {
 	}
 }
 
+// TestBinauralLayer pins the carrier-pair stage. The subtle interaction is the
+// empty Type: a colourless NOISE layer is deliberately dropped ("the editor said
+// remove this"), and a binaural layer has no colour at all — so it must be
+// recognised before that rule or it would silently vanish.
+func TestBinauralLayer(t *testing.T) {
+	p, err := (noisePreset{Type: "brown", WaveSpeed: 0.08,
+		Layers: []noiseLayer{{CarrierHz: 100, BeatHz: 4, Gain: -30}}}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if len(p.Layers) != 1 || !p.Layers[0].binaural() {
+		t.Fatalf("a binaural layer must survive having no colour, got %+v", p.Layers)
+	}
+	// One tone per channel, and none of the noise shaping: a band would tilt a
+	// pure tone and reverb would smear the channels into each other, which is
+	// precisely the phase difference the effect is made of.
+	got := strings.Join(p.layerSoxArgs(p.Layers[0]), " ")
+	want := "--buffer 131072 -c 2 --null -t sox - synth 60 sine 100 sine 104 gain -30 repeat 1439"
+	if got != want {
+		t.Errorf("binaural stage:\n got %q\nwant %q", got, want)
+	}
+	for _, banned := range []string{"band", "tremolo", "reverb"} {
+		if strings.Contains(got, banned) {
+			t.Errorf("a binaural stage must not carry %q: %q", banned, got)
+		}
+	}
+	// Carriers are clamped into the range where binaural phase-locking works.
+	if q, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{{BeatHz: 4, CarrierHz: 9000}}}).normalize(); q.Layers[0].CarrierHz != 1000 {
+		t.Errorf("carrier should clamp to 1000 Hz, got %g", q.Layers[0].CarrierHz)
+	}
+	if q, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{{BeatHz: 4}}}).normalize(); q.Layers[0].CarrierHz != 100 {
+		t.Errorf("a carrier-less beat should default to 100 Hz, got %g", q.Layers[0].CarrierHz)
+	}
+	// Noise-shaped fields are cleared, so a layer edited from noise to binaural
+	// cannot keep a stale band or swell that the stage would ignore anyway.
+	q, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{
+		{Type: "pink", CenterHz: 900, Speed: 0.02, Depth: 40, Offset: 5, CarrierHz: 200, BeatHz: 7}}}).normalize()
+	l := q.Layers[0]
+	if l.Type != "" || l.CenterHz != 0 || l.Speed != 0 || l.Depth != 0 || l.Offset != 0 {
+		t.Errorf("noise fields should clear on a binaural layer: %+v", l)
+	}
+}
+
+// TestFocus10 pins the Monroe-shaped preset: the brown reference as the bed, plus
+// two beats at once — 4 Hz for the body and 10 Hz to hold the mind up. One beat
+// alone is a different state, so the pair is the preset.
+func TestFocus10(t *testing.T) {
+	p, err := mustFindDefault(t, "focus 10").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	brown, err := mustFindDefault(t, "brown").normalize()
+	if err != nil {
+		t.Fatalf("normalize brown: %v", err)
+	}
+	// The bed is the brown preset untouched — same band, swell and reverb.
+	if p.CenterHz != brown.CenterHz || p.WidthHz != brown.WidthHz ||
+		p.WaveSpeed != brown.WaveSpeed || p.WaveDepth != brown.WaveDepth || p.Reverb != brown.Reverb {
+		t.Errorf("the bed should be the brown preset: %+v vs %+v", p, brown)
+	}
+	if len(p.Layers) != 2 {
+		t.Fatalf("want two beats, got %d", len(p.Layers))
+	}
+	beats := []float64{p.Layers[0].BeatHz, p.Layers[1].BeatHz}
+	if beats[0] != 4 || beats[1] != 10 {
+		t.Errorf("want a 4 Hz body beat and a 10 Hz mind beat, got %v", beats)
+	}
+	for i, l := range p.Layers {
+		if !l.binaural() {
+			t.Errorf("layer %d should be binaural: %+v", i+1, l)
+		}
+		if l.CarrierHz > 1000 {
+			t.Errorf("carrier %g Hz is above where binaural beats work", l.CarrierHz)
+		}
+		// The tones sit under the bed: a full-scale sine measures -3 dB against
+		// the bed's -27, so a positive or zero gain here would bury it.
+		if l.Gain > -20 {
+			t.Errorf("layer %d gain %g would sit on top of the bed", i+1, l.Gain)
+		}
+	}
+	if p.Layers[0].CarrierHz == p.Layers[1].CarrierHz {
+		t.Error("the two pairs should use different carriers, or their own difference tones collide")
+	}
+}
+
 // TestNormalizeLayers pins layer validation: unknown colours rejected, a
 // colourless entry dropped rather than fatal, the preset's own band inherited
 // when a layer names none, a swell-less layer left perfectly still, and the

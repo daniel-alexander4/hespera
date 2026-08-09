@@ -252,7 +252,28 @@ type noiseLayer struct {
 	Depth    float64 `json:"depth,omitempty"`    // swell depth %
 	Gain     float64 `json:"gain,omitempty"`     // dB; 0 = leave the level alone
 	Offset   float64 `json:"offset,omitempty"`   // seconds; phase shift against the body
+
+	// A BINAURAL layer instead of a noise one: a pure tone in each ear, the two
+	// differing by BeatHz, which is the Hemi-Sync mechanism Monroe patented. The
+	// beat exists nowhere in the audio — each channel is a steady sine — and is
+	// produced by the listener's own binaural processing, which is why:
+	//
+	//   ⚠️ IT REQUIRES HEADPHONES. Over speakers both ears hear both carriers,
+	//   they beat acoustically in the air, and what you get is a physical
+	//   amplitude wobble — a different phenomenon that entrains nothing. Pulse
+	//   (an AM of the mix) is the speaker-compatible tool; this one is not.
+	//
+	// BeatHz > 0 marks the layer binaural, and Type is then ignored: this stage
+	// synthesizes `sine C  sine C+beat` across the two channels rather than
+	// noise, and skips the band-pass, the swell and the reverb — a band would
+	// tilt a pure tone, and reverb would smear the two channels into each other,
+	// destroying the very phase difference the effect is made of.
+	CarrierHz float64 `json:"carrierHz,omitempty"` // the tone in the left ear; right gets +BeatHz
+	BeatHz    float64 `json:"beatHz,omitempty"`    // the difference the brain hears; 0 = a noise layer
 }
+
+// binaural reports whether this layer is a carrier pair rather than a noise bed.
+func (l noiseLayer) binaural() bool { return l.BeatHz > 0 }
 
 // noiseConfig is the whole on-disk file. It lives on the BOX that makes the
 // sound, not on the Hespera server, so a scheduled window still fires when the
@@ -423,6 +444,35 @@ func defaultNoiseConfig() noiseConfig {
 				Layers: []noiseLayer{
 					{Type: "brownnoise", CenterHz: 1420, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -6.4, Offset: 10},
 					{Type: "brownnoise", CenterHz: 1786, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -9.5, Offset: 6.25},
+				}},
+			// "focus 10" is Monroe's name for mind-awake / body-asleep, and this is
+			// the documented SHAPE of it rather than his signal: Hemi-Sync is
+			// binaural beats over a noise bed (US 3,884,218 / 5,213,562), but the
+			// per-state frequency recipe was never published, so what is here is
+			// the widely reproduced two-beat form and should be read as that.
+			//
+			// The brown preset, untouched, is the bed. Over it: a **4 Hz** theta
+			// beat, the body-asleep component, and a **10 Hz** alpha beat to hold
+			// the mind up — one beat alone lands you in one state, and the whole
+			// point of this one is the two at once.
+			//
+			// Carriers are 100 and 250 Hz, deliberately low and far apart:
+			// binaural phase-locking only works below ~1 kHz, and separating the
+			// pairs keeps their own difference tones out of the way. Levels put
+			// the tones under the bed (a full-scale sine measures −3 dB against
+			// the bed's −27, so −30 and −33 sit them 3 and 6 dB below it in RMS —
+			// further below by ear, since 100 Hz needs more level than 1786 Hz to
+			// read as equally loud, and the bed's band leaves them unmasked).
+			//
+			// ⚠️ HEADPHONES OR IT IS NOT THIS EFFECT. Each channel is a steady
+			// sine; the beat is made by the listener. On speakers the two carriers
+			// beat in the air instead — an audible wobble that entrains nothing.
+			{Name: "focus 10", Type: "brownnoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				Reverb: 19, FadeIn: 3,
+				Layers: []noiseLayer{
+					{CarrierHz: 100, BeatHz: 4, Gain: -30},
+					{CarrierHz: 250, BeatHz: 10, Gain: -33},
 				}},
 			base("brown", "brownnoise", 0), // the reference: unchanged from the original
 			base("pink", "pinknoise", 7),
@@ -701,6 +751,20 @@ func (p noisePreset) normalize() (noisePreset, error) {
 	var layers []noiseLayer
 	for i, l := range out.Layers {
 		l.Type = strings.ToLower(strings.TrimSpace(l.Type))
+		// A binaural layer is a carrier pair, not a colour, so it is validated
+		// here and skips every noise-shaped rule below (band, swell, reverb).
+		// Carriers are held under 1 kHz because that is where binaural
+		// phase-locking works at all — above it the auditory system stops
+		// following the phase difference and the effect simply doesn't happen.
+		if l.binaural() {
+			l.Type = ""
+			l.BeatHz = math.Max(0.5, math.Min(40, l.BeatHz))
+			l.CarrierHz = clampFloat(l.CarrierHz, 40, 1000, 100)
+			l.Gain = math.Max(-60, math.Min(20, l.Gain))
+			l.CenterHz, l.WidthHz, l.Speed, l.Depth, l.Offset = 0, 0, 0, 0, 0
+			layers = append(layers, l)
+			continue
+		}
 		if l.Type == "" {
 			// A colourless layer is how the editor says "this one is gone",
 			// and how a hand-edited file's leftover object degrades. Dropping
@@ -944,6 +1008,20 @@ func layerRepeatCount(l noiseLayer) int {
 //     gain-last, i.e. the same level either way — so the clean one wins, and the
 //     shipped velvet floor's argv stays byte-identical to what was auditioned.
 func (p noisePreset) layerSoxArgs(l noiseLayer) []string {
+	if l.binaural() {
+		// `-c 2` plus two waveform specs assigns one per channel: left hears the
+		// carrier, right hears carrier+beat. Integer carriers over a
+		// whole-second buffer are phase-continuous at the loop point for BOTH
+		// tones and for the beat between them, so `repeat` cannot click.
+		a := []string{"--buffer", strconv.Itoa(noiseBuffer),
+			"-c", strconv.Itoa(noiseChannels), "--null", "-t", "sox", "-",
+			"synth", num(layerBufferSecs(l)),
+			"sine", num(l.CarrierHz), "sine", num(l.CarrierHz + l.BeatHz)}
+		if l.Gain != 0 {
+			a = append(a, "gain", num(l.Gain))
+		}
+		return append(a, "repeat", strconv.Itoa(layerRepeatCount(l)))
+	}
 	ff := layerNeedsFFmpeg(l)
 	var a []string
 	if ff {
