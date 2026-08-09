@@ -701,37 +701,68 @@ func TestOceanPinkStages(t *testing.T) {
 	}
 }
 
-// TestOceanBrownBrownBrown pins the all-brown sibling: ocean pink with its small
-// wave swapped to brown, so the two are a fair A/B differing only in that
-// timbre. The two brown layers must stay byte-identical to ocean pink's — that
-// is what "a copy" means, and a drift there is invisible by ear across presets —
-// while the BODY gain must not be copied, since brown measures 7.4 dB hotter
-// than pink through this band and −0.5 would let the smallest wave dominate.
+// TestOceanBrownBrownBrown pins the all-brown preset's three stages: one colour,
+// three sizes, and a TONE LADDER stepping about a third of an octave per size
+// (large 1420, medium 1786, small 2250) because three waves in one band have
+// identical timbre and leave the ear only rhythm to separate them.
+//
+// Two things here are easy to break by tidying and must not be:
+//   - the medium layer states 1786 EXPLICITLY. The body is the small wave, so an
+//     empty layer band inherits the preset's 2250 and the medium wave silently
+//     follows the small one up the ladder.
+//   - the gains absorb the band shift (large −8.4, small −6.0, medium unchanged
+//     at −9.5). Brown falls ~6 dB/octave, so equal numbers across unequal bands
+//     would deliver the tone change as a balance change.
 func TestOceanBrownBrownBrown(t *testing.T) {
-	bbb, err := mustFindDefault(t, "ocean brown brown brown").normalize()
+	p, err := mustFindDefault(t, "ocean brown brown brown").normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	pink, err := mustFindDefault(t, "ocean pink").normalize()
-	if err != nil {
-		t.Fatalf("normalize ocean pink: %v", err)
+	if p.Type != "brownnoise" || len(p.Layers) != 2 {
+		t.Fatalf("want a brown body plus two brown layers, got %q + %d layers", p.Type, len(p.Layers))
 	}
-	if bbb.Type != "brownnoise" {
-		t.Errorf("the small wave should be brown, got %q", bbb.Type)
+	wantBody := "--buffer 131072 -c 2 --null -t sox - synth 64 brownnoise band -n 2250 499 tremolo 0.0625 85 reverb 19 repeat 1349 gain -6"
+	if got := strings.Join(p.bodySoxArgs(), " "); got != wantBody {
+		t.Errorf("bright wave (body):\n got %q\nwant %q", got, wantBody)
 	}
-	for i, l := range bbb.Layers {
-		if got, want := strings.Join(bbb.layerSoxArgs(l), " "), strings.Join(pink.layerSoxArgs(pink.Layers[i]), " "); got != want {
-			t.Errorf("layer %d drifted from ocean pink's:\n got %q\nwant %q", i+1, got, want)
+	wantLayers := []string{
+		"--buffer 131072 -c 2 --null -t sox - synth 90 brownnoise band -n 1420 499 tremolo 0.025 45 trim 10 reverb 19 repeat 1079 gain -6.4",
+		"--buffer 131072 -c 2 --null -t sox - synth 81.25 brownnoise band -n 1786 499 tremolo 0.04 40 trim 6.25 reverb 19 repeat 1151 gain -9.5",
+	}
+	for i, want := range wantLayers {
+		if got := strings.Join(p.layerSoxArgs(p.Layers[i]), " "); got != want {
+			t.Errorf("layer %d:\n got %q\nwant %q", i+1, got, want)
 		}
 	}
-	// −7.9 puts the brown body on the same stage level pink's −0.5 produced
-	// (measured −27.07 brown vs −34.46 pink at gain 0), which is what holds the
-	// mixed level equal: both presets measure RMS −30.3 through their own argv.
-	if bbb.GainDB != -7.9 {
-		t.Errorf("body gain should be the level-matched −7.9, got %g", bbb.GainDB)
+	// The ladder itself, stated as properties rather than as numbers. Tone falls
+	// as the wave grows — and the RATES deliberately do not follow it: the
+	// brightest wave is no longer the fastest, which is what keeps the three from
+	// reading as one texture running at three speeds.
+	if !(p.Layers[0].CenterHz < p.Layers[1].CenterHz && p.Layers[1].CenterHz < p.CenterHz) {
+		t.Errorf("tone should rise as the wave shrinks, got large %g / medium %g / small %g",
+			p.Layers[0].CenterHz, p.Layers[1].CenterHz, p.CenterHz)
 	}
-	if bbb.GainDB == pink.GainDB {
-		t.Error("the body gain must NOT be copied across a colour change")
+	// Periods still fall with the wave's size (large slowest, bright fastest),
+	// but both ends have moved INWARD from the 50s/12.5s they started at: the
+	// bright swell is drawn out and the dark one tightened, so the ratio between
+	// the fastest and slowest wave is no longer 4:1.
+	if !(p.Layers[0].Speed < p.Layers[1].Speed && p.Layers[1].Speed < p.WaveSpeed) {
+		t.Errorf("swell period should fall with wave size, got large %g / medium %g / bright %g Hz",
+			p.Layers[0].Speed, p.Layers[1].Speed, p.WaveSpeed)
+	}
+	if p.WaveSpeed >= 0.08 {
+		t.Errorf("the bright wave's swell should last longer than the original 12.5s, got %g Hz", p.WaveSpeed)
+	}
+	if p.Layers[0].Speed <= 0.02 {
+		t.Errorf("the dark wave's swell should be shorter than the original 50s, got %g Hz", p.Layers[0].Speed)
+	}
+	// Every wave keeps a distinct period, or two of them beat as one rhythm.
+	for i, a := range []float64{p.WaveSpeed, p.Layers[0].Speed, p.Layers[1].Speed} {
+		for j, b := range []float64{p.WaveSpeed, p.Layers[0].Speed, p.Layers[1].Speed} {
+			if i < j && a == b {
+				t.Errorf("two waves share a swell rate (%g) — they would read as one", a)
+			}
+		}
 	}
 }
 

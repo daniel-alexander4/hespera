@@ -348,18 +348,62 @@ func defaultNoiseConfig() noiseConfig {
 			// The all-brown sibling (Dan, 2026-08-08): ocean pink with its small
 			// wave swapped from pink to brown, so the three sizes differ only in
 			// rhythm and nothing in timbre. Every number is ocean pink's except
-			// the body gain, and that ONE cannot be copied: through this band
-			// brown measures −27.07 dB against pink's −34.46, so keeping −0.5
-			// would put the small wave 7.4 dB hotter than its sibling's and let
-			// the smallest wave dominate the other two. −7.9 lands the brown body
-			// on the same −34.98 dB stage level pink's −0.5 produced, which is
-			// what keeps the two presets a fair A/B rather than one being louder.
+			// two.
+			//
+			// The body GAIN cannot be copied: through this band brown measures
+			// −27.07 dB against pink's −34.46, so keeping −0.5 would put the
+			// small wave 7.4 dB hotter than its sibling's and let the smallest
+			// wave dominate the other two. −7.9 lands the brown body on the same
+			// −34.98 dB stage level pink's −0.5 produced, which is what keeps the
+			// two presets a fair A/B rather than one being louder.
+			//
+			// The body DEPTH is 85, not 37 (Dan, on hearing it: "the small ones
+			// should come and go too"). A pink bed at 37 is a bed — it dips to
+			// 63% and, with two slower waves filling those dips, reads as
+			// continuous. At 85 each small wave arrives and recedes to ~15%. The
+			// gain does not compensate for that, because depth does not move the
+			// CREST (peak holds at ~−16.8 dB from depth 37 through 95, measured)
+			// — the wave breaks exactly as loud as before and simply goes away
+			// between breaks, which costs ~2 dB of mean level and never adds any.
+			//
+			// Then a TONE LADDER (Dan, still hearing one texture: "change the
+			// large wave to be slightly lower in tone and the small wave to be
+			// slightly higher"). Three waves in the same band have identical
+			// timbre, leaving the ear nothing but rhythm to separate them, so the
+			// bands step about a third of an octave apart: large 1420, medium
+			// 1786 (the anchor), small 2250. Note the medium layer now states
+			// 1786 EXPLICITLY — the body is the small wave, so an empty layer
+			// band would inherit 2250 and follow it up.
+			//
+			// A band shift is also a level shift, and the gains absorb it: brown
+			// falls ~6 dB/octave, measured at −25.61 dB mean for the large wave
+			// at 1420 (1.85 dB louder than at 1786) and −31.09 for the small at
+			// 2250 (1.88 quieter), so −8.4 and −6.0 hold both stages at exactly
+			// the mean levels the balance was set at. Left alone, the low wave
+			// would have swollen and the small one faded — the tone change would
+			// have arrived as a balance change.
+			// Finally the swell RATES stop tracking the tone ladder (Dan, on
+			// hearing it: "make the higher pitched swell last longer and the
+			// lower swell shorter and slightly louder"). The bright wave is drawn
+			// out from 12.5s to 16s per swell and the dark one tightened from 50s
+			// to 40s — so tone no longer predicts rhythm, which is what stops the
+			// three reading as one texture at three speeds. SoX's tremolo is a
+			// fixed sine with no duty cycle, so "lasts longer" can only be a
+			// slower rate; there is no way to hold a plateau and shorten the
+			// trough.
+			//
+			// Rate does NOT affect level (measured: the bright wave 0.08 → 0.0625
+			// moves its mean 0.08 dB, the dark 0.02 → 0.025 moves it 0.01), so no
+			// gain here compensates for the retiming — the dark wave's −6.4 is
+			// purely the "slightly louder" that was asked for, +2 dB. Its offset
+			// follows its period down to 10s, keeping the quarter-period spacing
+			// that stops crests landing together.
 			{Name: "ocean brown brown brown", Type: "brownnoise",
-				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				GainDB: -7.9, Reverb: 19, FadeIn: 3,
+				CenterHz: 2250, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 85,
+				GainDB: -6, Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
-					{Type: "brownnoise", Speed: 0.02, Depth: 45, Gain: -6.5, Offset: 12.5},
-					{Type: "brownnoise", Speed: 0.04, Depth: 40, Gain: -9.5, Offset: 6.25},
+					{Type: "brownnoise", CenterHz: 1420, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -6.4, Offset: 10},
+					{Type: "brownnoise", CenterHz: 1786, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -9.5, Offset: 6.25},
 				}},
 		},
 	}
