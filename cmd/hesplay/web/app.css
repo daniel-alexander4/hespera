@@ -30,7 +30,9 @@
   --music: #89b4fa;    /* blue — quick play, playlists, artists, albums */
   --noise: #cba6f7;    /* mauve — the plain colour references */
   --nature: #94e2d5;   /* teal — the seas: surf, tides, waves */
-  --entrain: #b4befe;  /* lavender — presets aimed at a brain state */
+  --pulse: #b4befe;    /* lavender — an AM of the mix: textural, speakers fine */
+  --binaural: #74c7ec; /* sapphire — one tone per ear: headphones */
+  --monaural: #f5c2e7; /* pink — both tones both ears: tonal, speakers fine */
   --time: #fab387;     /* peach — the schedule and its windows */
   --playing: #a6e3a1;  /* green — the queue, now playing, every play button */
   --lavender: #b4befe; /* the default header hue */
@@ -376,7 +378,9 @@ h2:first-child { margin-top: 0; }
 #schedule-card, .win { --hue: var(--time); }
 #nature-card { --hue: var(--nature); }
 #noise-card { --hue: var(--noise); }
-#entrainment-card { --hue: var(--entrain); }
+#pulse-card { --hue: var(--pulse); }
+#binaural-card { --hue: var(--binaural); }
+#monaural-card { --hue: var(--monaural); }
 .preset > summary {
   display: flex;
   align-items: baseline;
@@ -392,7 +396,7 @@ h2:first-child { margin-top: 0; }
    occur, so it is marked per preset rather than only in the card's note. */
 .preset > summary .hp {
   font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--on-accent); background: var(--hue, var(--entrain));
+  color: var(--on-accent); background: var(--hue, var(--binaural));
   padding: 0.1rem 0.35rem; border-radius: 4px; align-self: center; flex: none;
 }
 /* Every collapsible card wears a chevron: points right closed, down open —

@@ -414,19 +414,21 @@
   const NOISE_CARDS = [
     ['nature', 'Nature', 'noise-nature', 'nature-card', 'nature-h'],
     ['noise', 'Noise', 'noise-noise', 'noise-card', 'noise-h'],
-    ['entrainment', 'Entrainment', 'noise-entrainment', 'entrainment-card', 'entrainment-h'],
+    ['pulse', 'Pulse', 'noise-pulse', 'pulse-card', 'pulse-h'],
+    ['binaural', 'Binaural', 'noise-binaural', 'binaural-card', 'binaural-h'],
+    ['monaural', 'Monaural', 'noise-monaural', 'monaural-card', 'monaural-h'],
   ];
   // Mirrors deriveCategory in noise.go, for a config saved before `category`
   // existed: the server fills the field on its next write, but the phone has to
   // render what is on the box right now.
   function presetCard(p) {
     if (NOISE_CARDS.some((c) => c[0] === p.category)) return p.category;
-    if (p.category === 'binaural') return 'entrainment'; // the card's former name
-    // Purpose before mechanism: a pulse and a carrier pair are both aimed at a
-    // brain state, so both file here — which is what puts theta surf, a sea with
-    // a 6 Hz pulse, in this card rather than in nature.
-    if ((p.pulseHz || 0) > 0) return 'entrainment';
-    if ((p.layers || []).some((l) => (l.beatHz || 0) > 0)) return 'entrainment';
+    // Mechanism, and binaural first: a preset mixing both forms files under the
+    // stricter requirement, since one layer needing headphones makes the whole
+    // preset need them. Mirrors deriveCategory in noise.go.
+    if (needsHeadphones(p)) return 'binaural';
+    if ((p.layers || []).some((l) => (l.beatHz || 0) > 0 && l.monaural)) return 'monaural';
+    if ((p.pulseHz || 0) > 0 || (p.phases || []).length) return 'pulse';
     if ((p.layers || []).length || (p.wave2Speed || 0) > 0) return 'nature';
     return 'noise';
   }

@@ -142,7 +142,7 @@ const (
 // noiseCategories are the cards the remote groups presets into. Kept as data
 // rather than as three hard-coded lists so the phone and the server agree on both
 // the set and its order (Dan, 2026-08-09: "separate noise into three cards").
-var noiseCategories = []string{"nature", "noise", "entrainment"}
+var noiseCategories = []string{"nature", "noise", "pulse", "binaural", "monaural"}
 
 type noisePreset struct {
 	Name string `json:"name"`
@@ -999,13 +999,10 @@ func (p noisePreset) normalize() (noisePreset, error) {
 	// rejected — a preset must still play if someone types a category the phone
 	// doesn't know, and mis-filing it is a smaller failure than refusing it.
 	out.Category = strings.ToLower(strings.TrimSpace(out.Category))
-	// "binaural" was this card's name for one afternoon (v0.45.24) before it
-	// became "entrainment", which covers the AM pulse too. Accept the old name as
-	// an alias rather than letting it fall through to the derivation: a preset
-	// somebody hand-filed there meant exactly this card.
-	if out.Category == "binaural" {
-		out.Category = "entrainment"
-	}
+	// No aliases for the two names this card set has already worn ("binaural" for
+	// one afternoon, then "entrainment"): "binaural" is a real card again and must
+	// mean itself, and a preset saved as "entrainment" now falls through to the
+	// derivation, which files it by mechanism — exactly where the split wants it.
 	if !knownCategory(out.Category) {
 		out.Category = out.deriveCategory()
 	}
@@ -1021,33 +1018,34 @@ func knownCategory(c string) bool {
 	return false
 }
 
-// deriveCategory files a preset that doesn't name a card, by what it IS:
+// deriveCategory files a preset that doesn't name a card, by what it IS. The
+// three entrainment cards are split by MECHANISM (Dan, 2026-08-09: "separate out
+// monoaural from binaural into different cards") because mechanism is what the
+// listener has to act on — whether headphones are needed, and whether the beat
+// is a texture or a tone:
 //
-//   - anything built to drive a brain state -> "entrainment", whether it does it
-//     with a binaural carrier pair or with an AM pulse on the mix. Purpose beats
-//     mechanism here (Dan, 2026-08-09, revising a first cut that filed by
-//     mechanism and split the two apart): the card is what you reach for when the
-//     goal is a state, and it grows to cover isochronic and a descending program
-//     without renaming. This outranks the sea test below, which is why theta surf
-//     — a three-wave sea carrying a 6 Hz pulse — lands here rather than in nature.
+//   - a binaural pair -> "binaural". Checked FIRST, and before monaural, so a
+//     preset mixing both forms files under the stricter requirement: one layer
+//     needing headphones makes the whole preset need them.
+//   - a monaural pair -> "monaural": tones, and the beat is in the air, so
+//     speakers are fine.
+//   - a pulse, or a program of them -> "pulse": an AM of the mix, textural
+//     rather than tonal, speakers fine. This outranks the sea test below, which
+//     is why `drowsy` — a three-wave sea carrying a 6 Hz pulse — lands here.
 //   - otherwise a sea -> "nature": more than one wave (layers) or a second swell
 //     chained on the one stream.
 //   - otherwise -> "noise": a single banded colour, the seven references.
-//
-// ⚠️ The mechanisms differ in a way the card name no longer states, so the UI has
-// to: a binaural preset REQUIRES headphones (each ear needs its own carrier) while
-// a pulse preset is speaker-valid. presetRow marks the binaural ones per preset.
 func (p noisePreset) deriveCategory() string {
-	if len(p.Phases) > 0 {
-		return "entrainment" // a program exists to walk a rate; nothing else does
-	}
-	if p.PulseHz > 0 {
-		return "entrainment"
+	if p.needsHeadphones() {
+		return "binaural"
 	}
 	for _, l := range p.Layers {
-		if l.binaural() {
-			return "entrainment"
+		if l.binaural() && l.Monaural {
+			return "monaural"
 		}
+	}
+	if p.PulseHz > 0 || len(p.Phases) > 0 {
+		return "pulse"
 	}
 	if len(p.Layers) > 0 || p.Wave2Speed > 0 {
 		return "nature"

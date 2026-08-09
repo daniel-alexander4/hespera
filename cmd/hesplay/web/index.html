@@ -102,15 +102,25 @@
       <summary><b id="noise-h">Noise</b></summary>
       <div class="rows" id="noise-noise"></div>
     </details>
-    <details class="preset" id="entrainment-card">
-      <summary><b id="entrainment-h">Entrainment</b></summary>
-      <!-- This card holds two different mechanisms, and only one of them needs
-           headphones — so the note explains the distinction and each preset that
-           requires them is marked individually in its own row (see presetRow). -->
-      <p class="msg">Presets marked <b>headphones</b> are binaural: one tone per ear,
-        and the beat is made between them — over speakers you get a plain wobble
-        instead. The rest pulse the whole mix and work on speakers.</p>
-      <div class="rows" id="noise-entrainment"></div>
+    <!-- Three entrainment cards, split by MECHANISM: what the listener has to
+         act on is whether headphones are needed and whether the beat arrives as a
+         texture or a tone. -->
+    <details class="preset" id="pulse-card">
+      <summary><b id="pulse-h">Pulse</b></summary>
+      <p class="msg">The whole sound swells at the rate — textural, and fine on speakers.</p>
+      <div class="rows" id="noise-pulse"></div>
+    </details>
+    <details class="preset" id="binaural-card">
+      <summary><b id="binaural-h">Binaural</b></summary>
+      <p class="msg">One tone per ear; the beat is made between them, so it needs
+        <b>headphones</b> — over speakers you get a plain wobble instead.</p>
+      <div class="rows" id="noise-binaural"></div>
+    </details>
+    <details class="preset" id="monaural-card">
+      <summary><b id="monaural-h">Monaural</b></summary>
+      <p class="msg">Both tones in both ears, beating in the air — tonal like binaural,
+        but no headphones needed.</p>
+      <div class="rows" id="noise-monaural"></div>
     </details>
   </section>
 </main>
