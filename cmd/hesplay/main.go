@@ -305,6 +305,13 @@ func dispatch(ctx context.Context, c *client, args []string, shuffle bool) error
 		return nil
 	}
 
+	// `noise-events` is the event generator, hidden for the same reason `complete`
+	// is: it exists so another program can call it — here hesplay exec'ing itself
+	// for one stage of a noise mix — not because a user has a use for raw PCM.
+	if args[0] == "noise-events" {
+		return cmdNoiseEvents(ctx, args[1:])
+	}
+
 	// `noise` is entirely local — it synthesizes sound, it does not stream any.
 	// Handled before the probe below on purpose: the whole point of the feature
 	// it replaces is that the box makes noise overnight whether or not the music

@@ -378,6 +378,19 @@ a layer with a bright band and a big negative gain; a config written before
 layers existed is migrated on read, so a saved floor keeps playing exactly as it
 did.
 
+**Events — rain, not a sea.** Every other layer is continuous, so the engine could
+only ever make something that *breathes*: a sea, a wind, a bed. Rain drops, crackle
+and drips are discrete events at irregular times, and neither SoX nor ffmpeg can
+schedule one — so hesplay generates them itself, as Poisson-timed noise bursts with
+an exponential decay, piped into the same per-stage shaping every other layer uses.
+An event layer takes a rate and a decay; **rate is a texture knob, not a volume
+one** (each event is scaled by the expected overlap, so denser rain is not louder
+rain — measured within 0.5 dB across 60, 120 and 250 events per second). The
+generator runs as a hidden `noise-events` verb, which is what keeps `hesplay noise
+--print` paste-able: the printed pipeline is the one that plays. **rain** is the
+first such preset — a wide bright wash for the sheet of rain with 120 near drops a
+second over it.
+
 **A pulse, for a state rather than a place.** A preset can also carry an
 *entrainment pulse* — an amplitude modulation of the whole mix, fast enough to be
 a rhythm the brain can follow rather than a wave you hear arrive. The entrainment

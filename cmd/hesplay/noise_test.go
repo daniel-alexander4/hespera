@@ -983,6 +983,102 @@ func TestEntrainmentNamedByState(t *testing.T) {
 	}
 }
 
+// TestEventLayer pins the third layer kind: samples from hesplay's own generator,
+// shaped by this stage like any other layer. The interactions worth guarding are
+// the ones a future edit would break silently.
+func TestEventLayer(t *testing.T) {
+	p, err := (noisePreset{Type: "pink", CenterHz: 3000, WidthHz: 4000, WaveSpeed: 0.05,
+		Layers: []noiseLayer{{EventsPerSec: 120, DecayMs: 9, Gain: -3.8}}}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	l := p.Layers[0]
+	if !l.eventLayer() {
+		t.Fatalf("should be an event layer: %+v", l)
+	}
+	// It inherits the preset's band when it names none, like a noise layer.
+	if l.CenterHz != 3000 || l.WidthHz != 4000 {
+		t.Errorf("band not inherited: %g/%g", l.CenterHz, l.WidthHz)
+	}
+	// Raw stdin at the engine's rate, gain FIRST (band -n rings a transient),
+	// then band and the shared reverb — and NO repeat: the stream never ends, so
+	// there is no buffer to loop and no seam to click at.
+	got := strings.Join(p.layerSoxArgs(l), " ")
+	want := "--buffer 131072 -t raw -r 48000 -e signed -b 16 -c 2 - -t sox - gain -3.8 band -n 3000 4000 reverb 19"
+	if got != want {
+		t.Errorf("event stage:\n got %q\nwant %q", got, want)
+	}
+	for _, banned := range []string{"repeat", "synth", "tremolo"} {
+		if strings.Contains(got, banned) {
+			t.Errorf("an event stage must not carry %q: %q", banned, got)
+		}
+	}
+	// It is not a carrier pair and needs no headphones, and it needs no ffmpeg —
+	// requiring one would refuse a preset that needs nothing but SoX.
+	if p.needsHeadphones() || p.layersNeedFFmpeg() {
+		t.Errorf("event layer misclassified: headphones=%v ffmpeg=%v", p.needsHeadphones(), p.layersNeedFFmpeg())
+	}
+	if p.Category != "nature" {
+		t.Errorf("an event preset is nature, got %q", p.Category)
+	}
+	// Clamps, and the noise/tone fields cleared so a layer edited into an event
+	// layer cannot keep a stale swell the stage would ignore.
+	q, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{
+		{Type: "pink", EventsPerSec: 9e9, DecayMs: -5, Speed: 0.02, Depth: 40, Offset: 3},
+	}}).normalize()
+	e := q.Layers[0]
+	if e.EventsPerSec != 2000 {
+		t.Errorf("rate should clamp, got %g", e.EventsPerSec)
+	}
+	if e.DecayMs != 12 {
+		t.Errorf("a silly decay should fall back to the default, got %g", e.DecayMs)
+	}
+	if e.Type != "" || e.Speed != 0 || e.Depth != 0 || e.Offset != 0 {
+		t.Errorf("noise fields should clear on an event layer: %+v", e)
+	}
+	// A layer carrying BOTH markers is a config error, and the two orderings that
+	// read it must agree: normalize validates it as binaural, so the event fields
+	// are cleared — otherwise layerSoxArgs would have staged it as an event layer
+	// while normalize had validated a carrier pair.
+	amb, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{
+		{CarrierHz: 200, BeatHz: 7, EventsPerSec: 120, DecayMs: 9},
+	}}).normalize()
+	a := amb.Layers[0]
+	if !a.binaural() || a.eventLayer() {
+		t.Errorf("a carrier pair should win and clear the event fields: %+v", a)
+	}
+	if got := strings.Join(amb.layerSoxArgs(a), " "); !strings.Contains(got, "sine 200 sine 207") {
+		t.Errorf("staged as something other than the carrier pair it validated as: %q", got)
+	}
+	// And a decay on a NOISE layer is meaningless and clears.
+	if r, _ := (noisePreset{Type: "brown", Layers: []noiseLayer{{Type: "pink", Speed: 0.02, DecayMs: 50}}}).normalize(); r.Layers[0].DecayMs != 0 {
+		t.Errorf("only an event layer decays, got %g", r.Layers[0].DecayMs)
+	}
+}
+
+// TestRainPreset pins the first events-driven preset, and the two ways it is
+// deliberately unlike the seas.
+func TestRainPreset(t *testing.T) {
+	p, err := mustFindDefault(t, "rain").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if len(p.Layers) != 1 || !p.Layers[0].eventLayer() {
+		t.Fatalf("rain should carry one event layer, got %+v", p.Layers)
+	}
+	// Wide, because rain is broadband — the seas run 499 Hz wide.
+	if p.WidthHz < 1000 {
+		t.Errorf("rain's bed should be wide, got %g Hz", p.WidthHz)
+	}
+	// Shallow and slow, because rain breathes rather than surges.
+	if p.WaveDepth > 25 {
+		t.Errorf("rain should not surge like surf, got depth %g", p.WaveDepth)
+	}
+	if p.Category != "nature" {
+		t.Errorf("filed under %q", p.Category)
+	}
+}
+
 // TestMonauralLayer pins the speaker-valid form of a carrier pair: both tones in
 // BOTH channels, so the beat happens acoustically instead of neurally. The
 // headphones flag is the property that must follow it — a monaural preset marked
@@ -1189,7 +1285,7 @@ func TestPresetCategories(t *testing.T) {
 	// Split by MECHANISM, because that is what the listener has to act on: a
 	// texture on speakers, tones needing headphones, or tones that don't.
 	want := map[string][]string{
-		"nature":   {"ocean brown brown brown", "ocean brown", "ocean pink"},
+		"nature":   {"ocean brown brown brown", "rain", "ocean brown", "ocean pink"},
 		"noise":    {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
 		"pulse":    {"drowsy (6 Hz)", "sharp focus (40 Hz)"},
 		"binaural": {"body asleep, mind awake (4+10 Hz)", "sleep onset (10→4 Hz)", "deep hypnagogia (3.5+10 Hz)", "deep sleep (2 Hz)"},

@@ -402,6 +402,16 @@
     ['beatHz', 'Beat (Hz)', 0.5, 40, 0.5],
     ['gain', 'Gain (dB)', -60, 20, 0.5],
   ];
+  // An event layer's knobs: how often a transient fires and how fast it decays.
+  // Rate is a TEXTURE knob, not a volume one — the generator scales each event by
+  // the expected overlap, so denser rain is not louder rain.
+  const EVENT_FIELDS = [
+    ['eventsPerSec', 'Events per second', 0.1, 2000, 1],
+    ['decayMs', 'Decay (ms)', 1, 2000, 1],
+    ['gain', 'Gain (dB)', -60, 20, 0.5],
+    ['centerHz', 'Band centre (Hz, 0=same)', 0, 20000, 1],
+    ['widthHz', 'Band width (Hz, 0=same)', 0, 20000, 1],
+  ];
   const LAYER_FIELDS = [
     ['speed', 'Swell rate (Hz, 0=still)', 0, 0.2, 0.001],
     ['depth', 'Swell depth (%)', 0, 100, 1],
@@ -692,6 +702,8 @@
       if ((l.beatHz || 0) > 0) {
         sub2.textContent = (l.monaural ? 'monaural' : 'binaural')
           + ' · ' + l.beatHz + ' Hz on ' + (l.carrierHz || 100);
+      } else if ((l.eventsPerSec || 0) > 0) {
+        sub2.textContent = 'events · ' + l.eventsPerSec + '/s · ' + (l.decayMs || 12) + 'ms';
       } else {
         sub2.textContent = (l.type || '').replace('noise', '')
           + (l.speed > 0 ? ' · ' + Math.round(1 / l.speed) + 's wave' : ' · still');
@@ -703,7 +715,7 @@
       tl.className = 'field';
       // A carrier pair has no colour — the stage synthesizes sines and ignores
       // Type — so the picker would be a control that does nothing.
-      tl.hidden = (l.beatHz || 0) > 0;
+      tl.hidden = (l.beatHz || 0) > 0 || (l.eventsPerSec || 0) > 0;
       const ts = document.createElement('span');
       ts.textContent = 'Colour';
       const tsel = document.createElement('select');
@@ -718,9 +730,13 @@
       tl.append(ts, tsel);
       box.appendChild(tl);
 
-      // Two kinds of layer, two field sets: a carrier pair is tones, not noise.
+      // Three kinds of layer, three field sets. Order matches the server's
+      // precedence (noise.go: a carrier pair wins over event markers), so the
+      // editor can never show fields the stage will ignore.
       const isTone = (l.beatHz || 0) > 0;
-      (isTone ? TONE_FIELDS : LAYER_FIELDS).forEach(([key, label, min, max, step]) => {
+      const isEvent = !isTone && (l.eventsPerSec || 0) > 0;
+      const fields = isTone ? TONE_FIELDS : (isEvent ? EVENT_FIELDS : LAYER_FIELDS);
+      fields.forEach(([key, label, min, max, step]) => {
         box.appendChild(numberField(label, l[key] || 0, min, max, step, (v) => {
           l[key] = parseFloat(v) || 0;
         }));
