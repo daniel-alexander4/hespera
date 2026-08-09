@@ -383,13 +383,39 @@ only ever make something that *breathes*: a sea, a wind, a bed. Rain drops, crac
 and drips are discrete events at irregular times, and neither SoX nor ffmpeg can
 schedule one — so hesplay generates them itself, as Poisson-timed noise bursts with
 an exponential decay, piped into the same per-stage shaping every other layer uses.
-An event layer takes a rate and a decay; **rate is a texture knob, not a volume
-one** (each event is scaled by the expected overlap, so denser rain is not louder
-rain — measured within 0.5 dB across 60, 120 and 250 events per second). The
-generator runs as a hidden `noise-events` verb, which is what keeps `hesplay noise
---print` paste-able: the printed pipeline is the one that plays. **rain** is the
-first such preset — a wide bright wash for the sheet of rain with 120 near drops a
-second over it.
+An event layer takes a rate and a decay, and the level contract has two regimes
+divided by `rate x decay`: above 1, each event is scaled by the expected overlap so
+**rate is a texture knob, not a volume one** (denser rain is not louder rain); below
+1 — where most sparse layers live, a cave drip is 0.036 — a per-event ceiling takes
+over instead, so level rises with density and the peak stays put. That ceiling is
+what makes the sparse end safe, and it is the reason for the suite's two
+calibration rules: **the bed carries the level, the events carry the transients**
+(nine fire crackles a second measure 45 dB down while peaking 20 dB *above* the bed
+— aiming their average instead asks for an +11 dB lift and clips), and **an event
+layer is never given a positive gain** (a capped, randomly-peaking source clips
+occasionally rather than reproducibly — one thunder stage measured peak −32.6 dBFS
+and the next clipped, 14 dB apart, which is what proved a measured peak useless as
+a calibration target). The generator runs as a hidden `noise-events` verb, which is
+what keeps `hesplay noise --print` paste-able: the printed pipeline is the one that
+plays.
+
+**The nature card.** Eight places, every gain solved by measuring each stage
+through its own chain rather than turned by ear: **rain** (a wide bright wash with
+500 fast drops a second), **downpour** (rain's sheet plus a low roar for the weight
+of it), **distant storm** (a duller sheet with 1.5-second thunder every eight
+seconds, heard across a valley at 25% reverb), **stream** (the one water preset
+whose events are dense — a continuous scatter of splashes over a low gurgle),
+**waterfall** (the only preset with no layers at all, because a waterfall has no
+events), **wind** (three bands swelling against each other at 7 and 3 seconds
+apart, because the gust *is* the offset), **campfire** (a low roar under a fast
+bright crackle and an occasional pop) and **cave** (the quietest, still air at the
+slowest swell here under two narrow drips at 40% reverb). They mix to −29 through
+−34 dBFS with at least 20 dB of peak headroom, so switching between them is not a
+volume change. Rain's first cut sounded to Dan like "pebbles being dropped on
+aluminum"; the obvious suspect — the band ringing — was measured and cleared, and
+the three real causes were all the drop itself: a 9 ms decay where rain is 1–3,
+uniform amplitudes so every drop was the same drop, and an instantaneous onset
+whose click no decay can hide.
 
 **A pulse, for a state rather than a place.** A preset can also carry an
 *entrainment pulse* — an amplitude modulation of the whole mix, fast enough to be

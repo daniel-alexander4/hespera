@@ -50,12 +50,41 @@ const (
 	// emitting. e^-6 is 0.25%, inaudible under anything, and it bounds how many
 	// events can be alive at once.
 	eventTailFactor = 6
+
+	// eventPeakK sets where a given Amp sits relative to full scale. See the
+	// derivation at its use: it is the single constant in an otherwise derived
+	// normalization, and it is what keeps the heavy tail's rare loud events off the
+	// ceiling.
+	eventPeakK = 0.5
+
+	// eventPeakMax is the ceiling no single event may exceed, and it is what makes
+	// the SPARSE end of the range safe. The 1/sqrt(rate x tau) normalization holds
+	// average loudness constant, which at very low densities demands an amplitude
+	// ABOVE full scale — one drip every two seconds cannot average to the same
+	// level as five hundred a second without each drip clipping. Three of the eight
+	// nature presets clipped on exactly this before the clamp existed. Past the
+	// clamp the average simply falls below target, which is correct: a cave with
+	// one drip every two seconds IS quiet, and its preset gain says so.
+	// ⚠️ 0.25 (−12 dB), not something near full scale, because the stage that
+	// follows is `band -n` — which carries about +11 dB of its own, so a 0.9-peak
+	// event clips inside SoX even though the generator never did. Same headroom
+	// rule the ffmpeg-fed layers learned, reached from the other end: there the fix
+	// was attenuating before the band, here it is not handing the band anything it
+	// cannot pass.
+	eventPeakMax = 0.25
 )
 
 // eventVoice is one live transient: a noise burst with an exponential decay and a
 // fixed stereo position.
+// The attack and the per-event variation are not decoration. A batch of identical
+// instantaneous bursts at one decay reads as "pebbles dropped on aluminium" (Dan,
+// hearing exactly that): a real drop splashes in a millisecond or two, real drops
+// arrive in wildly different sizes, and nothing in nature starts instantaneously.
 type eventVoice struct {
 	env   float64 // current amplitude
+	peak  float64 // target amplitude, reached at the end of the attack
+	decay float64 // this event's own per-sample decay factor
+	atk   int     // attack frames remaining; while > 0 the envelope ramps up
 	left  float64 // 0..1 pan weight for the left channel
 	left2 float64
 	rem   int // frames remaining before it is dropped
@@ -107,13 +136,23 @@ func generateEvents(ctx context.Context, w io.Writer, spec eventGenSpec) (eventG
 	if tau < 1 {
 		tau = 1
 	}
-	decay := math.Exp(-1 / tau)
-	life := int(tau * eventTailFactor)
+	life := int(tau * eventTailFactor * 3) // room for the longest jittered decay
 	// Amplitude is scaled by how many events are expected to overlap, so density
 	// alone cannot drive the sum into the clipper: raising the rate makes rain
 	// denser, not louder.
-	overlap := math.Max(1, spec.Rate*float64(life)/noiseSampleRate)
-	peak := spec.Amp / math.Sqrt(overlap)
+	// Level normalization, derived rather than fudged. An exponentially decaying
+	// event carries energy proportional to its own tau (∫e^(-2t/tau) = tau/2), so
+	// the expected power of the sum goes as rate × tau — and the peak amplitude
+	// must therefore scale as 1/sqrt(rate × tau) for the LOUDNESS to be invariant
+	// to both knobs. Getting this wrong is not a small matter: a first cut that
+	// normalized by event COUNT alone put the peaks at −0.2 dBFS and the level 4.5
+	// dB hot, so retuning the texture would have silently retuned every preset.
+	//
+	// eventPeakK is then the one constant, chosen so a full Amp of 1.0 lands a
+	// comfortable distance below full scale even with the heavy tail's rare large
+	// events (measured across the rate/decay grid, not guessed).
+	overlapEnergy := math.Max(1e-6, spec.Rate*tau/noiseSampleRate)
+	peak := math.Min(eventPeakMax, spec.Amp*eventPeakK/math.Sqrt(overlapEnergy))
 
 	voices := make([]eventVoice, 0, 64)
 	buf := make([]byte, 0, eventChunkSamples*4)
@@ -130,11 +169,25 @@ func generateEvents(ctx context.Context, w io.Writer, spec eventGenSpec) (eventG
 			if nextIn <= 0 {
 				gap := -math.Log(math.Max(rnd.Float64(), 1e-12)) / spec.Rate * noiseSampleRate
 				nextIn += math.Max(1, gap)
-				// 0.4..1.0 of peak: real drops are not identical, and the spread
-				// is most of what stops a dense stream reading as hiss.
-				a := peak * (0.4 + 0.6*rnd.Float64())
+				// Heavy-tailed amplitude: the cube of a uniform draw gives many tiny
+				// events and a few loud ones, which is how rain actually arrives. A
+				// uniform spread made every drop the same size, and the ear groups
+				// equal-sized impacts as OBJECTS rather than as a texture.
+				u := rnd.Float64()
+				a := peak * u * u * u
+				// Each event decays at its own rate (log-normal about the configured
+				// one), so they differ in timbre as well as in level: a short one
+				// ticks, a long one taps.
+				t := math.Max(1, tau*math.Exp(rnd.NormFloat64()*0.5))
+				// A sub-millisecond ramp rather than an instantaneous edge, which is
+				// a click — and a click is what made these read as something hard
+				// striking something hard.
+				atk := int(math.Max(1, math.Min(t/4, 0.0006*noiseSampleRate)))
 				pan := rnd.Float64()
-				voices = append(voices, eventVoice{env: a, left: 1 - pan, left2: pan, rem: life})
+				voices = append(voices, eventVoice{
+					peak: a, decay: math.Exp(-1 / t), atk: atk,
+					left: 1 - pan, left2: pan, rem: life,
+				})
 				st.Events++
 			}
 			nextIn--
@@ -142,12 +195,20 @@ func generateEvents(ctx context.Context, w io.Writer, spec eventGenSpec) (eventG
 			var l, r float64
 			live := voices[:0]
 			for _, v := range voices {
+				if v.atk > 0 {
+					v.atk--
+					v.env += v.peak / float64(v.atk+1) // linear ramp to the peak
+					if v.env > v.peak {
+						v.env = v.peak
+					}
+				} else {
+					v.env *= v.decay
+				}
 				n := rnd.Float64()*2 - 1 // the burst itself: white, shaped by env
 				l += n * v.env * v.left
 				r += n * v.env * v.left2
-				v.env *= decay
 				v.rem--
-				if v.rem > 0 {
+				if v.rem > 0 && v.env > 1e-5 {
 					live = append(live, v)
 				}
 			}

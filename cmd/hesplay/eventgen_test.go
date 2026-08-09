@@ -51,45 +51,131 @@ func pcmStats(b []byte) (rms, peak float64) {
 // that says the generator produced anything at all — a silent layer and a sparse
 // one are indistinguishable by ear.
 func TestEventGenDensity(t *testing.T) {
+	// Averaged over several seeds, not asserted on one. Arrivals are Poisson, so a
+	// single realization of ~500 events carries a standard deviation of ~22 and a
+	// one-seed threshold is a coin flip with a tight tolerance — which is exactly
+	// how this test first failed on a change that altered the RNG consumption
+	// pattern without touching the arrival process at all.
 	const secs = 4
-	w := &stopAfter{n: noiseSampleRate * secs * 4}
-	st, err := generateEvents(context.Background(), w, eventGenSpec{Rate: 120, DecayMs: 9, Amp: 0.5, Seed: 7})
-	if err != nil {
-		t.Fatalf("generateEvents: %v", err)
+	const rate = 120
+	totalEvents, totalFrames := 0, 0
+	for _, seed := range []int64{1, 2, 3, 7, 11} {
+		w := &stopAfter{n: noiseSampleRate * secs * 4}
+		st, err := generateEvents(context.Background(), w, eventGenSpec{Rate: rate, DecayMs: 9, Amp: 0.5, Seed: seed})
+		if err != nil {
+			t.Fatalf("seed %d: %v", seed, err)
+		}
+		if st.Frames < noiseSampleRate*secs {
+			t.Errorf("seed %d: only %d frames for %ds", seed, st.Frames, secs)
+		}
+		if st.Clipped != 0 {
+			t.Errorf("seed %d: %d clipped samples at the shipped amplitude — silent distortion", seed, st.Clipped)
+		}
+		// Per-seed rate, against the frames actually produced rather than the
+		// nominal window: the writer stops on a chunk boundary, not a second one.
+		got := float64(st.Events) / (float64(st.Frames) / noiseSampleRate)
+		t.Logf("seed %2d: %.1f events/s", seed, got)
+		totalEvents += st.Events
+		totalFrames += st.Frames
 	}
-	want := 120 * secs
-	if got := st.Events; math.Abs(float64(got-want))/float64(want) > 0.1 {
-		t.Errorf("emitted %d events over %ds, want ~%d (±10%%)", got, secs, want)
-	}
-	if st.Frames < noiseSampleRate*secs {
-		t.Errorf("only %d frames for %ds", st.Frames, secs)
-	}
-	if st.Clipped != 0 {
-		t.Errorf("%d clipped samples at the shipped amplitude — that is silent distortion", st.Clipped)
+	// Against the frames actually emitted, not the nominal window. Dividing by the
+	// nominal seconds inflated this by 9% and read as a generator bias when the
+	// only fault was the denominator — the writer stops on a chunk boundary, so it
+	// overshoots the window it was asked for.
+	mean := float64(totalEvents) / (float64(totalFrames) / noiseSampleRate)
+	if math.Abs(mean-rate)/rate > 0.1 {
+		t.Errorf("mean %.1f events/s across seeds, want ~%d (±10%%)", mean, rate)
 	}
 }
 
-// TestEventGenLevelIsDensityInvariant pins the design property that makes rate a
-// TEXTURE knob: each event is scaled by the expected overlap, so turning density
-// up makes rain denser, not louder. Without it, a rate change would silently
-// become a level change and every preset's calibration would drift with it.
-func TestEventGenLevelIsDensityInvariant(t *testing.T) {
-	level := func(rate float64) (float64, float64) {
-		w := &stopAfter{n: noiseSampleRate * 3 * 4}
-		if _, err := generateEvents(context.Background(), w, eventGenSpec{Rate: rate, DecayMs: 9, Amp: 0.5, Seed: 11}); err != nil {
-			t.Fatalf("rate %g: %v", rate, err)
+// TestEventGenLevelRegimes pins the level contract, which has TWO regimes with a
+// sharp, computable boundary — and the boundary is not a wart, it is the price of
+// clip safety.
+//
+// Let R = rate x decay (in seconds): the number of events expected to overlap
+// within one time constant. The normalization asks for peak = Amp*k/sqrt(R), so:
+//
+//	R >= 1  the normalization governs and LEVEL IS DENSITY-INVARIANT — rate and
+//	        decay are texture knobs, which is what keeps a preset's calibration
+//	        from drifting when its texture is retuned.
+//	R <  1  eventPeakMax governs instead, because the normalization is asking for
+//	        an amplitude above full scale. Level then RISES with density, and the
+//	        peak stays put. Most sparse presets live here (a cave drip is
+//	        R = 0.036), which is exactly why they are balanced by lowering their
+//	        BED rather than lifting the events — see the nature suite's comment.
+//
+// This test straddled the boundary before the ceiling existed and read as a
+// regression when the ceiling was added; the ceiling was right and the test was
+// under-specified.
+func TestEventGenLevelRegimes(t *testing.T) {
+	// Above the boundary: invariant. R = 4.3 and 8.6 at 9 ms.
+	lo, loPk := levelAt(t, 480, 9)
+	hi, hiPk := levelAt(t, 960, 9)
+	if dB := 20 * math.Log10(hi/lo); math.Abs(dB) > 2 {
+		t.Errorf("in the normalized regime 2x the density moved the level %.2f dB; rate must not be a volume knob there", dB)
+	}
+	// Decay is the second texture knob and must be just as neutral there. A first
+	// cut normalized by event count alone, which put the peaks at -0.2 dBFS and
+	// the level 4.5 dB hot the moment a decay was retuned.
+	short, shortPk := levelAt(t, 300, 12) // R = 3.6
+	long, longPk := levelAt(t, 300, 40)   // R = 12
+	if d := 20 * math.Log10(long/short); math.Abs(d) > 2 {
+		t.Errorf("in the normalized regime 3.3x the decay moved the level %.2f dB", d)
+	}
+	// Below the boundary: level rises with density, and that is correct — a few
+	// drips at a fixed peak ARE quieter than many. What must NOT move is the peak.
+	sparse, sparsePk := levelAt(t, 9, 4)  // R = 0.036, a fire crackle
+	denser, denserPk := levelAt(t, 90, 4) // R = 0.36, still clamped
+	if denser <= sparse {
+		t.Errorf("under the ceiling, 10x the density should be louder: %.5f -> %.5f", sparse, denser)
+	}
+	for _, pk := range []struct {
+		what string
+		v    float64
+	}{{"480/s 9ms", loPk}, {"960/s 9ms", hiPk}, {"300/s 12ms", shortPk},
+		{"300/s 40ms", longPk}, {"9/s 4ms", sparsePk}, {"90/s 4ms", denserPk}} {
+		if pk.v > eventPeakMax+0.01 {
+			t.Errorf("%s peaked at %.3f, above the %.2f ceiling", pk.what, pk.v, eventPeakMax)
 		}
-		return pcmStats(w.buf.Bytes())
 	}
-	lo, loPk := level(60)
-	hi, hiPk := level(480)
-	dB := 20 * math.Log10(hi/lo)
-	if math.Abs(dB) > 2 {
-		t.Errorf("8x the density moved the level %.2f dB (%.4f -> %.4f); rate must not be a volume knob", dB, lo, hi)
+}
+
+// levelAt renders a few seconds at one rate/decay and returns its RMS and peak.
+func levelAt(t *testing.T, rate, decayMs float64) (float64, float64) {
+	t.Helper()
+	w := &stopAfter{n: noiseSampleRate * 3 * 4}
+	if _, err := generateEvents(context.Background(), w, eventGenSpec{Rate: rate, DecayMs: decayMs, Amp: 0.5, Seed: 11}); err != nil {
+		t.Fatalf("rate %g decay %g: %v", rate, decayMs, err)
 	}
-	// And density must not push it into the clipper either.
-	if hiPk >= 1.0 || loPk >= 1.0 {
-		t.Errorf("peaks reached full scale: %.3f at 60/s, %.3f at 480/s", loPk, hiPk)
+	return pcmStats(w.buf.Bytes())
+}
+
+// TestEventGenSparseDoesNotClip pins the ceiling that makes the sparse end safe.
+// The 1/sqrt(rate x tau) normalization holds average loudness constant, which at a
+// drip every two seconds demands an amplitude ABOVE full scale — three of the eight
+// nature presets (campfire, cave, distant storm) clipped on precisely this, and the
+// measurement that caught it was a per-preset level check, not a unit test.
+func TestEventGenSparseDoesNotClip(t *testing.T) {
+	for _, tc := range []struct{ rate, decay float64 }{
+		{0.12, 1500}, // thunder: one every eight seconds, a 1.5 s rumble
+		{0.25, 90},   // the deeper cave drip
+		{0.6, 60},    // the cave drip
+		{1.2, 25},    // a fire pop
+		{9, 4},       // fire crackle
+	} {
+		w := &stopAfter{n: noiseSampleRate * 4 * 4}
+		st, err := generateEvents(context.Background(), w,
+			eventGenSpec{Rate: tc.rate, DecayMs: tc.decay, Amp: 0.5, Seed: 3})
+		if err != nil {
+			t.Fatalf("%g/s %gms: %v", tc.rate, tc.decay, err)
+		}
+		if st.Clipped != 0 {
+			t.Errorf("%g/s %gms clipped %d samples — a sparse preset must not distort", tc.rate, tc.decay, st.Clipped)
+		}
+		_, pk := pcmStats(w.buf.Bytes())
+		if pk > eventPeakMax+0.01 {
+			t.Errorf("%g/s %gms peaked at %.3f, above the %.2f ceiling", tc.rate, tc.decay, pk, eventPeakMax)
+		}
 	}
 }
 

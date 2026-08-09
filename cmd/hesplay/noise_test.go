@@ -1058,6 +1058,45 @@ func TestEventLayer(t *testing.T) {
 
 // TestRainPreset pins the first events-driven preset, and the two ways it is
 // deliberately unlike the seas.
+// TestNatureSuite pins the calibration rule that three of these presets broke
+// before it was understood: AN EVENT LAYER IS NEVER GIVEN A POSITIVE GAIN. The
+// generator caps its loudest possible event at eventPeakMax and `band -n` adds
+// ~+11 dB downstream, so a positive gain is a bet that no loud event arrives —
+// lost occasionally rather than reproducibly, which is the worst failure shape
+// there is. A cut is always safe. Measured consequence of getting this wrong:
+// one thunder stage read peak -32.6 dBFS and the next clipped, 14 dB apart.
+func TestNatureSuite(t *testing.T) {
+	want := []string{"rain", "wind", "stream", "campfire", "distant storm", "cave", "waterfall", "downpour"}
+	for _, name := range want {
+		p, err := mustFindDefault(t, name).normalize()
+		if err != nil {
+			t.Fatalf("%s: normalize: %v", name, err)
+		}
+		if p.Category != "nature" {
+			t.Errorf("%s filed under %q, want nature", name, p.Category)
+		}
+		for i, l := range p.Layers {
+			if l.eventLayer() && l.Gain > 0 {
+				t.Errorf("%s layer %d is an event layer at gain %+g — a positive gain on a capped, randomly-peaking source clips eventually", name, i, l.Gain)
+			}
+		}
+		// Every one of these is a place, not a tone: no entrainment machinery.
+		if p.PulseHz != 0 || len(p.Phases) != 0 {
+			t.Errorf("%s carries entrainment machinery (pulse %g, %d phases)", name, p.PulseHz, len(p.Phases))
+		}
+	}
+	// The suite spans quiet-to-loud deliberately, and the two extremes are the
+	// ones whose gains are least intuitive: the cave is the quietest thing here
+	// and its bed is a barely-moving 0.015 Hz swell; the waterfall is the only
+	// preset with no layers at all, because a waterfall has no events.
+	if cave, _ := mustFindDefault(t, "cave").normalize(); cave.WaveSpeed > 0.02 {
+		t.Errorf("the cave's air should barely move, got %g Hz", cave.WaveSpeed)
+	}
+	if fall, _ := mustFindDefault(t, "waterfall").normalize(); len(fall.Layers) != 0 {
+		t.Errorf("waterfall should have no layers, got %d", len(fall.Layers))
+	}
+}
+
 func TestRainPreset(t *testing.T) {
 	p, err := mustFindDefault(t, "rain").normalize()
 	if err != nil {
@@ -1073,6 +1112,17 @@ func TestRainPreset(t *testing.T) {
 	// Shallow and slow, because rain breathes rather than surges.
 	if p.WaveDepth > 25 {
 		t.Errorf("rain should not surge like surf, got depth %g", p.WaveDepth)
+	}
+	// Dan's verdict on the first cut was "pebbles being dropped on aluminum", and
+	// the fix was the drop, not the filter: many fast drops instead of few slow
+	// ones. A 9 ms decay is a woodblock; rain is 1-3 ms. Individual drops should
+	// not be countable, hence the rate.
+	d := p.Layers[0]
+	if d.DecayMs > 4 {
+		t.Errorf("a rain drop decays in 1-3 ms, got %g ms — that is a woodblock", d.DecayMs)
+	}
+	if d.EventsPerSec < 300 {
+		t.Errorf("rain at %g drops/s is countable, which reads as pebbles", d.EventsPerSec)
 	}
 	if p.Category != "nature" {
 		t.Errorf("filed under %q", p.Category)
@@ -1285,7 +1335,8 @@ func TestPresetCategories(t *testing.T) {
 	// Split by MECHANISM, because that is what the listener has to act on: a
 	// texture on speakers, tones needing headphones, or tones that don't.
 	want := map[string][]string{
-		"nature":   {"ocean brown brown brown", "rain", "ocean brown", "ocean pink"},
+		"nature": {"ocean brown brown brown", "rain", "wind", "stream", "campfire",
+			"distant storm", "cave", "waterfall", "downpour", "ocean brown", "ocean pink"},
 		"noise":    {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
 		"pulse":    {"drowsy (6 Hz)", "sharp focus (40 Hz)"},
 		"binaural": {"body asleep, mind awake (4+10 Hz)", "sleep onset (10→4 Hz)", "deep hypnagogia (3.5+10 Hz)", "deep sleep (2 Hz)"},
