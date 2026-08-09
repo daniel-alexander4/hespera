@@ -120,8 +120,12 @@ h2:first-child { margin-top: 0; }
 .s-playing { --hue: var(--playing); }
 
 /* Quick play is two square-ish tiles; playlists are full-width rows, because a
-   playlist name plus its two action buttons has no room to sit half-width. */
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+   playlist name plus its two action buttons has no room to sit half-width.
+   The bottom margin matters: a card sitting flush under a row of tiles reads as
+   part of that row rather than as the next thing down (Dan, on the Artists card
+   under Most popular). It matches the gap between cards, so the page keeps one
+   rhythm, and it collapses against a following header's larger margin. */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem; }
 #playlists { grid-template-columns: 1fr; }
 
 .btn {
