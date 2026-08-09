@@ -102,13 +102,15 @@
       <summary><b id="noise-h">Noise</b></summary>
       <div class="rows" id="noise-noise"></div>
     </details>
-    <details class="preset" id="binaural-card">
-      <summary><b id="binaural-h">Binaural</b></summary>
-      <!-- The one card that carries a usage note, because without headphones the
-           effect does not happen at all: each ear must get its own carrier. -->
-      <p class="msg">Headphones — each ear gets its own tone, and the beat is made
-        between them. On speakers you hear a plain wobble instead.</p>
-      <div class="rows" id="noise-binaural"></div>
+    <details class="preset" id="entrainment-card">
+      <summary><b id="entrainment-h">Entrainment</b></summary>
+      <!-- This card holds two different mechanisms, and only one of them needs
+           headphones — so the note explains the distinction and each preset that
+           requires them is marked individually in its own row (see presetRow). -->
+      <p class="msg">Presets marked <b>headphones</b> are binaural: one tone per ear,
+        and the beat is made between them — over speakers you get a plain wobble
+        instead. The rest pulse the whole mix and work on speakers.</p>
+      <div class="rows" id="noise-entrainment"></div>
     </details>
   </section>
 </main>

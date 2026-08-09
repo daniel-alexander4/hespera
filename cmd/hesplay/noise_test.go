@@ -867,23 +867,38 @@ func TestPresetCategories(t *testing.T) {
 		}
 		got[p.Category] = append(got[p.Category], p.Name)
 	}
-	// The seas, the plain colours, and the one that needs headphones.
+	// The seas, the plain colours, and the two aimed at a brain state — theta surf
+	// by an AM pulse, focus 10 by binaural pairs. Purpose, not mechanism.
 	want := map[string][]string{
-		"nature":   {"theta surf", "ocean brown brown brown", "ocean brown", "ocean pink"},
-		"noise":    {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
-		"binaural": {"focus 10"},
+		"nature":      {"ocean brown brown brown", "ocean brown", "ocean pink"},
+		"noise":       {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
+		"entrainment": {"theta surf", "focus 10"},
 	}
 	for card, names := range want {
 		if strings.Join(got[card], ", ") != strings.Join(names, ", ") {
 			t.Errorf("%s card:\n got %v\nwant %v", card, got[card], names)
 		}
 	}
-	// A binaural pair outranks everything else, because that is the property that
-	// decides whether headphones are required.
+	// Either mechanism outranks the sea test: a sea with a carrier pair, and a sea
+	// with a pulse, both belong to the card you reach for when you want a state.
 	p, _ := (noisePreset{Type: "brown", Wave2Speed: 0.02,
 		Layers: []noiseLayer{{CarrierHz: 100, BeatHz: 4}}}).normalize()
-	if p.Category != "binaural" {
-		t.Errorf("a sea carrying a carrier pair should file as binaural, got %q", p.Category)
+	if p.Category != "entrainment" {
+		t.Errorf("a sea carrying a carrier pair should file as entrainment, got %q", p.Category)
+	}
+	if q, _ := (noisePreset{Type: "brown", Wave2Speed: 0.02, PulseHz: 6}).normalize(); q.Category != "entrainment" {
+		t.Errorf("a sea carrying a pulse should file as entrainment, got %q", q.Category)
+	}
+	// Only the binaural one requires headphones, and the UI marks per preset.
+	if !p.needsHeadphones() {
+		t.Error("a carrier pair requires headphones")
+	}
+	if q, _ := (noisePreset{Type: "brown", PulseHz: 6}).normalize(); q.needsHeadphones() {
+		t.Error("a pulse preset is speaker-valid and must not be marked headphones")
+	}
+	// The card's former name stays an alias, so a preset hand-filed there stays.
+	if q, _ := (noisePreset{Type: "brown", Category: "binaural"}).normalize(); q.Category != "entrainment" {
+		t.Errorf("the old card name should alias to entrainment, got %q", q.Category)
 	}
 	// A second swell alone makes it a sea, with no layers at all.
 	if q, _ := (noisePreset{Type: "brown", Wave2Speed: 0.02, Wave2Depth: 45}).normalize(); q.Category != "nature" {

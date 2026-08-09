@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -171,7 +172,20 @@ func TestIPCTimePos(t *testing.T) {
 					return
 				}
 				defer conn.Close()
+				// Read the request BEFORE replying, which is both what mpv does
+				// and what keeps this from racing: ipcTimePos writes its
+				// get_property line and only then reads, so a fake server that
+				// replied and closed immediately could close the socket first —
+				// the client's write then failed with EPIPE and the call
+				// reported not-ok. That made the two subtests expecting a real
+				// value fail about half the time (diagnosed 2026-08-09; it had
+				// been dismissed as load flakiness twice before).
+				br := bufio.NewReader(conn)
+				if _, err := br.ReadString('\n'); err != nil {
+					return
+				}
 				io.WriteString(conn, tc.reply+"\n")
+				io.Copy(io.Discard, br) // stay open until the client hangs up
 			}()
 			pos, ok := ipcTimePos(sock)
 			if ok != tc.wantOK || pos != tc.wantPos {

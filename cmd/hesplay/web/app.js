@@ -407,16 +407,27 @@
   const NOISE_CARDS = [
     ['nature', 'Nature', 'noise-nature', 'nature-card', 'nature-h'],
     ['noise', 'Noise', 'noise-noise', 'noise-card', 'noise-h'],
-    ['binaural', 'Binaural', 'noise-binaural', 'binaural-card', 'binaural-h'],
+    ['entrainment', 'Entrainment', 'noise-entrainment', 'entrainment-card', 'entrainment-h'],
   ];
   // Mirrors deriveCategory in noise.go, for a config saved before `category`
   // existed: the server fills the field on its next write, but the phone has to
   // render what is on the box right now.
   function presetCard(p) {
     if (NOISE_CARDS.some((c) => c[0] === p.category)) return p.category;
-    if ((p.layers || []).some((l) => (l.beatHz || 0) > 0)) return 'binaural';
+    if (p.category === 'binaural') return 'entrainment'; // the card's former name
+    // Purpose before mechanism: a pulse and a carrier pair are both aimed at a
+    // brain state, so both file here — which is what puts theta surf, a sea with
+    // a 6 Hz pulse, in this card rather than in nature.
+    if ((p.pulseHz || 0) > 0) return 'entrainment';
+    if ((p.layers || []).some((l) => (l.beatHz || 0) > 0)) return 'entrainment';
     if ((p.layers || []).length || (p.wave2Speed || 0) > 0) return 'nature';
     return 'noise';
+  }
+
+  // Only a binaural preset actually requires headphones; a pulse one does not.
+  // Mirrors needsHeadphones in noise.go.
+  function needsHeadphones(p) {
+    return (p.layers || []).some((l) => (l.beatHz || 0) > 0);
   }
 
   // Mirrors noiseMaxLayers in noise.go: each layer is a process and a buffered
@@ -520,6 +531,12 @@
     sub.className = 'sub';
     sub.textContent = p.type.replace('noise', '');
     sum.appendChild(sub);
+    if (needsHeadphones(p)) {
+      const hp = document.createElement('span');
+      hp.className = 'hp';
+      hp.textContent = 'headphones';
+      sum.appendChild(hp);
+    }
     // Play lives IN the summary so a collapsed card is still one tap at
     // bedtime — the card replaced the old quick tile, and the tile's whole
     // point was one press. preventDefault keeps the tap from also toggling

@@ -30,7 +30,7 @@
   --music: #89b4fa;    /* blue — quick play, playlists, artists, albums */
   --noise: #cba6f7;    /* mauve — the plain colour references */
   --nature: #94e2d5;   /* teal — the seas: surf, tides, waves */
-  --binaural: #b4befe; /* lavender — carrier pairs, i.e. headphones */
+  --entrain: #b4befe;  /* lavender — presets aimed at a brain state */
   --time: #fab387;     /* peach — the schedule and its windows */
   --playing: #a6e3a1;  /* green — the queue, now playing, every play button */
   --lavender: #b4befe; /* the default header hue */
@@ -376,7 +376,7 @@ h2:first-child { margin-top: 0; }
 #schedule-card, .win { --hue: var(--time); }
 #nature-card { --hue: var(--nature); }
 #noise-card { --hue: var(--noise); }
-#binaural-card { --hue: var(--binaural); }
+#entrainment-card { --hue: var(--entrain); }
 .preset > summary {
   display: flex;
   align-items: baseline;
@@ -388,6 +388,13 @@ h2:first-child { margin-top: 0; }
 }
 .preset > summary b { font-weight: 600; color: var(--hue, var(--text)); }
 .preset > summary .sub { font-size: 0.78rem; color: var(--subtext); }
+/* "headphones" on a preset that is binaural: without them the effect does not
+   occur, so it is marked per preset rather than only in the card's note. */
+.preset > summary .hp {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--on-accent); background: var(--hue, var(--entrain));
+  padding: 0.1rem 0.35rem; border-radius: 4px; align-self: center; flex: none;
+}
 /* Every collapsible card wears a chevron: points right closed, down open —
    the visual promise that the row expands. Drawn in CSS (the icon sprite
    can't reach a pseudo-element); sits at the right edge, or just after the
