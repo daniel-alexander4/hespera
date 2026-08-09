@@ -185,6 +185,26 @@ type noisePreset struct {
 	// post-trim whole-period remainder).
 	Wave2Offset float64 `json:"wave2Offset,omitempty"` // seconds; shifts the fast swell against the slow one
 
+	// The entrainment pulse: an amplitude modulation of the WHOLE sea, fast
+	// enough to be a rhythm the brain can follow rather than a wave you hear
+	// arrive. Theta (4-7 Hz) is the hypnagogic band the out-of-body literature
+	// aims at; PulseHz 0 = off, which is every other preset.
+	//
+	// It is deliberately NOT a Speed field. Those are surf swells, clamped to
+	// noiseMaxWaveSpeed (0.20 Hz) and woven into the loop-seam derivation; this
+	// runs 20-200x faster and is applied AFTER `repeat` (or at the mixer, past
+	// every input), which has two consequences worth keeping: it modulates the
+	// endless stream rather than the looped buffer, so there is NO
+	// commensurability constraint on its rate and no seam it can click at; and
+	// it rides every wave at once, so the whole sea throbs while each wave keeps
+	// its own swell.
+	//
+	// Sinusoidal by construction (SoX's tremolo), which is the point: an
+	// isochronic on/off pulse train entrains more strongly but is a beep, and a
+	// startling stimulus is the opposite of what a body-asleep state needs.
+	PulseHz    float64 `json:"pulseHz,omitempty"`    // entrainment AM rate; 0 = off
+	PulseDepth float64 `json:"pulseDepth,omitempty"` // its depth %; shallow is the point
+
 	// Extra layers, each an independently-enveloped wave in its OWN SoX process,
 	// summed with the body by one `play -m` at unity.
 	//
@@ -405,6 +425,38 @@ func defaultNoiseConfig() noiseConfig {
 					{Type: "brownnoise", CenterHz: 1420, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -6.4, Offset: 10},
 					{Type: "brownnoise", CenterHz: 1786, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -9.5, Offset: 6.25},
 				}},
+			// "theta surf" is the three-wave sea aimed at a hypnagogic state
+			// rather than at sounding like the coast (Dan, 2026-08-08). Four
+			// deliberate departures from ocean brown brown brown:
+			//
+			// (1) A 6 Hz PULSE on the whole mix — mid-theta, the band the
+			// out-of-body and lucid-dream literature aims at, deep enough at 20%
+			// to be followable and shallow enough not to read as a beep.
+			// (2) The ladder drops to 1000/1400/1900 Hz. High frequencies are the
+			// alerting part of a noise, and the 2250 Hz break that gives the
+			// coast preset its life is exactly what keeps a listener present.
+			// (3) The small wave's depth comes back from 85 to 60: a wave that
+			// disappears and returns invites attention, and this preset wants the
+			// surface uneventful.
+			// (4) A 12 s fade rather than 3 — it starts while someone is already
+			// lying down.
+			//
+			// Gains re-measured for the lower bands (brown gets louder as the band
+			// drops: −22.94 / −25.20 / −28.58 dB mean at gain 0), holding the
+			// same large-loudest balance and summing near −33 dB, a few dB under
+			// the coast presets.
+			//
+			// What this preset does NOT claim: entrainment of EEG by amplitude
+			// modulation is real but modest, and no out-of-body outcome is
+			// established science. It is a tool for a practice, tuned honestly.
+			{Name: "theta surf", Type: "brownnoise",
+				CenterHz: 1900, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 60,
+				GainDB: -9, Reverb: 19, FadeIn: 12,
+				PulseHz: 6, PulseDepth: 20,
+				Layers: []noiseLayer{
+					{Type: "brownnoise", CenterHz: 1000, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -13.7, Offset: 10},
+					{Type: "brownnoise", CenterHz: 1400, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -14.4, Offset: 6.25},
+				}},
 		},
 	}
 }
@@ -611,6 +663,18 @@ func (p noisePreset) normalize() (noisePreset, error) {
 		out.Wave2Offset = math.Max(0, math.Min(noiseMaxBufferSecs, out.Wave2Offset))
 	} else {
 		out.Wave2Offset = 0
+	}
+
+	// The entrainment pulse. Zero (and negative) means off, so clampFloat's
+	// default-substitution must not apply — the same rule the swells follow. The
+	// range is the useful entrainment span: below 0.5 Hz it is a swell (that is
+	// what the swell fields are for), above 40 Hz it stops being a rhythm and
+	// becomes a buzz.
+	if out.PulseHz > 0 {
+		out.PulseHz = math.Max(0.5, math.Min(40, out.PulseHz))
+		out.PulseDepth = clampFloat(out.PulseDepth, 1, 100, 20)
+	} else {
+		out.PulseHz, out.PulseDepth = 0, 0
 	}
 
 	// The extra layers. A legacy floor folds in first, so from here there is
@@ -919,6 +983,10 @@ func (p noisePreset) mixerArgs() []string {
 	for i := 0; i < len(p.Layers)+1; i++ {
 		a = append(a, "-v", "1", "-t", "sox", mixerFD(i))
 	}
+	// The pulse belongs HERE rather than in any stage: applied to the sum, every
+	// wave carries the same rhythm, which is the whole point of an entrainment
+	// modulation. In a stage it would ride one wave and fade with it.
+	a = append(a, p.pulseArgs()...)
 	if p.FadeIn > 0 {
 		a = append(a, "fade", "t", num(p.FadeIn))
 	}
@@ -966,10 +1034,20 @@ func (p noisePreset) shapeArgs() []string {
 	return append(a, "reverb", num(p.Reverb))
 }
 
-// finishArgs is level then fade — always last, and on the native path always
-// after `repeat`.
+// pulseArgs is the entrainment modulation, or nothing when it is off. Its one
+// placement rule: past `repeat` and past the mixer's inputs, so it modulates the
+// endless stream instead of the looped buffer — see the PulseHz comment.
+func (p noisePreset) pulseArgs() []string {
+	if p.PulseHz <= 0 {
+		return nil
+	}
+	return []string{"tremolo", num(p.PulseHz), num(p.PulseDepth)}
+}
+
+// finishArgs is the pulse, then level, then fade — always last, and on the
+// native path always after `repeat`.
 func (p noisePreset) finishArgs() []string {
-	var a []string
+	a := p.pulseArgs()
 	if p.GainDB != 0 {
 		a = append(a, "gain", num(p.GainDB))
 	}

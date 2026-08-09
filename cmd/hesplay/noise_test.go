@@ -766,6 +766,91 @@ func TestOceanBrownBrownBrown(t *testing.T) {
 	}
 }
 
+// TestEntrainmentPulse pins the pulse's ONE placement rule on all three
+// topologies: past `repeat` and past the mixer's inputs, so it modulates the
+// endless stream rather than the looped buffer. That is what frees its rate from
+// the loop-seam derivation every swell is bound by — get this wrong and a 6 Hz
+// modulation would click at every buffer boundary.
+func TestEntrainmentPulse(t *testing.T) {
+	// native single stage: after repeat, before gain and fade
+	p, err := (noisePreset{Type: "brown", WaveSpeed: 0.08, GainDB: -3, FadeIn: 5, PulseHz: 6, PulseDepth: 20}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	got := strings.Join(p.noiseArgs(), " ")
+	if !strings.Contains(got, "repeat 1382 tremolo 6 20 gain -3 fade t 5") {
+		t.Errorf("native pulse misplaced: %q", got)
+	}
+	// hybrid (ffmpeg-fed, no repeat at all): after the shaping, before gain/fade
+	h, err := (noisePreset{Type: "velvet", WaveSpeed: 0.08, FadeIn: 5, PulseHz: 4.5}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if got := strings.Join(h.soxPipeArgs(), " "); !strings.Contains(got, "reverb 19 tremolo 4.5 20 fade t 5") {
+		t.Errorf("hybrid pulse misplaced: %q", got)
+	}
+	// layered: at the MIXER, after every input — one rhythm across every wave,
+	// which a per-stage pulse could not give (it would fade with its own wave)
+	l, err := (noisePreset{Type: "brown", WaveSpeed: 0.08, FadeIn: 3, PulseHz: 6, PulseDepth: 25,
+		Layers: []noiseLayer{{Type: "brown", Speed: 0.02}}}).normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if got := strings.Join(l.mixerArgs(), " "); !strings.HasSuffix(got, "/dev/fd/4 tremolo 6 25 fade t 3") {
+		t.Errorf("mixer pulse misplaced: %q", got)
+	}
+	// and no stage carries it — the body stage is level-only
+	if got := strings.Join(l.bodySoxArgs(), " "); strings.Contains(got, "tremolo 6") {
+		t.Errorf("the pulse must not ride a single stage: %q", got)
+	}
+	// off by default, and a silly value switches it off rather than clamping on
+	if q, _ := (noisePreset{Type: "brown", WaveSpeed: 0.08}).normalize(); q.pulseArgs() != nil {
+		t.Error("the pulse must be off unless asked for")
+	}
+	if q, _ := (noisePreset{Type: "brown", PulseHz: -3, PulseDepth: 40}).normalize(); q.PulseHz != 0 || q.PulseDepth != 0 {
+		t.Errorf("a negative rate should switch the pulse off, got %g/%g", q.PulseHz, q.PulseDepth)
+	}
+	if q, _ := (noisePreset{Type: "brown", PulseHz: 900}).normalize(); q.PulseHz != 40 {
+		t.Errorf("rate should clamp to the entrainment span, got %g", q.PulseHz)
+	}
+	if q, _ := (noisePreset{Type: "brown", PulseHz: 6}).normalize(); q.PulseDepth != 20 {
+		t.Errorf("a depthless pulse should default shallow, got %g", q.PulseDepth)
+	}
+}
+
+// TestThetaSurf pins the hypnagogic preset: a 6 Hz pulse on the whole mix, and a
+// sea deliberately duller than the coast presets — a lower ladder (high
+// frequencies are the alerting part of a noise), a small wave that no longer
+// vanishes and returns, and a long fade for someone already lying down.
+func TestThetaSurf(t *testing.T) {
+	p, err := mustFindDefault(t, "theta surf").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if p.PulseHz != 6 || p.PulseDepth != 20 {
+		t.Errorf("want a 6 Hz / 20%% pulse, got %g Hz / %g%%", p.PulseHz, p.PulseDepth)
+	}
+	if !strings.HasSuffix(strings.Join(p.mixerArgs(), " "), "tremolo 6 20 fade t 12") {
+		t.Errorf("the pulse should ride the summed sea: %v", p.mixerArgs())
+	}
+	coast, err := mustFindDefault(t, "ocean brown brown brown").normalize()
+	if err != nil {
+		t.Fatalf("normalize the coast preset: %v", err)
+	}
+	if !(p.CenterHz < coast.CenterHz && p.Layers[0].CenterHz < coast.Layers[0].CenterHz) {
+		t.Error("theta surf should sit lower than the coast preset, not brighter")
+	}
+	if p.WaveDepth >= coast.WaveDepth {
+		t.Errorf("the small wave should be steadier here, got depth %g vs %g", p.WaveDepth, coast.WaveDepth)
+	}
+	if p.FadeIn <= coast.FadeIn {
+		t.Errorf("this preset starts on someone lying down; want a longer fade, got %g", p.FadeIn)
+	}
+	if coast.PulseHz != 0 {
+		t.Error("the coast presets must carry no pulse")
+	}
+}
+
 // TestNormalizeLayers pins layer validation: unknown colours rejected, a
 // colourless entry dropped rather than fatal, the preset's own band inherited
 // when a layer names none, a swell-less layer left perfectly still, and the

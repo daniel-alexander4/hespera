@@ -378,6 +378,27 @@ a layer with a bright band and a big negative gain; a config written before
 layers existed is migrated on read, so a saved floor keeps playing exactly as it
 did.
 
+**A pulse, for a state rather than a place.** A preset can also carry an
+*entrainment pulse* — an amplitude modulation of the whole mix, fast enough to be
+a rhythm the brain can follow rather than a wave you hear arrive. **theta surf**
+ships one at 6 Hz, mid-theta, the hypnagogic band; its sea is deliberately duller
+than the coast presets (a lower ladder, since high frequencies are the alerting
+part of a noise; a small wave that no longer vanishes and returns; a 12 s fade for
+someone already lying down). The pulse is applied *after* the loop — past `repeat`
+on a single stage, past every input at the mixer — which is what frees its rate
+from the loop-seam arithmetic and lets it ride every wave at once while each keeps
+its own swell. Measured in the delivered audio, 6 Hz carries 13 % modulation
+against 1–4 % at neighbouring rates.
+
+Two honest caveats. The modulation is sinusoidal, not an on/off *isochronic*
+pulse: isochronic entrains more strongly but is a beep, and a startling stimulus
+is the opposite of what a body-asleep state needs. And **binaural beats are not
+what this is** — those need one carrier per ear and therefore headphones; over
+room speakers each ear hears both channels and the effect is ordinary acoustic
+beating, not the binaural phenomenon. Entrainment of EEG by amplitude modulation
+is real but modest, and no out-of-body outcome is established science; this is a
+tool for a practice, tuned honestly.
+
 **The swells are deliberately out of step.** With every envelope starting at
 its peak, the tide crest always lands on a wave crest and every layer breathes in
 unison with the sea. Each preset can offset its rhythms: the "2nd swell offset"

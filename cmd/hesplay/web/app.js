@@ -384,6 +384,12 @@
     ['reverb', 'Reverb (%)', 0, 100, 1],
     ['gainDb', 'Gain (dB)', -60, 20, 0.5],
     ['fadeIn', 'Fade in (s)', 0, 300, 1],
+    // The entrainment pulse: a throb of the whole mix, fast enough to be a
+    // rhythm rather than a wave. 0 = off, which is every coast preset; theta
+    // (4-7 Hz) is the hypnagogic band. Depth is deliberately shallow — deep
+    // enough to follow, not deep enough to read as a beep.
+    ['pulseHz', 'Pulse rate (Hz, 0=off)', 0, 40, 0.5],
+    ['pulseDepth', 'Pulse depth (%)', 0, 100, 1],
   ];
   // An extra layer's knobs — a wave of its own, in its own process, so it has
   // its own everything. Size is the SWELL: a 0.02 Hz swell is one wave every 50
