@@ -851,6 +851,93 @@ func TestThetaSurf(t *testing.T) {
 	}
 }
 
+// TestEntrainmentSubstrateIsBrown pins Dan's rule (2026-08-09: "for all
+// entrainments, use brown for the substrate layer"): brown is the darkest of the
+// four SoX colours and the least alerting, and a bed under a beat exists to carry
+// the modulation rather than to be listened to. Two presets moved off pink for
+// this, and a future preset that beds on pink would quietly break the set.
+func TestEntrainmentSubstrateIsBrown(t *testing.T) {
+	for _, raw := range defaultNoiseConfig().Presets {
+		p, err := raw.normalize()
+		if err != nil {
+			t.Fatalf("normalize %q: %v", raw.Name, err)
+		}
+		switch p.Category {
+		case "pulse", "binaural", "monaural":
+		default:
+			continue
+		}
+		if p.Type != "brownnoise" {
+			t.Errorf("%q beds on %q — every entrainment substrate should be brown", p.Name, p.Type)
+		}
+	}
+}
+
+// TestMonauralTwins pins the two speaker-valid twins of the fast binaural states.
+// The twin must differ from its original in ONE way — the delivery — so the
+// comparison is honest: same carriers, same beats, same bed, monaural flag set.
+func TestMonauralTwins(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"body asleep, mind awake (4+10 Hz)", "body asleep, mind awake (4+10 Hz, monaural)"},
+		{"deep hypnagogia (3.5+10 Hz)", "deep hypnagogia (3.5+10 Hz, monaural)"},
+	} {
+		orig, err := mustFindDefault(t, pair[0]).normalize()
+		if err != nil {
+			t.Fatalf("normalize %q: %v", pair[0], err)
+		}
+		twin, err := mustFindDefault(t, pair[1]).normalize()
+		if err != nil {
+			t.Fatalf("normalize %q: %v", pair[1], err)
+		}
+		if twin.Category != "monaural" || orig.Category != "binaural" {
+			t.Errorf("%q/%q filed as %q/%q", pair[0], pair[1], orig.Category, twin.Category)
+		}
+		if twin.needsHeadphones() {
+			t.Errorf("%q is the no-headphones version and must not be marked", pair[1])
+		}
+		if len(orig.Layers) != len(twin.Layers) {
+			t.Fatalf("%q has %d layers, twin has %d", pair[0], len(orig.Layers), len(twin.Layers))
+		}
+		for i := range orig.Layers {
+			o, w := orig.Layers[i], twin.Layers[i]
+			if o.CarrierHz != w.CarrierHz || o.BeatHz != w.BeatHz || o.Gain != w.Gain {
+				t.Errorf("%q layer %d differs from its twin beyond delivery: %+v vs %+v", pair[1], i+1, o, w)
+			}
+			if !w.Monaural {
+				t.Errorf("%q layer %d should be monaural", pair[1], i+1)
+			}
+		}
+		// No twin below the fast rates: a monaural beat is ~65% present in a
+		// single channel at every rate, so a 2 Hz twin would be an audible throb.
+		for _, l := range twin.Layers {
+			if l.BeatHz < 3 {
+				t.Errorf("%q carries a %g Hz monaural beat — too slow to be anything but a throb", pair[1], l.BeatHz)
+			}
+		}
+	}
+	// And the slow binaural state deliberately has NO twin. Asked by NAME, because
+	// findPreset would resolve "deep sleep (anything)" back to the real preset —
+	// which is the tolerant lookup working, not an answer to this question.
+	for _, raw := range defaultNoiseConfig().Presets {
+		if strings.Contains(raw.Name, "deep sleep") && strings.Contains(raw.Name, "monaural") {
+			t.Errorf("%q exists: at 2 Hz a monaural beat is a throb, not a presence", raw.Name)
+		}
+	}
+	// The bare state name is now ambiguous between the two deliveries, and must be
+	// refused rather than resolved to whichever comes first in the list.
+	if _, err := defaultNoiseConfig().findPreset("body asleep, mind awake"); err == nil {
+		t.Error("a state with two deliveries should be refused, not guessed")
+	} else if !strings.Contains(err.Error(), "monaural") {
+		t.Errorf("the refusal should name both candidates: %v", err)
+	}
+	// Naming the delivery resolves it.
+	if p, err := defaultNoiseConfig().findPreset("body asleep, mind awake (4+10 Hz, monaural)"); err != nil {
+		t.Errorf("the full name should resolve: %v", err)
+	} else if !p.Layers[0].Monaural {
+		t.Errorf("resolved to the wrong delivery: %q", p.Name)
+	}
+}
+
 // TestEntrainmentNamedByState pins the naming convention (Dan, 2026-08-09: "label
 // the entrainments not by frequency, but by the state they put you in. add
 // frequency in parentheses") and, more importantly, the lookup that makes those
@@ -868,7 +955,8 @@ func TestEntrainmentNamedByState(t *testing.T) {
 		}
 		// Every entrainment preset states its rate in parentheses, and states a
 		// state outside them — "6 Hz" alone would be the thing this rename undid.
-		if !strings.Contains(p.Name, "(") || !strings.Contains(p.Name, "Hz)") {
+		open := strings.Index(p.Name, "(")
+		if open < 0 || !strings.Contains(p.Name[open:], "Hz") || !strings.HasSuffix(p.Name, ")") {
 			t.Errorf("%q should carry its frequency in parentheses", p.Name)
 		}
 		if before := strings.TrimSpace(strings.Split(p.Name, "(")[0]); before == "" {
@@ -1105,7 +1193,7 @@ func TestPresetCategories(t *testing.T) {
 		"noise":    {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
 		"pulse":    {"drowsy (6 Hz)", "sharp focus (40 Hz)"},
 		"binaural": {"body asleep, mind awake (4+10 Hz)", "sleep onset (10→4 Hz)", "deep hypnagogia (3.5+10 Hz)", "deep sleep (2 Hz)"},
-		"monaural": {"relaxed alert (10 Hz)"},
+		"monaural": {"body asleep, mind awake (4+10 Hz, monaural)", "deep hypnagogia (3.5+10 Hz, monaural)", "relaxed alert (10 Hz)"},
 	}
 	for card, names := range want {
 		if strings.Join(got[card], ", ") != strings.Join(names, ", ") {

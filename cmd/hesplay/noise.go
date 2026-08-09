@@ -544,9 +544,9 @@ func defaultNoiseConfig() noiseConfig {
 			// instead of asking the brain to jump to a state. Binaural, because
 			// it is the stronger stimulus and this is a headphones-on practice;
 			// the bed is pink at +2 (→ ~−32.5, evening level).
-			{Name: "sleep onset (10→4 Hz)", Type: "pinknoise",
+			{Name: "sleep onset (10→4 Hz)", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				GainDB: 2, Reverb: 19, FadeIn: 20,
+				GainDB: -5.4, Reverb: 19, FadeIn: 20,
 				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -35.5}},
 				Phases: []noisePhase{
 					{Minutes: 3, Beats: []float64{10}}, // alpha: eyes closed, still awake
@@ -567,13 +567,46 @@ func defaultNoiseConfig() noiseConfig {
 					{CarrierHz: 250, BeatHz: 10, Gain: -33},
 				}},
 
+			// ⚠️ EVERY entrainment preset beds on BROWN (Dan, 2026-08-09: "for all
+			// entrainments, use brown for the substrate layer"). It is the darkest
+			// of the four SoX colours and the least alerting, which is what a
+			// substrate under a beat should be — the bed is there to carry the
+			// modulation, not to be listened to. Two presets moved off pink for
+			// this, and their gains had to move with them: brown measures −27.1
+			// through this band against pink's −34.5, so −5.4 and −4.4 hold them
+			// at the levels they were tuned to rather than 7.4 dB above them.
+
+			// The two MONAURAL twins of the fast binaural states, so the same
+			// state is available without headphones (Dan asked for the fast two
+			// only, and the measurement is why: a beat is ~65% present in a single
+			// channel at EVERY rate, so at 2 Hz a monaural twin is an audible
+			// throb rather than a presence — 10 Hz reads as shimmer, 2 Hz does
+			// not). Their gains are the SAME NUMBERS as the binaural originals,
+			// which after `mix` halving lands the tones 3 dB quieter — deliberate,
+			// since a monaural beat is physically in the air and reads far more
+			// prominent than a binaural one at equal level.
+			{Name: "body asleep, mind awake (4+10 Hz, monaural)", Type: "brownnoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				Reverb: 19, FadeIn: 3,
+				Layers: []noiseLayer{
+					{CarrierHz: 100, BeatHz: 4, Gain: -30, Monaural: true},
+					{CarrierHz: 250, BeatHz: 10, Gain: -33, Monaural: true},
+				}},
+			{Name: "deep hypnagogia (3.5+10 Hz, monaural)", Type: "brownnoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				Reverb: 19, FadeIn: 3,
+				Layers: []noiseLayer{
+					{CarrierHz: 100, BeatHz: 3.5, Gain: -30, Monaural: true},
+					{CarrierHz: 250, BeatHz: 10, Gain: -33, Monaural: true},
+				}},
+
 			// "alpha surface" is MONAURAL on purpose: relaxed-alert for a room,
 			// with no headphones, and the preset to come back up on after a
 			// session. Its tones carry ~3 dB more gain than a binaural pair would
 			// because SoX's `mix` halves what it combines.
-			{Name: "relaxed alert (10 Hz)", Type: "pinknoise",
+			{Name: "relaxed alert (10 Hz)", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				GainDB: 3, Reverb: 19, FadeIn: 8,
+				GainDB: -4.4, Reverb: 19, FadeIn: 8,
 				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -32.5, Monaural: true}}},
 
 			// "delta sink" is the honest tool for simply going under — 2 Hz, the
@@ -787,27 +820,36 @@ func (cfg noiseConfig) findPreset(name string) (noisePreset, error) {
 		}
 		return strings.ToLower(strings.TrimSpace(s))
 	}
+	// Both fallbacks collect EVERY match and refuse when there is more than one.
+	// The exact-bare pass has to do this too, not just the prefix pass: once a
+	// state exists in two deliveries — "body asleep, mind awake (4+10 Hz)" and
+	// "… (4+10 Hz, monaural)" — they bare to the SAME string, and returning the
+	// first would silently hand back the headphones version to someone who asked
+	// for the speaker one. Naming both is the only honest answer.
+	ambiguous := func(hits []noisePreset) error {
+		names := make([]string, 0, len(hits))
+		for _, p := range hits {
+			names = append(names, p.Name)
+		}
+		return fmt.Errorf("%q matches several presets (%s) — be more specific", name, strings.Join(names, ", "))
+	}
 	if want := bare(name); want != "" {
+		var exact, prefix []noisePreset
 		for _, p := range cfg.Presets {
-			if bare(p.Name) == want {
-				return p, nil
+			switch {
+			case bare(p.Name) == want:
+				exact = append(exact, p)
+			case strings.HasPrefix(bare(p.Name), want):
+				prefix = append(prefix, p)
 			}
 		}
-		var hits []noisePreset
-		for _, p := range cfg.Presets {
-			if strings.HasPrefix(bare(p.Name), want) {
-				hits = append(hits, p)
+		for _, hits := range [][]noisePreset{exact, prefix} {
+			if len(hits) == 1 {
+				return hits[0], nil
 			}
-		}
-		if len(hits) == 1 {
-			return hits[0], nil
-		}
-		if len(hits) > 1 {
-			names := make([]string, 0, len(hits))
-			for _, p := range hits {
-				names = append(names, p.Name)
+			if len(hits) > 1 {
+				return noisePreset{}, ambiguous(hits)
 			}
-			return noisePreset{}, fmt.Errorf("%q matches several presets (%s) — be more specific", name, strings.Join(names, ", "))
 		}
 	}
 	names := make([]string, 0, len(cfg.Presets))
