@@ -422,7 +422,7 @@ func defaultNoiseConfig() noiseConfig {
 			// What this preset does NOT claim: entrainment of EEG by amplitude
 			// modulation is real but modest, and no out-of-body outcome is
 			// established science. It is a tool for a practice, tuned honestly.
-			{Name: "theta surf", Type: "brownnoise",
+			{Name: "drowsy (6 Hz)", Type: "brownnoise",
 				CenterHz: 1900, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 60,
 				GainDB: -13, Reverb: 19, FadeIn: 12,
 				PulseHz: 6, PulseDepth: 10,
@@ -512,7 +512,7 @@ func defaultNoiseConfig() noiseConfig {
 			// ⚠️ HEADPHONES OR IT IS NOT THIS EFFECT. Each channel is a steady
 			// sine; the beat is made by the listener. On speakers the two carriers
 			// beat in the air instead — an audible wobble that entrains nothing.
-			{Name: "focus 10", Type: "brownnoise",
+			{Name: "body asleep, mind awake (4+10 Hz)", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
 				Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
@@ -521,6 +521,16 @@ func defaultNoiseConfig() noiseConfig {
 				}},
 			// --- the rest of the entrainment card (Dan, 2026-08-09: add all four,
 			// plus monaural, isochronic and the descending program) ---
+			//
+			// NAMED FOR THE STATE, frequency in parentheses (Dan, same day). The
+			// rate is what the engine does; the state is what you are choosing
+			// between at midnight, and "theta surf" told you neither. The former
+			// names map: theta surf → drowsy, focus 10 → body asleep mind awake,
+			// focus 10 deep → deep hypnagogia, descend → sleep onset, alpha
+			// surface → relaxed alert, delta sink → deep sleep, gamma sharpen →
+			// sharp focus. ⚠️ A name is the key a schedule window stores and the
+			// CLI resolves, so findPreset gained prefix and drop-the-parenthetical
+			// matching — otherwise every one of these would need shell quoting.
 			//
 			// One preset per USE, not per frequency: the rate is a single field on
 			// the phone, so a row per rate would be clutter pretending to be
@@ -534,7 +544,7 @@ func defaultNoiseConfig() noiseConfig {
 			// instead of asking the brain to jump to a state. Binaural, because
 			// it is the stronger stimulus and this is a headphones-on practice;
 			// the bed is pink at +2 (→ ~−32.5, evening level).
-			{Name: "descend", Type: "pinknoise",
+			{Name: "sleep onset (10→4 Hz)", Type: "pinknoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
 				GainDB: 2, Reverb: 19, FadeIn: 20,
 				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -35.5}},
@@ -549,7 +559,7 @@ func defaultNoiseConfig() noiseConfig {
 			// "focus 10 deep" is the A/B against focus 10 — deeper theta, where
 			// most out-of-body accounts point, with the 10 Hz mind component
 			// unchanged so the comparison is one variable.
-			{Name: "focus 10 deep", Type: "brownnoise",
+			{Name: "deep hypnagogia (3.5+10 Hz)", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
 				Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
@@ -561,7 +571,7 @@ func defaultNoiseConfig() noiseConfig {
 			// with no headphones, and the preset to come back up on after a
 			// session. Its tones carry ~3 dB more gain than a binaural pair would
 			// because SoX's `mix` halves what it combines.
-			{Name: "alpha surface", Type: "pinknoise",
+			{Name: "relaxed alert (10 Hz)", Type: "pinknoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
 				GainDB: 3, Reverb: 19, FadeIn: 8,
 				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -32.5, Monaural: true}}},
@@ -571,7 +581,7 @@ func defaultNoiseConfig() noiseConfig {
 			// swell) at sleep level, with a 30 s fade because it starts on someone
 			// already lying down. Not an out-of-body preset: this one is for
 			// nights when the answer is sleep.
-			{Name: "delta sink", Type: "brownnoise",
+			{Name: "deep sleep (2 Hz)", Type: "brownnoise",
 				CenterHz: 1200, WidthHz: 499, WaveSpeed: 0.05, WaveDepth: 30,
 				GainDB: -10.4, Reverb: 19, FadeIn: 30,
 				Layers: []noiseLayer{{CarrierHz: 100, BeatHz: 2, Gain: -36}}},
@@ -583,7 +593,7 @@ func defaultNoiseConfig() noiseConfig {
 			// ⚠️ The bed is banded LOW (700 Hz) deliberately: a 40 Hz gate over
 			// the usual 1786 Hz band is a buzz, which is the same mistake as the
 			// 6 Hz "train" only faster.
-			{Name: "gamma sharpen", Type: "brownnoise",
+			{Name: "sharp focus (40 Hz)", Type: "brownnoise",
 				CenterHz: 700, WidthHz: 400, WaveSpeed: 0.0625, WaveDepth: 30,
 				GainDB: -8.8, Reverb: 19, FadeIn: 5,
 				PulseHz: 40, PulseDepth: 12, PulseShape: "square"},
@@ -763,6 +773,41 @@ func (cfg noiseConfig) findPreset(name string) (noisePreset, error) {
 	for _, p := range cfg.Presets {
 		if strings.EqualFold(p.Name, name) {
 			return p, nil
+		}
+	}
+	// The entrainment presets are named for the STATE with the frequency in
+	// parentheses — "deep sleep (2 Hz)" — which reads well on a phone and is
+	// awkward at a shell prompt, where parentheses need quoting. So after the
+	// exact match, try again with the parenthetical dropped from both sides, then
+	// accept an unambiguous prefix: `hesplay noise deep sleep` finds it, while a
+	// prefix matching two presets stays an error rather than a coin flip.
+	bare := func(s string) string {
+		if i := strings.IndexByte(s, '('); i > 0 {
+			s = s[:i]
+		}
+		return strings.ToLower(strings.TrimSpace(s))
+	}
+	if want := bare(name); want != "" {
+		for _, p := range cfg.Presets {
+			if bare(p.Name) == want {
+				return p, nil
+			}
+		}
+		var hits []noisePreset
+		for _, p := range cfg.Presets {
+			if strings.HasPrefix(bare(p.Name), want) {
+				hits = append(hits, p)
+			}
+		}
+		if len(hits) == 1 {
+			return hits[0], nil
+		}
+		if len(hits) > 1 {
+			names := make([]string, 0, len(hits))
+			for _, p := range hits {
+				names = append(names, p.Name)
+			}
+			return noisePreset{}, fmt.Errorf("%q matches several presets (%s) — be more specific", name, strings.Join(names, ", "))
 		}
 	}
 	names := make([]string, 0, len(cfg.Presets))

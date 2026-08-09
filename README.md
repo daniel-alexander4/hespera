@@ -380,8 +380,14 @@ did.
 
 **A pulse, for a state rather than a place.** A preset can also carry an
 *entrainment pulse* — an amplitude modulation of the whole mix, fast enough to be
-a rhythm the brain can follow rather than a wave you hear arrive. **theta surf**
-ships one at 6 Hz, mid-theta, the hypnagogic band, at depth 10 &mdash; it shipped at 20 for
+a rhythm the brain can follow rather than a wave you hear arrive. The entrainment
+presets are **named for the state they aim at, with the rate in parentheses** —
+`drowsy (6 Hz)`, `relaxed alert (10 Hz)`, `deep sleep (2 Hz)`, `sharp focus
+(40 Hz)`, `body asleep, mind awake (4+10 Hz)`, `deep hypnagogia (3.5+10 Hz)` and
+`sleep onset (10→4 Hz)` — because the rate is what the engine does and the state is
+what you are choosing between at midnight. Names resolve by prefix and ignore the
+parenthetical, so `hesplay noise deep sleep` needs no quoting. **drowsy**
+ships a 6 Hz pulse, mid-theta, the hypnagogic band, at depth 10 &mdash; it shipped at 20 for
 one evening and was heard as "a train chugging along", which is what a periodic
 modulation of noise becomes once it crosses into conscious perception; halved, it
 sits near the threshold, followable rather than countable; its sea is deliberately duller

@@ -823,7 +823,7 @@ func TestEntrainmentPulse(t *testing.T) {
 // frequencies are the alerting part of a noise), a small wave that no longer
 // vanishes and returns, and a long fade for someone already lying down.
 func TestThetaSurf(t *testing.T) {
-	p, err := mustFindDefault(t, "theta surf").normalize()
+	p, err := mustFindDefault(t, "drowsy (6 Hz)").normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -848,6 +848,50 @@ func TestThetaSurf(t *testing.T) {
 	}
 	if coast.PulseHz != 0 {
 		t.Error("the coast presets must carry no pulse")
+	}
+}
+
+// TestEntrainmentNamedByState pins the naming convention (Dan, 2026-08-09: "label
+// the entrainments not by frequency, but by the state they put you in. add
+// frequency in parentheses") and, more importantly, the lookup that makes those
+// names usable: a name is what a schedule window stores and what the CLI resolves,
+// and every one of these would otherwise need shell quoting.
+func TestEntrainmentNamedByState(t *testing.T) {
+	cfg := defaultNoiseConfig()
+	for _, raw := range cfg.Presets {
+		p, err := raw.normalize()
+		if err != nil {
+			t.Fatalf("normalize %q: %v", raw.Name, err)
+		}
+		if p.Category != "entrainment" {
+			continue
+		}
+		// Every entrainment preset states its rate in parentheses, and states a
+		// state outside them — "6 Hz" alone would be the thing this rename undid.
+		if !strings.Contains(p.Name, "(") || !strings.Contains(p.Name, "Hz)") {
+			t.Errorf("%q should carry its frequency in parentheses", p.Name)
+		}
+		if before := strings.TrimSpace(strings.Split(p.Name, "(")[0]); before == "" {
+			t.Errorf("%q is only a frequency; it should name the state", p.Name)
+		}
+	}
+	// The lookup: exact, then parenthetical-insensitive, then unambiguous prefix.
+	for _, q := range []string{"deep sleep (2 Hz)", "deep sleep", "DEEP SLEEP", "deep sl"} {
+		p, err := cfg.findPreset(q)
+		if err != nil {
+			t.Errorf("findPreset(%q): %v", q, err)
+		} else if p.Name != "deep sleep (2 Hz)" {
+			t.Errorf("findPreset(%q) found %q", q, p.Name)
+		}
+	}
+	// An ambiguous prefix must NOT silently pick one.
+	if _, err := cfg.findPreset("deep"); err == nil {
+		t.Error(`"deep" matches two presets and should be refused, not guessed`)
+	} else if !strings.Contains(err.Error(), "several") {
+		t.Errorf("ambiguity should say so: %v", err)
+	}
+	if _, err := cfg.findPreset("nonesuch"); err == nil {
+		t.Error("an unknown name should still be an error")
 	}
 }
 
@@ -915,7 +959,7 @@ func TestIsochronicPulse(t *testing.T) {
 // which phase keeps the fade, and that a phase preset can never recurse into the
 // program runner (Phases must be cleared, or runNoise would loop forever).
 func TestProgramPhases(t *testing.T) {
-	p, err := mustFindDefault(t, "descend").normalize()
+	p, err := mustFindDefault(t, "sleep onset (10→4 Hz)").normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -977,25 +1021,25 @@ func TestNewEntrainmentPresets(t *testing.T) {
 		headphones bool
 		check      func(p noisePreset) string
 	}{
-		{"descend", true, func(p noisePreset) string {
+		{"sleep onset (10→4 Hz)", true, func(p noisePreset) string {
 			if len(p.Phases) == 0 {
 				return "no program"
 			}
 			return ""
 		}},
-		{"focus 10 deep", true, func(p noisePreset) string {
+		{"deep hypnagogia (3.5+10 Hz)", true, func(p noisePreset) string {
 			if p.Layers[0].BeatHz != 3.5 {
 				return "not the deeper theta"
 			}
 			return ""
 		}},
-		{"alpha surface", false, func(p noisePreset) string {
+		{"relaxed alert (10 Hz)", false, func(p noisePreset) string {
 			if !p.Layers[0].Monaural {
 				return "should be monaural, so it works on speakers"
 			}
 			return ""
 		}},
-		{"delta sink", true, func(p noisePreset) string {
+		{"deep sleep (2 Hz)", true, func(p noisePreset) string {
 			if p.Layers[0].BeatHz != 2 {
 				return "not 2 Hz"
 			}
@@ -1004,7 +1048,7 @@ func TestNewEntrainmentPresets(t *testing.T) {
 			}
 			return ""
 		}},
-		{"gamma sharpen", false, func(p noisePreset) string {
+		{"sharp focus (40 Hz)", false, func(p noisePreset) string {
 			if p.PulseShape != "square" || p.PulseHz != 40 {
 				return "should be a 40 Hz isochronic gate"
 			}
@@ -1052,7 +1096,7 @@ func TestPresetCategories(t *testing.T) {
 	want := map[string][]string{
 		"nature":      {"ocean brown brown brown", "ocean brown", "ocean pink"},
 		"noise":       {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
-		"entrainment": {"theta surf", "focus 10", "descend", "focus 10 deep", "alpha surface", "delta sink", "gamma sharpen"},
+		"entrainment": {"drowsy (6 Hz)", "body asleep, mind awake (4+10 Hz)", "sleep onset (10→4 Hz)", "deep hypnagogia (3.5+10 Hz)", "relaxed alert (10 Hz)", "deep sleep (2 Hz)", "sharp focus (40 Hz)"},
 	}
 	for card, names := range want {
 		if strings.Join(got[card], ", ") != strings.Join(names, ", ") {
@@ -1141,7 +1185,7 @@ func TestBinauralLayer(t *testing.T) {
 // two beats at once — 4 Hz for the body and 10 Hz to hold the mind up. One beat
 // alone is a different state, so the pair is the preset.
 func TestFocus10(t *testing.T) {
-	p, err := mustFindDefault(t, "focus 10").normalize()
+	p, err := mustFindDefault(t, "body asleep, mind awake (4+10 Hz)").normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
