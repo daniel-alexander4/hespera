@@ -27,12 +27,12 @@ var originalScriptArgs = []string{
 // the buffer becomes a whole number of swells (the loop-seam fix), the repeat
 // count is recomputed for that buffer, and a fade-in is appended.
 func TestNoiseArgsMatchOriginalExceptIntendedChanges(t *testing.T) {
-	p, err := defaultNoiseConfig().Presets[0].normalize()
+	// By NAME, not by position: "brown" is the reference chain this test guards,
+	// and the shipped list is ordered for the phone (Dan put theta surf on top),
+	// so an index here would break on a reorder that changes no argv at all.
+	p, err := mustFindDefault(t, "brown").normalize()
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
-	}
-	if p.Name != "brown" {
-		t.Fatalf("expected the first default preset to be brown, got %q", p.Name)
 	}
 	got := p.noiseArgs()
 
