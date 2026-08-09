@@ -6,13 +6,33 @@
    on both platforms, and the transport sits in the bottom third where a hand
    holding the phone already is. */
 :root {
-  --base: #1e1e2e;
-  --mantle: #181825;
-  --surface: #313244;
+  /* An ELEVATION LADDER, darkest to lightest: page, then cards, then controls.
+     It used to run the other way — the page was base and cards were mantle, so
+     every card sat DARKER than the page it was on and nothing read as a card at
+     all (Dan: "it's difficult to differentiate headers and cards"). Each step up
+     is a step lighter, so a control inside a card inside the page is legible as
+     three layers without a single border being needed to say so. */
+  --crust: #11111b;   /* fixed chrome: the top bar and the transport */
+  --mantle: #181825;  /* the page itself, and inset fields inside a card */
+  --base: #1e1e2e;    /* Mocha's own base, kept for anything that wants it */
+  --card: #23233a;    /* a card — a step you can actually see against the page */
+  --card-2: #2b2b45;  /* a card inside a card (a noise layer) */
+  --surface: #3a3a52; /* buttons, inputs, borders — a step above a card */
+
   --text: #cdd6f4;
   --subtext: #a6adc8;
-  --accent: #cba6f7;
   --on-accent: #1e1e2e;
+
+  /* Catppuccin Mocha accents, assigned by MEANING rather than for variety, so
+     colour is information: a card's hue tells you what kind of thing it is, and
+     its header, its title and its pressed buttons all carry that one hue.
+     Anything without a hue of its own falls back to lavender. */
+  --music: #89b4fa;    /* blue — quick play, playlists, artists, albums */
+  --noise: #cba6f7;    /* mauve — the noise cards and their presets */
+  --time: #fab387;     /* peach — the schedule and its windows */
+  --playing: #a6e3a1;  /* green — the queue, now playing, every play button */
+  --lavender: #b4befe; /* the default header hue */
+  --accent: #cba6f7;
   --danger: #f38ba8;
 
   --pad: 1rem;
@@ -50,7 +70,7 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   padding-bottom: calc(var(--now-h) + env(safe-area-inset-bottom));
-  background: var(--base);
+  background: var(--mantle);
   color: var(--text);
   font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* A remote has nothing to select and no pinch-zoom to offer; suppressing the
@@ -64,19 +84,40 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--pad);
   padding: calc(env(safe-area-inset-top) + 0.6rem) var(--pad) 0.6rem;
-  background: var(--mantle);
+  background: var(--crust);
   border-bottom: 1px solid var(--surface);
 }
-.bar h1 { margin: 0; font-size: 1.1rem; letter-spacing: 0.02em; }
+/* The one piece of branding, and the only place a gradient earns its keep: it
+   marks the app's own chrome apart from the cards below it. */
+.bar h1 {
+  margin: 0; font-size: 1.1rem; letter-spacing: 0.02em;
+  background: linear-gradient(100deg, var(--music), var(--noise));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
 
 main { padding: var(--pad); }
+/* A section header carries its section's hue and a bar in the same colour. The
+   bar is what makes it scannable on a phone at arm's length: uppercase grey type
+   alone disappeared between the cards it was meant to label. */
 h2 {
-  margin: 1.4rem 0 0.6rem;
+  margin: 1.6rem 0 0.6rem;
+  display: flex; align-items: center; gap: 0.5rem;
   font-size: 0.82rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--subtext);
+  color: var(--hue, var(--lavender));
+}
+h2::before {
+  content: '';
+  width: 0.9rem; height: 3px; flex: none; border-radius: 2px;
+  background: var(--hue, var(--lavender));
 }
 h2:first-child { margin-top: 0; }
+/* Sections declare their hue once; the header, the card edges, the titles and
+   the pressed-button flash all read it from here. */
+.s-music { --hue: var(--music); }
+.s-noise { --hue: var(--noise); }
+.s-time { --hue: var(--time); }
+.s-playing { --hue: var(--playing); }
 
 /* Quick play is two square-ish tiles; playlists are full-width rows, because a
    playlist name plus its two action buttons has no room to sit half-width. */
@@ -95,7 +136,11 @@ h2:first-child { margin-top: 0; }
   text-align: left;
   cursor: pointer;
 }
-.btn:active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn:active {
+  background: var(--hue, var(--accent));
+  color: var(--on-accent);
+  border-color: var(--hue, var(--accent));
+}
 
 /* A playlist tile: name, then its track count as a quiet second line. Two lines
    max — a long playlist name wraps rather than truncating to nothing useful. */
@@ -110,7 +155,8 @@ h2:first-child { margin-top: 0; }
   display: flex; flex-direction: column; justify-content: center; gap: 0.15rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--surface); border-radius: var(--radius);
-  background: var(--mantle);
+  border-left: 3px solid var(--hue, var(--music));
+  background: var(--card);
   min-width: 0;
 }
 .pl .name b { font-weight: 600; overflow-wrap: anywhere; }
@@ -150,34 +196,34 @@ h2:first-child { margin-top: 0; }
 /* Already played: dimmed, so the eye lands on the current row and what follows. */
 .q-row.is-past { opacity: 0.45; }
 .q-row.is-now {
-  border-left-color: var(--accent);
-  background: var(--mantle);
+  border-left-color: var(--playing);
+  background: var(--card);
   color: var(--text);
   font-weight: 600;
   opacity: 1;
 }
-.q-row.is-now .q-n { color: var(--accent); }
+.q-row.is-now .q-n { color: var(--playing); }
 .q-row.is-now .q-a { color: var(--text); }
 
 /* The playing row carries its own transport and progress, so it is a card
    rather than a line. It sits in the list where the song is, which is where the
    eye already is — the old fixed footer put those controls below everything. */
 .np-card {
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--playing);
   border-radius: 8px;
-  background: var(--mantle);
+  background: var(--card);
   padding: 0.5rem 0.6rem 0.6rem;
 }
 .np-card .np-head { display: grid; grid-template-columns: auto 1fr; gap: 0.6rem; align-items: center; }
 .np-card .np-cover { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--surface); }
 .np-card .np-text { min-width: 0; }
-.np-card .np-t { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.np-card .np-t { font-weight: 600; color: var(--playing); overflow-wrap: anywhere; }
 .np-card .np-a { font-size: 0.78rem; color: var(--subtext); overflow-wrap: anywhere; }
 
 /* Percentage only — no clock. A thin track that fills; nothing to drag, because
    seeking is not something the engine exposes here. */
 .np-bar { height: 4px; border-radius: 2px; background: var(--surface); margin: 0.55rem 0 0.5rem; overflow: hidden; }
-.np-bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s linear; }
+.np-bar > i { display: block; height: 100%; width: 0; background: var(--playing); transition: width 0.4s linear; }
 .np-bar.is-unknown { opacity: 0.35; }
 
 .np-controls { display: flex; justify-content: center; gap: 0.4rem; }
@@ -216,7 +262,7 @@ h2:first-child { margin-top: 0; }
   cursor: pointer;
 }
 .letters button:active, .letters button.is-on {
-  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+  background: var(--music); color: var(--on-accent); border-color: var(--music);
 }
 /* A letter with no artists behind it is shown but dead — the grid keeps its
    shape, and a tap that could only ever return nothing is not offered. */
@@ -233,13 +279,20 @@ h2:first-child { margin-top: 0; }
   display: flex; flex-direction: column; justify-content: center; gap: 0.15rem;
   min-height: 48px; padding: 0.6rem 0.75rem;
   border: 1px solid var(--surface); border-radius: var(--radius);
-  background: var(--mantle); color: var(--text);
+  border-left: 3px solid var(--hue, var(--music));
+  background: var(--card); color: var(--text);
   font: inherit; text-align: left; min-width: 0; cursor: pointer;
 }
 .row-item .open b { font-weight: 600; overflow-wrap: anywhere; }
 .row-item .open .sub { font-size: 0.78rem; color: var(--subtext); }
 .row-item .open:active { background: var(--surface); }
 .row-item .go { min-width: 44px; padding: 0.6rem 0.7rem; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Play is green on the artist and album screens too — the same promise the
+   green play buttons make everywhere else. Shuffle and Mix keep the section hue
+   on press, which the .btn rule already gives them. */
+.act[data-act$="-play"] { color: var(--playing); }
+.act[data-act$="-play"]:active { background: var(--playing); border-color: var(--playing); color: var(--on-accent); }
 
 /* Play / shuffle for the whole artist or album, above their lists. */
 .act-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.4rem; }
@@ -252,7 +305,7 @@ h2:first-child { margin-top: 0; }
 
 .panel {
   padding: var(--pad);
-  background: var(--mantle);
+  background: var(--card);
   border-bottom: 1px solid var(--surface);
 }
 .panel label { display: block; margin-bottom: 0.4rem; font-size: 0.82rem; color: var(--subtext); }
@@ -260,7 +313,7 @@ h2:first-child { margin-top: 0; }
   width: 100%; min-height: 44px;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--surface); border-radius: var(--radius);
-  background: var(--base); color: var(--text);
+  background: var(--mantle); color: var(--text);
   font: inherit;
 }
 .row { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.6rem; }
@@ -273,7 +326,7 @@ h2:first-child { margin-top: 0; }
   align-items: center; gap: 0.75rem;
   height: calc(var(--now-h) + env(safe-area-inset-bottom));
   padding: 0.6rem var(--pad) calc(0.6rem + env(safe-area-inset-bottom));
-  background: var(--mantle);
+  background: var(--crust);
   border-top: 1px solid var(--surface);
 }
 .art {
@@ -281,7 +334,7 @@ h2:first-child { margin-top: 0; }
   background: var(--surface);
 }
 .meta { min-width: 0; }
-.np-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-title { font-weight: 600; color: var(--playing); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np-sub { font-size: 0.82rem; color: var(--subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .transport { display: flex; gap: 0.15rem; }
 
@@ -302,13 +355,20 @@ h2:first-child { margin-top: 0; }
    The one screen in the app with a form on it. Inputs are full-width and
    44px tall for the same reason every other target is: a thumb at bedtime,
    in the dark, is not accurate. */
+/* Every card: lifted off the page, and wearing its kind's colour on the left
+   edge. The hue is declared per card below rather than here, so one rule styles
+   presets, schedule windows and anything added later. */
 .preset, .win {
-  background: var(--mantle);
+  background: var(--card);
   border: 1px solid var(--surface);
+  border-left: 3px solid var(--hue, var(--lavender));
   border-radius: var(--radius);
   padding: 0.7rem;
   margin-bottom: 0.6rem;
 }
+#artists-card { --hue: var(--music); }
+#schedule-card, .win { --hue: var(--time); }
+#noise-card, #noise-quick .preset { --hue: var(--noise); }
 .preset > summary {
   display: flex;
   align-items: baseline;
@@ -318,7 +378,7 @@ h2:first-child { margin-top: 0; }
   min-height: 44px;
   padding: 0.4rem 0;
 }
-.preset > summary b { font-weight: 600; }
+.preset > summary b { font-weight: 600; color: var(--hue, var(--text)); }
 .preset > summary .sub { font-size: 0.78rem; color: var(--subtext); }
 /* Every collapsible card wears a chevron: points right closed, down open —
    the visual promise that the row expands. Drawn in CSS (the icon sprite
@@ -340,6 +400,11 @@ h2:first-child { margin-top: 0; }
 details.preset[open] > summary::after { transform: rotate(45deg); }
 /* The summary's Play button: pushed to the right edge, vertically centred
    against the baseline-aligned text, sized as a real touch target. */
+/* Play reads green everywhere it appears — in a card summary, on a playlist, on
+   an artist row — and fills on press. Stop is the only red control in the app. */
+.go { color: var(--playing); }
+.go:active { background: var(--playing); color: var(--on-accent); border-color: var(--playing); }
+#stop { color: var(--danger); }
 .preset > summary .go {
   margin-left: auto;
   align-self: center;
@@ -353,7 +418,7 @@ details.preset[open] > summary::after { transform: rotate(45deg); }
 /* A layer card sits INSIDE a preset card, so it steps up a shade rather than
    repeating the same panel — otherwise a nested collapsible reads as a sibling
    of the preset it belongs to. */
-.preset .preset { background: var(--base); }
+.preset .preset { background: var(--card-2); }
 
 .field { display: grid; gap: 0.25rem; margin-bottom: 0.55rem; }
 .field > span { font-size: 0.78rem; color: var(--subtext); }
@@ -361,7 +426,7 @@ details.preset[open] > summary::after { transform: rotate(45deg); }
   width: 100%;
   min-height: 44px;
   padding: 0.5rem 0.6rem;
-  background: var(--base);
+  background: var(--mantle);
   color: var(--text);
   border: 1px solid var(--surface);
   border-radius: 8px;
@@ -379,7 +444,7 @@ details.preset[open] > summary::after { transform: rotate(45deg); }
   gap: 0.25rem;
   padding: 0.35rem 0.5rem;
   font-size: 0.8rem;
-  background: var(--base);
+  background: var(--mantle);
   border: 1px solid var(--surface);
   border-radius: 8px;
 }
