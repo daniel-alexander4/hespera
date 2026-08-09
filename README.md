@@ -381,14 +381,19 @@ did.
 **A pulse, for a state rather than a place.** A preset can also carry an
 *entrainment pulse* — an amplitude modulation of the whole mix, fast enough to be
 a rhythm the brain can follow rather than a wave you hear arrive. **theta surf**
-ships one at 6 Hz, mid-theta, the hypnagogic band; its sea is deliberately duller
+ships one at 6 Hz, mid-theta, the hypnagogic band, at depth 10 &mdash; it shipped at 20 for
+one evening and was heard as "a train chugging along", which is what a periodic
+modulation of noise becomes once it crosses into conscious perception; halved, it
+sits near the threshold, followable rather than countable; its sea is deliberately duller
 than the coast presets (a lower ladder, since high frequencies are the alerting
 part of a noise; a small wave that no longer vanishes and returns; a 12 s fade for
 someone already lying down). The pulse is applied *after* the loop — past `repeat`
 on a single stage, past every input at the mixer — which is what frees its rate
 from the loop-seam arithmetic and lets it ride every wave at once while each keeps
-its own swell. Measured in the delivered audio, 6 Hz carries 13 % modulation
-against 1–4 % at neighbouring rates.
+its own swell. Measured in the delivered audio, 6 Hz carries 4.7 % modulation
+against no more than 1.2 % at any neighbouring rate, and 0.4 % with the pulse off.
+Applying the pulse to a recording of the same sea and subtracting isolates it
+exactly: 0.91 dB peak to peak, against the 0.92 dB depth 10 predicts.
 
 Two honest caveats. The modulation is sinusoidal, not an on/off *isochronic*
 pulse: isochronic entrains more strongly but is a beep, and a startling stimulus

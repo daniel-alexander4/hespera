@@ -827,10 +827,10 @@ func TestThetaSurf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	if p.PulseHz != 6 || p.PulseDepth != 20 {
-		t.Errorf("want a 6 Hz / 20%% pulse, got %g Hz / %g%%", p.PulseHz, p.PulseDepth)
+	if p.PulseHz != 6 || p.PulseDepth != 10 {
+		t.Errorf("want a 6 Hz / 10%% pulse, got %g Hz / %g%%", p.PulseHz, p.PulseDepth)
 	}
-	if !strings.HasSuffix(strings.Join(p.mixerArgs(), " "), "tremolo 6 20 fade t 12") {
+	if !strings.HasSuffix(strings.Join(p.mixerArgs(), " "), "tremolo 6 10 fade t 12") {
 		t.Errorf("the pulse should ride the summed sea: %v", p.mixerArgs())
 	}
 	coast, err := mustFindDefault(t, "ocean brown brown brown").normalize()

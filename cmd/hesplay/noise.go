@@ -430,8 +430,12 @@ func defaultNoiseConfig() noiseConfig {
 			// deliberate departures from ocean brown brown brown:
 			//
 			// (1) A 6 Hz PULSE on the whole mix — mid-theta, the band the
-			// out-of-body and lucid-dream literature aims at, deep enough at 20%
-			// to be followable and shallow enough not to read as a beep.
+			// out-of-body and lucid-dream literature aims at. Depth **10**, down
+			// from the 20 it shipped at for one evening: at 20 (a 1.94 dB swing)
+			// Dan heard it as "a train chugging along", which is what a periodic
+			// AM of band-limited noise turns into once it crosses into conscious
+			// perception. 10 halves the swing to ~0.9 dB — around the threshold
+			// for noise, which is the target: followable, not countable.
 			// (2) The ladder drops to 1000/1400/1900 Hz. High frequencies are the
 			// alerting part of a noise, and the 2250 Hz break that gives the
 			// coast preset its life is exactly what keeps a listener present.
@@ -442,20 +446,28 @@ func defaultNoiseConfig() noiseConfig {
 			// lying down.
 			//
 			// Gains re-measured for the lower bands (brown gets louder as the band
-			// drops: −22.94 / −25.20 / −28.58 dB mean at gain 0), holding the
-			// same large-loudest balance and summing near −33 dB, a few dB under
-			// the coast presets.
+			// drops: −22.94 / −25.20 / −28.58 dB mean at gain 0), then all three
+			// trimmed a further 4 dB together — Dan, same listen: "maybe too
+			// loud?". Trimming all three by the same amount is what keeps the
+			// balance the tuning established; it sums near −38 dB, ~7 under the
+			// coast presets, which is the right place for something that plays in
+			// a dark room rather than as a room ambience.
+			//
+			// ⚠️ Note a real gap this exposed: a layered preset has NO master
+			// level knob — GainDB is the body stage's level, so lowering the whole
+			// preset means moving every stage's gain in step. Worth a master trim
+			// at the mixer if this happens again.
 			//
 			// What this preset does NOT claim: entrainment of EEG by amplitude
 			// modulation is real but modest, and no out-of-body outcome is
 			// established science. It is a tool for a practice, tuned honestly.
 			{Name: "theta surf", Type: "brownnoise",
 				CenterHz: 1900, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 60,
-				GainDB: -9, Reverb: 19, FadeIn: 12,
-				PulseHz: 6, PulseDepth: 20,
+				GainDB: -13, Reverb: 19, FadeIn: 12,
+				PulseHz: 6, PulseDepth: 10,
 				Layers: []noiseLayer{
-					{Type: "brownnoise", CenterHz: 1000, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -13.7, Offset: 10},
-					{Type: "brownnoise", CenterHz: 1400, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -14.4, Offset: 6.25},
+					{Type: "brownnoise", CenterHz: 1000, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -17.7, Offset: 10},
+					{Type: "brownnoise", CenterHz: 1400, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -18.4, Offset: 6.25},
 				}},
 		},
 	}
