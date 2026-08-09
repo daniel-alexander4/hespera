@@ -837,11 +837,28 @@ func TestThetaSurf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize the coast preset: %v", err)
 	}
-	if !(p.CenterHz < coast.CenterHz && p.Layers[0].CenterHz < coast.Layers[0].CenterHz) {
-		t.Error("theta surf should sit lower than the coast preset, not brighter")
+	// ⚠️ ONE WAVE, NOT THREE (v0.45.34, reversing v0.45.18). This used to be the
+	// coast preset detuned — ladder dropped to 1000/1400/1900 and body depth cut
+	// 85 → 60, both to be less alerting. Together they went too far: three
+	// staggered waves exist so their crests never stack, so each trough is filled
+	// by another's crest, and at depth 60 the sum travelled just 4.8 dB against
+	// the coast's 6.1. Dan heard it as "a constant jet-engine sound". A single
+	// wave has nothing filling its troughs and now travels ~17 dB.
+	if len(p.Layers) != 0 {
+		t.Errorf("drowsy is one wave now, got %d layers — the staggered layers are"+
+			" what flattened it into a constant roar", len(p.Layers))
 	}
-	if p.WaveDepth >= coast.WaveDepth {
-		t.Errorf("the small wave should be steadier here, got depth %g vs %g", p.WaveDepth, coast.WaveDepth)
+	// The bed is the timbral twin's, exactly: the pair must differ in DELIVERY
+	// alone, which is the claim its naming makes.
+	twin, err := mustFindDefault(t, "drowsy (6 Hz, timbral)").normalize()
+	if err != nil {
+		t.Fatalf("normalize the timbral twin: %v", err)
+	}
+	if p.Type != twin.Type || p.CenterHz != twin.CenterHz || p.WidthHz != twin.WidthHz ||
+		p.WaveSpeed != twin.WaveSpeed || p.WaveDepth != twin.WaveDepth {
+		t.Errorf("the two drowsy twins must share one bed, got %s %g/%g @ %g/%g vs %s %g/%g @ %g/%g",
+			p.Type, p.CenterHz, p.WidthHz, p.WaveSpeed, p.WaveDepth,
+			twin.Type, twin.CenterHz, twin.WidthHz, twin.WaveSpeed, twin.WaveDepth)
 	}
 	if p.FadeIn <= coast.FadeIn {
 		t.Errorf("this preset starts on someone lying down; want a longer fade, got %g", p.FadeIn)

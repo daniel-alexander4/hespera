@@ -478,30 +478,34 @@ func defaultNoiseConfig() noiseConfig {
 			// (4) A 12 s fade rather than 3 — it starts while someone is already
 			// lying down.
 			//
-			// Gains re-measured for the lower bands (brown gets louder as the band
-			// drops: −22.94 / −25.20 / −28.58 dB mean at gain 0), then all three
-			// trimmed a further 4 dB together — Dan, same listen: "maybe too
-			// loud?". Trimming all three by the same amount is what keeps the
-			// balance the tuning established; it sums near −38 dB, ~7 under the
-			// coast presets, which is the right place for something that plays in
-			// a dark room rather than as a room ambience.
+			// ⚠️ ONE WAVE, NOT THREE (v0.45.34). This was the three-wave sea of
+			// `ocean brown brown brown` with its ladder dropped to 1000/1400/1900
+			// and its body depth cut 85 → 60, both to be less alerting. The two
+			// together went too far: measured, the sum travelled just **4.8 dB**
+			// against that sea's 6.1 and `ocean brown`'s 8.9 — the least motion of
+			// any preset here — and Dan heard it as "a constant jet-engine sound".
 			//
-			// ⚠️ Note a real gap this exposed: a layered preset has NO master
-			// level knob — GainDB is the body stage's level, so lowering the whole
-			// preset means moving every stage's gain in step. Worth a master trim
-			// at the mixer if this happens again.
+			// The cause is structural, not a level. Three staggered waves exist so
+			// their crests never stack, which means each one's trough is filled by
+			// another's crest; at depth 60 the SUM barely moves at all. Dropping to
+			// a single wave is what lets it breathe: same wave, one stage, nothing
+			// filling the troughs, and it now travels like the sea it came from.
+			//
+			// The bed is now IDENTICAL to the timbral twin's — same colour, band,
+			// rate and depth — so the pair differs in delivery alone, which is what
+			// the naming has claimed since v0.45.32. Keep them in step.
+			//
+			// FadeIn stays 12s (this plays in a dark room, not as room ambience)
+			// and the 6 Hz pulse is untouched at depth 10, the perception
+			// threshold: 20 read as "a train chugging along".
 			//
 			// What this preset does NOT claim: entrainment of EEG by amplitude
 			// modulation is real but modest, and no out-of-body outcome is
 			// established science. It is a tool for a practice, tuned honestly.
 			{Name: "drowsy (6 Hz)", Type: "brownnoise",
-				CenterHz: 1900, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 60,
-				GainDB: -1.67, Reverb: 19, FadeIn: 12,
-				PulseHz: 6, PulseDepth: 10,
-				Layers: []noiseLayer{
-					{Type: "brownnoise", CenterHz: 1000, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -6.37, Offset: 10},
-					{Type: "brownnoise", CenterHz: 1400, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -7.07, Offset: 6.25},
-				}},
+				CenterHz: 2250, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 85,
+				GainDB: 3.34, Reverb: 19, FadeIn: 12,
+				PulseHz: 6, PulseDepth: 10},
 			// The TIMBRAL delivery of the same 6 Hz state — the twin naming the
 			// monaural pair already established (state, rate, delivery). Where
 			// `drowsy (6 Hz)` modulates LOUDNESS of the whole mix, this modulates
