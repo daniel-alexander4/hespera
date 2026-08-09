@@ -701,6 +701,40 @@ func TestOceanPinkStages(t *testing.T) {
 	}
 }
 
+// TestOceanBrownBrownBrown pins the all-brown sibling: ocean pink with its small
+// wave swapped to brown, so the two are a fair A/B differing only in that
+// timbre. The two brown layers must stay byte-identical to ocean pink's — that
+// is what "a copy" means, and a drift there is invisible by ear across presets —
+// while the BODY gain must not be copied, since brown measures 7.4 dB hotter
+// than pink through this band and −0.5 would let the smallest wave dominate.
+func TestOceanBrownBrownBrown(t *testing.T) {
+	bbb, err := mustFindDefault(t, "ocean brown brown brown").normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	pink, err := mustFindDefault(t, "ocean pink").normalize()
+	if err != nil {
+		t.Fatalf("normalize ocean pink: %v", err)
+	}
+	if bbb.Type != "brownnoise" {
+		t.Errorf("the small wave should be brown, got %q", bbb.Type)
+	}
+	for i, l := range bbb.Layers {
+		if got, want := strings.Join(bbb.layerSoxArgs(l), " "), strings.Join(pink.layerSoxArgs(pink.Layers[i]), " "); got != want {
+			t.Errorf("layer %d drifted from ocean pink's:\n got %q\nwant %q", i+1, got, want)
+		}
+	}
+	// −7.9 puts the brown body on the same stage level pink's −0.5 produced
+	// (measured −27.07 brown vs −34.46 pink at gain 0), which is what holds the
+	// mixed level equal: both presets measure RMS −30.3 through their own argv.
+	if bbb.GainDB != -7.9 {
+		t.Errorf("body gain should be the level-matched −7.9, got %g", bbb.GainDB)
+	}
+	if bbb.GainDB == pink.GainDB {
+		t.Error("the body gain must NOT be copied across a colour change")
+	}
+}
+
 // TestNormalizeLayers pins layer validation: unknown colours rejected, a
 // colourless entry dropped rather than fatal, the preset's own band inherited
 // when a layer names none, a swell-less layer left perfectly still, and the

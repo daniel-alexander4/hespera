@@ -345,6 +345,22 @@ func defaultNoiseConfig() noiseConfig {
 					{Type: "brownnoise", Speed: 0.02, Depth: 45, Gain: -6.5, Offset: 12.5},
 					{Type: "brownnoise", Speed: 0.04, Depth: 40, Gain: -9.5, Offset: 6.25},
 				}},
+			// The all-brown sibling (Dan, 2026-08-08): ocean pink with its small
+			// wave swapped from pink to brown, so the three sizes differ only in
+			// rhythm and nothing in timbre. Every number is ocean pink's except
+			// the body gain, and that ONE cannot be copied: through this band
+			// brown measures −27.07 dB against pink's −34.46, so keeping −0.5
+			// would put the small wave 7.4 dB hotter than its sibling's and let
+			// the smallest wave dominate the other two. −7.9 lands the brown body
+			// on the same −34.98 dB stage level pink's −0.5 produced, which is
+			// what keeps the two presets a fair A/B rather than one being louder.
+			{Name: "ocean brown brown brown", Type: "brownnoise",
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				GainDB: -7.9, Reverb: 19, FadeIn: 3,
+				Layers: []noiseLayer{
+					{Type: "brownnoise", Speed: 0.02, Depth: 45, Gain: -6.5, Offset: 12.5},
+					{Type: "brownnoise", Speed: 0.04, Depth: 40, Gain: -9.5, Offset: 6.25},
+				}},
 		},
 	}
 }

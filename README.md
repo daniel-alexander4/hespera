@@ -362,8 +362,12 @@ and layers are capped at four so a config cannot ask for a process fleet.
 
 **ocean pink** is the shipped example: three waves of different sizes — a large
 brown one every 50 seconds, a medium brown every 25, and the small pink bed every
-12.5, at swell depths 45/40/37 shrinking with the wave. `hesplay noise --print
-"ocean pink"` shows the whole paste-able pipeline. The earlier *floor* — a
+12.5, at swell depths 45/40/37 shrinking with the wave. **ocean brown brown
+brown** is the same three waves with the small one brown as well, so the sizes
+differ in rhythm and nothing in timbre; the two are level-matched (both mix to
+−30.3 dB RMS) so switching between them is a fair comparison rather than one
+being louder. `hesplay noise --print "ocean pink"` shows the whole paste-able
+pipeline. The earlier *floor* — a
 barely-audible velvet bed banded bright at 4.5 kHz, 30 dB under the sea — is just
 a layer with a bright band and a big negative gain; a config written before
 layers existed is migrated on read, so a saved floor keeps playing exactly as it
