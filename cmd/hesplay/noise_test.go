@@ -851,6 +851,54 @@ func TestThetaSurf(t *testing.T) {
 	}
 }
 
+// TestPresetCategories pins the three cards. The derivation is what matters more
+// than the field: every config already on a box predates it, so a preset that
+// names no card must still land in the right one.
+func TestPresetCategories(t *testing.T) {
+	cfg := defaultNoiseConfig()
+	got := map[string][]string{}
+	for _, raw := range cfg.Presets {
+		p, err := raw.normalize()
+		if err != nil {
+			t.Fatalf("normalize %q: %v", raw.Name, err)
+		}
+		if !knownCategory(p.Category) {
+			t.Errorf("%q landed in an unknown card %q", p.Name, p.Category)
+		}
+		got[p.Category] = append(got[p.Category], p.Name)
+	}
+	// The seas, the plain colours, and the one that needs headphones.
+	want := map[string][]string{
+		"nature":   {"theta surf", "ocean brown brown brown", "ocean brown", "ocean pink"},
+		"noise":    {"brown", "pink", "white", "tpdf", "blue", "violet", "velvet"},
+		"binaural": {"focus 10"},
+	}
+	for card, names := range want {
+		if strings.Join(got[card], ", ") != strings.Join(names, ", ") {
+			t.Errorf("%s card:\n got %v\nwant %v", card, got[card], names)
+		}
+	}
+	// A binaural pair outranks everything else, because that is the property that
+	// decides whether headphones are required.
+	p, _ := (noisePreset{Type: "brown", Wave2Speed: 0.02,
+		Layers: []noiseLayer{{CarrierHz: 100, BeatHz: 4}}}).normalize()
+	if p.Category != "binaural" {
+		t.Errorf("a sea carrying a carrier pair should file as binaural, got %q", p.Category)
+	}
+	// A second swell alone makes it a sea, with no layers at all.
+	if q, _ := (noisePreset{Type: "brown", Wave2Speed: 0.02, Wave2Depth: 45}).normalize(); q.Category != "nature" {
+		t.Errorf("a two-swell preset should file as nature, got %q", q.Category)
+	}
+	// An explicit card wins over the derivation; garbage falls back to it rather
+	// than refusing to play.
+	if q, _ := (noisePreset{Type: "brown", Category: "NATURE "}).normalize(); q.Category != "nature" {
+		t.Errorf("an explicit card should be honoured (and normalized), got %q", q.Category)
+	}
+	if q, _ := (noisePreset{Type: "brown", Category: "kitchen sink"}).normalize(); q.Category != "noise" {
+		t.Errorf("an unknown card should fall back to the derivation, got %q", q.Category)
+	}
+}
+
 // TestBinauralLayer pins the carrier-pair stage. The subtle interaction is the
 // empty Type: a colourless NOISE layer is deliberately dropped ("the editor said
 // remove this"), and a binaural layer has no colour at all — so it must be

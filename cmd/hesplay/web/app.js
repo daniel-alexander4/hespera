@@ -403,6 +403,22 @@
     ['centerHz', 'Band centre (Hz, 0=same)', 0, 20000, 1],
     ['widthHz', 'Band width (Hz, 0=same)', 0, 20000, 1],
   ];
+  // The three cards, in the server's order (noiseCategories in noise.go).
+  const NOISE_CARDS = [
+    ['nature', 'Nature', 'noise-nature', 'nature-card', 'nature-h'],
+    ['noise', 'Noise', 'noise-noise', 'noise-card', 'noise-h'],
+    ['binaural', 'Binaural', 'noise-binaural', 'binaural-card', 'binaural-h'],
+  ];
+  // Mirrors deriveCategory in noise.go, for a config saved before `category`
+  // existed: the server fills the field on its next write, but the phone has to
+  // render what is on the box right now.
+  function presetCard(p) {
+    if (NOISE_CARDS.some((c) => c[0] === p.category)) return p.category;
+    if ((p.layers || []).some((l) => (l.beatHz || 0) > 0)) return 'binaural';
+    if ((p.layers || []).length || (p.wave2Speed || 0) > 0) return 'nature';
+    return 'noise';
+  }
+
   // Mirrors noiseMaxLayers in noise.go: each layer is a process and a buffered
   // loop, so the Add button stops rather than letting a phone tap build a fleet.
   const MAX_LAYERS = 4;
@@ -420,9 +436,22 @@
   // bare play buttons with the editor a screen deeper). Rebuilt whenever the
   // config is (re)read so a renamed preset can't leave a stale card behind.
   function renderNoiseQuick() {
-    const box = $('noise-quick');
-    box.textContent = '';
-    (noiseCfg.presets || []).forEach((p) => box.appendChild(presetRow(p)));
+    const presets = noiseCfg.presets || [];
+    NOISE_CARDS.forEach(([key, label, boxId, cardId, headId]) => {
+      const box = $(boxId);
+      if (!box) return;
+      box.textContent = '';
+      const mine = presets.filter((p) => presetCard(p) === key);
+      mine.forEach((p) => box.appendChild(presetRow(p)));
+      // The count in the summary is the point of a collapsed card: it says
+      // whether opening it is worth a tap.
+      const head = $(headId);
+      if (head) head.textContent = mine.length ? label + ' \u00b7 ' + mine.length : label;
+      // An empty card is noise on a phone screen, so it goes away entirely —
+      // a box with no binaural preset shouldn't advertise a binaural card.
+      const card = $(cardId);
+      if (card) card.hidden = mine.length === 0;
+    });
   }
 
   // The front page's schedule card: a readable view of the saved windows —
@@ -549,6 +578,25 @@
     NOISE_FIELDS.forEach(([key, label, min, max, step]) => {
       det.appendChild(numberField(label, p[key], min, max, step, (v) => { p[key] = parseFloat(v); }));
     });
+
+    // Which card this preset is filed under. Re-rendering on change moves the
+    // card immediately, which is the only way the control reads as doing
+    // something — the preset physically leaves the card you are looking at.
+    const cat = document.createElement('label');
+    cat.className = 'field';
+    const cspan = document.createElement('span');
+    cspan.textContent = 'Card';
+    const csel = document.createElement('select');
+    NOISE_CARDS.forEach(([key, label]) => {
+      const o = document.createElement('option');
+      o.value = key;
+      o.textContent = label;
+      if (key === presetCard(p)) o.selected = true;
+      csel.appendChild(o);
+    });
+    csel.addEventListener('change', () => { p.category = csel.value; renderNoiseQuick(); });
+    cat.append(cspan, csel);
+    det.appendChild(cat);
 
     // The extra layers: waves of their own, each rendered by its own process and
     // summed with the body, which is why every one of them can have its own

@@ -90,9 +90,25 @@
       <div id="schedule-view" class="rows"></div>
       <button class="btn" id="noise-more">Edit schedule…</button>
     </details>
+    <!-- Three cards rather than one list (Dan, 2026-08-09). The server files each
+         preset by its `category`, deriving it when absent, so a config written
+         before the cards existed still lands correctly. A card with nothing in it
+         hides itself. -->
+    <details class="preset" id="nature-card">
+      <summary><b id="nature-h">Nature</b></summary>
+      <div class="rows" id="noise-nature"></div>
+    </details>
     <details class="preset" id="noise-card">
-      <summary><b>Noise</b></summary>
-      <div class="rows" id="noise-quick"></div>
+      <summary><b id="noise-h">Noise</b></summary>
+      <div class="rows" id="noise-noise"></div>
+    </details>
+    <details class="preset" id="binaural-card">
+      <summary><b id="binaural-h">Binaural</b></summary>
+      <!-- The one card that carries a usage note, because without headphones the
+           effect does not happen at all: each ear must get its own carrier. -->
+      <p class="msg">Headphones — each ear gets its own tone, and the beat is made
+        between them. On speakers you hear a plain wobble instead.</p>
+      <div class="rows" id="noise-binaural"></div>
     </details>
   </section>
 </main>

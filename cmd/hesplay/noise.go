@@ -139,9 +139,22 @@ const (
 // noisePreset is one named noise configuration. Field names avoid the word
 // "amplitude" on purpose: in the original it could mean either the depth of the
 // volume swell or the output level, and they are different knobs.
+// noiseCategories are the cards the remote groups presets into. Kept as data
+// rather than as three hard-coded lists so the phone and the server agree on both
+// the set and its order (Dan, 2026-08-09: "separate noise into three cards").
+var noiseCategories = []string{"nature", "noise", "binaural"}
+
 type noisePreset struct {
 	Name string `json:"name"`
 	Type string `json:"type"` // one of noiseTypes
+
+	// Category is which card the remote files this preset under. Empty is the
+	// normal case and it is DERIVED (see deriveCategory) — a binaural pair makes
+	// it binaural, a layered or two-swell sea makes it nature, a bare colour is
+	// noise. Deriving rather than requiring the field is what lets every config
+	// already on a box land in the right card without being edited, including
+	// presets a user wrote before the cards existed.
+	Category string `json:"category,omitempty"`
 
 	CenterHz float64 `json:"centerHz"` // band-pass centre
 	WidthHz  float64 `json:"widthHz"`  // band-pass width
@@ -665,6 +678,8 @@ func (cfg noiseConfig) findPreset(name string) (noisePreset, error) {
 // exception, because there is no sensible clamp for a waveform name.
 func (p noisePreset) normalize() (noisePreset, error) {
 	out := p
+	// Resolved AFTER the layers below, since the derivation reads them; the
+	// assignment lives at the end of this function.
 	out.Type = strings.ToLower(strings.TrimSpace(out.Type))
 	if out.Type == "" {
 		out.Type = "brownnoise"
@@ -795,7 +810,46 @@ func (p noisePreset) normalize() (noisePreset, error) {
 		layers = append(layers, l)
 	}
 	out.Layers = layers
+
+	// The card. A value outside the known set is treated as absent rather than
+	// rejected — a preset must still play if someone types a category the phone
+	// doesn't know, and mis-filing it is a smaller failure than refusing it.
+	out.Category = strings.ToLower(strings.TrimSpace(out.Category))
+	if !knownCategory(out.Category) {
+		out.Category = out.deriveCategory()
+	}
 	return out, nil
+}
+
+func knownCategory(c string) bool {
+	for _, k := range noiseCategories {
+		if k == c {
+			return true
+		}
+	}
+	return false
+}
+
+// deriveCategory files a preset that doesn't name a card, by what it IS:
+//
+//   - any binaural pair in it -> "binaural", because that is the property that
+//     decides whether headphones are required, which outranks everything else;
+//   - otherwise a sea -> "nature": more than one wave (layers) or a second swell
+//     chained on the one stream. This is what puts theta surf under nature
+//     despite its entrainment pulse — its foundation is the three-wave sea, and
+//     "binaural" is kept meaning literally one carrier per ear (Dan's call,
+//     2026-08-09; move it with the category field if that stops being useful);
+//   - otherwise -> "noise": a single banded colour, the seven references.
+func (p noisePreset) deriveCategory() string {
+	for _, l := range p.Layers {
+		if l.binaural() {
+			return "binaural"
+		}
+	}
+	if len(p.Layers) > 0 || p.Wave2Speed > 0 {
+		return "nature"
+	}
+	return "noise"
 }
 
 func knownNoiseType(t string) bool {

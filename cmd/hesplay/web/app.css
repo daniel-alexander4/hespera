@@ -28,7 +28,9 @@
      its header, its title and its pressed buttons all carry that one hue.
      Anything without a hue of its own falls back to lavender. */
   --music: #89b4fa;    /* blue — quick play, playlists, artists, albums */
-  --noise: #cba6f7;    /* mauve — the noise cards and their presets */
+  --noise: #cba6f7;    /* mauve — the plain colour references */
+  --nature: #94e2d5;   /* teal — the seas: surf, tides, waves */
+  --binaural: #b4befe; /* lavender — carrier pairs, i.e. headphones */
   --time: #fab387;     /* peach — the schedule and its windows */
   --playing: #a6e3a1;  /* green — the queue, now playing, every play button */
   --lavender: #b4befe; /* the default header hue */
@@ -372,7 +374,9 @@ h2:first-child { margin-top: 0; }
 }
 #artists-card { --hue: var(--music); }
 #schedule-card, .win { --hue: var(--time); }
-#noise-card, #noise-quick .preset { --hue: var(--noise); }
+#nature-card { --hue: var(--nature); }
+#noise-card { --hue: var(--noise); }
+#binaural-card { --hue: var(--binaural); }
 .preset > summary {
   display: flex;
   align-items: baseline;
