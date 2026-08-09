@@ -496,11 +496,11 @@ func defaultNoiseConfig() noiseConfig {
 			// established science. It is a tool for a practice, tuned honestly.
 			{Name: "drowsy (6 Hz)", Type: "brownnoise",
 				CenterHz: 1900, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 60,
-				GainDB: -13, Reverb: 19, FadeIn: 12,
+				GainDB: -1.67, Reverb: 19, FadeIn: 12,
 				PulseHz: 6, PulseDepth: 10,
 				Layers: []noiseLayer{
-					{Type: "brownnoise", CenterHz: 1000, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -17.7, Offset: 10},
-					{Type: "brownnoise", CenterHz: 1400, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -18.4, Offset: 6.25},
+					{Type: "brownnoise", CenterHz: 1000, WidthHz: 499, Speed: 0.025, Depth: 45, Gain: -6.37, Offset: 10},
+					{Type: "brownnoise", CenterHz: 1400, WidthHz: 499, Speed: 0.04, Depth: 40, Gain: -7.07, Offset: 6.25},
 				}},
 			// The TIMBRAL delivery of the same 6 Hz state — the twin naming the
 			// monaural pair already established (state, rate, delivery). Where
@@ -537,12 +537,12 @@ func defaultNoiseConfig() noiseConfig {
 			// switching delivery of one state must not be a volume change.
 			{Name: "drowsy (6 Hz, timbral)", Category: "pulse", Type: "brownnoise",
 				CenterHz: 2250, WidthHz: 499, WaveSpeed: 0.0625, WaveDepth: 85,
-				GainDB: -7.4, Reverb: 19, FadeIn: 3,
+				GainDB: 2.37, Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
 					{Type: "brownnoise", CenterHz: 700, WidthHz: 499, Speed: 6, Depth: 100,
-						Swell: 0.0625, SwellDepth: 86, Dry: true, Gain: -33.01},
+						Swell: 0.0625, SwellDepth: 86, Dry: true, Gain: -23.24},
 					{Type: "brownnoise", CenterHz: 2400, WidthHz: 499, Speed: 6, Depth: 100,
-						Swell: 0.0625, SwellDepth: 86, Dry: true, Offset: 0.0833, Gain: -23.64},
+						Swell: 0.0625, SwellDepth: 86, Dry: true, Offset: 0.0833, Gain: -13.87},
 				}},
 			// The all-brown sibling (Dan, 2026-08-08): ocean pink with its small
 			// wave swapped from pink to brown, so the three sizes differ only in
@@ -660,8 +660,8 @@ func defaultNoiseConfig() noiseConfig {
 			// the bed is pink at +2 (→ ~−32.5, evening level).
 			{Name: "sleep onset (10→4 Hz)", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				GainDB: -5.4, Reverb: 19, FadeIn: 20,
-				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -35.5}},
+				GainDB: 0.31, Reverb: 19, FadeIn: 20,
+				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -29.79}},
 				Phases: []noisePhase{
 					{Minutes: 3, Beats: []float64{10}}, // alpha: eyes closed, still awake
 					{Minutes: 3, Beats: []float64{8}},  // the edge of theta
@@ -720,8 +720,8 @@ func defaultNoiseConfig() noiseConfig {
 			// because SoX's `mix` halves what it combines.
 			{Name: "relaxed alert (10 Hz)", Type: "brownnoise",
 				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
-				GainDB: -4.4, Reverb: 19, FadeIn: 8,
-				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -32.5, Monaural: true}}},
+				GainDB: 0.02, Reverb: 19, FadeIn: 8,
+				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -28.08, Monaural: true}}},
 
 			// "delta sink" is the honest tool for simply going under — 2 Hz, the
 			// slowest thing here, over a duller and slower bed (1200 Hz, a 20 s
@@ -730,8 +730,8 @@ func defaultNoiseConfig() noiseConfig {
 			// nights when the answer is sleep.
 			{Name: "deep sleep (2 Hz)", Type: "brownnoise",
 				CenterHz: 1200, WidthHz: 499, WaveSpeed: 0.05, WaveDepth: 30,
-				GainDB: -10.4, Reverb: 19, FadeIn: 30,
-				Layers: []noiseLayer{{CarrierHz: 100, BeatHz: 2, Gain: -36}}},
+				GainDB: -2.77, Reverb: 19, FadeIn: 30,
+				Layers: []noiseLayer{{CarrierHz: 100, BeatHz: 2, Gain: -28.37}}},
 
 			// "gamma sharpen" is the daytime one, and the only rate here with
 			// strong replicated evidence (the 40 Hz auditory steady-state
@@ -742,7 +742,7 @@ func defaultNoiseConfig() noiseConfig {
 			// 6 Hz "train" only faster.
 			{Name: "sharp focus (40 Hz)", Type: "brownnoise",
 				CenterHz: 700, WidthHz: 400, WaveSpeed: 0.0625, WaveDepth: 30,
-				GainDB: -8.8, Reverb: 19, FadeIn: 5,
+				GainDB: -4.06, Reverb: 19, FadeIn: 5,
 				PulseHz: 40, PulseDepth: 12, PulseShape: "square"},
 
 			base("brown", "brownnoise", 0), // the reference: unchanged from the original
