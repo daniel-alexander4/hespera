@@ -423,8 +423,10 @@ type noiseWindow struct {
 	Preset string `json:"preset,omitempty"` // empty = the config default
 }
 
-// defaultNoiseConfig reproduces the shipped brownnoise command as the "brown"
-// preset. Every other colour reuses the same effect chain and differs only in
+// defaultNoiseConfig carries the shipped brownnoise command forward as the
+// "brown" preset — its band, reverb and rate unchanged, its swell depth since
+// walked from the original 37 to 50 by ear (see `base` below).
+// Every other colour reuses the same effect chain and differs only in
 // waveform and level: the original tuned that chain by ear for brown, and
 // inventing per-colour band centres nobody has listened to would be fabricating
 // a decision. They are starting points to tune, not recommendations.
@@ -438,8 +440,8 @@ type noiseWindow struct {
 //
 // Shipping those unadjusted would mean switching from brown to violet sounded
 // like the noise had stopped — a 20 dB drop. Each gain brings its colour up to
-// brown's measured level, leaving brown itself at 0 so the reference stays
-// byte-identical to the original command.
+// brown's measured level, leaving brown itself at 0 so brown stays the
+// reference every other number here is expressed against.
 //
 // Caveat worth knowing before trusting them: equal RMS is not equal LOUDNESS.
 // The ear is most sensitive around 2-4 kHz, so the high-frequency colours (blue,
@@ -447,11 +449,28 @@ type noiseWindow struct {
 // are a sane starting point, not a psychoacoustic match — trim by ear with the
 // gain knob, which is exactly what it is for.
 func defaultNoiseConfig() noiseConfig {
+	// ⚠️ SWELL DEPTH IS 50, NOT THE ORIGINAL SCRIPT'S 37 (Dan, 2026-08-10, by
+	// ear on brown): at 37 the swell dips to 63% of crest and reads as nearly
+	// flat; 50 halves it and the breathing is audible without the wave going
+	// away. It lives in `base` so all seven colours move together — the whole
+	// point of that helper is that the colours differ in waveform and level and
+	// in nothing else, so a per-colour swell would make switching colours a
+	// change of character.
+	//
+	// ⚠️ NOTHING RE-LEVELS FOR THIS, and that is measured, not assumed. Depth
+	// does not move the crest (peak flat ±0.4 dB from 37 through 95), and the
+	// family is matched on P95 of 0.4 s RMS — a near-crest statistic — so the
+	// six entrainment beds that moved with brown shifted ≤0.31 dB at P95, which
+	// is inside the run-to-run variance of noise (the four presets that did NOT
+	// change measured up to 0.36 dB apart across the same two runs). The family
+	// still sits within 0.5 dB of its reference; it is now tighter, not looser.
+	// What does fall is MEAN RMS, by ~0.55 dB — the trough is deeper and the
+	// crest is not, which is the whole point of the change.
 	base := func(name, typ string, gain float64) noisePreset {
 		return noisePreset{
 			Name: name, Type: typ,
 			CenterHz: 1786, WidthHz: 499,
-			WaveSpeed: 0.08, WaveDepth: 37,
+			WaveSpeed: 0.08, WaveDepth: 50,
 			Reverb: 19, GainDB: gain, FadeIn: 3,
 		}
 	}
@@ -631,7 +650,7 @@ func defaultNoiseConfig() noiseConfig {
 			// sine; the beat is made by the listener. On speakers the two carriers
 			// beat in the air instead — an audible wobble that entrains nothing.
 			{Name: "body asleep, mind awake (4+10 Hz)", Type: "brownnoise",
-				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 50,
 				Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
 					{CarrierHz: 100, BeatHz: 4, Gain: -30},
@@ -663,7 +682,7 @@ func defaultNoiseConfig() noiseConfig {
 			// it is the stronger stimulus and this is a headphones-on practice;
 			// the bed is pink at +2 (→ ~−32.5, evening level).
 			{Name: "sleep onset (10→4 Hz)", Type: "brownnoise",
-				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 50,
 				GainDB: 0.31, Reverb: 19, FadeIn: 20,
 				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -29.79}},
 				Phases: []noisePhase{
@@ -678,7 +697,7 @@ func defaultNoiseConfig() noiseConfig {
 			// most out-of-body accounts point, with the 10 Hz mind component
 			// unchanged so the comparison is one variable.
 			{Name: "deep hypnagogia (3.5+10 Hz)", Type: "brownnoise",
-				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 50,
 				Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
 					{CarrierHz: 100, BeatHz: 3.5, Gain: -30},
@@ -704,14 +723,14 @@ func defaultNoiseConfig() noiseConfig {
 			// since a monaural beat is physically in the air and reads far more
 			// prominent than a binaural one at equal level.
 			{Name: "body asleep, mind awake (4+10 Hz, monaural)", Type: "brownnoise",
-				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 50,
 				Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
 					{CarrierHz: 100, BeatHz: 4, Gain: -30, Monaural: true},
 					{CarrierHz: 250, BeatHz: 10, Gain: -33, Monaural: true},
 				}},
 			{Name: "deep hypnagogia (3.5+10 Hz, monaural)", Type: "brownnoise",
-				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 50,
 				Reverb: 19, FadeIn: 3,
 				Layers: []noiseLayer{
 					{CarrierHz: 100, BeatHz: 3.5, Gain: -30, Monaural: true},
@@ -723,7 +742,7 @@ func defaultNoiseConfig() noiseConfig {
 			// session. Its tones carry ~3 dB more gain than a binaural pair would
 			// because SoX's `mix` halves what it combines.
 			{Name: "relaxed alert (10 Hz)", Type: "brownnoise",
-				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 37,
+				CenterHz: 1786, WidthHz: 499, WaveSpeed: 0.08, WaveDepth: 50,
 				GainDB: 0.02, Reverb: 19, FadeIn: 8,
 				Layers: []noiseLayer{{CarrierHz: 200, BeatHz: 10, Gain: -28.08, Monaural: true}}},
 

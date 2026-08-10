@@ -23,9 +23,11 @@ var originalScriptArgs = []string{
 }
 
 // TestNoiseArgsMatchOriginalExceptIntendedChanges pins the port against the
-// script. Three differences are deliberate and everything else must match:
+// script. Four differences are deliberate and everything else must match:
 // the buffer becomes a whole number of swells (the loop-seam fix), the repeat
-// count is recomputed for that buffer, and a fade-in is appended.
+// count is recomputed for that buffer, a fade-in is appended, and the tremolo
+// depth is 50 rather than the script's 37 (Dan, 2026-08-10, by ear: at 37 the
+// swell only dips to 63% of crest and barely reads as one).
 func TestNoiseArgsMatchOriginalExceptIntendedChanges(t *testing.T) {
 	// By NAME, not by position: "brown" is the reference chain this test guards,
 	// and the shipped list is ordered for the phone (Dan put theta surf on top),
@@ -43,11 +45,20 @@ func TestNoiseArgsMatchOriginalExceptIntendedChanges(t *testing.T) {
 			t.Errorf("arg %d: got %q, original %q", i, got[i], originalScriptArgs[i])
 		}
 	}
-	// The waveform and the whole effect chain up to `repeat` must be identical.
+	// The waveform and the whole effect chain up to `repeat` must be identical
+	// EXCEPT the tremolo depth, which is checked on its own below — the band,
+	// the swell RATE and the reverb still cannot drift.
+	const depthArg = 15 // synth <len> brownnoise band -n <c> <w> tremolo <speed> <depth>
+	want := append([]string(nil), originalScriptArgs...)
+	want[depthArg] = "50"
 	gotChain := strings.Join(got[8:19], " ")
-	wantChain := strings.Join(originalScriptArgs[8:19], " ")
+	wantChain := strings.Join(want[8:19], " ")
 	if gotChain != wantChain {
 		t.Errorf("effect chain drifted:\n got %q\nwant %q", gotChain, wantChain)
+	}
+	if originalScriptArgs[depthArg] != "37" || got[depthArg] != "50" {
+		t.Errorf("swell depth: got %q, script %q — 50 is the deliberate change, not a drift",
+			got[depthArg], originalScriptArgs[depthArg])
 	}
 	// And the intended differences are present.
 	if got[7] == "01:00" {
@@ -886,6 +897,41 @@ func TestEntrainmentSubstrateIsBrown(t *testing.T) {
 		}
 		if p.Type != "brownnoise" {
 			t.Errorf("%q beds on %q — every entrainment substrate should be brown", p.Name, p.Type)
+		}
+	}
+}
+
+// TestBrownBedsShareBrownsSwell pins what "the brown preset is the bed" means
+// (Dan, 2026-08-10, on taking brown's swell from 37 to 50: "make all of the
+// browns being used as background for other noises the same"). A bed sitting in
+// brown's own band is brown, so it must breathe like brown — one of them left
+// behind at the old depth would be a background that reads differently under
+// otherwise identical beats.
+//
+// Deliberately keyed on the BAND: the beds that were tuned away from brown on
+// purpose — deep sleep at 1200 Hz, sharp focus at 700, the drowsy pair at 2250 —
+// carry their own swells and are none of this test's business.
+func TestBrownBedsShareBrownsSwell(t *testing.T) {
+	brown, err := mustFindDefault(t, "brown").normalize()
+	if err != nil {
+		t.Fatalf("normalize brown: %v", err)
+	}
+	for _, raw := range defaultNoiseConfig().Presets {
+		p, err := raw.normalize()
+		if err != nil {
+			t.Fatalf("normalize %q: %v", raw.Name, err)
+		}
+		switch p.Category {
+		case "pulse", "binaural", "monaural":
+		default:
+			continue
+		}
+		if p.Type != brown.Type || p.CenterHz != brown.CenterHz || p.WidthHz != brown.WidthHz {
+			continue // a bed deliberately tuned off brown's band
+		}
+		if p.WaveSpeed != brown.WaveSpeed || p.WaveDepth != brown.WaveDepth {
+			t.Errorf("%q beds on brown's band but swells %g Hz depth %g — brown is %g Hz depth %g",
+				p.Name, p.WaveSpeed, p.WaveDepth, brown.WaveSpeed, brown.WaveDepth)
 		}
 	}
 }
