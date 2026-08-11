@@ -399,23 +399,30 @@ a calibration target). The generator runs as a hidden `noise-events` verb, which
 what keeps `hesplay noise --print` paste-able: the printed pipeline is the one that
 plays.
 
-**The nature card.** Eight places, every gain solved by measuring each stage
-through its own chain rather than turned by ear: **rain** (a wide bright wash with
-500 fast drops a second), **downpour** (rain's sheet plus a low roar for the weight
-of it), **distant storm** (a duller sheet with 1.5-second thunder every eight
-seconds, heard across a valley at 25% reverb), **stream** (the one water preset
-whose events are dense — a continuous scatter of splashes over a low gurgle),
-**waterfall** (the only preset with no layers at all, because a waterfall has no
-events), **wind** (three bands swelling against each other at 7 and 3 seconds
-apart, because the gust *is* the offset), **campfire** (a low roar under a fast
-bright crackle and an occasional pop) and **cave** (the quietest, still air at the
-slowest swell here under two narrow drips at 40% reverb). They mix to −29 through
-−34 dBFS with at least 20 dB of peak headroom, so switching between them is not a
-volume change. Rain's first cut sounded to Dan like "pebbles being dropped on
-aluminum"; the obvious suspect — the band ringing — was measured and cleared, and
-the three real causes were all the drop itself: a 9 ms decay where rain is 1–3,
-uniform amplitudes so every drop was the same drop, and an instantaneous onset
-whose click no decay can hide.
+**The nature card, fitted to real recordings.** Eight places — **rain**,
+**downpour**, **distant storm**, **stream**, **waterfall**, **wind**,
+**campfire**, **cave** — and every number in them is fitted to field recordings
+of the weather they are named after rather than turned by ear. The references are
+34 openly-licensed recordings (Wikimedia Commons and archive.org, including radio
+aporee's field-recording map), two to seven per place, and the target is the
+per-band *median* across them, so one microphone's rolloff or one roof's
+resonance is outvoted and what gets copied is what the place has in common. Every
+candidate was rendered through the preset's own `hesplay noise --print` pipeline
+and measured — about 5,500 renders — so the chain's own quirks are inside the
+loop. Mean third-octave error against the recordings fell from **8.2 dB to
+2.5 dB**; the worst preset, the cave, went from 24.6 to 2.2 once the recordings
+showed that a cave's continuous tone is broad and bright rather than a low hum.
+No audio is redistributed: the recordings were analysed locally and the presets
+remain synthesis.
+
+The fit changes a few things you can hear. Rain's drops now sit *under* its
+sheet rather than over it, and there are far fewer of them, because real rain's
+drops are dense enough to *be* the sheet. The waterfall moved from brown noise to
+pink, since brown falls about 6 dB an octave and no filter can flatten that into
+the plateau three real falls agree on. Levels are matched on the P95 of
+short-time RMS, which is the honest yardstick for sound this transient — the
+card sits at −29 to −34 dBFS on that measure, so switching presets is still not a
+volume change.
 
 **A pulse, for a state rather than a place.** A preset can also carry an
 *entrainment pulse* — an amplitude modulation of the whole mix, fast enough to be

@@ -1172,20 +1172,30 @@ func TestRainPreset(t *testing.T) {
 	if p.WidthHz < 1000 {
 		t.Errorf("rain's bed should be wide, got %g Hz", p.WidthHz)
 	}
-	// Shallow and slow, because rain breathes rather than surges.
-	if p.WaveDepth > 25 {
-		t.Errorf("rain should not surge like surf, got depth %g", p.WaveDepth)
-	}
-	// Dan's verdict on the first cut was "pebbles being dropped on aluminum", and
-	// the fix was the drop, not the filter: many fast drops instead of few slow
-	// ones. A 9 ms decay is a woodblock; rain is 1-3 ms. Individual drops should
-	// not be countable, hence the rate.
+	// ⚠️ This test used to pin rain to Dan's ear — depth <= 25, >= 300 drops/s —
+	// after the first cut sounded like "pebbles being dropped on aluminum". Those
+	// bounds are GONE by his instruction (2026-08-11: "rain shouldn't be pinned by
+	// my ear. fix it so that it is as close to the real recording as possible"),
+	// and rain is now fitted to five field recordings instead. What replaces them
+	// is what those recordings actually say, which contradicts both old bounds:
+	//
+	// The drops sit UNDER the bed, not over it. Real rain's drops are dense
+	// enough to BE the sheet; only the nearest few resolve as arrivals, so a
+	// preset whose drop stage is louder than its bed is a preset that sounds like
+	// something hitting something.
 	d := p.Layers[0]
+	if d.Gain >= p.GainDB {
+		t.Errorf("rain's drops (%+g dB) should sit under its sheet (%+g dB) — real rain is a sheet with near drops on it, not a drum", d.Gain, p.GainDB)
+	}
+	// The one thing the ear pass and the measurement agree on: a drop is a splash,
+	// not a woodblock. This survived the refit (1.9 ms fitted, <= 4 ms before).
 	if d.DecayMs > 4 {
 		t.Errorf("a rain drop decays in 1-3 ms, got %g ms — that is a woodblock", d.DecayMs)
 	}
-	if d.EventsPerSec < 300 {
-		t.Errorf("rain at %g drops/s is countable, which reads as pebbles", d.EventsPerSec)
+	// And the drops are BRIGHT: the fit put them at 10.7 kHz, an octave and a half
+	// above where the hand-tuned version had them.
+	if d.CenterHz < 4000 {
+		t.Errorf("rain's resolvable drops are bright, got %g Hz", d.CenterHz)
 	}
 	if p.Category != "nature" {
 		t.Errorf("filed under %q", p.Category)

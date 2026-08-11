@@ -780,40 +780,70 @@ func defaultNoiseConfig() noiseConfig {
 			base("violet", "violetnoise", 20),
 			base("velvet", "velvetnoise", 0),
 			// "rain" is the first preset whose character is EVENTS rather than a
-			// swell, and the reason the event layer exists: a bright wide wash for
-			// the sheet of rain, with the near drops as a generated transient layer
-			// over it. Neither SoX nor ffmpeg can schedule those drops, which is why
-			// hesplay generates them itself (eventgen.go).
+			// swell, and the reason the event layer exists: a wash for the sheet of
+			// rain, with the near drops as a generated transient layer over it.
+			// Neither SoX nor ffmpeg can schedule those drops, which is why hesplay
+			// generates them itself (eventgen.go).
 			//
-			// Deliberately unlike the seas: a WIDE band (3000±4000 rather than
-			// 1786±499) because rain is broadband, and a shallow slow swell (20% at
-			// 0.05 Hz) because rain breathes rather than surges.
+			// ⚠️ EVERY NUMBER BELOW IS FITTED TO FIELD RECORDINGS, and rain is the
+			// preset where that changed the most (Dan, 2026-08-11: "rain shouldn't
+			// be pinned by my ear. fix it so that it is as close to the real
+			// recording as possible"). Five recordings of rain on streets, roofs and
+			// open ground say the same three things, and all three contradict the
+			// hand-tuned version this replaces:
 			//
-			// Levels solved from measurement, not chosen: the bed reads −25.31 dB at
-			// gain 0 through its chain and the drop stage −29, so −10.5 and −3.8 put
-			// the drops 3 dB over the bed and the pair at ~−31, the nature presets'
-			// level. Density does NOT affect level — 60, 120 and 250 drops/s all
-			// measure within 0.5 dB, because the generator scales each event by the
-			// expected overlap, so rate is a texture knob and nothing else.
-			// ⚠️ 500 drops a second at a 2 ms decay, not 120 at 9 ms. The first cut
-			// sounded to Dan like "pebbles being dropped on aluminum" — and the
-			// obvious suspect, the band ringing, was measured and CLEARED (band -n
-			// 3200 3500 rings 0.4 ms, the least of four filters tried). The three
-			// real causes were the drop itself: a 9 ms decay is a woodblock where
-			// rain is 1-3 ms; uniform amplitudes make every drop the same drop,
-			// which reads as a machine; and an instantaneous onset adds a click
-			// that no decay can hide. The generator now shapes all three (u^3
-			// amplitudes, log-normal decay jitter, a sub-ms attack), and the rate
-			// went up because individual drops should not be countable.
+			//   1. Rain is a SHEET, not a drum. The drops sit 15.5 dB under the bed
+			//      here, where they used to sit 9 dB over it. Real rain's drops are
+			//      so dense that they ARE the bed; what a microphone resolves as
+			//      separate arrivals is only the nearest handful.
+			//   2. Those resolvable drops are FEW and BRIGHT — 48/s in a 10.7 kHz
+			//      band, not 500/s at 3.2 kHz. The old rate was chasing a texture
+			//      the bed is now supplying.
+			//   3. Rain BREATHES, deeply and very slowly: 64% at 0.0076 Hz, one
+			//      swell every two minutes, against the old 20% at 0.05 Hz.
+			//
+			// Shape error against the reference profile: 3.89 dB → 1.08 dB, the
+			// closest fit on the card. The drop's short decay is the one thing the
+			// ear pass and the measurement agree on (1.9 ms here, ≤4 ms before) —
+			// "a 9 ms decay is a woodblock where rain is 1-3 ms" survived contact
+			// with the recordings.
 			{Name: "rain", Type: "pinknoise",
-				CenterHz: 3000, WidthHz: 4000, WaveSpeed: 0.05, WaveDepth: 20,
-				GainDB: -10.5, Reverb: 19, FadeIn: 4,
+				CenterHz: 2027.2, WidthHz: 9287.5, WaveSpeed: 0.007636, WaveDepth: 64.14,
+				GainDB: -5.5, Reverb: 19, FadeIn: 4,
 				Layers: []noiseLayer{
-					{EventsPerSec: 500, DecayMs: 2, CenterHz: 3200, WidthHz: 3500, Gain: -1.5},
+					{EventsPerSec: 47.89, DecayMs: 1.896, CenterHz: 10664, WidthHz: 2932.3, Gain: -15.54},
 				}},
 
 			// --- the rest of the nature card (Dan, 2026-08-09: "create the full
-			// suite of nature noises now") ---
+			// suite of nature noises now"; fitted to real recordings 2026-08-11,
+			// "go out and find actual sound recordings for each of the nature
+			// sounds and make the generated versions sound as much like them as
+			// possible by sound profile") ---
+			//
+			// ⚠️ THESE ARE FITTED NUMBERS. Each preset's band centres, widths,
+			// colours, gains, event rates, decays and swells were optimised against
+			// the measured profile of 34 field recordings — 2 to 7 per place, from
+			// Wikimedia Commons and archive.org (radio aporee's field-recording map
+			// plus CC0 sound-effect uploads). The target is the per-band MEDIAN
+			// across the recordings for a place, so one microphone's rolloff, one
+			// roof's resonance and one recorder's self-noise are outvoted and what
+			// is copied is what the sound has in common. No audio is redistributed:
+			// it was analysed locally and these presets remain synthesis.
+			//
+			// Every candidate was rendered through this file's OWN `--print` argv
+			// and measured, so `band -n` saturation, the gain-order rule and the
+			// mixer's `-v 1` were all inside the loop — about 5,500 renders. Mean
+			// weighted third-octave error across the card: 8.20 dB → 2.48 dB.
+			//
+			// What the fit is NOT allowed to decide, and why:
+			//   - Stage ROLES. Each stage is held inside the band its source could
+			//     occupy (a raindrop is 1.2-8 kHz, thunder is 40-250). Unheld, the
+			//     first run "fitted" rain by moving its drop layer to 150 Hz at
+			//     −25 dB — drops deleted, one wide band left. That matches the
+			//     reference spectrum and is not rain. A metric ranks what it is
+			//     shown; the roles are an input.
+			//   - Absolute level. The score ignores it (it removes the weighted
+			//     mean), so level is set afterwards, in one step — see below.
 			//
 			// Every gain below is solved, not chosen: each stage was measured at
 			// gain 0 through its own chain and the gain is the difference from a
@@ -837,89 +867,170 @@ func defaultNoiseConfig() noiseConfig {
 			//     cannot clip), which is why rain's and the stream's are negative.
 			//
 			// Reverb is per-preset, so it is also a place: 19% outdoors, 25% for a
-			// storm heard across a valley, 40% for a cave.
+			// storm heard across a valley, 40% for a cave. Reverb was NOT fitted —
+			// it is a statement about where the listener is standing, and the
+			// recordings each carry their own room rather than a shared one.
+			//
+			// ⚠️ LEVEL IS SET AFTER THE FIT AND ON P95, NOT MEAN RMS. One offset
+			// moves the body gain AND every layer gain together (a layered preset
+			// has no master level knob), targeting the P95 of 0.4 s short-time RMS
+			// the shipped card already sat at, −29 to −34 dBFS. Mean RMS is the
+			// wrong yardstick now: the fitted presets are far more transient-heavy
+			// than the ones they replace, because the recordings are — campfire's
+			// crest factor is 21 dB and cave's 18 against references at 34 and 33 —
+			// and levelling an impulsive sound by its average either buries it or
+			// clips it. (The measurement also corrected the docs: the shipped card
+			// never had "at least 20 dB of peak headroom"; its peaks run to −10.4
+			// dBFS. The property it really holds is the P95 spread.)
+			//
+			// ⚠️ Two presets needed a BED-ONLY lift on top, and it is a priced
+			// trade, not a free one. Once the events ARE the sound, an event stage's
+			// "never positive" gain rule pins the whole preset's level: campfire
+			// could be offset 0.00 dB and sat 10 dB under the card. Raising event
+			// DENSITY was measured as the alternative and is worse (x8 buys 3.75 dB
+			// and costs 5.66 dB of shape); raising the bed buys 10 dB for 2.6.
+			// So campfire's bed is +9.84 and distant storm's +12.42 above what the
+			// fit asked for, costing 1.53 → 4.15 dB and 1.34 → 2.76 dB of shape
+			// error respectively. Cave's +22.50 was nearly free (2.16 → 2.22).
+			// If the card's one-loudness rule is ever relaxed, those three lifts are
+			// the first thing to hand back.
 
-			// "wind" is three brown/pink bands at three offsets — the gust IS the
-			// offset. One stream with one swell reads as a fan; three swelling
-			// against each other (0.03 / 0.05 / 0.08 Hz, 7 s and 3 s apart) never
-			// repeats inside a minute. The whistle band on top is what makes it
-			// wind through something rather than air in a duct.
-			{Name: "wind", Type: "brownnoise",
-				CenterHz: 250, WidthHz: 200, WaveSpeed: 0.03, WaveDepth: 50,
-				GainDB: -14.7, Reverb: 19, FadeIn: 6,
+			// "wind" is three bands at three offsets — the gust IS the offset. One
+			// stream with one swell reads as a fan; three swelling against each
+			// other never repeats inside a minute.
+			//
+			// Fitted: 6.59 dB → 3.15. ⚠️ Wind's references disagree with each other
+			// more than any other place's — up to 21 dB between recordings in the
+			// 250-4000 Hz range, because "wind" covers a gale on a bare hill and a
+			// breeze through grass. The fit is weighted by that disagreement, so it
+			// follows the low end where seven recordings agree and takes the median
+			// where they do not. Hence a bed on WHITE noise banded low (214±2000)
+			// rather than brown: the colour supplies the top the band then cuts,
+			// which is the shape wind noise actually has.
+			{Name: "wind", Type: "whitenoise",
+				CenterHz: 214, WidthHz: 2000, WaveSpeed: 0.06314, WaveDepth: 11.46,
+				GainDB: -24.65, Reverb: 19, FadeIn: 6,
 				Layers: []noiseLayer{
-					{Type: "brownnoise", CenterHz: 800, WidthHz: 500, Speed: 0.05, Depth: 60, Gain: -14.1, Offset: 7},
-					{Type: "pinknoise", CenterHz: 2500, WidthHz: 1500, Speed: 0.08, Depth: 70, Gain: -5.5, Offset: 3},
+					{Type: "brownnoise", CenterHz: 550.6, WidthHz: 557, Speed: 0.07987, Depth: 93, Gain: -12.48, Offset: 7},
+					{Type: "pinknoise", CenterHz: 9000, WidthHz: 5109.8, Speed: 0.00863, Depth: 50.47, Gain: -18.98, Offset: 3},
 				}},
 
 			// "stream" is the one water preset whose events are DENSE: a brook is a
 			// continuous scatter of small splashes, not a bed with drops on it. The
-			// low 35 ms gurgle layer is the water moving around a rock; without it
-			// the splashes alone sound like static.
+			// low gurgle layer is the water moving around a rock; without it the
+			// splashes alone sound like static.
+			//
+			// Fitted: 3.29 dB → 2.12, against three brooks and a snowmelt channel.
+			// The fit moved the gurgle UP (500 → 1094 Hz) and stretched it from 35
+			// to 118 ms: a real brook's low component is longer and less thuddy than
+			// the hand-tuned one, and the splashes came down from 200/s to 73/s for
+			// the same reason rain's drops did — much of what sounded like separate
+			// splashes belongs in the bed.
 			{Name: "stream", Type: "pinknoise",
-				CenterHz: 1200, WidthHz: 1000, WaveSpeed: 0.07, WaveDepth: 25,
-				GainDB: -7.1, Reverb: 19, FadeIn: 4,
+				CenterHz: 558.2, WidthHz: 3731.6, WaveSpeed: 0.00736, WaveDepth: 95,
+				GainDB: -10.68, Reverb: 19, FadeIn: 4,
 				Layers: []noiseLayer{
-					{EventsPerSec: 200, DecayMs: 4, CenterHz: 4000, WidthHz: 3000, Gain: -3.2},
-					{EventsPerSec: 40, DecayMs: 35, CenterHz: 500, WidthHz: 350, Gain: -5.1},
+					{EventsPerSec: 72.61, DecayMs: 5.524, CenterHz: 1862.4, WidthHz: 5713.3, Gain: -0.93},
+					{EventsPerSec: 12.66, DecayMs: 117.8, CenterHz: 1093.5, WidthHz: 618.9, Gain: -4.08},
 				}},
 
-			// "campfire" is rule 1 at its most extreme: the crackles measure 11 dB
+			// "campfire" is rule 1 at its most extreme: the crackles measure well
 			// BELOW the roar and are the loudest thing in the room, because they are
 			// transients and it is not. Two event layers because a fire makes two
 			// sounds — a fast bright crackle and an occasional low pop.
+			//
+			// Fitted against six fires: 6.87 dB → 4.15. ⚠️ It would be 1.53 without
+			// the bed lift the card's one-loudness rule required (see above) —
+			// campfire is the preset that pays most for that rule, and if the rule
+			// is ever relaxed this is the first bed to hand back 9.84 dB. The
+			// crackle got much shorter and much wider (1.2 ms across 10 kHz, from
+			// 4 ms across 2 kHz): a real crackle is a click, not a tick.
 			{Name: "campfire", Type: "brownnoise",
-				CenterHz: 300, WidthHz: 250, WaveSpeed: 0.06, WaveDepth: 35,
-				GainDB: -14.2, Reverb: 19, FadeIn: 4,
+				CenterHz: 562.1, WidthHz: 1515.8, WaveSpeed: 0.00958, WaveDepth: 58.03,
+				GainDB: -16.36, Reverb: 19, FadeIn: 4,
 				Layers: []noiseLayer{
-					{EventsPerSec: 9, DecayMs: 4, CenterHz: 2500, WidthHz: 2000},
-					{EventsPerSec: 1.2, DecayMs: 25, CenterHz: 700, WidthHz: 500},
+					{EventsPerSec: 11.27, DecayMs: 1.165, CenterHz: 2061, WidthHz: 9996.5},
+					{EventsPerSec: 1.1, DecayMs: 27.06, CenterHz: 440.6, WidthHz: 305, Gain: -7.77},
 				}},
 
-			// "distant storm" is rain heard from inside: the sheet is duller and
-			// further off than the rain preset's, and thunder is a 1.5 s event every
-			// eight seconds in an 80 Hz band. Reverb 25 is the valley.
-			{Name: "distant storm", Type: "pinknoise",
-				CenterHz: 1500, WidthHz: 1500, WaveSpeed: 0.02, WaveDepth: 40,
-				GainDB: -8.8, Reverb: 25, FadeIn: 6,
+			// "distant storm" is rain heard from inside, with thunder across the
+			// valley — reverb 25 is that valley.
+			//
+			// Fitted against five thunderstorms recorded from shelter: 6.56 dB →
+			// 2.76. The recordings pushed it a long way from the hand-tuned version:
+			// thunder is now shorter and far more frequent (400 ms every 3 s, from
+			// 1.5 s every 8 s) and sits at 130 Hz rather than 80, which together
+			// read as continuous rumble rather than punctuation. ⚠️ Worth knowing
+			// where that came from: the references are storms heard from shelter,
+			// which is CLOSER than "distant" implies. If it reads as too busy, the
+			// fix is a distant-thunder reference set, not a knob.
+			// The rain-event stage sits 32 dB down and looks vestigial; it is not —
+			// removing it costs 2.19 dB of shape error (measured).
+			{Name: "distant storm", Type: "brownnoise",
+				CenterHz: 3000, WidthHz: 2305.1, WaveSpeed: 0.03385, WaveDepth: 36.24,
+				GainDB: -15.34, Reverb: 25, FadeIn: 6,
 				Layers: []noiseLayer{
-					{EventsPerSec: 400, DecayMs: 2, CenterHz: 3200, WidthHz: 3500},
-					{EventsPerSec: 0.12, DecayMs: 1500, CenterHz: 80, WidthHz: 60},
+					{EventsPerSec: 81.22, DecayMs: 30, CenterHz: 2371.3, WidthHz: 5684.3, Gain: -31.88},
+					{EventsPerSec: 0.3438, DecayMs: 400, CenterHz: 130.3, WidthHz: 43.1, Gain: -0.11},
 				}},
 
 			// "cave" is the quiet one, and deliberately so: still air that barely
-			// moves (0.015 Hz, the slowest swell here) under two narrow drips at
-			// 40% reverb. Narrow bands and long decays are what make a drip a drip
-			// rather than a tick — 120 Hz wide against rain's 3500.
-			{Name: "cave", Type: "brownnoise",
-				CenterHz: 200, WidthHz: 150, WaveSpeed: 0.015, WaveDepth: 30,
-				GainDB: -14.8, Reverb: 40, FadeIn: 4,
+			// moves under drips at 40% reverb.
+			//
+			// ⚠️ The biggest correction on the card: 24.55 dB → 2.22, and the one
+			// that showed the method's worth, because nothing about the old preset
+			// looked wrong. Both references (dripping water in a cave, 140 MB and
+			// 5 MB of it) say a cave's continuous tone is BROAD and rises to a peak
+			// around 6-8 kHz — still air, distant water, the room itself — where the
+			// preset had a dominant 200 Hz brown hum. A dark bed at any gain cannot
+			// go there, which is why the bed is now white across the full span and
+			// the drips are bright (5.6 kHz) rather than 1.2/2.4 kHz. The drips are
+			// also faster than they were, because the recordings are: a dripping
+			// cave drips.
+			{Name: "cave", Type: "whitenoise",
+				CenterHz: 147.9, WidthHz: 20000, WaveSpeed: 0.005, WaveDepth: 5,
+				GainDB: -14.31, Reverb: 40, FadeIn: 4,
 				Layers: []noiseLayer{
-					{EventsPerSec: 0.6, DecayMs: 60, CenterHz: 1200, WidthHz: 120},
-					{EventsPerSec: 0.25, DecayMs: 90, CenterHz: 2400, WidthHz: 200},
+					{EventsPerSec: 4, DecayMs: 29.87, CenterHz: 5583.4, WidthHz: 1828.5, Gain: -17.09},
+					{EventsPerSec: 0.08711, DecayMs: 48.14, CenterHz: 2105.1, WidthHz: 2000},
 				}},
 
 			// "waterfall" is the one preset with no layers at all, because a
 			// waterfall has no events: it is one unvarying mass of water. A shallow
-			// fast swell (0.09 Hz, 15%) is the only motion — enough that it is not
-			// a static hiss, not enough to read as surf.
+			// slow swell is the only motion — enough that it is not a static hiss,
+			// not enough to read as surf.
 			// ⚠️ The one nature preset that must NAME its card. deriveCategory files
 			// by mechanism, and a single swelling band with no layers is
 			// indistinguishable from the plain colours — so without this the
 			// waterfall lands on the noise card.
-			{Name: "waterfall", Category: "nature", Type: "brownnoise",
-				CenterHz: 600, WidthHz: 2500, WaveSpeed: 0.09, WaveDepth: 15,
-				GainDB: -16.1, Reverb: 19, FadeIn: 4},
+			//
+			// Fitted against three falls: 10.40 dB → 2.41, the second-largest
+			// correction here, and it is entirely a COLOUR fix. Three recordings
+			// agree on a broad plateau from 315 Hz to 3 kHz, and brown noise falls
+			// ~6 dB an octave — a slope no band centre or width can flatten, which
+			// is why the fit stalled at 8.02 until the colour sweep tried pink
+			// (flat per third-octave) and dropped it to 4.04 in one step. The whole
+			// reason the sweep exists.
+			{Name: "waterfall", Category: "nature", Type: "pinknoise",
+				CenterHz: 378.4, WidthHz: 8124.8, WaveSpeed: 0.006594, WaveDepth: 23.97,
+				GainDB: -5.49, Reverb: 19, FadeIn: 4},
 
 			// "downpour" is the loud end of the card: rain's sheet plus a low roar
-			// layer for the weight of it and nearly twice rain's drop density. The
+			// layer for the weight of it and several times rain's drop density. The
 			// roar is what separates a downpour from rain turned up.
-			{Name: "downpour", Type: "pinknoise",
-				CenterHz: 2500, WidthHz: 3000, WaveSpeed: 0.06, WaveDepth: 15,
-				GainDB: -8.9, Reverb: 19, FadeIn: 4,
+			//
+			// Fitted: 3.44 dB → 1.97. ⚠️ Its reference set needed a codec screen
+			// before it was usable — `Heavy_rain_in_Glenshaw,_PA.ogg` falls 36 dB at
+			// 5 kHz, so above that it is a recording of a bitrate rather than of
+			// rain, and fitting to it darkened the preset permanently. It was the
+			// only such cliff inside the fit span across all 34 references, and
+			// dropping it moved the fit from 4.46 to 2.74 before levelling.
+			{Name: "downpour", Type: "whitenoise",
+				CenterHz: 888, WidthHz: 1428.8, WaveSpeed: 0.02491, WaveDepth: 88.96,
+				GainDB: -8.85, Reverb: 19, FadeIn: 4,
 				Layers: []noiseLayer{
-					{Type: "brownnoise", CenterHz: 400, WidthHz: 350, Speed: 0.04, Depth: 25, Gain: -17.2, Offset: 5},
-					{EventsPerSec: 900, DecayMs: 2, CenterHz: 3500, WidthHz: 3500, Gain: -1.5},
+					{Type: "brownnoise", CenterHz: 474.5, WidthHz: 162.4, Speed: 0.01535, Depth: 18, Gain: -20.53, Offset: 5},
+					{EventsPerSec: 375, DecayMs: 5.442, CenterHz: 1912.6, WidthHz: 6359.2, Gain: -0.22},
 				}},
 
 			// The ocean pair. "ocean brown" chains a 50s deep swell under the
