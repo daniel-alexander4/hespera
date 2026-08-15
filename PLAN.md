@@ -10,7 +10,12 @@ This plan is scaffolding. It retires into `CLAUDE.md` + ADRs once built
 (STANDARDS §15.6); until then, amendments accumulate here.
 
 **Dateline.** Seeded 2026-08-15 from the Roku hand-off brief + a code and
-external-reality recon (D1–D14, build order P00–P06).
+external-reality recon (D1–D14, build order P00–P06); grilled + deepdived 2026-08-15
+(now D1–D16, build order P00–P07, P03 being the channel skeleton)
+against Roku's own docs and this repo's actual lines — three external claims
+cracked (D7, D14, and D6's scope), L1 re-graded on measured Pi 5 numbers, D15
+added as a measurement gate, and a `/deepdive` of `playback.Decide` turned the
+new streaming arm's blast radius into a nine-item checklist (P02).
 
 ---
 
@@ -53,7 +58,8 @@ The work therefore splits in two, and the second half is smaller than it looks:
   bulk of the hours and none of it is portable from `web/`.
 
 **Honest estimate.** Server-side JSON + profile work: ~1 phase (P01), the
-smaller half. The channel itself: 4 phases (P02–P06), because every screen is
+smaller half, plus a conditional streaming-arm phase (P02) whose necessity one
+measurement decides. The channel itself: 4 phases (P04–P07), because every screen is
 new code in a language nothing else in the tree uses. Nothing here is
 infeasible, and nothing needs a capability Roku lacks — *for the six verticals
 in scope*. Books are the exception and are cut (D11).
@@ -62,13 +68,20 @@ in scope*. Books are the exception and are cut (D11).
 
 ## Repo laws (the invariants this work may not break)
 
-- **L1 — Direct play or say so.** The target is a 1080p Roku TV served by the
-  Pi 5 (`hespera`, 192.168.1.189), which cannot sustain concurrent transcodes.
-  The channel must never *silently* trigger one. Roku's decode set is wider than
-  Chrome's — MKV/MP4/MOV, H.264/HEVC/AV1, AAC/MP3/FLAC/ALAC + AC3/E-AC3/DTS
-  passthrough — so the correct posture is to exploit that and surface the
-  decision when it can't be met. A transcode is a visible outcome, never a
-  default.
+- **L1 — The Roku is the second concurrent stream, by construction.**
+  ~~Direct play or say so… the Pi 5 cannot sustain concurrent transcodes.~~
+  **(grill pin: re-graded on measured numbers, 2026-08-15)** The original law
+  was over-graded. Measured (project memory, `pi-replaces-plex`): the Pi 5 has
+  **no hardware encoder at all**; one transcode is fine, **two concurrent HEVC
+  transcodes ≈ 90% duty cycle**, three falls behind. The sharp fact is not that
+  transcoding is forbidden — it is that the Pi 5 *already drives its own TV
+  window*, so a Roku session is the second stream whenever both are watching.
+  The law is therefore: **the channel must never silently add a transcode**, and
+  the direct-play fraction is a measured exit criterion (D15), not an aspiration.
+  Roku's decode set is wider than Chrome's — MKV/MP4/MOV, H.264/HEVC/AV1,
+  AAC/MP3/FLAC/ALAC + AC3/E-AC3/DTS passthrough — so exploiting it can *reduce*
+  the Pi's transcode load below what its own Chromium window costs today (614
+  HEVC files always transcode for that browser and may direct-play on a Roku).
 - **L2 — The TV is a viewer, not an administrator.** The channel gets read
   access plus playback-progress writes. No scan, no match approval, no library
   delete, no settings, no `/poweroff` (already loopback-gated), no tag editing.
@@ -119,13 +132,16 @@ to a conservative static `roku` row when absent. The static row is the floor,
 not the answer.
 *Provenance:* [roDeviceInfo](https://developer.roku.com/docs/references/brightscript/components/rodeviceinfo.md).
 
-### D5 — Direct-play-or-nothing is the design constraint *(settled 2026-08-15, Dan: 1080p Roku TV + Pi 5 server)*
-See **L1**. Consequence: the codec/container matrix work in P01 is not an
-optimization pass, it is the feature. The measured precedent is in this repo —
-copying video instead of transcoding it was 74.9 → 2.4 CPU-s per minute of
-1080p (31×, `CLAUDE.md` §TV Streaming).
+### D5 — Maximising direct play is the feature, not an optimization *(settled 2026-08-15, Dan: 1080p Roku TV + Pi 5 server; amended by the grill)*
+See **L1**. The codec/container matrix work in P01 is the point of the project.
+The measured precedent is in this repo — copying video instead of transcoding it
+was 74.9 → 2.4 CPU-s per minute of 1080p (31×, `CLAUDE.md` §TV Streaming).
+**(grill pin, 2026-08-15)** Measured against a real library (danlap's dev DB,
+136 files, read-only probe): every file is mkv or mp4, 40% is HEVC, 26% carries
+AC-3/E-AC-3. Depending on two device bits alone, the direct-play fraction spans
+**51%–100%**. That range is the project's economics and D15 collapses it.
 
-### D6 — Transport by decision: direct play, HLS, and *no* progressive remux *(settled 2026-08-15, auto-adopted, flagged for Stage 3)*
+### D6 — Transport by decision: direct play, HLS, and *no* progressive remux *(settled 2026-08-15; seam resolved into P02 by the grill)*
 - **Direct play** → `/stream/tv/{id}` etc. `http.ServeContent` gives byte ranges,
   so Roku seeks natively. This is the intended path for most of the library.
 - **Transcode** → HLS. Hespera's segment-on-demand VOD playlist is already
@@ -135,16 +151,38 @@ copying video instead of transcoding it was 74.9 → 2.4 CPU-s per minute of
   the `moov` duration patch, and which deliberately `panic(http.ErrAbortHandler)`s
   on failure to defeat a Chrome-specific lie. None of that helps a Roku, and an
   unseekable stream on a TV remote is a defect.
-- **Open seam for Stage 3:** a file whose codecs are fine but whose container
-  Roku won't take (`.avi`, raw `.ts`) currently has no cheap arm — remux is
-  disabled and transcode violates L1. The candidate answer is an HLS variant
-  that stream-*copies* into segments. Not yet designed.
+- ~~**Open seam for Stage 3:** a file whose codecs are fine but whose container
+  Roku won't take (`.avi`, raw `.ts`) has no cheap arm. The candidate answer is
+  an HLS variant that stream-*copies* into segments. Not yet designed.~~
+  **(grill pin: the seam is much larger than "odd containers", 2026-08-15)**
+  The population isn't rare containers — it is **any file whose audio the device
+  cannot decode**, which is 26% of the measured library. And the arm is
+  structurally blocked in a way the first pass missed: **`video.VODPlaylist`
+  (`ffmpeg.go:415`) synthesises uniform `EXTINF`s**, which is only valid because
+  every segment is independently re-encoded with a forced keyframe at its first
+  frame. `-c:v copy` cannot force a keyframe, so segment boundaries must fall on
+  the source's own keyframes and the playlist must carry their real durations.
+  A copy arm therefore needs either a keyframe index or a one-pass
+  ffmpeg-written playlist — it cannot reuse the synthetic one.
+  **One consolation, from the muxer:** AC-3/E-AC-3 are excluded from
+  `fmp4CopyableAudio` (`playback.go:187`) for a *fragmented-MP4* reason, not a
+  client one — and Hespera's HLS segments are already MPEG-TS (`seg%05d.ts`),
+  which carries AC-3 natively. So a TS-based copy arm can copy h264+AC-3 with no
+  re-encode at all, provided the device decodes it. This is promoted to its own
+  conditional phase (**P02**) with the deepdive's checklist as its acceptance
+  criteria, and it is a genuine improvement for Chrome too: that same h264+AC-3
+  shape takes the unseekable progressive remux today.
 
-### D7 — Subtitles are sidecar VTT; burn-in is a last resort *(settled 2026-08-15, auto-adopted)*
-Roku takes a subtitle URL in content metadata and supports WebVTT/SRT/TTML, and
-Hespera already extracts VTT sidecars (`/stream/tv-subtitles/`, overlap-clamped
-by `clampVTTOverlaps`). Bitmap subs (PGS/DVD/DVB) force burn-in, which is a
-transcode — under **L1** that is surfaced as a choice, never taken silently.
+### D7 — Subtitles are sidecar **SRT**; burn-in is a last resort *(settled 2026-08-15; corrected by the grill)*
+~~Roku supports WebVTT/SRT/TTML and Hespera already extracts VTT sidecars.~~
+**(grill correction, 2026-08-15 — this was wrong)** Roku's *sideloaded* caption
+formats are **srt, ttml and dfxp — WebVTT is not among them**. Hespera emits
+WebVTT everywhere (`extractVTT`, the OpenSubtitles cache, `/stream/tv-subtitles/`),
+so the Roku path needs an **SRT sidecar twin** carrying the same overlap clamp
+(`clampVTTOverlaps`) — two cues active at once is a defect in either format, and
+the clamp is the only thing preventing it. Same ffmpeg call, different `-f`.
+Bitmap subs (PGS/DVD/DVB) still force burn-in, which is a transcode — under
+**L1** that is surfaced as a choice, never taken silently.
 
 ### D8 — Network posture is unchanged *(settled 2026-08-15, auto-adopted: no new exposure)*
 The Roku reaches Hespera over the LAN, which means `HESPERA_LISTEN=:8080` — the
@@ -185,22 +223,72 @@ port 8085. **L5** keeps the later options open, and they are not hypothetical:
 Jellyfin ships a *public* Roku channel that talks plain HTTP to a LAN server, so
 the store path is not foreclosed by this design.
 
-### D13 — Music leveling cannot be reproduced on the device *(open — resolve in Stage 3)*
+### D13 — Music plays unleveled on the TV *(settled 2026-08-15 by the grill — was open)*
 Hespera's one automatic music behaviour is a client-side `GainNode` applying
 per-track `gainDb` (`player.js`), and the EQ is ten biquads in the same graph.
-BrightScript exposes no equivalent per-stream gain. Candidate resolutions:
-(a) music plays unleveled on the TV and the plan says so; (b) the server applies
-gain, which means re-encoding and collides with **L1**; (c) leveling is dropped
-for Roku and the loudness data is surfaced some other way. **Not settled** —
-this is a real fidelity regression against the web player and it needs the Stage
-3 audio round. Verify the BrightScript audio API before choosing.
+**Verified:** BrightScript exposes no per-stream gain for playback — volume is
+device-level and deliberately not app-controllable; `roAudioResource`'s 0–100
+volume is for sound effects, not the `Video`/`Audio` playback path. Of the three
+candidates, **(a) unleveled-and-documented wins**: (b) means re-encoding every
+music stream to apply a gain, which also destroys byte-range seeking, and (c)
+"surface it some other way" is not a fix. The files are untouched either way —
+this is a playback-time convenience the device cannot offer.
+**This is a real, permanent fidelity regression against the web player**, logged
+to `pending.md` because a future Roku OS audio API would change the answer.
 
-### D14 — Trickplay sprites do not transfer *(settled 2026-08-15, auto-adopted)*
-Hespera's scrubber preview is a JPEG sprite sheet positioned by CSS
-`background-position` — a browser mechanism. Roku's trick mode is driven by
-HLS/DASH I-frame playlists instead. For P03 the channel ships Roku's native
-trick mode on the HLS path and a timestamp-only scrubber on direct play; the
-sprite cache is untouched and unused by the TV.
+### D14 — Trickplay transfers, repackaged as BIF *(settled 2026-08-15; corrected by the grill)*
+~~Trickplay sprites do not transfer; Roku's trick mode is driven by HLS/DASH
+I-frame playlists, so the TV gets a timestamp-only scrubber on direct play.~~
+**(grill correction, 2026-08-15 — this was wrong)** Roku's trick-mode mechanism
+is a **BIF file** (Base Index Frames) attached via `Content.SDBifUrl` /
+`HDBifUrl` / `FHDBifUrl`. A BIF is a documented, trivial binary container: a
+magic number, version, frame count, timestamp multiplier, an index of
+(timestamp, offset) pairs, then concatenated **JPEGs** — all little-endian, and
+writable from Go with `encoding/binary` alone.
+
+Hespera's `video.GenerateTrickplay` already extracts exactly that: keyframe-only
+JPEGs at `fps=1/10`, 240px wide. Roku wants 320px (HD) JPEGs at a fixed
+interval. **So the extraction is already done and only the packaging differs** —
+a BIF writer over the existing keyframe pass, not a new pipeline. The sprite
+sheets stay for the browser; the TV gets BIFs from the same frames.
+
+### D15 — Measure the device before building against it *(settled 2026-08-15 by the grill)*
+The whole project's economics turn on **two bits**: does this specific 1080p
+Roku decode **HEVC**, and does it decode **E-AC-3**? Across the measured library
+those two answers move the direct-play fraction between **51% and 100%** — the
+difference between "the Roku unloads the Pi" and "the Roku doubles its transcode
+work while the Pi is already driving its own TV" (**L1**).
+
+This is not a design question, it is one HTTP GET
+(`http://<roku-ip>:8060/query/device-info`, Roku's keyless ECP endpoint),
+confirmed in-channel later by `roDeviceInfo.CanDecodeVideo()`/`CanDecodeAudio()`
+(**D4**). It runs as **P01.S00, before any other work**, and its result is
+recorded here as a dated pin. A plan whose payoff is unknown by a factor of two,
+when the measurement is free, is a plan that has not been costed.
+
+**The census must run against the library that will actually be served** — the
+Pi 5's (~3,657 files, including ~185 DivX-era files that the dev set contains
+none of), not the dev DB the range above came from. Running it on the wrong host
+would retire a seam the real library still populates.
+
+### D16 — DLNA/UPnP considered and declined *(settled 2026-08-15 by the grill)*
+Re-opened as the "zero BrightScript" alternative: serve DLNA and let Roku Media
+Player — already installed on every Roku — browse it. **Declined on
+correctness**: it delivers a folder tree, not Hespera. No posters, no resume, no
+Continue Watching, no watched state, no skip-intro — i.e. none of the product.
+Recorded here rather than forgotten, because it is the honest **fallback** if
+D15's measurement kills the channel: it would still put the library on the TV.
+
+---
+
+## Prerequisites (owner-side, before P01 closes)
+
+1. **Upgrade the Pi 5.** `hespera` (192.168.1.189) is on **0.39.11** — six
+   minors behind — and it is the server this targets. Nothing here is testable
+   against it until it is upgraded.
+2. **Enable Developer Mode on the Roku** and record its IP; the deploy
+   credentials go in `.env`, which `.gitignore` already covers (`.gitignore:21`,
+   verified — no new ignore rule needed).
 
 ---
 
@@ -218,11 +306,20 @@ all six verticals, a capability-negotiated Roku profile, and LAN discovery —
 verifiable end to end with `curl` alone, before a single line of BrightScript.
 
 Exit criteria:
+- The device census (P01.S00) is recorded as a dated pin on **D15**, run against
+  the Pi 5's library — the direct-play fraction is a number, not a range.
 - Every in-scope vertical can be browsed to a playable id over JSON.
 - A `client=roku` session returns direct play for the library's dominant shapes,
   and its decision is reproducible from the stored probe.
 - DTO guard test passes; no browse JSON reads a template view model.
 - Discovery answers on the LAN and the manual path works without it.
+
+#### P01.S00 — Measure the device and the library *(no product code)*
+Scope: query the real Roku (`:8060/query/device-info`), run the read-only
+codec census against the Pi 5's DB, and pin both to D15. Refs: D15, L1.
+Acceptance: HEVC and E-AC-3 answered yes/no for the actual device; the
+direct-play / audio-only-re-encode / full-transcode split stated as three counts
+over the real library; **P02's conditionality resolved by those numbers.**
 
 #### P01.S01 — `roku` profile + capability negotiation
 Scope: static conservative `roku` row in `internal/playback/profiles.go` plus a
@@ -252,11 +349,81 @@ Scope: UDP probe/answer carrying base URL + version, kill-switchable, plus the
 `/healthz` identity the client already needs. Refs: D9, L5.
 
 #### P01.S07 — Session hardening for a TV client
-Scope: the D6 seam — decide and implement the answer for compatible-codec /
-incompatible-container files; confirm subtitle sidecar URLs, `stream_start_seconds`
-and skip segments read correctly for a non-browser consumer. Refs: D6, D7.
+Scope: the SRT sidecar twin (D7) and the BIF writer over the existing keyframe
+pass (D14); confirm `stream_start_seconds`, skip segments and chapter marks read
+correctly for a non-browser consumer. Refs: D7, D14.
+*(The D6 seam itself is P02, not here — it is a streaming arm, not session work.)*
 
-### P02 — The channel skeleton and the install pipeline
+### P02 — The copy-video streaming arm *(CONDITIONAL — built only if P01.S00 says it is needed)*
+⚠️ **This is not new work — it is an already-deferred item whose gate this
+project may trip.** `deferred.md` → *"Keyframe-aligned copy-HLS (make the copy
+paths freely seekable)"*, analysed 2026-07-13. Its stated gate is *"the
+progressive `?start=`-reload seek becomes a real complaint"*; a Roku that cannot
+decode part of the library is a **different** trigger for the same work. **Do
+not build it from this plan without checking that item first** — per the
+standing lesson that "on the list" ≠ "needed now", the trigger question goes to
+Dan before any code.
+
+That entry carries two findings sharper than this plan's own, both of which are
+acceptance criteria here:
+- **`-ss` + `-c:v copy` preserves pre-roll back to the previous keyframe**, so a
+  segment cut at a fixed `index*6` boundary starts *before* its predecessor
+  ended → DTS goes backward across the MSE append → precisely the
+  `Parsed buffers not in DTS sequence` failure that `-bf 0` and
+  `-avoid_negative_ts disabled` already exist to prevent. The current
+  per-segment builder cannot be adapted; it must be replaced for this arm.
+- **`-vf` + `-c:v copy` is a hard ffmpeg error**, so the 1080p downscale *and*
+  the `-fps_mode cfr` that underwrites the uniform manifest both have to go.
+
+Goal: a seekable stream that copies the video and touches only what must be
+touched — the arm between "direct play" and "full transcode". Skipped entirely
+if the device decodes everything the library holds; that is the point of running
+P01.S00 first.
+
+Exit criteria: a copied-video HLS stream plays and seeks on the real device; the
+existing transcode path is byte-identical to before; the nine checklist items
+below are all discharged.
+
+**Acceptance criteria — the `/deepdive` modification checklist** (subject:
+`playback.Decide` and the streaming-arm surface; traced 2026-08-15, every call
+site read):
+1. Add `RemuxProtocol Protocol` to `ClientProfile` and **set it explicitly on
+   all three web profiles** — `Protocol`'s zero value is `""`, not
+   `ProtocolFile`. Consult it at `playback.go:161` **and** `:109` (the
+   forced-mode arm), which both hardcode `ProtocolFile` today.
+2. Make all three URL builders protocol-aware — `streamURL`
+   (`handlers_stream_tv.go:257`), `movieStreamURL` (`:163`), `photoStreamURL`
+   (`:186`) — all three dispatch on `Decision` alone. **Add tests for the movie
+   and photo builders: they have none** (the TV one is pinned at
+   `handlers_stream_tv_test.go:540`, so TV fails loudly and the other two fail
+   silently).
+3. Split `fmp4CopyableAudio` (`playback.go:187`) into a container-aware pair:
+   MPEG-TS carries AC-3/E-AC-3, fragmented MP4 cannot. `RemuxAudioNeedsTranscode`
+   currently conflates "the client can't decode it" with "the muxer can't carry
+   it" and would force AAC for no reason on a TS arm.
+4. Add an arm discriminator to `hlsKey` (`ffmpeg.go:620`) or bump
+   `segEncodeVersion` — the key is `src|mtime|size|maxHeight|aud|encoder|v5`
+   with **no arm field**, and TV, movie and photo all share one cache root
+   (`h.tvHLSCacheRoot()`). Copy-segments and transcode-segments for the same
+   file would collide, and mixing them at a boundary re-introduces exactly the
+   DTS discontinuity `segEncodeVersion` exists to prevent.
+5. Replace `VODPlaylist` for this arm with real keyframe-aligned `EXTINF`s.
+6. Gate `isRemux` on protocol in all three clones (`tv:250`, `movie:156`,
+   `photo:179`) so `StreamStart` is 0 for a segmented arm — a segmented stream
+   is not rebased, and reporting a keyframe landing for it shifts every subtitle
+   cue on resume, silently.
+7. Teach `Profile()` the Roku UA **and** propagate the client hint + capability
+   descriptor onto every stream URL. `remuxAudioPlan` re-derives the profile on
+   the *stream* request (`handlers_stream_tv.go:368`) and `inferFromUA` matches
+   only browser UAs, so a Roku is planned as Chrome. Latent today (no current
+   client sends a non-browser UA to these endpoints) — tracked in `pending.md`.
+8. Re-verify the audiobook clone stays insulated — it hardcodes
+   `protocol := ProtocolFile` (`handlers_audiobooks.go:72`) and collapses any
+   non-direct decision (`:78–82`). Keep that deliberately, not accidentally.
+9. Update `CLAUDE.md` §TV Streaming: the "DirectStream is always progressive"
+   claim and the `fmp4CopyableAudio` note both go stale.
+
+### P03 — The channel skeleton and the install pipeline
 Goal: a Dev tile on the real TV that finds the server and lists the libraries.
 Exit criteria: `make roku` produces a correctly-rooted ZIP; the deploy script
 fails loudly on the endpoint's 200-with-error-page; the channel connects by
@@ -266,22 +433,24 @@ Slices (sketch): manifest + icons + splash; `main.brs` + `MainScene`; the build
 target; the deploy script with gitignored credentials; the connect/settings
 screen with registry persistence; the home screen.
 
-### P03 — Video: TV and Movies
+### P04 — Video: TV and Movies
 Goal: the crown jewel working on the TV — browse to an episode, play it, resume
 it, and have the server agree about what happened.
 Exit criteria: direct play confirmed on the real library; resume round-trips
-through the earn-only progress rule; subtitles, skip-intro and Up Next work;
-a forced transcode is visible, not silent.
+through the earn-only progress rule; SRT subtitles (D7), skip-intro and Up Next
+work; BIF trick mode (D14) on the scrubber; a forced transcode is visible, not
+silent.
 
-### P04 — Photos and home-video clips
+### P05 — Photos and home-video clips
 Goal: the photo grid, the viewer, and clip playback through the same session
 layer.
 
-### P05 — Audio: Music, Audiobooks, Podcasts
-Goal: the three audio verticals, with D13 resolved and its answer implemented.
-Audiobook chapter stepping reuses the server's chapter marks.
+### P06 — Audio: Music, Audiobooks, Podcasts
+Goal: the three audio verticals. Music ships unleveled per **D13**, and the
+connect screen says so rather than leaving it to be discovered. Audiobook
+chapter stepping reuses the server's chapter marks.
 
-### P06 — Parity and polish
+### P07 — Parity and polish
 Goal: search, Continue Watching across verticals, deep links, honest error
 surfaces, and measured performance on the 1080p panel.
 
@@ -301,16 +470,24 @@ surfaces, and measured performance on the 1080p panel.
 
 ## Standing caveats and open doubts
 
-1. **D13 (music leveling) is unresolved** and is the one known fidelity
-   regression against the web player.
-2. **HEVC on the target device is unknown** until the real Roku is queried
-   (`http://<ip>:8060/query/device-info`). D4 makes this a runtime answer rather
-   than a planning assumption, but it decides how much of the library direct-plays.
-3. **DTS is passthrough-only** — it needs a receiver, not TV speakers. The
+1. **The one surviving doubt (grill, 2026-08-15):** if the target Roku decodes
+   neither HEVC nor E-AC-3, roughly half the library needs full video transcodes
+   on a box with no hardware encoder that is already driving its own TV — and no
+   amount of client work fixes that. **D15 is the gate that answers it**, and
+   **D16 (DLNA) is the fallback** if the answer is bad enough to kill the channel.
+2. ~~D13 (music leveling) is unresolved~~ — **settled** as unleveled-and-documented
+   (D13); it remains the one permanent fidelity regression against the web player,
+   logged to `pending.md`.
+3. ~~HEVC on the target device is unknown~~ — **promoted** from a caveat to a
+   scheduled measurement (D15 / P01.S00). It is no longer something to remember;
+   it is a slice.
+4. **DTS is passthrough-only** — it needs a receiver, not TV speakers. The
    capability descriptor must reflect the *sink*, not the device.
-4. **AV1 is DASH-only on Roku**; Hespera speaks HLS. Treat AV1 as transcode-bound
+5. **AV1 is DASH-only on Roku**; Hespera speaks HLS. Treat AV1 as transcode-bound
    until proven otherwise.
-5. **The Pi 5 is the ceiling.** Any design that leans on transcoding is wrong
-   here even when it is correct in general (L1).
 6. **One sideloaded app at a time** — the TV cannot hold a stable build and a
    test build simultaneously.
+7. **The measured 51%–100% span came from the dev library**, not the Pi 5's. The
+   real library holds ~185 DivX-era files the dev set contains none of, which are
+   the population for the container arm. Do not quote the span as a fact about
+   the served library — re-measure there (D15).
