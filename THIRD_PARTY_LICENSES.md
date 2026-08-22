@@ -66,3 +66,26 @@ the modules themselves.
 - **hls.js** (`web/static/hls.light.min.js`) — Apache License 2.0. © the hls.js authors (video-dev). The minified bundle carries no in-file header banner; its attribution is retained here.
 - **Catppuccin** palette (color values in `web/static/app.css`) — MIT License. © Catppuccin.
 - **Lucide** icons (inlined SVGs in `web/templates/partials_icons.html`) — ISC License. © Lucide Contributors.
+
+## Bundled data (non-module)
+
+- **EFF Long Wordlist** (`cmd/hesplay/wordlist.go`) — Creative Commons
+  Attribution 3.0 United States (CC BY 3.0 US). © Electronic Frontier
+  Foundation. Source:
+  <https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases>;
+  licence: <https://creativecommons.org/licenses/by/3.0/us/>. **Modified** —
+  EFF's four hyphenated entries were removed (7,772 of 7,776 words); see
+  [`third_party/eff-wordlist/NOTICE`](third_party/eff-wordlist/NOTICE)
+  for the modification notice CC BY requires and for why that file carries the
+  licence URI rather than a transcribed legal text. The EFF does not endorse
+  this project.
+
+  > Note the scope difference from every entry above: this is a **data asset
+  > compiled into `hesplay`**, not a Go module, so neither
+  > `TestThirdPartyLicensesCurrent` nor `TestThirdPartyLicenseTexts` covers it —
+  > both iterate `go.mod`. It also lives at `third_party/eff-wordlist/` rather
+  > than under `third_party/licenses/`, deliberately: `ThirdPartyLicensesFS()`
+  > is rooted at the latter and `/about/licenses` prints everything it finds
+  > beneath the heading "license texts for every module compiled into Hespera"
+  > — which this is not, on either count. The notice ships in the hesplay
+  > `.deb` (`build/nfpm-hesplay.yaml`) because that is the binary it is in.

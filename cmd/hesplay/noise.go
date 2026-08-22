@@ -1165,23 +1165,9 @@ func saveNoiseConfig(cfg noiseConfig) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p), ".hesplay-*.json")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer os.Remove(name) // no-op once the rename below succeeds
-	if _, err := tmp.Write(append(b, '\n')); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(name, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(name, p)
+	// writeFileAtomic (atomicfile.go) is the package's one atomic write; this
+	// function used to hand-roll the same eighteen lines.
+	return writeFileAtomic(p, append(b, '\n'), 0o644)
 }
 
 // findPreset resolves a preset by name, case-insensitively, falling back to the

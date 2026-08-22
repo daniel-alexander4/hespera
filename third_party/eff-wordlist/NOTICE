@@ -1,0 +1,29 @@
+EFF Long Wordlist
+=================
+
+Work:    "EFF's New Wordlists for Random Passphrases" — eff_large_wordlist.txt
+Author:  Electronic Frontier Foundation
+Source:  https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases
+License: Creative Commons Attribution 3.0 United States (CC BY 3.0 US)
+         https://creativecommons.org/licenses/by/3.0/us/
+
+Used in Hespera as the word source for the hesplay phone remote's three-word
+passphrase (cmd/hesplay/wordlist.go, compiled into the `hesplay` binary).
+
+MODIFICATION NOTICE (required by CC BY 3.0 US section 4(b)): this is a
+derivative of EFF's list. Its four hyphenated entries — drop-down, felt-tip,
+t-shirt and yo-yo — have been removed, leaving 7,772 of the original 7,776
+words. hesplay treats every non-letter as a word separator when normalising a
+typed passphrase, so a hyphenated entry would make a three-word passphrase
+normalise to four tokens. No words were added or altered.
+
+The Electronic Frontier Foundation does not endorse Hespera or hesplay.
+
+WHY THIS FILE IS A NOTICE AND NOT THE LICENCE TEXT
+--------------------------------------------------
+CC BY 3.0 US section 4(a) is satisfied by including "a copy of, or the Uniform
+Resource Identifier for" the licence. The URI is given above. The verbatim
+legal text is deliberately not reproduced here rather than transcribed from
+memory, because a licence text that is subtly wrong is worse than a pointer to
+the authoritative one. To bundle it, fetch it from the URI above and add it to
+this directory as LICENSE.

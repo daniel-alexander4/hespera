@@ -2,6 +2,8 @@
 bin/
 *.exe
 /hespera
+/hesplay
+/hescli
 
 # Release artifacts (cross-compiled binaries + .deb packages)
 dist/

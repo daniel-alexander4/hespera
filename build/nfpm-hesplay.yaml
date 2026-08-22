@@ -61,9 +61,18 @@ contents:
     dst: /usr/share/bash-completion/completions/hesplay
     file_info:
       mode: 0644
-  # hesplay is stdlib-only (no third-party Go modules), so the AGPL license
-  # text is the whole copyright story.
+  # hesplay is stdlib-only (no third-party Go modules), so the AGPL license text
+  # is the whole copyright story for its CODE. Its one third-party asset is the
+  # EFF passphrase wordlist, attributed below.
   - src: LICENSE
     dst: /usr/share/doc/hesplay/copyright
+    file_info:
+      mode: 0644
+
+  # The passphrase wordlist is EFF's, under CC BY 3.0 US, and it is compiled
+  # into this binary — so its attribution and modification notice ship with the
+  # binary rather than only living in the source tree.
+  - src: third_party/eff-wordlist/NOTICE
+    dst: /usr/share/doc/hesplay/eff-wordlist-NOTICE
     file_info:
       mode: 0644
