@@ -25,7 +25,10 @@
 # passphrase, generated on first start into ~/.config/hespera/hesplay-passphrase
 # (0600) for the User=%i account — NOT /etc/default/hesplay, which is root-owned
 # and holds the listen address only. Under this unit stdout is the journal, so
-# the words are never printed; read that file as %i to learn them.
+# the words are never printed. To learn them:
+#     sudo -u %i hesplay passphrase
+# Run it AS that account: the command refuses under sudo-as-root precisely
+# because root would read (or create) a different file.
 
 [Unit]
 Description=hesplay phone remote (%i)

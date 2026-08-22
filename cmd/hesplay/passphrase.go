@@ -172,7 +172,6 @@ func readPassphraseFromStdin(in io.Reader) (string, error) {
 }
 
 // changePassphrase implements set / rotate / logout.
-// changePassphrase implements set / rotate / logout.
 //
 // Order is the whole correctness argument here: VALIDATE, then RESOLVE the new
 // passphrase, and only then MUTATE anything on disk. The first version moved a

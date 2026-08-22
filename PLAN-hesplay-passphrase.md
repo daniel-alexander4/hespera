@@ -1,6 +1,6 @@
 # PLAN — a three-word passphrase for the hesplay remote
 
-**Status: building.** Single source of truth for this work.
+**Status: shipped (v0.45.39–.43).** Single source of truth for this work.
 
 > **Why this is not `PLAN.md`.** `PLAN.md` is the in-flight Roku arc (P00–P07,
 > still in planning). One repo, two plans: appending a phase to that document
@@ -32,7 +32,19 @@ posture, not just code. The surface behind it is wider than "playback":
 
 ### D1 — One secret, and the cookie is derived from it *(settled 2026-08-22 by the grill)*
 Three words on disk, plaintext, 0600. Cookie value =
-`base64url(sha256("hesplay-session-v1\x00" + normalized phrase))`. Buys: survives
+`base64url(HMAC-SHA256(instance key, "hesplay-session-v1\x00" + normalized phrase))`,
+where the per-instance key is 32 random bytes stored beside the words.
+
+**⚠️ Corrected 2026-08-22 — this decision as first written documented the bug.**
+It said `sha256(domain + phrase)` with no key, which the S01 review found is
+reversible offline in ~22s on one GPU against a 38.77-bit secret: a stolen
+cookie would have handed back the words the household says out loud. The code
+was fixed in the same slice and the decision was not, so for four commits the
+plan's headline decision described the defect rather than the fix. The key is
+also what makes `logout` possible — a new key with the SAME words signs every
+phone out.
+
+Buys: survives
 restart (so the needrestart every apt deploy triggers does not sign the
 household out), a stolen cookie does not yield the spoken words, and changing
 the passphrase IS the revocation mechanism. Rejected: a second stored session
@@ -122,7 +134,44 @@ DNS rebinding a non-event: a rebound origin sends no cookie and gets 401.
 
 ## Build order
 
-### P01 — The passphrase gate
+### P01 — The passphrase gate *(done 2026-08-22, v0.45.44)*
+
+**Exit criteria, credited clause by clause** (split on every `and`; a clause that
+cannot be demonstrated is `not exercised`, never a silent pass):
+
+| # | Clause | Verdict |
+|---|---|---|
+| C1 | Every gated route refuses an unauthenticated request | met — 16 routes × 4 methods + wrong-cookie; live 401 (baseline 200) |
+| C2 | the static shell still serves | met — test + live 200 |
+| C3 | a correct passphrase in any casing or spacing signs in | met — table + real browser (`Canopy-Spoilage-Chip␣␣`) |
+| C4 | a wrong one does not | met — test, live 401, browser inline message |
+| C5 | an over-budget attempt is refused **without being compared** | met — the *correct* passphrase 429s and the failure counter does not move; mutation-verified |
+| C6 | the passphrase file is 0600 after create | met — test + live `stat` |
+| C7 | …and after rotate | met — test + live `stat` |
+| C8 | a rotate applies without a restart | met — injected-clock test + CLI against a running remote, <1.5s |
+| C9 | a cookie survives one | met — token identical across reconstruction; live restart → old cookie 200 |
+| C10 | scheduled noise starts at its window with nobody signed in | **not exercised live** — see below |
+| C11 | `go test ./...` green | met |
+| C12 | `go vet ./...` green | met |
+| C13 | `go.mod` unchanged | met — `git diff eab1394~1 -- go.mod go.sum` empty |
+
+**C10 is the one gap and is recorded as a gap.** Demonstrating it means making
+sound, which [[no-playback]] forbids on every box here. What stands instead: the
+reconciler goroutine starts at `control.go:515`, **two lines before the auth
+exists** (`:517`), and neither it nor a reconcile pass references auth in any
+form — both pinned by `TestScheduleIsIndependentOfAuth` and mutation-verified
+(moving `openAuth()` ahead of the watcher turns it red). That is a *guard*, not
+a demonstration, and the difference is stated rather than blurred.
+
+**Phase-close review found three cross-slice defects no single-slice review
+could see**, all fixed in v0.45.44: persistence was inferred from an overloaded
+`warning` value (so a garbled-but-successful start advertised itself as
+ephemeral and steered the operator away from the file holding the words); the
+CLI promised a live reload the remote could not honour on a path-less auth; and
+`authCounts`' documented tripwire was unobservable through its only publisher,
+because `/api/state` is itself gated.
+
+
 
 **Exit criteria.** Every gated route refuses an unauthenticated request **and**
 the static shell still serves; a correct passphrase in any casing or spacing
@@ -235,8 +284,8 @@ Tasks:
   the login UI cannot tell 401 "sign in" from 503 "this box has no passphrase"
   from a 502 upstream failure — three states that need three different screens.
 Login overlay outside the `SCREENS` stack; 401 branch in `api()`; pause the 2s
-poll while signed out; `#p=` fragment sign-in + `history.replaceState`; art
-`onerror`.
+poll while signed out; art `onerror`. (The `#p=` fragment sign-in that stood
+here was **cut** — see D8.)
 
 #### P01.S04 — CLI verbs and docs *(done 2026-08-22, v0.45.43)*
 
@@ -293,5 +342,8 @@ has just falsified. What is left here:
   against a houseguest, false against a sniffer. README must say so.
 - **Hespera itself stays unauthenticated** on the same LAN. This gates the
   smaller blast radius of the two. Named, not resolved — Dan asked for hesplay.
-- **`cmd/hesplay/web/app.js` has no automated coverage.** `test/js/harness.js`
-  pins `web/static`. S03's behaviour is live-browser-only.
+- ~~`cmd/hesplay/web/app.js` has no automated coverage.~~ **Closed by S03 T07**:
+  `test/js/harness.js` takes a directory now and `test/js/hesplay_app.test.js`
+  covers the sign-in state machine. What remains live-browser-only is the part
+  jsdom cannot model — a phone keyboard's autocapitalize, cookie survival across
+  a PWA relaunch, and the TV's arrow-key focus ring.

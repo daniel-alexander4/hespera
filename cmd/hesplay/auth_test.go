@@ -461,7 +461,14 @@ func TestAuthIsRaceFree(t *testing.T) {
 // TestPassphrasePathIsItsOwnFile pins that the secret does not live in
 // hesplay.json, which PUT /api/noise rewrites wholesale from request JSON.
 func TestPassphrasePathIsItsOwnFile(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	// The SEAM, not XDG_CONFIG_HOME: os.UserConfigDir() ignores that variable on
+	// darwin and windows, and hesplay ships binaries for both — an env-based
+	// isolation here would reach the developer's real config directory when the
+	// suite runs on a Mac. (passphrase_test.go's isolate() is the pattern.)
+	dir := t.TempDir()
+	prev := passphrasePath
+	passphrasePath = func() (string, error) { return filepath.Join(dir, "hespera", "hesplay-passphrase"), nil }
+	t.Cleanup(func() { passphrasePath = prev })
 	p, err := passphrasePath()
 	if err != nil {
 		t.Fatal(err)

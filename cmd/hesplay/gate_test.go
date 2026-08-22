@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -330,17 +331,110 @@ func TestStatePublishesAuthCounters(t *testing.T) {
 // journal. Under systemd, where stdout is not a terminal, that message is the
 // only thing they see.
 func TestAnnounceDoesNotPointAtAFileThatIsWrong(t *testing.T) {
-	a := newMemoryAuth(testPassphrase, nil)
+	// File-backed, because the announce now prints a.path and persistence is
+	// checked against the file rather than inferred from an error value.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hesplay-passphrase")
+	a, _, err := newAuth(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !a.usable() {
 		t.Fatal("setup: the fixture auth is not usable")
+	}
+	if !passphraseIsOnDisk(a) {
+		t.Fatal("setup: a freshly generated passphrase should be on disk")
 	}
 	// Stimulus first: when the passphrase IS persisted, the path is printed.
 	// Without this the assertion below would also pass against an announce that
 	// prints nothing at all, ever.
-	if out := captureStdout(t, func() { announcePassphrase(a, true) }); !strings.Contains(out, "the passphrase is in") {
+	if out := captureStdout(t, func() { announcePassphrase(a, true) }); !strings.Contains(out, path) {
 		t.Fatalf("persisted start printed no path: %q", out)
 	}
 	if out := captureStdout(t, func() { announcePassphrase(a, false) }); strings.Contains(out, "the passphrase is in") {
 		t.Fatalf("a NON-persisted passphrase was advertised as being in the file: %q", out)
+	}
+
+	// And the cross-slice defect itself: a GARBLED start writes a real
+	// passphrase and still returns a warning. Persistence must follow the file,
+	// not the warning — the old `warning == nil` test reported this box as
+	// ephemeral and steered the operator away from the file holding the words.
+	dir2 := t.TempDir()
+	path2 := filepath.Join(dir2, "hesplay-passphrase")
+	if err := os.WriteFile(path2, []byte("Пароль Секрет Ключ\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Drive openAuth ITSELF through the passphrasePath seam — an earlier version
+	// of this test called passphraseIsOnDisk directly, which the defect did not
+	// touch, so it passed against the bug. The value under test is openAuth's
+	// SECOND return.
+	prev := passphrasePath
+	passphrasePath = func() (string, error) { return path2, nil }
+	defer func() { passphrasePath = prev }()
+
+	b, persisted := openAuth()
+	if !b.usable() {
+		t.Fatal("setup: a garbled start should still yield a usable passphrase")
+	}
+	if _, _, warning := newAuth(path2, nil); warning != nil {
+		t.Fatal("setup: the file is no longer garbled, so this case is not being exercised")
+	}
+	if !passphraseIsOnDisk(b) {
+		t.Fatal("setup: the words should be on disk after a garbled start")
+	}
+	if !persisted {
+		t.Fatal("openAuth reported a well-persisted passphrase as ephemeral — the announce would steer the operator away from the file holding the words")
+	}
+}
+
+// TestScheduleIsIndependentOfAuth guards the phase's one exit clause that
+// cannot be demonstrated by running it: "scheduled noise starts at its window
+// with nobody signed in". Demonstrating it live means MAKING SOUND, which is
+// forbidden on every box here — so this guards the property structurally
+// instead, and fails if a later change couples the two.
+//
+// Two things must stay true:
+//   - the reconciler goroutine is started BEFORE the auth exists at all, so it
+//     cannot consult it; and
+//   - neither the reconciler loop nor a reconcile pass mentions auth.
+//
+// A source-level guard rather than a behavioural one, in the shape of
+// TestRouteTableIsFullyCovered — because the property IS a source property.
+func TestScheduleIsIndependentOfAuth(t *testing.T) {
+	src, err := os.ReadFile("control.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+
+	startIdx := strings.Index(s, "go ct.watchNoiseSchedule(ctx)")
+	authIdx := strings.Index(s, "a, persisted := openAuth()")
+	if startIdx < 0 || authIdx < 0 {
+		t.Fatal("serveControl no longer starts the schedule watcher or the auth the way this guard expects — re-read it")
+	}
+	if startIdx > authIdx {
+		t.Fatal("the noise schedule is now started AFTER the auth; the household's overnight noise must not depend on a credential existing")
+	}
+
+	// Neither function may reference auth in any form.
+	for _, fn := range []string{
+		"func (ct *controller) reconcileNoise(",
+		"func (ct *controller) watchNoiseSchedule(",
+	} {
+		i := strings.Index(s, fn)
+		if i < 0 {
+			t.Fatalf("%s not found — this guard has stopped guarding", fn)
+		}
+		// Body runs to the next top-level func.
+		j := strings.Index(s[i+len(fn):], "\nfunc ")
+		if j < 0 {
+			j = len(s) - i - len(fn)
+		}
+		body := s[i : i+len(fn)+j]
+		for _, bad := range []string{"auth", "Token", "token", "cookie", "Cookie", "signedIn"} {
+			if strings.Contains(body, bad) {
+				t.Errorf("%s now mentions %q — the noise schedule must run with nobody signed in", fn, bad)
+			}
+		}
 	}
 }

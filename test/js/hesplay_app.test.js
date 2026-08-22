@@ -179,3 +179,22 @@ test('a login that succeeds but whose cookie is dropped does not loop', async ()
   assert.strictEqual(doc.getElementById('signin').hidden, false, 'the card must stay up');
   assert.match(doc.getElementById('signin-msg').textContent, /did not keep the session cookie/i);
 });
+
+test('503 at the login endpoint does not claim a wrong passphrase', async () => {
+  // The phase review found submitSignIn had grown a SECOND taxonomy for one
+  // status: api() routed 503 to the no-passphrase card while a 503 from
+  // /api/login printed "That is not the passphrase" — two contradictory answers
+  // to the same server state.
+  const { window } = boot({
+    '/api/login': { status: 503, body: { ok: false, message: 'no passphrase is configured on this box — see the server log' } },
+    '/api/': GATED,
+  });
+  await flush();
+  const doc = window.document;
+  doc.getElementById('passphrase').value = 'correct horse battery';
+  doc.getElementById('signin-go').click();
+  await flush();
+  const msg = doc.getElementById('signin-msg').textContent;
+  assert.match(msg, /no passphrase/i, `503 reported as: ${msg}`);
+  assert.doesNotMatch(msg, /not the passphrase/i, 'a 503 was reported as a wrong passphrase');
+});

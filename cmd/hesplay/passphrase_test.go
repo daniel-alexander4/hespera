@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// isolate points passphrasePath() at a temp dir for one test.
 // isolate points passphrasePath at a temp dir for one test.
 //
 // It overrides the SEAM rather than setting XDG_CONFIG_HOME: os.UserConfigDir()

@@ -393,7 +393,16 @@
     // this guard the field is re-focused — re-popping the phone keyboard — on
     // every one of them.
     if (signedOut) {
-      if (o.noPassphrase) signinMsg(o.detail || 'This box has no passphrase set.', true);
+      if (o.noPassphrase) {
+        signinMsg(o.detail || 'This box has no passphrase set.', true);
+        $('passphrase').disabled = true;
+        $('signin-go').disabled = true;
+      } else {
+        // A later 401 after an earlier 503 means the box grew a passphrase —
+        // re-enable, or the field stays disabled forever with no way back.
+        $('passphrase').disabled = false;
+        $('signin-go').disabled = false;
+      }
       return;
     }
     signedOut = true;
@@ -460,6 +469,17 @@
       if (res.status === 429) {
         signinMsg('Too many attempts — wait a few seconds.', true);
         setTimeout(() => { $('signin-go').disabled = false; }, 4000);
+        signingIn = false;
+        return;
+      }
+      if (res.status === 503) {
+        // The box has no passphrase at all. api() routes the same status to the
+        // no-passphrase card; saying "that is not the passphrase" here would be
+        // a SECOND, contradictory taxonomy for one status.
+        let msg = 'This box has no passphrase set.';
+        try { const b = await res.json(); if (b && b.message) msg = b.message; } catch (_) { /* not JSON */ }
+        signinMsg(msg, true);
+        $('passphrase').disabled = true;
         signingIn = false;
         return;
       }

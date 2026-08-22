@@ -260,7 +260,14 @@ installing hesplay opens no port until you ask:
 
 ```sh
 sudo systemctl enable --now hesplay@$USER   # serve the remote on :8090, now and at boot
+hesplay passphrase                          # the three words this box asks for
 ```
+
+⚠️ Run `hesplay passphrase` **as the instance account** — the file lives in that
+account's config directory, and under `sudo` you would read a different one.
+Under the unit the words are never printed to the log on purpose (the journal is
+persistent and readable by the `adm` group), so this command is how you learn
+them.
 
 The instance name is the account to run as, and that account needs access to the
 sound card (usually: membership of the `audio` group). Override the port in
@@ -290,8 +297,14 @@ surviving disconnection and having controls are mutually exclusive.
 
 `--listen` is off unless you pass it, and it is gated by a **three-word
 passphrase**. Each box generates its own on first use and stores it at
-`~/.config/hespera/hesplay-passphrase` (mode 0600) — run the remote from a
-terminal to see it printed, or read that file over ssh. Type the three words
+`~/.config/hespera/hesplay-passphrase` (mode 0600). To learn it, run
+`hesplay passphrase` as the account the remote runs as. Starting the remote by
+hand in a terminal also prints it; started as a **service** it deliberately does
+not, because that would put the words in the journal.
+
+Changing it (`hesplay passphrase set`, or `rotate` for three fresh random words)
+signs every phone out and takes effect within a second — no restart.
+`hesplay passphrase logout` signs everyone out while keeping the same words. Type the three words
 once per phone; the session is remembered, survives restarts, and changing the
 words signs every phone out.
 

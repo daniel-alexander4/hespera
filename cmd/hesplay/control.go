@@ -1209,12 +1209,26 @@ func openAuth() (a *auth, persisted bool) {
 	if warning != nil {
 		fmt.Fprintf(os.Stderr, "warn: %v\n", warning)
 	}
-	// persisted is what announcePassphrase needs and cannot infer: a.path is set
-	// even when the write FAILED, and the unreadable-file branch hands back an
-	// ephemeral passphrase while the file on disk still holds the old one. In
-	// both cases pointing an operator at that path sends them to words that do
-	// not work.
-	return a, a.path != "" && warning == nil
+	// ⚠️ Persistence is checked against the FILE, never inferred from `warning`.
+	// That was the phase review's cross-slice finding: newAuth returns a purely
+	// informational warning on the garbled path ("moved aside and replaced")
+	// AFTER a fully successful write, so `warning == nil` reported a
+	// well-persisted passphrase as ephemeral — and the announce then steered the
+	// operator away from the one file that held the words. One value cannot mean
+	// both "something happened worth saying" and "nothing reached disk".
+	return a, passphraseIsOnDisk(a)
+}
+
+// passphraseIsOnDisk reports whether the file at a.path really holds a's
+// passphrase. Reading it back is the same discipline the CLI uses after a
+// write: it catches a failed write, a file that holds something else, and a
+// path nobody can read — none of which an error value reliably distinguishes.
+func passphraseIsOnDisk(a *auth) bool {
+	if a == nil || a.path == "" {
+		return false
+	}
+	onDisk, _, err := readAuthFile(a.path)
+	return err == nil && onDisk == a.phraseForDisplay()
 }
 
 // announcePassphrase prints the words only to a terminal.
@@ -1232,8 +1246,10 @@ func announcePassphrase(a *auth, persisted bool) {
 		fmt.Printf("passphrase: %s\n", a.phraseForDisplay())
 		return
 	}
-	if p, err := passphrasePath(); err == nil && persisted {
-		fmt.Printf("the passphrase is in %s\n", p)
+	// a.path, not a second passphrasePath() call: the auth's own path is the
+	// authoritative one, and resolving it twice invites the two to disagree.
+	if persisted && a.path != "" {
+		fmt.Printf("the passphrase is in %s\n", a.path)
 		return
 	}
 	// No terminal to print to AND no file to point at — the ephemeral path,

@@ -172,12 +172,18 @@ type attemptBucket struct {
 
 // authCounts is the shape /api/state publishes.
 //
-// OK, Denied and NoCookie ALL reading zero is the signal that the gate is not
-// mounted at all — the one failure this feature could have and never notice.
-// It has to be all three: splitting NoCookie out of Denied made ok=0/denied=0
-// the ORDINARY state of a household that simply has not signed in yet, so the
-// two-counter version of this sentence stopped being true the moment the split
-// landed.
+// ⚠️ Where the "is the gate even mounted?" tripwire actually lives, corrected
+// after the phase review: NOT here. An all-zero reading would be that signal —
+// but /api/state is itself GATED, so reaching it at all requires validToken to
+// have succeeded, which has already incremented OK. Every snapshot a reader can
+// obtain has OK >= 1, so the invariant is unobservable through its only
+// publisher. The real reader is TestProductionRoutesAreGated, which builds the
+// handler through the production constructor and asserts 401 on every route.
+//
+// What these counters ARE good for, live: Denied vs NoCookie separates "the
+// household is presenting a stale cookie" from "nobody has signed in", and
+// Throttled shows a limiter that is actually firing. Those are the questions a
+// running box can answer about itself.
 type authCounts struct {
 	OK uint64 `json:"ok"`
 	// Denied and NoCookie are two counters on purpose, not one "refused".
@@ -487,7 +493,14 @@ func newAuth(path string, now func() time.Time) (a *auth, generated bool, warnin
 		if err != nil {
 			return newRefusingAuth(now), false, fmt.Errorf("%w; and no temporary passphrase could be drawn: %v", readErr, err)
 		}
-		return eph, true, fmt.Errorf("%w — serving with a temporary passphrase that will change on restart", readErr)
+		// Keep the path. The file is unreadable NOW, and reloadLocked retries
+		// once a second — so the moment an operator fixes the permissions or
+		// runs `hesplay passphrase set`, the running remote adopts it. Without
+		// this the box served an ephemeral passphrase until someone restarted
+		// it, and the CLI's "a running remote picks this up within a second"
+		// was a promise it could not keep.
+		eph.path, eph.checked = path, now()
+		return eph, true, fmt.Errorf("%w — serving with a temporary passphrase until the file is readable again", readErr)
 	}
 
 	var aside string
