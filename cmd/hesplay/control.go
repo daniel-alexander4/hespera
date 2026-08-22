@@ -514,7 +514,7 @@ func serveControl(ctx context.Context, c *client, addr string, args []string, sh
 	// is not immediately preempted by a window that happens to be open.
 	go ct.watchNoiseSchedule(ctx)
 
-	a := openAuth()
+	a, persisted := openAuth()
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -534,7 +534,7 @@ func serveControl(ctx context.Context, c *client, addr string, args []string, sh
 	}()
 
 	fmt.Printf("remote on http://%s — open it on your phone and Add to Home Screen\n", addr)
-	announcePassphrase(a)
+	announcePassphrase(a, persisted)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -615,17 +615,24 @@ var (
 // login endpoint and the static shell, which holds no secret and ships in the
 // public .deb.
 //
-// ⚠️ The FIRST check is not the credential — it is that the path is canonical,
-// and that ordering is load-bearing rather than defensive. This middleware
-// decides on r.URL.Path (decoded) while ServeMux routes on r.URL.EscapedPath();
-// an escaped dot segment survives ServeMux's cleaning untouched, so the two can
-// be handed different strings. Demonstrated before this was written:
-// /art/%2e%2e/app.js decodes to /art/../app.js, which cleans to /app.js — a
-// static file, so the exemption below would have PASSED IT THROUGH — while the
-// mux routed it to the gated /art/ handler. Requiring both forms to be already
-// canonical makes the two decisions provably the same input, and kills the
-// %2e%2e traversal into the upstream proxy on the way past. No real client ever
-// sends a dot segment.
+// The FIRST check is not the credential — it is that the path is canonical.
+//
+// The reason, stated accurately: this middleware decides on r.URL.Path
+// (decoded) while ServeMux routes on r.URL.EscapedPath(), and an escaped dot
+// segment survives ServeMux's cleaning untouched, so the two can be handed
+// DIFFERENT STRINGS. Any gate whose exemption is computed on one string while
+// routing happens on the other is bypassable in principle: /art/%2e%2e/app.js
+// decodes to /art/../app.js, which cleans to /app.js — a static file — while
+// the mux routes it to the gated /art/ handler.
+//
+// ⚠️ Honest scope, corrected after review: this check is NOT what stops that
+// today, and an earlier version of this comment claimed it was. isPublicAsset
+// hands the UNCLEANED name to fs.ValidPath, which rejects a ".." element on its
+// own — so with this check removed the traversals return 401, not a bypass
+// (mutation-verified). What the check buys is that the property is local and
+// provable here, instead of resting on a downstream helper's incidental
+// behaviour, and it kills the %2e%2e traversal into the upstream proxy on the
+// way past. Keep it; do not oversell it. No real client sends a dot segment.
 func requireAuth(a *auth, assets fs.FS, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !canonicalPath(r.URL) {
@@ -1166,9 +1173,17 @@ func (ct *controller) handleArt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "art unavailable", http.StatusBadGateway)
 		return
 	}
-	if ctype := resp.Header.Get("Content-Type"); ctype != "" {
-		w.Header().Set("Content-Type", ctype)
+	// Only an image is forwarded. The upstream is repointable (handleServer), so
+	// without this an authenticated caller could serve text/html from the
+	// remote's OWN origin — proven live to return a <script> body. controlCSP
+	// neuters it today, which makes this contained rather than safe: contained
+	// by a header one edit away.
+	ctype := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ctype, "image/") {
+		http.Error(w, "art unavailable", http.StatusBadGateway)
+		return
 	}
+	w.Header().Set("Content-Type", ctype)
 	// private: the response is only reachable with a session cookie now, so a
 	// shared cache must not keep it.
 	w.Header().Set("Cache-Control", "private, max-age=3600")
@@ -1179,22 +1194,27 @@ func (ct *controller) handleArt(w http.ResponseWriter, r *http.Request) {
 // openAuth loads or creates the remote's passphrase, never failing the process:
 // the noise reconciler lives in here, and a config-directory problem must not
 // take the household's schedule down with it.
-func openAuth() *auth {
+func openAuth() (a *auth, persisted bool) {
 	p, err := passphrasePath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warn: no config directory (%v) — using a temporary passphrase that changes on restart\n", err)
 		eph, ephErr := ephemeralAuth(nil)
 		if ephErr != nil {
 			fmt.Fprintf(os.Stderr, "warn: %v — the remote will refuse every sign-in\n", ephErr)
-			return newRefusingAuth(nil)
+			return newRefusingAuth(nil), false
 		}
-		return eph
+		return eph, false
 	}
 	a, _, warning := newAuth(p, nil)
 	if warning != nil {
 		fmt.Fprintf(os.Stderr, "warn: %v\n", warning)
 	}
-	return a
+	// persisted is what announcePassphrase needs and cannot infer: a.path is set
+	// even when the write FAILED, and the unreadable-file branch hands back an
+	// ephemeral passphrase while the file on disk still holds the old one. In
+	// both cases pointing an operator at that path sends them to words that do
+	// not work.
+	return a, a.path != "" && warning == nil
 }
 
 // announcePassphrase prints the words only to a terminal.
@@ -1203,7 +1223,7 @@ func openAuth() *auth {
 // adm group — so a box that starts as a service says WHERE the passphrase is
 // and never what it is. Someone running `hesplay --listen` by hand is looking
 // at their own screen and gets the words.
-func announcePassphrase(a *auth) {
+func announcePassphrase(a *auth, persisted bool) {
 	if !a.usable() {
 		fmt.Fprintln(os.Stderr, "warn: no passphrase is in force — the remote will refuse every sign-in")
 		return
@@ -1212,7 +1232,7 @@ func announcePassphrase(a *auth) {
 		fmt.Printf("passphrase: %s\n", a.phraseForDisplay())
 		return
 	}
-	if p, err := passphrasePath(); err == nil {
+	if p, err := passphrasePath(); err == nil && persisted {
 		fmt.Printf("the passphrase is in %s\n", p)
 		return
 	}

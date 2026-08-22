@@ -57,22 +57,50 @@ func TestProductionRoutesAreGated(t *testing.T) {
 // TestRouteTableIsFullyCovered reads routes() and fails if it registers a path
 // that gatedPaths does not cover. The list above is a hand-kept mirror of the
 // mux, and a hand-kept mirror rots — this is what stops it.
+//
+// ⚠️ It must match CONSTANT patterns too, not only string literals. An earlier
+// version matched `mux.HandleFunc("..."` only, and a reviewer mutation-proved
+// the hole: adding `mux.HandleFunc(dangerPath, ct.handleStop)` with
+// `const dangerPath = "/api/wipe"` passed both this test AND
+// TestProductionRoutesAreGated. The route table already uses that idiom for
+// loginPath, so the hole was one keystroke from being real. An identifier this
+// test cannot resolve is a FAILURE, not a skip — failing closed is the whole
+// point of a coverage guard.
+//
+// Blind spot, stated rather than implied: it reads control.go only, so a route
+// registered from another file would still slip past.
 func TestRouteTableIsFullyCovered(t *testing.T) {
 	src, err := os.ReadFile("control.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	re := regexp.MustCompile(`mux\.Handle(?:Func)?\("([^"]+)"`)
+	// Constants the route table is allowed to register through, resolved to
+	// their values so a renamed or re-pointed constant cannot hide a route.
+	consts := map[string]string{"loginPath": loginPath}
+
+	re := regexp.MustCompile(`mux\.Handle(?:Func)?\(\s*(?:"([^"]*)"|([A-Za-z_]\w*))`)
 	ms := re.FindAllStringSubmatch(string(src), -1)
+	if want := strings.Count(string(src), "mux.Handle"); len(ms) != want {
+		t.Fatalf("matched %d route registrations but control.go contains %d `mux.Handle` calls — the regex has stopped seeing some", len(ms), want)
+	}
 	if len(ms) < 16 {
 		t.Fatalf("only found %d route registrations — the regex has stopped matching routes()", len(ms))
 	}
+
 	covered := map[string]bool{}
 	for _, p := range gatedPaths {
 		covered[p] = true
 	}
 	for _, m := range ms {
 		pat := m[1]
+		if m[2] != "" {
+			v, ok := consts[m[2]]
+			if !ok {
+				t.Errorf("route registered through constant %q, which this test cannot resolve — add it to consts and decide whether it is gated", m[2])
+				continue
+			}
+			pat = v
+		}
 		switch {
 		case pat == "/": // the static shell, deliberately public
 		case pat == loginPath: // the way in, deliberately public
@@ -289,5 +317,30 @@ func TestStatePublishesAuthCounters(t *testing.T) {
 	}
 	if got.Auth.Denied == 0 {
 		t.Error("auth.denied is zero after a WRONG cookie — the two denial causes are not separated")
+	}
+}
+
+// TestAnnounceDoesNotPointAtAFileThatIsWrong pins a real defect found in review.
+//
+// Two degraded starts hand back a working, in-memory passphrase while the file
+// at passphrasePath() holds something ELSE or nothing: an unreadable file (the
+// household's old passphrase is still on disk) and a failed write. In both the
+// announce used to print "the passphrase is in <path>" — sending the operator
+// to words that do not work, with the truth one stderr line further up a
+// journal. Under systemd, where stdout is not a terminal, that message is the
+// only thing they see.
+func TestAnnounceDoesNotPointAtAFileThatIsWrong(t *testing.T) {
+	a := newMemoryAuth(testPassphrase, nil)
+	if !a.usable() {
+		t.Fatal("setup: the fixture auth is not usable")
+	}
+	// Stimulus first: when the passphrase IS persisted, the path is printed.
+	// Without this the assertion below would also pass against an announce that
+	// prints nothing at all, ever.
+	if out := captureStdout(t, func() { announcePassphrase(a, true) }); !strings.Contains(out, "the passphrase is in") {
+		t.Fatalf("persisted start printed no path: %q", out)
+	}
+	if out := captureStdout(t, func() { announcePassphrase(a, false) }); strings.Contains(out, "the passphrase is in") {
+		t.Fatalf("a NON-persisted passphrase was advertised as being in the file: %q", out)
 	}
 }

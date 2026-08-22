@@ -69,13 +69,26 @@ never a refusal to start.
 checked on **both** `r.URL.Path` and `r.URL.EscapedPath()`, before it decides
 anything else. Both halves earn their place: the decoded check catches
 `%2e%2e`, the escaped one catches double-encoding (`%252e%252e`), which survives
-a single decode as literal text. Not defence in depth — **load-bearing**: the middleware
-decides on a cleaned path while `ServeMux` routes on the raw one, and any
-divergence between those two is a bypass. Refusing non-canonical paths makes the
-two decisions provably the same input. It also kills the `/art/%2e%2e/..`
-traversal into the upstream proxy for free. No legitimate client sends a dot
-segment; verified that `/`, `/app.js`, `/api/state` and `/art/album/1` are all
-already canonical.
+a single decode as literal text. No legitimate client sends a dot segment;
+verified that `/`, `/app.js`, `/api/state` and `/art/album/1` are all already
+canonical.
+
+**⚠️ Corrected 2026-08-22 by the S02 security review — this decision was first
+written overclaiming itself.** It said the check was "not defence in depth —
+load-bearing". That is **false as implemented**, and the correction was verified
+by mutation: with `canonicalPath` removed, every traversal returns 401, not a
+bypass, because `isPublicAsset` hands the *uncleaned* name to `fs.ValidPath`,
+which rejects a `..` element on its own.
+
+What was true: the bypass is real for the shape this plan **first described** —
+clean the path, then look it up in a set of public paths — which is exactly what
+the probe that justified D7 modelled. What is true now: the check makes the
+property **local and provable here** rather than resting on a downstream
+helper's incidental behaviour, and it kills the `/art/%2e%2e/..` traversal into
+the upstream proxy on the way past. Keep it; do not oversell it. The general
+hazard it guards — a gate whose exemption is computed on `r.URL.Path` while
+routing happens on `r.URL.EscapedPath()` — is real regardless of which mechanism
+happens to catch it today.
 
 ### D6 — Cookies are not port-scoped, and that is accepted *(settled 2026-08-22)*
 The session cookie is offered to any other HTTP service on the same hostname.
