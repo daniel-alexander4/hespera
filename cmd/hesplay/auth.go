@@ -214,7 +214,13 @@ func (a *auth) snapshot() authCounts {
 // file is rewritten wholesale by PUT /api/noise from request JSON, so a secret
 // living there would be readable and destroyable by the very surface this gate
 // exists to close.
-func passphrasePath() (string, error) {
+// ⚠️ A package var, not a plain function, and for a sharp reason:
+// os.UserConfigDir() honours $XDG_CONFIG_HOME only on unix — on darwin and
+// windows it ignores it entirely. hesplay ships binaries for both, so a test
+// that isolated itself with t.Setenv("XDG_CONFIG_HOME", …) would silently write
+// the DEVELOPER'S REAL passphrase file when the suite ran on a Mac. Tests
+// override this instead. (The powerOff / noisePause seam shape.)
+var passphrasePath = func() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err

@@ -238,10 +238,53 @@ Login overlay outside the `SCREENS` stack; 401 branch in `api()`; pause the 2s
 poll while signed out; `#p=` fragment sign-in + `history.replaceState`; art
 `onerror`.
 
-#### P01.S04 — CLI verbs and docs
-`hesplay passphrase [set|rotate]` (never in argv); `README.md` §Security posture
-and §Remote speakers; `cmd/hesplay/CLAUDE.md`; `usage()`;
-`build/hesplay@.service` header.
+#### P01.S04 — CLI verbs and docs *(done 2026-08-22, v0.45.43)*
+
+**Deepdive did NOT fire**, and recording that rather than skipping silently: the
+slice adds a case to a verb switch and an entry to a completion list. Additive,
+with no record payload, wire format, on-disk layout or multi-implementor seam —
+the file format is S01's and `writeAuthFile` already exists. The precedent
+(`cmdServer`, `main.go:~225`, dispatched pre-probe at `main.go:64`) was read
+directly instead.
+
+**Scope moved.** `README.md`, `usage()`, `build/hesplay@.service` and
+`control.go`'s package comment were already corrected in **S02** — they became
+*false* the moment the gate landed, and a commit does not get to ship a claim it
+has just falsified. What is left here:
+
+- T01 — `hesplay passphrase` — print the words. **Always**, never TTY-gated:
+  `announcePassphrase`'s gate protects a long-running service's *journal*, and
+  an explicit one-shot request is not that. TTY-gating it would break
+  `P=$(hesplay passphrase)` by silently returning a path where a caller expects
+  a passphrase.
+- T01b — `hesplay passphrase path` — the file, for scripting.
+- T02 — `hesplay passphrase set` — read the words from **stdin**, never argv
+  (`ps` is world-readable and shell history keeps it). Empty input, EOF-first
+  and input that normalises to nothing are **hard errors that write nothing** —
+  otherwise the file loses its phrase line and the next start silently mints
+  random words, locking the household out.
+- T03 — `hesplay passphrase rotate` — generate a fresh one.
+- T03b — `hesplay passphrase logout` — new instance key, **same words**. The
+  passphrase file's own comment advertises exactly this operation ("delete it to
+  sign every phone out without changing the words") and the CLI would otherwise
+  omit the thing its own file documents.
+- T03c — **refuse under sudo.** `os.Geteuid()==0 && $SUDO_USER != ""` names the
+  resolved path and `sudo -u <user> …` instead. Root writing into dan's 0700
+  directory *succeeds* — producing a root-owned 0600 file the remote (as `dan`)
+  cannot read, which degrades to an ephemeral passphrase that changes on every
+  restart and is unrecoverable without sudo. And every write re-reads the file
+  afterwards and prints what is actually on disk.
+- T03d — **`passphrase` and `path` must use `readAuthFile`, never `newAuth`** —
+  `newAuth` *generates and persists* on a fresh box and *renames* a garbled file
+  aside. A read-only verb must not mint a credential.
+- T04 — dispatch pre-probe beside `server`: this is pure file work and has to
+  run when no Hespera is up.
+- T05 — `passphrase` into the completion verb list **and its own sub-arg case**
+  beside `server)`'s — the bare verb list alone drops it into `*) COMPREPLY=()`.
+- T06 — tests over an isolated `XDG_CONFIG_HOME`.
+- T07 — `cmd/hesplay/CLAUDE.md`. ⚠️ **Gitignored** (`**/CLAUDE.md`, and no
+  CLAUDE.md is tracked), so this edit is local-only and never rides in the
+  commit — worth knowing before `/tidy` rather than discovering inside it.
 
 ## Standing caveats
 

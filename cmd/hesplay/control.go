@@ -1228,7 +1228,7 @@ func announcePassphrase(a *auth, persisted bool) {
 		fmt.Fprintln(os.Stderr, "warn: no passphrase is in force — the remote will refuse every sign-in")
 		return
 	}
-	if fi, err := os.Stdout.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+	if term(os.Stdout) { // term: passphrase.go — one char-device check, not two
 		fmt.Printf("passphrase: %s\n", a.phraseForDisplay())
 		return
 	}

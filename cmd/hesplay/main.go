@@ -70,6 +70,17 @@ func main() {
 		return
 	}
 
+	// `passphrase` is pure file work on the remote's credential — like `server`
+	// it must run with no Hespera up, and on a headless box it is usually why
+	// you sshed in.
+	if len(args) > 0 && args[0] == "passphrase" {
+		if err := cmdPassphrase(args[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Ctrl+C / SIGTERM stops the current track's engine process and exits.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -111,6 +122,7 @@ Commands:
   all                  Play the whole catalog (shuffled)
   playlists            List playlists
   server [url|clear]   Show, set, or clear the saved default server
+  passphrase [cmd]     Show or change the phone remote's passphrase
   completion <bash|zsh> Print a shell completion script
   version              Print hesplay version (also --version)
 
@@ -598,7 +610,7 @@ const bashCompletion = `# hesplay bash completion
 _hesplay() {
   local cur cmd vidx i
   cur="${COMP_WORDS[COMP_CWORD]}"
-  local cmds="album artist song mix playlist popular all playlists server completion version help"
+  local cmds="album artist song mix playlist popular all playlists server passphrase completion version help"
 
   # The verb is the first non-flag word after the program name.
   cmd=""; vidx=0
@@ -620,6 +632,8 @@ _hesplay() {
       COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") ); return;;
     server)
       COMPREPLY=( $(compgen -W "clear" -- "$cur") ); return;;
+    passphrase)
+      COMPREPLY=( $(compgen -W "path set rotate logout" -- "$cur") ); return;;
     album|artist|song|mix|playlist)
       # Everything after the verb up to the cursor is the partial name; names
       # need no quoting, so they arrive as separate words and rejoin here.
