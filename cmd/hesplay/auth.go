@@ -152,6 +152,7 @@ type auth struct {
 	// Counters, read through snapshot(). Relaxed adds on the request path.
 	okCount        atomic.Uint64
 	deniedCount    atomic.Uint64
+	noCookieCount  atomic.Uint64
 	loginCount     atomic.Uint64
 	failureCount   atomic.Uint64
 	throttledCount atomic.Uint64
@@ -169,22 +170,38 @@ type attemptBucket struct {
 	warned bool
 }
 
-// authCounts is the shape /api/state publishes. okCount and deniedCount both
-// reading zero is the signal that the gate is not mounted at all, which is the
-// one failure this feature could have and never notice.
+// authCounts is the shape /api/state publishes.
+//
+// OK, Denied and NoCookie ALL reading zero is the signal that the gate is not
+// mounted at all — the one failure this feature could have and never notice.
+// It has to be all three: splitting NoCookie out of Denied made ok=0/denied=0
+// the ORDINARY state of a household that simply has not signed in yet, so the
+// two-counter version of this sentence stopped being true the moment the split
+// landed.
 type authCounts struct {
-	OK        uint64 `json:"ok"`
+	OK uint64 `json:"ok"`
+	// Denied and NoCookie are two counters on purpose, not one "refused".
+	// A refusal has two causes — a cookie that was presented and rejected, and
+	// no cookie at all — and lumping them reads backwards exactly when it
+	// matters: a household that cannot sign in looks identical to a household
+	// that has not tried. Attribution beats aggregation (instrument.md).
 	Denied    uint64 `json:"denied"`
+	NoCookie  uint64 `json:"noCookie"`
 	Logins    uint64 `json:"logins"`
 	Failures  uint64 `json:"failures"`
 	Throttled uint64 `json:"throttled"`
 	Reloads   uint64 `json:"reloads"`
 }
 
+// countNoCookie records a refusal where no credential was presented at all.
+// Its own counter rather than a branch of deniedCount — see authCounts.
+func (a *auth) countNoCookie() { a.noCookieCount.Add(1) }
+
 func (a *auth) snapshot() authCounts {
 	return authCounts{
 		OK:        a.okCount.Load(),
 		Denied:    a.deniedCount.Load(),
+		NoCookie:  a.noCookieCount.Load(),
 		Logins:    a.loginCount.Load(),
 		Failures:  a.failureCount.Load(),
 		Throttled: a.throttledCount.Load(),

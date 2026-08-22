@@ -288,11 +288,19 @@ session would kill playback mid-song — and detaching it to survive that remove
 the terminal, which switches the transport keys off entirely. Over a shell,
 surviving disconnection and having controls are mutually exclusive.
 
-`--listen` is off unless you pass it, and it has **no authentication**, the same
-posture as Hespera itself: anyone who can reach that port can change what is
-playing on that box. The blast radius is playback there — it is not a shell and
-it cannot touch the library. Bind it on a network you would already trust with
-the speakers.
+`--listen` is off unless you pass it, and it is gated by a **three-word
+passphrase**. Each box generates its own on first use and stores it at
+`~/.config/hespera/hesplay-passphrase` (mode 0600) — run the remote from a
+terminal to see it printed, or read that file over ssh. Type the three words
+once per phone; the session is remembered, survives restarts, and changing the
+words signs every phone out.
+
+Two honest limits. The remote speaks **plain HTTP**, so the passphrase and the
+session cookie cross the wire readable by anything on the wire — this keeps a
+houseguest or a stray device off your speakers, not a network adversary. And
+Hespera itself is unauthenticated, so a LAN-exposed server is still open even
+when the remote is not. Bind both on a network you would already trust with the
+speakers, and put a reverse proxy with real auth in front for anything more.
 
 A shuffled catalog sweep — `artist`, `popular`, `all`, and any mix — plays **one
 recording per song**: if a track also exists as a live take, a greatest-hits

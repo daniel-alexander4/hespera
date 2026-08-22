@@ -21,7 +21,11 @@
 #
 # HESPLAY_LISTEN defaults to :8090 (the port the README and the .deb's docs
 # use). Override it in /etc/default/hesplay — bind it on a network you would
-# already trust with the speakers, since the remote has no authentication.
+# already trust with the speakers. The remote is gated by a three-word
+# passphrase, generated on first start into ~/.config/hespera/hesplay-passphrase
+# (0600) for the User=%i account — NOT /etc/default/hesplay, which is root-owned
+# and holds the listen address only. Under this unit stdout is the journal, so
+# the words are never printed; read that file as %i to learn them.
 
 [Unit]
 Description=hesplay phone remote (%i)

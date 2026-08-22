@@ -132,9 +132,13 @@ more than 10s into a track — and q to quit. Ctrl+C still stops.
 Phone remote: hesplay --listen :8090 serves a small installable web app on this
 box — open http://<this-box>:8090 on your phone and Add to Home Screen. Music
 still plays from THIS box's speakers; the phone only sends the buttons, so
-locking it stops nothing. The remote has one setting, the Hespera server. It has
-no authentication, the same posture as Hespera itself — anyone who can reach the
-port can change what is playing here.
+locking it stops nothing. The remote has one setting, the Hespera server.
+
+The remote is gated by a three-word passphrase, generated per box on first use
+and stored in ~/.config/hespera/hesplay-passphrase (0600). Started from a
+terminal it prints the words; started as a service it prints only where they
+are, so they never land in the journal. It travels over plain HTTP, so it keeps
+a houseguest off the speakers, not someone sniffing the wire.
 
 Completion: the .deb wires up bash automatically; otherwise source it, e.g.
 source <(hesplay completion bash). Verbs complete offline; album/artist/song/mix

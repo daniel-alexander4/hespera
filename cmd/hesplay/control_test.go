@@ -55,6 +55,27 @@ func newTestController() *controller {
 	return newController(newClient("http://127.0.0.1:1"), engine{name: "mpv", path: "/nonexistent"})
 }
 
+// testPassphrase is what newTestRoutes signs in with.
+const testPassphrase = "correct horse battery"
+
+// newTestRoutes builds the PRODUCTION handler — the same routes() serveControl
+// calls — around an in-memory auth.
+//
+// ⚠️ newMemoryAuth, never newAuth: newTestController takes no *testing.T and
+// sets no XDG_CONFIG_HOME, and this package has no TestMain, so a file-backed
+// auth here would write a passphrase into the real ~/.config/hespera on every
+// `go test`.
+func newTestRoutes() (http.Handler, *auth) {
+	a := newMemoryAuth(testPassphrase, nil)
+	return newTestController().routes(a), a
+}
+
+// signedIn attaches a valid session cookie.
+func signedIn(r *http.Request, a *auth) *http.Request {
+	r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: a.token})
+	return r
+}
+
 func TestSendAndStopAreSafeWhenIdle(t *testing.T) {
 	ct := newTestController()
 	if ct.send(actionNext) {
@@ -198,7 +219,7 @@ func TestResolveAndStartRejectsBadRequests(t *testing.T) {
 }
 
 func TestHandlersRejectWrongMethods(t *testing.T) {
-	h := newTestController().routes()
+	h, a := newTestRoutes()
 	cases := []struct {
 		method, path string
 	}{
@@ -213,7 +234,7 @@ func TestHandlersRejectWrongMethods(t *testing.T) {
 	}
 	for _, c := range cases {
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest(c.method, c.path, nil))
+		h.ServeHTTP(rr, signedIn(httptest.NewRequest(c.method, c.path, nil), a))
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("%s %s = %d, want 405", c.method, c.path, rr.Code)
 		}
@@ -222,9 +243,9 @@ func TestHandlersRejectWrongMethods(t *testing.T) {
 
 // Pause has nothing to act on when idle, and must say so rather than pretend.
 func TestPauseRefusedWhenIdle(t *testing.T) {
-	h := newTestController().routes()
+	h, a := newTestRoutes()
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/pause", strings.NewReader(`{"paused":true}`)))
+	h.ServeHTTP(rr, signedIn(httptest.NewRequest(http.MethodPost, "/api/pause", strings.NewReader(`{"paused":true}`)), a))
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("POST /api/pause while idle = %d, want 409", rr.Code)
 	}
@@ -234,9 +255,9 @@ func TestPauseRefusedWhenIdle(t *testing.T) {
 // all — ffplay has no IPC, so the remote hides the control instead of offering
 // one that can only fail.
 func TestStateReportsPauseCapability(t *testing.T) {
-	h := newTestController().routes()
+	h, a := newTestRoutes()
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	h.ServeHTTP(rr, signedIn(httptest.NewRequest(http.MethodGet, "/api/state", nil), a))
 	var got struct {
 		Paused   bool `json:"paused"`
 		CanPause bool `json:"canPause"`
@@ -254,9 +275,9 @@ func TestStateReportsPauseCapability(t *testing.T) {
 }
 
 func TestStateReportsIdle(t *testing.T) {
-	h := newTestController().routes()
+	h, a := newTestRoutes()
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/state", nil))
+	h.ServeHTTP(rr, signedIn(httptest.NewRequest(http.MethodGet, "/api/state", nil), a))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("/api/state = %d, want 200", rr.Code)
 	}
@@ -276,7 +297,9 @@ func TestStateReportsIdle(t *testing.T) {
 // The shell must be served from the embedded tree, and the hardening headers
 // must be on it — the app is the only thing this binary exposes to a browser.
 func TestShellIsServedWithSecurityHeaders(t *testing.T) {
-	h := newTestController().routes()
+	h, _ := newTestRoutes()
+	// Deliberately no cookie: the shell holds no secret, ships in the public
+	// .deb, and must load so the login screen can render at all.
 	for _, path := range []string{"/", "/app.js", "/app.css", "/manifest.webmanifest", "/sw.js"} {
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))

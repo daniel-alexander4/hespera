@@ -115,10 +115,10 @@ func TestEnsureRebuildsWhenTheServerChanges(t *testing.T) {
 }
 
 func TestBrowseHandlersRejectWrongMethods(t *testing.T) {
-	h := newTestController().routes()
+	h, a := newTestRoutes()
 	for _, path := range []string{"/api/letters", "/api/artists", "/api/artist", "/api/album"} {
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, path, nil))
+		h.ServeHTTP(rr, signedIn(httptest.NewRequest(http.MethodPost, path, nil), a))
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("POST %s = %d, want 405", path, rr.Code)
 		}
@@ -126,11 +126,11 @@ func TestBrowseHandlersRejectWrongMethods(t *testing.T) {
 }
 
 func TestBrowseIDValidation(t *testing.T) {
-	h := newTestController().routes()
+	h, a := newTestRoutes()
 	for _, q := range []string{"", "?id=", "?id=0", "?id=-3", "?id=abc"} {
 		for _, path := range []string{"/api/artist", "/api/album"} {
 			rr := httptest.NewRecorder()
-			h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path+q, nil))
+			h.ServeHTTP(rr, signedIn(httptest.NewRequest(http.MethodGet, path+q, nil), a))
 			if rr.Code != http.StatusBadRequest {
 				t.Fatalf("GET %s%s = %d, want 400", path, q, rr.Code)
 			}

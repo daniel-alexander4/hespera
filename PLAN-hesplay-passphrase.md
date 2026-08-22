@@ -64,6 +64,19 @@ The reconciler lives inside the `--listen` process. An unwritable config
 directory yields an in-memory passphrase, a loud warning, and a serving remote —
 never a refusal to start.
 
+### D7 — A non-canonical request path is refused at the door *(settled 2026-08-22 by the S02 deepdive)*
+`requireAuth` returns 400 for any path that is not already in cleaned form —
+checked on **both** `r.URL.Path` and `r.URL.EscapedPath()`, before it decides
+anything else. Both halves earn their place: the decoded check catches
+`%2e%2e`, the escaped one catches double-encoding (`%252e%252e`), which survives
+a single decode as literal text. Not defence in depth — **load-bearing**: the middleware
+decides on a cleaned path while `ServeMux` routes on the raw one, and any
+divergence between those two is a bypass. Refusing non-canonical paths makes the
+two decisions provably the same input. It also kills the `/art/%2e%2e/..`
+traversal into the upstream proxy for free. No legitimate client sends a dot
+segment; verified that `/`, `/app.js`, `/api/state` and `/art/album/1` are all
+already canonical.
+
 ### D6 — Cookies are not port-scoped, and that is accepted *(settled 2026-08-22)*
 The session cookie is offered to any other HTTP service on the same hostname.
 A property of HTTP cookies, not of this design; the proportionate fix (bearer
@@ -103,10 +116,37 @@ reached the panicking constructor on the very error it was written to handle.
 Round 4 found nothing above LOW. Every fix is mutation-verified — the pin goes
 red when the bug is put back.
 
-#### P01.S02 — The gate
-`routes(a *auth)` → `secureControl(requireAuth(a, mux))`; `POST /api/login`;
-the cookie; `/art/` hardening; repair the 7 `.routes()` test sites;
-`TestProductionRoutesAreGated`; publish `authCounts` on `/api/state`.
+#### P01.S02 — The gate *(done 2026-08-22, v0.45.40)*
+
+**Deepdive fired** (2026-08-22) — the slice modifies `routes()`, `secureControl`,
+`handleArt` and `handleState`, none of which this plan authored. It found two
+things the plan did not know, both before a line was written:
+
+1. **A middleware wrapping `ServeMux` sees the RAW, uncleaned path**, and
+   ServeMux does not clean an *escaped* dot segment. So
+   `/art/%2e%2e/%2e%2e/healthz` reaches `handleArt` intact and is concatenated
+   onto the upstream base.
+2. Consequently the first gating shape — "exempt a path that resolves to a
+   static file" — was **bypassable**: `/art/%2e%2e/app.js` cleans to `/app.js`
+   (exempt) while the mux routes it to the gated `/art/` handler. Demonstrated
+   with a probe, not reasoned.
+
+**→ D7 (below) is the amendment this forced.** Tasks:
+
+- T01 — `requireAuth`: **refuse any non-canonical path with 400 first**, then
+  exempt `/api/login` and static files, then require the cookie. Nested
+  `secureControl(requireAuth(...))` so a 401 still carries the security headers.
+- T02 — `POST /api/login`: POST only, body bounded 4 KiB, source IP via
+  `net.SplitHostPort`, `a.login` → cookie `hesplay_session`, `Path=/`,
+  `HttpOnly`, `SameSite=Lax`, no `Secure`, 1yr.
+- T03 — `serveControl`: build the auth, warn on a degraded start, announce the
+  passphrase **only when stdout is a TTY** so it never reaches the journal.
+- T04 — `/art/` hardening: whitelist `^/art/album/[0-9]+$`, refuse redirects,
+  serve only upstream 200, bound the body, `Cache-Control: private`.
+- T05 — `handleState` publishes `authCounts` — the reader those counters have
+  been waiting for since S01.
+- T06 — tests: in-memory auth helper, cookie helper for the 25 gated requests,
+  `TestProductionRoutesAreGated`, and traversal pins.
 - Use `a.usable()` to tell "no credential could be established, nobody can sign
   in" from "signed in fine, the key could not be persisted" — `newAuth` returns a
   non-nil auth and a non-nil error in both cases.
@@ -125,6 +165,10 @@ the cookie; `/art/` hardening; repair the 7 `.routes()` test sites;
   credential**. S02's live check is that same request returning **401**.
 
 #### P01.S03 — The client
+- ⚠️ **`api()` must carry the status onto the thrown Error** (`app.js:19-27`
+  currently throws `new Error(body.message)` and drops `res.status`). Without it
+  the login UI cannot tell 401 "sign in" from 503 "this box has no passphrase"
+  from a 502 upstream failure — three states that need three different screens.
 Login overlay outside the `SCREENS` stack; 401 branch in `api()`; pause the 2s
 poll while signed out; `#p=` fragment sign-in + `history.replaceState`; art
 `onerror`.

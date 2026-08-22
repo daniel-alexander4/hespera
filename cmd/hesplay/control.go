@@ -15,10 +15,14 @@
 // actions are simply a second producer for that same channel — no new
 // transport model, and the CLI path is untouched when --listen is absent.
 //
-// Posture: no authentication, matching Hespera itself (README §Security
-// posture). The blast radius is playback on one box — skip, pause the queue,
-// change what is playing — not a shell and not the library. Bind it to the LAN
-// only on a network you would already let control the speakers.
+// Posture: gated by a three-word passphrase (auth.go), which is a DEPARTURE
+// from Hespera itself — the server still has no auth layer. The asymmetry is
+// deliberate rather than an oversight: --listen exists to be reached from a
+// phone, and the surface behind it is wider than playback (PUT /api/noise
+// rewrites a config file, and PUT /api/server plus /art/ together are a proxy
+// through a caller-supplied upstream). Plain HTTP, so the credential crosses
+// the wire readable — this keeps a houseguest off the speakers, not a sniffer.
+// Bind it to the LAN only on a network you would already let control them.
 package main
 
 import (
@@ -29,9 +33,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -507,9 +514,11 @@ func serveControl(ctx context.Context, c *client, addr string, args []string, sh
 	// is not immediately preempted by a window that happens to be open.
 	go ct.watchNoiseSchedule(ctx)
 
+	a := openAuth()
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           ct.routes(),
+		Handler:           ct.routes(a),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -525,6 +534,7 @@ func serveControl(ctx context.Context, c *client, addr string, args []string, sh
 	}()
 
 	fmt.Printf("remote on http://%s — open it on your phone and Add to Home Screen\n", addr)
+	announcePassphrase(a)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -532,7 +542,7 @@ func serveControl(ctx context.Context, c *client, addr string, args []string, sh
 	return nil
 }
 
-func (ct *controller) routes() http.Handler {
+func (ct *controller) routes(a *auth) http.Handler {
 	mux := http.NewServeMux()
 
 	sub, err := fs.Sub(webFS, "web")
@@ -541,7 +551,8 @@ func (ct *controller) routes() http.Handler {
 	}
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 
-	mux.HandleFunc("/api/state", ct.handleState)
+	mux.HandleFunc(loginPath, handleLogin(a))
+	mux.HandleFunc("/api/state", ct.handleState(a))
 	mux.HandleFunc("/api/playlists", ct.handlePlaylists)
 	mux.HandleFunc("/api/letters", ct.handleLetters)
 	mux.HandleFunc("/api/artists", ct.handleArtists)
@@ -558,7 +569,169 @@ func (ct *controller) routes() http.Handler {
 	mux.HandleFunc("/api/noise/start", ct.handleNoiseStart)
 	mux.HandleFunc("/art/", ct.handleArt)
 
-	return secureControl(mux)
+	// requireAuth nests INSIDE secureControl so a 401 still carries the CSP and
+	// the other hardening headers — secureControl sets them before delegating,
+	// so wrapping the other way would short-circuit past them.
+	return secureControl(requireAuth(a, sub, mux))
+}
+
+const loginPath = "/api/login"
+
+// maxLoginBody bounds the sign-in request. auth.login caps the passphrase
+// itself, but the body is the caller's to bound and this is the caller.
+const maxLoginBody = 4 << 10
+
+// maxArtBytes bounds a proxied cover image. The upstream is normally Hespera,
+// but handleServer lets it be repointed, so "normally" is not a bound.
+const maxArtBytes = 32 << 20
+
+var (
+	errNonCanonicalPath = errors.New("non-canonical request path")
+	errSignInRequired   = errors.New("sign in required")
+	errWrongPassphrase  = errors.New("that is not the passphrase")
+	errTooManyAttempts  = errors.New("too many attempts — wait a few seconds")
+	errNoPassphraseSet  = errors.New("no passphrase is configured on this box — see the server log")
+	errNotAlbumArt      = errors.New("not an album art path")
+
+	// artPathRe is the whole set of paths the art proxy will forward. The
+	// client only ever requests /art/album/{id} (app.js:209, :293), so anything
+	// else is either a bug or someone probing the upstream through us.
+	artPathRe = regexp.MustCompile(`^/art/album/[0-9]+$`)
+
+	// artHTTP is the upstream client for the art proxy, with redirects REFUSED.
+	// The shared client follows up to ten hops by default, which — given
+	// handleServer lets the upstream be repointed — is one redirect away from a
+	// general read primitive against the LAN. Built once: newClient carries
+	// nothing per-upstream but a timeout, so a per-request copy bought nothing.
+	artHTTP = &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+)
+
+// requireAuth gates the remote. Everything needs a session cookie except the
+// login endpoint and the static shell, which holds no secret and ships in the
+// public .deb.
+//
+// ⚠️ The FIRST check is not the credential — it is that the path is canonical,
+// and that ordering is load-bearing rather than defensive. This middleware
+// decides on r.URL.Path (decoded) while ServeMux routes on r.URL.EscapedPath();
+// an escaped dot segment survives ServeMux's cleaning untouched, so the two can
+// be handed different strings. Demonstrated before this was written:
+// /art/%2e%2e/app.js decodes to /art/../app.js, which cleans to /app.js — a
+// static file, so the exemption below would have PASSED IT THROUGH — while the
+// mux routed it to the gated /art/ handler. Requiring both forms to be already
+// canonical makes the two decisions provably the same input, and kills the
+// %2e%2e traversal into the upstream proxy on the way past. No real client ever
+// sends a dot segment.
+func requireAuth(a *auth, assets fs.FS, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !canonicalPath(r.URL) {
+			writeErr(w, http.StatusBadRequest, errNonCanonicalPath)
+			return
+		}
+		if r.URL.Path == loginPath || isPublicAsset(assets, r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if c, err := r.Cookie(sessionCookieName); err != nil {
+			a.countNoCookie()
+		} else if a.validToken(c.Value) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// A box that could not establish a credential says so rather than
+		// showing a sign-in that can never succeed. It leaks nothing: the
+		// passphrase is not in the message, and the state is already on stderr.
+		if !a.usable() {
+			writeErr(w, http.StatusServiceUnavailable, errNoPassphraseSet)
+			return
+		}
+		writeErr(w, http.StatusUnauthorized, errSignInRequired)
+	})
+}
+
+// canonicalPath reports whether the request path is already in cleaned form in
+// BOTH its decoded and its escaped spelling. The escaped half is what catches
+// double-encoding (%252e%252e), which survives one decode as literal text.
+func canonicalPath(u *url.URL) bool {
+	if u.Path == "" || u.Path[0] != '/' || path.Clean(u.Path) != u.Path {
+		return false
+	}
+	esc := u.EscapedPath()
+	return path.Clean(esc) == esc
+}
+
+// isPublicAsset reports whether p names a regular file in the embedded web
+// tree. Derived from the tree itself rather than a hand-kept list, so adding an
+// asset cannot silently leave it gated — and a directory is not public, so
+// /icons/ stops offering a listing.
+func isPublicAsset(assets fs.FS, p string) bool {
+	name := strings.TrimPrefix(p, "/")
+	if name == "" {
+		name = "index.html"
+	}
+	if !fs.ValidPath(name) {
+		return false
+	}
+	fi, err := fs.Stat(assets, name)
+	return err == nil && fi.Mode().IsRegular()
+}
+
+// clientIP is the rate limiter's key.
+func clientIP(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// handleLogin exchanges the three words for a session cookie.
+func handleLogin(a *auth) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, errPOSTOnly)
+			return
+		}
+		var body struct {
+			Passphrase string `json:"passphrase"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxLoginBody)).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("bad request: %w", err))
+			return
+		}
+		if !a.usable() {
+			writeErr(w, http.StatusServiceUnavailable, errNoPassphraseSet)
+			return
+		}
+		token, status := a.login(clientIP(r), body.Passphrase)
+		switch status {
+		case http.StatusOK:
+			http.SetCookie(w, &http.Cookie{
+				Name:  sessionCookieName,
+				Value: token,
+				Path:  "/",
+				// Lax, not Strict: Hespera's home screen links straight here
+				// (the noise_remote_url card), and Strict withholds the cookie
+				// on a top-level cross-site navigation — so every arrival from
+				// Hespera would have shown a sign-in despite a live session.
+				// Lax still withholds it from cross-site POSTs, which is every
+				// mutating call this API has.
+				SameSite: http.SameSiteLaxMode,
+				HttpOnly: true,
+				// No Secure: this is plain http on a LAN, and a Secure cookie
+				// would simply never be stored.
+				MaxAge: sessionMaxAge,
+			})
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		case http.StatusTooManyRequests:
+			writeErr(w, http.StatusTooManyRequests, errTooManyAttempts)
+		default:
+			writeErr(w, http.StatusUnauthorized, errWrongPassphrase)
+		}
+	}
 }
 
 // secureControl sets the same hardening headers as the tapcount template, minus
@@ -605,43 +778,49 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 	writeJSON(w, code, map[string]any{"ok": false, "message": err.Error()})
 }
 
-func (ct *controller) handleState(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeErr(w, http.StatusMethodNotAllowed, errGETOnly)
-		return
+func (ct *controller) handleState(a *auth) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeErr(w, http.StatusMethodNotAllowed, errGETOnly)
+			return
+		}
+		ct.mu.Lock()
+		st, kind, base := ct.state, ct.kind, ct.c.base
+		noisePausable := ct.noisePause != nil
+		ct.mu.Unlock()
+		playing := kind != sessionNone
+		// ffplay has no IPC, so the button hides itself rather than offering
+		// something that can only fail. Noise pauses by signal, not IPC, so its
+		// answer is the seam's presence — installed only where signals work.
+		canPause := stallSocket(ct.eng, 1) != ""
+		if kind == sessionNoise {
+			canPause = noisePausable
+		}
+		// The window rides on the polled state rather than a separate endpoint: it
+		// re-centres itself as the queue advances, so the highlight can never drift
+		// out of step with what is playing.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "playing": playing, "server": base, "now": st,
+			// kind lets the remote render a noise session differently from a queue
+			// (footer on every screen, no next/previous) without inferring it from
+			// an empty track list.
+			"kind":  kind.String(),
+			"queue": ct.windowAround(st.Index),
+			// paused is a state of the playing queue, not a third mode: playing
+			// stays true so the transport and the queue list keep their shape.
+			"paused": playing && ct.paused.Load(),
+			// The auth counters' reader — see authCounts for what an all-zero
+			// reading means. Published rather than merely collected, because a
+			// counter with no reader proves nothing.
+			"auth":     a.snapshot(),
+			"canPause": canPause,
+			// Fraction 0..1 of the track played, or -1 when unknown (no IPC, or the
+			// engine has not reported a duration yet). The remote shows a bar, not a
+			// clock, so a fraction is all it needs — and music_tracks has no duration
+			// column, making the engine the only source.
+			"progress": ct.progress(playing, st.ID),
+		})
 	}
-	ct.mu.Lock()
-	st, kind, base := ct.state, ct.kind, ct.c.base
-	noisePausable := ct.noisePause != nil
-	ct.mu.Unlock()
-	playing := kind != sessionNone
-	// ffplay has no IPC, so the button hides itself rather than offering
-	// something that can only fail. Noise pauses by signal, not IPC, so its
-	// answer is the seam's presence — installed only where signals work.
-	canPause := stallSocket(ct.eng, 1) != ""
-	if kind == sessionNoise {
-		canPause = noisePausable
-	}
-	// The window rides on the polled state rather than a separate endpoint: it
-	// re-centres itself as the queue advances, so the highlight can never drift
-	// out of step with what is playing.
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "playing": playing, "server": base, "now": st,
-		// kind lets the remote render a noise session differently from a queue
-		// (footer on every screen, no next/previous) without inferring it from
-		// an empty track list.
-		"kind":  kind.String(),
-		"queue": ct.windowAround(st.Index),
-		// paused is a state of the playing queue, not a third mode: playing
-		// stays true so the transport and the queue list keep their shape.
-		"paused":   playing && ct.paused.Load(),
-		"canPause": canPause,
-		// Fraction 0..1 of the track played, or -1 when unknown (no IPC, or the
-		// engine has not reported a duration yet). The remote shows a bar, not a
-		// clock, so a fraction is all it needs — and music_tracks has no duration
-		// column, making the engine the only source.
-		"progress": ct.progress(playing, st.ID),
-	})
 }
 
 func (ct *controller) handlePlaylists(w http.ResponseWriter, r *http.Request) {
@@ -960,22 +1139,87 @@ func (ct *controller) handleArt(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errGETOnly)
 		return
 	}
+	// The client asks for exactly one shape (app.js:209, :293). Anything else is
+	// a bug or someone using us to reach the upstream — and handleServer lets
+	// the upstream be repointed, so "the upstream is Hespera" is not a bound.
+	if !artPathRe.MatchString(r.URL.Path) {
+		writeErr(w, http.StatusBadRequest, errNotAlbumArt)
+		return
+	}
 	c := ct.upstream()
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, c.base+r.URL.Path, nil)
 	if err != nil {
 		http.Error(w, "bad art path", http.StatusBadRequest)
 		return
 	}
-	resp, err := c.http.Do(req)
+	resp, err := artHTTP.Do(req)
 	if err != nil {
 		http.Error(w, "art unavailable", http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+	// Only a 200 is forwarded. Previously every upstream status was copied
+	// through verbatim WITH Cache-Control: max-age=3600 — so an upstream 404 or
+	// 500, body and all, was handed to the browser and told to keep it for an
+	// hour.
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "art unavailable", http.StatusBadGateway)
+		return
+	}
 	if ctype := resp.Header.Get("Content-Type"); ctype != "" {
 		w.Header().Set("Content-Type", ctype)
 	}
-	w.Header().Set("Cache-Control", "max-age=3600")
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	// private: the response is only reachable with a session cookie now, so a
+	// shared cache must not keep it.
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, maxArtBytes))
+}
+
+// openAuth loads or creates the remote's passphrase, never failing the process:
+// the noise reconciler lives in here, and a config-directory problem must not
+// take the household's schedule down with it.
+func openAuth() *auth {
+	p, err := passphrasePath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warn: no config directory (%v) — using a temporary passphrase that changes on restart\n", err)
+		eph, ephErr := ephemeralAuth(nil)
+		if ephErr != nil {
+			fmt.Fprintf(os.Stderr, "warn: %v — the remote will refuse every sign-in\n", ephErr)
+			return newRefusingAuth(nil)
+		}
+		return eph
+	}
+	a, _, warning := newAuth(p, nil)
+	if warning != nil {
+		fmt.Fprintf(os.Stderr, "warn: %v\n", warning)
+	}
+	return a
+}
+
+// announcePassphrase prints the words only to a terminal.
+//
+// Under systemd stdout is the journal, which is persistent and readable by the
+// adm group — so a box that starts as a service says WHERE the passphrase is
+// and never what it is. Someone running `hesplay --listen` by hand is looking
+// at their own screen and gets the words.
+func announcePassphrase(a *auth) {
+	if !a.usable() {
+		fmt.Fprintln(os.Stderr, "warn: no passphrase is in force — the remote will refuse every sign-in")
+		return
+	}
+	if fi, err := os.Stdout.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		fmt.Printf("passphrase: %s\n", a.phraseForDisplay())
+		return
+	}
+	if p, err := passphrasePath(); err == nil {
+		fmt.Printf("the passphrase is in %s\n", p)
+		return
+	}
+	// No terminal to print to AND no file to point at — the ephemeral path,
+	// where openAuth could not resolve a config directory. Saying nothing here
+	// leaves a remote that serves and that nobody can ever sign in to.
+	fmt.Fprintln(os.Stderr,
+		"warn: a temporary passphrase is in force and there is no config directory to keep it in — "+
+			"run the remote from a terminal to see it, or fix the config directory and restart")
 }

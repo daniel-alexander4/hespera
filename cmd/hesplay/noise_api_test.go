@@ -200,7 +200,7 @@ func TestNoiseSessionReportsAsPlaying(t *testing.T) {
 	ct.state = nowPlaying{Queue: "Noise", Title: "brown noise"}
 	ct.mu.Unlock()
 
-	w, body := doJSON(t, http.HandlerFunc(ct.handleState), http.MethodGet, "/api/state", "")
+	w, body := doJSON(t, ct.handleState(newMemoryAuth(testPassphrase, nil)), http.MethodGet, "/api/state", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d", w.Code)
 	}
@@ -221,7 +221,7 @@ func TestNoiseStateReportsKindAndPausability(t *testing.T) {
 	ct.mu.Unlock()
 
 	// Before the engine process exists there is nothing to signal.
-	_, body := doJSON(t, http.HandlerFunc(ct.handleState), http.MethodGet, "/api/state", "")
+	_, body := doJSON(t, ct.handleState(newMemoryAuth(testPassphrase, nil)), http.MethodGet, "/api/state", "")
 	if body["kind"] != "noise" {
 		t.Fatalf("kind: got %v, want noise", body["kind"])
 	}
@@ -232,7 +232,7 @@ func TestNoiseStateReportsKindAndPausability(t *testing.T) {
 	ct.mu.Lock()
 	ct.noisePause = func(bool) error { return nil }
 	ct.mu.Unlock()
-	_, body = doJSON(t, http.HandlerFunc(ct.handleState), http.MethodGet, "/api/state", "")
+	_, body = doJSON(t, ct.handleState(newMemoryAuth(testPassphrase, nil)), http.MethodGet, "/api/state", "")
 	if body["canPause"] != true {
 		t.Errorf("canPause with the seam installed: got %v, want true", body["canPause"])
 	}
