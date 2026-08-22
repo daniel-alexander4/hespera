@@ -64,6 +64,29 @@ The reconciler lives inside the `--listen` process. An unwritable config
 directory yields an in-memory passphrase, a loud warning, and a serving remote —
 never a refusal to start.
 
+### D8 — The `#p=<phrase>` URL sign-in is CUT *(settled 2026-08-22 by the S03 attack — it had been a default-to-confirm)*
+The original grill proposed letting `noise_remote_url` carry the passphrase in a
+fragment, so Hespera's home Noise card would work on the TV — whose app-mode
+Chromium, driven by a Flirc remote, has **no keyboard at all**. Cut, because the
+cost was mis-weighed:
+
+- `noise_remote_url` is an `app_settings` value rendered as an **`href` on an
+  unauthenticated Hespera**. Putting the passphrase in it hands the credential to
+  anyone who can load the home page — precisely the population this whole arc
+  exists to keep off the speakers. `history.replaceState` cleans the address bar,
+  not Hespera's DOM.
+- The premise that the TV would need it repeatedly is **false**. The session
+  cookie is HttpOnly with a one-year life, and the kiosk Chromium runs a
+  persistent dedicated profile — so the TV signs in **once, ever**. One borrowed
+  USB keyboard, one time, beats a permanent plaintext credential.
+
+Also corrected: the worry that Add-to-Home-Screen would bake the fragment into
+`start_url` does not hold — `start_url: "."` resolves against the manifest and
+drops the fragment.
+
+If this is ever revisited, the shape is a single-use short-TTL **enrollment
+token**, never the passphrase itself.
+
 ### D7 — A non-canonical request path is refused at the door *(settled 2026-08-22 by the S02 deepdive)*
 `requireAuth` returns 400 for any path that is not already in cleaned form —
 checked on **both** `r.URL.Path` and `r.URL.EscapedPath()`, before it decides
@@ -177,7 +200,36 @@ things the plan did not know, both before a line was written:
 - Baseline recorded live 2026-08-22: `GET /api/state` answers **200 with no
   credential**. S02's live check is that same request returning **401**.
 
-#### P01.S03 — The client
+#### P01.S03 — The client *(done 2026-08-22, v0.45.42)*
+
+**Deepdive fired** (2026-08-22) — the slice modifies `app.js`, `index.html` and
+`app.css`, none of which this plan authored. Three facts it established that the
+plan did not know:
+
+- `app.css:71` is `[hidden] { display: none !important; }`, so a plain `hidden`
+  attribute reliably beats any `display` the overlay carries.
+- `toast(msg, isErr)` (`app.js:49-57`) is the app's **only** error surface and
+  every one of eight error paths already funnels there — so a sign-in failure
+  reuses it rather than inventing a second.
+- `app.js` reads `location` / `history` / `hash` **nowhere at all**, so a `#p=`
+  fragment cannot collide with anything. The screen stack is purely in-memory.
+
+Tasks:
+- T01 — `api()` attaches `e.status`/`e.body` (it currently drops `res.status`,
+  so 401 *sign in*, 503 *this box has no passphrase* and a 502 upstream failure
+  are indistinguishable) and routes 401/503 to the overlay.
+- T02 — the overlay: markup after `#toast`, `position:fixed; inset:0; z-index:5`
+  (above `.bar` 2, `.now` 3, `.toast` 4), styled off `.panel`/`.btn`.
+- T03 — one field, `autocapitalize` off, not `type="password"`; Enter submits via
+  a keydown handler rather than a `<form>`, which sidesteps `form-action 'none'`.
+- T04 — suspend the poll while signed out (boot must capture the interval handle,
+  which it currently discards) and clear the stale paint.
+- T05 — **CUT.** See D8.
+- T06 — `onerror` on the two album-art `<img>`s, which now 401 while signed out.
+- T07 — (added by the attack) extend `test/js/harness.js` to take a static dir
+  and add `hesplay_app.test.js`. This slice puts a state machine into a
+  1,254-line file with **zero** automated coverage; the harness change is one
+  constant becoming a parameter.
 - ⚠️ **`api()` must carry the status onto the thrown Error** (`app.js:19-27`
   currently throws `new Error(body.message)` and drops `res.status`). Without it
   the login UI cannot tell 401 "sign in" from 503 "this box has no passphrase"

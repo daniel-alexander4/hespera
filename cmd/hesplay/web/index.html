@@ -190,6 +190,26 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+<!-- Sign-in. Not a <form>: controlCSP carries form-action 'none', so a native
+     submit is refused by the browser. Enter is handled in app.js instead. -->
+<div id="signin" class="signin" role="dialog" aria-modal="true" aria-labelledby="signin-title" hidden>
+  <div class="signin-card">
+    <h2 id="signin-title">hesplay</h2>
+    <!-- The box, not just the app: the support call is "wrong Pi", not "wrong words". -->
+    <p id="signin-host" class="signin-host"></p>
+    <label for="passphrase">Passphrase</label>
+    <!-- inputmode is deliberately absent: #server's inputmode="url" would cost
+         the space bar, and this field is three words. autocapitalize/autocorrect
+         off because phones would otherwise "fix" the words; the server
+         normalises anyway, so the client never does. -->
+    <input id="passphrase" type="text" autocomplete="off" autocapitalize="none"
+           autocorrect="off" spellcheck="false" enterkeyhint="go"
+           placeholder="three words">
+    <button id="signin-go" class="btn">Sign in</button>
+    <span id="signin-msg" class="msg" role="status" aria-live="polite"></span>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

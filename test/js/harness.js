@@ -1,4 +1,5 @@
-// Shared jsdom harness for Hespera's browser JS (web/static/*.js).
+// Shared jsdom harness for Hespera's browser JS, and for hesplay's phone
+// remote (cmd/hesplay/web/app.js) via the `dir` option on loadController.
 //
 // The Go binary embeds web/ and never runs Node — this harness is dev-only. It
 // loads a real controller file into a jsdom window and exercises it through its
@@ -17,6 +18,10 @@ const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
 
 const STATIC_DIR = path.join(__dirname, '..', '..', 'web', 'static');
+// hesplay's PWA is a second, separate front end in the same repo. It had no
+// automated coverage at all until a sign-in state machine landed in it; the
+// harness takes a directory rather than growing a copy.
+const HESPLAY_DIR = path.join(__dirname, '..', '..', 'cmd', 'hesplay', 'web');
 
 // A mock hls.js: records what the controller drives it with (startPosition,
 // loadSource, the registered event handlers) so a test can assert the pipeline
@@ -75,7 +80,7 @@ function makeFetch(routes) {
 // Load a controller file into a fresh jsdom window built around `html`, with the
 // browser-API stubs injected, then return handles for assertions. `stubs` lets a
 // test add/override globals (e.g. window.YT) before the script runs.
-function loadController(file, { html, url = 'http://localhost/', stubs = {}, storage = {} } = {}) {
+function loadController(file, { html, url = 'http://localhost/', stubs = {}, storage = {}, dir = STATIC_DIR } = {}) {
   const dom = new JSDOM(html, { url, runScripts: 'outside-only', pretendToBeVisual: true });
   const { window } = dom;
 
@@ -121,7 +126,7 @@ function loadController(file, { html, url = 'http://localhost/', stubs = {}, sto
   for (const k of Object.keys(stubs)) { if (k !== 'fetch') window[k] = stubs[k]; }
 
   // Run the real controller source in the window's context.
-  const src = fs.readFileSync(path.join(STATIC_DIR, file), 'utf8');
+  const src = fs.readFileSync(path.join(dir, file), 'utf8');
   vm.runInContext(src, dom.getInternalVMContext());
 
   return { dom, window, document: window.document, fetch: window.fetch, beacons };
@@ -132,4 +137,4 @@ function loadController(file, { html, url = 'http://localhost/', stubs = {}, sto
 const tick = () => new Promise((r) => setTimeout(r, 0));
 async function flush(n = 3) { for (let i = 0; i < n; i++) await tick(); }
 
-module.exports = { loadController, makeMockHls, makeFetch, flush, STATIC_DIR };
+module.exports = { loadController, makeMockHls, makeFetch, flush, STATIC_DIR, HESPLAY_DIR };

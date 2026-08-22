@@ -469,3 +469,60 @@ details.preset[open] > summary::after { transform: rotate(45deg); }
 }
 #noise-more { width: 100%; margin-top: 0.6rem; }
 #noise-add-window { width: 100%; margin-bottom: 0.8rem; }
+
+/* --- Sign-in overlay -------------------------------------------------------
+   z-index 5 clears everything the app paints: .bar (2), .now (3), .toast (4).
+   Opaque, because it must hide the library behind it and not merely sit on top.
+   app.css's [hidden] { display: none !important } is what makes the toggle
+   reliable — and hiding <main>/.bar with `hidden` (display:none) rather than
+   visibility:hidden is what keeps the TV's focus ring from walking behind this
+   card onto live play buttons. */
+.signin {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: var(--pad);
+  background: var(--base);
+  --hue: var(--lavender);
+}
+.signin-card {
+  width: 100%;
+  max-width: 22rem;
+  padding: var(--pad);
+  background: var(--card);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--hue);
+}
+.signin-card h2 { margin: 0 0 0.15rem; font-size: 1.1rem; }
+.signin-host {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: var(--subtext);
+  word-break: break-all;
+}
+.signin-card label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--subtext);
+}
+.signin-card input {
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--surface);
+  border-radius: var(--radius);
+  background: var(--mantle);
+  color: var(--text);
+  font: inherit;
+}
+.signin-card .btn { justify-content: center; text-align: center; }
+.signin-card .btn[disabled] { opacity: 0.55; }
+.signin-card .msg { display: block; margin-top: 0.6rem; min-height: 1.2em; }
+
+/* The overlay covers the transport, so the body padding that reserves room for
+   it is dead space while signing in. */
+body.signing-in { padding-bottom: 0; }

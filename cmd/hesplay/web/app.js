@@ -21,10 +21,25 @@
     let body = null;
     try { body = await res.json(); } catch (_) { /* a proxy error page, not JSON */ }
     if (!res.ok || (body && body.ok === false)) {
-      throw new Error((body && body.message) || ('HTTP ' + res.status));
+      // The status rides along. Without it 401 "sign in", 503 "this box has no
+      // passphrase" and a 502 upstream failure are one indistinguishable
+      // string, and they need three different screens.
+      const e = new Error((body && body.message) || ('HTTP ' + res.status));
+      e.status = res.status;
+      e.body = body;
+      // One choke point for every one of the callers: the gate states raise the
+      // overlay from here rather than from sixteen catch blocks.
+      if (res.status === 401) showSignIn();
+      else if (res.status === 503) showSignIn({ noPassphrase: true, detail: e.message });
+      throw e;
     }
     return body || {};
   }
+
+  // isGateError marks the two states the overlay owns. Callers use it to stay
+  // quiet: their inline "could not reach the server" surfaces would otherwise
+  // paint "sign in required" behind the sign-in card.
+  function isGateError(e) { return e && (e.status === 401 || e.status === 503); }
 
   // Icons are <use> references into the sprite in index.html — the same Lucide
   // paths Hespera uses. createElementNS is required: SVG elements built with
@@ -48,6 +63,12 @@
 
   let toastTimer = 0;
   function toast(msg, isErr) {
+    // While signed out every in-flight call fails at once; four stacked error
+    // toasts behind the sign-in card help nobody. Sign-in's OWN errors never
+    // come through here — they use the card's inline #signin-msg, which is why
+    // silencing this cannot hide them (a 429 after eight wrong tries is the
+    // common case and must be visible).
+    if (signedOut) return;
     const el = $('toast');
     el.textContent = msg;
     el.classList.toggle('err', !!isErr);
@@ -167,6 +188,7 @@
       $('pl-empty').hidden = rows.length > 0;
     } catch (e) {
       box.textContent = '';
+      if (isGateError(e)) return; // the sign-in card is up; do not paint behind it
       $('pl-empty').hidden = false;
       $('pl-empty').textContent = 'Could not reach the server: ' + e.message;
     }
@@ -205,6 +227,10 @@
     if (n.id !== lastTrackID) {
       lastTrackID = n.id;
       const art = $('art');
+      // /art/ is gated now, so a stale or signed-out fetch 401s; without this
+      // the element shows a broken-image glyph and the JS still believes there
+      // is artwork.
+      art.onerror = () => { art.hidden = true; };
       if (n.albumId > 0) {
         art.src = '/art/album/' + n.albumId;
         art.hidden = false;
@@ -290,6 +316,7 @@
     cover.className = 'np-cover';
     cover.id = 'np-cover';
     cover.alt = '';
+    cover.onerror = () => { cover.hidden = true; };
     if (n.albumId > 0) cover.src = '/art/album/' + n.albumId; else cover.hidden = true;
     const text = document.createElement('div');
     text.className = 'np-text';
@@ -340,7 +367,132 @@
     bar.firstChild.style.width = known ? (Math.min(1, p) * 100).toFixed(1) + '%' : '0%';
   }
 
+  // --- sign-in -----------------------------------------------------------
+
+  let signedOut = false;
+  let pollTimer = 0;
+
+  // startPoll always clears first: hideSignIn can be reached twice (a second
+  // login landing while the first is settling), and a second interval would be
+  // unstoppable — nothing holds its handle.
+  function startPoll() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(refresh, POLL_MS);
+  }
+
+  function signinMsg(text, isErr) {
+    const el = $('signin-msg');
+    el.textContent = text || '';
+    el.classList.toggle('err', !!isErr);
+  }
+
+  function showSignIn(opts) {
+    const o = opts || {};
+    // Re-entrant by construction: the four boot loaders plus refresh() all fail
+    // at once, and visibilitychange fires refresh() unconditionally. Without
+    // this guard the field is re-focused — re-popping the phone keyboard — on
+    // every one of them.
+    if (signedOut) {
+      if (o.noPassphrase) signinMsg(o.detail || 'This box has no passphrase set.', true);
+      return;
+    }
+    signedOut = true;
+    clearInterval(pollTimer);
+    pollTimer = 0;
+
+    // Hide the app, do not merely cover it. `hidden` is display:none (app.css's
+    // [hidden] rule), which takes these out of the FOCUS ORDER — otherwise the
+    // TV's arrow-key ring walks behind the card onto live play buttons. This is
+    // the same reason the video player's fullscreen header uses display:none
+    // and never visibility:hidden.
+    document.querySelectorAll('main').forEach((m) => { m.hidden = true; });
+    document.querySelector('.bar').hidden = true;
+    $('now').hidden = true;
+    $('settings').hidden = true;
+    document.body.classList.add('signing-in');
+
+    // Forget what was painted. lastQueueKey is indices-only, so a different
+    // album at the same position would not repaint; lastTrackID pins #art to a
+    // URL that just 401'd and got onerror-hidden.
+    lastTrackID = -1;
+    lastQueueKey = '';
+
+    $('signin-host').textContent = location.host;
+    signinMsg(o.noPassphrase ? (o.detail || 'This box has no passphrase set.') : '', !!o.noPassphrase);
+    $('passphrase').disabled = !!o.noPassphrase;
+    $('signin-go').disabled = !!o.noPassphrase;
+    $('signin').hidden = false;
+    try { $('passphrase').focus(); } catch (_) { /* not focusable yet; harmless */ }
+  }
+
+  function hideSignIn() {
+    if (!signedOut) return;
+    signedOut = false;
+    $('signin').hidden = true;
+    document.body.classList.remove('signing-in');
+    document.querySelector('.bar').hidden = false;
+    $('passphrase').value = '';
+    signinMsg('');
+    // showScreen restores the right <main> AND derives #back-btn from the stack
+    // depth — un-hiding the button directly would show a Back that does nothing.
+    showScreen(stack[stack.length - 1], $('bar-title').textContent);
+    loadPlaylists();
+    loadNoiseQuick();
+    loadLetters();
+    refresh();
+    startPoll();
+  }
+
+  let signingIn = false;
+  async function submitSignIn() {
+    if (signingIn) return;
+    const phrase = $('passphrase').value;
+    if (!phrase.trim()) return;
+    signingIn = true;
+    $('signin-go').disabled = true;
+    signinMsg('Signing in…');
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passphrase: phrase }),
+      });
+      if (res.status === 429) {
+        signinMsg('Too many attempts — wait a few seconds.', true);
+        setTimeout(() => { $('signin-go').disabled = false; }, 4000);
+        signingIn = false;
+        return;
+      }
+      if (!res.ok) {
+        signinMsg('That is not the passphrase.', true);
+        $('signin-go').disabled = false;
+        signingIn = false;
+        return;
+      }
+      // Prove the cookie STUCK before tearing the card down. A browser that
+      // refused to keep it (private tab, lockdown mode, a profile that drops
+      // cookies on a non-secure origin) would otherwise loop: hide, reload,
+      // 401, show — indistinguishable to the user from a wrong passphrase.
+      const probe = await fetch('/api/state');
+      if (!probe.ok) {
+        signinMsg('Signed in, but this browser did not keep the session cookie.', true);
+        $('signin-go').disabled = false;
+        signingIn = false;
+        return;
+      }
+      signingIn = false;
+      hideSignIn();
+    } catch (e) {
+      signinMsg('Could not reach the box: ' + e.message, true);
+      $('signin-go').disabled = false;
+      signingIn = false;
+    }
+  }
+
   async function refresh() {
+    // Nothing to poll while the card is up, and visibilitychange calls this
+    // unconditionally.
+    if (signedOut) return;
     try {
       const st = await api('/api/state');
       renderNow(st);
@@ -960,6 +1112,7 @@
       renderNoiseQuick();
       renderScheduleCard();
     } catch (e) {
+      if (isGateError(e)) return; // the sign-in card is up
       $('noise-msg').textContent = e.message;
     }
   }
@@ -1104,6 +1257,7 @@
         () => play('mix', a.id, false),
       )));
     } catch (e) {
+      if (isGateError(e)) return; // the sign-in card is up; do not paint behind it
       $('browse-msg').classList.add('err');
       $('browse-msg').textContent = e.message;
     }
@@ -1237,11 +1391,20 @@
       renderNoiseScreen();
     });
 
+    $('signin-go').addEventListener('click', submitSignIn);
+    $('passphrase').addEventListener('keydown', (e) => {
+      // isComposing: an IME's Enter commits a candidate and must not submit.
+      if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        submitSignIn();
+      }
+    });
+
     loadPlaylists();
     loadNoiseQuick();
     loadLetters();
     refresh();
-    setInterval(refresh, POLL_MS);
+    startPoll();
     // Coming back from a locked screen should show the truth immediately rather
     // than up to POLL_MS of stale now-playing.
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
