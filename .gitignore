@@ -47,3 +47,6 @@ full.docker.reset.sh
 # JS test harness (dev-only; jsdom is never compiled into the Go binary)
 node_modules/
 package-lock.json
+
+# Claude Code local context — never committed
+.claude/
