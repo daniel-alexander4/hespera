@@ -44,47 +44,81 @@ Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
 
 ## Install
 
-Hespera ships as a self-contained binary — the web UI assets are embedded, so
-there is no directory to deploy alongside it. Builds are available for **Linux,
-macOS, and Windows** (amd64 + arm64).
+Download the build for your platform from the
+[releases page](https://github.com/daniel-alexander4/hespera/releases/latest).
+Hespera is one self-contained binary — the web UI is embedded, so there is
+nothing to deploy alongside it. Release builds come with TMDB, fanart.tv and
+OpenSubtitles keys bundled, so TV and movie matching work with no setup.
+
+You will also need:
+
+- **ffmpeg 7 or newer** for TV, movie and video playback (music and metadata
+  work without it). Older ffmpeg mostly works, but iPhone HEIC photos need 7.
+  Settings → About → System shows which version Hespera found.
+- **A Chromium-family browser** (Chrome, Chromium, Edge or Brave) for the app
+  window. On Linux one of these must be installed; Hespera won't use Firefox
+  for the app window.
 
 ### Debian / Ubuntu (recommended)
 
-```sh
-./build.sh && ./install.sh
-```
-
-Packages and installs the `.deb`s — `hespera` and `hescli` in `/usr/bin` with
-an app-menu entry + icon (pulling **ffmpeg** via apt), plus the `hesplay`
-music-player client, which ships as its own package so other boxes can install
-it without the full Hespera (see [Remote speakers](#remote-speakers-playing-music-on-another-box-hesplay)).
-`./install.sh remote [host]` deploys the server .deb to another machine over
-ssh; `./install.sh client [host]` deploys just the hesplay .deb. Nothing runs in
-the background unless you ask for it (a headless server unit ships, disabled —
-see [Serving your household](#serving-your-household)); launch **Hespera** from
-your app menu (or run `hespera`) and it opens an app window:
+Download `hespera_<version>_amd64.deb` (or `_arm64.deb` for a Raspberry Pi or
+other ARM box) and install it:
 
 ```sh
-hespera
+sudo apt install ./hespera_<version>_amd64.deb
 ```
 
-### Other platforms (macOS, Windows, other Linux)
+This puts `hespera` and `hescli` in `/usr/bin`, adds an app-menu entry, and
+pulls in ffmpeg. Nothing runs in the background unless you ask for it (a
+headless server unit ships disabled — see
+[Serving your household](#serving-your-household)). Launch **Hespera** from
+your app menu, or run `hespera`.
 
-Build the binaries (or grab one from `dist/` after `./build.sh`) and run the
-`hespera` binary directly — it's fully self-contained. **ffmpeg must be on your
-PATH** for TV/movie playback (transcoding and tag recovery); music and metadata
-work without it.
+> **Check your ffmpeg version.** Debian 13 ships ffmpeg 7; Ubuntu 24.04 ships
+> 6.1 and 22.04 ships 4.4. On those, everything except iPhone HEIC photos
+> works. For HEIC, install ffmpeg 7 from a PPA or a static build.
 
-- macOS: `brew install ffmpeg`
-- Windows: `winget install ffmpeg` (or `choco install ffmpeg`)
+The `hesplay` music-player client is a separate package
+(`hesplay_<version>_<arch>.deb`) — you only need it on a box with speakers you
+want to play music on. See
+[Remote speakers](#remote-speakers-playing-music-on-another-box-hesplay).
+
+### macOS
+
+Download `hespera-<version>-darwin-arm64` (Apple Silicon) or `-darwin-amd64`
+(Intel), then:
 
 ```sh
-./hespera-<version>-<os>-<arch>
+brew install ffmpeg
+chmod +x hespera-<version>-darwin-arm64
+xattr -d com.apple.quarantine hespera-<version>-darwin-arm64
+./hespera-<version>-darwin-arm64
 ```
+
+The binary isn't signed by Apple, so without the `xattr` step macOS refuses to
+open it as coming from an unidentified developer.
+
+### Windows
+
+Download `hespera-<version>-windows-amd64.exe` (or `-arm64.exe`), install
+ffmpeg with `winget install ffmpeg` (or `choco install ffmpeg`), and run the
+`.exe`. The binary isn't signed, so SmartScreen may warn on first launch —
+choose **More info → Run anyway**.
+
+### Other Linux
+
+Download `hespera-<version>-linux-amd64` (or `-arm64`), install ffmpeg with
+your package manager, `chmod +x` it and run it.
 
 ## Build from source
 
-Requires Go 1.23+.
+Requires Go 1.23+. Binaries you build yourself carry **no bundled provider
+keys**, so TV and movie matching stays off until you add your own TMDB key in
+Settings → Integrations (or `HESPERA_TMDB_API_KEY`) — see
+[Configuration](#configuration). On Debian/Ubuntu, `./build.sh && ./install.sh`
+builds the `.deb`s and installs them on this machine; `./install.sh remote
+[host]` deploys the server `.deb` to another machine over ssh, and
+`./install.sh client [host]` deploys just the hesplay `.deb`.
 
 ```sh
 make build        # local ./bin/hespera + ./bin/hescli + ./bin/hesplay (quick dev build)
