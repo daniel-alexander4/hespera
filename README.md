@@ -15,7 +15,8 @@ Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
 - **Music** — MusicBrainz matching with Cover Art Archive covers, artist bios
   and images, synced karaoke-style lyrics (LRCLIB), persistent playlists and
   one-click instant mixes, shuffle by era or popularity, duplicate detection,
-  and a per-track tag editor that writes back to your files.
+  a per-track tag editor that writes back to your files, and a ten-band
+  equalizer with presets.
 - **TV & Movies** — TMDB matching (posters, backdrops, cast, collections,
   related titles), direct play when your browser can handle the file and
   **seekable on-demand HLS transcoding** when it can't, embedded +
@@ -34,6 +35,15 @@ Licensed under the [GNU AGPL v3](LICENSE); third-party attributions in
   episodes with variable speed and resume to the second. The only part of
   Hespera that is not about files you own — nothing is downloaded and no audio
   is stored.
+- **Music in every room (`hesplay`)** — a separate small client that turns any
+  box with speakers (a headless Raspberry Pi, say) into a player for your
+  library: playlists, albums, artists, instant mixes and the popular/all
+  shuffles, with the same volume leveling, driven from the shell or from a
+  **phone remote** (an installable web app behind a three-word passphrase).
+  The same box is an **ambient-noise machine**: seven noise colours, layered
+  ocean surf, eight nature scenes fitted to real field recordings, and
+  entrainment-pulse presets, with a sleep timer and a nightly schedule. See
+  [Remote speakers](#remote-speakers-playing-music-on-another-box-hesplay).
 - **Library care** — a filesystem watcher auto-scans new media, corruption
   detection with lossless container auto-repair, loudness leveling, and jobs
   interrupted by a shutdown resume automatically on the next launch.
